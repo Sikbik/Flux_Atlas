@@ -46,12 +46,12 @@ export const App = () => {
   useEffect(() => {
     const checkForNewBuild = async () => {
       try {
-        const response = await fetch(`${apiConfig.baseUrl}/api/state`);
+        const response = await fetch(`${apiConfig.baseUrl}/api/status`);
         if (!response.ok) return;
 
-        const state = await response.json();
-        const currentBuildId = state.data?.buildId;
-        const isBuilding = state.building;
+        const status = await response.json();
+        const currentBuildId = status.buildId;
+        const isBuilding = status.building;
 
         console.log('[Background Poll]', {
           isBuilding,

@@ -75,6 +75,16 @@ export const createServer = () => {
     res.json(atlasBuilder.getState());
   });
 
+  // Lightweight endpoint for polling - only returns build status, no graph data
+  app.get('/api/status', (_req, res) => {
+    const state = atlasBuilder.getState();
+    res.json({
+      building: state.building,
+      buildId: state.data?.buildId,
+      error: state.error,
+    });
+  });
+
   // Serve static frontend files (for production)
   const frontendPath = path.join(__dirname, '../../../frontend/dist');
   app.use(express.static(frontendPath));
