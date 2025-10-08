@@ -264,7 +264,7 @@ MIT License - See [LICENSE](./LICENSE) file for details
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/Sikbik/Flux_Atlas/issues)
-- **Discord**: [Flux Discord](https://discord.gg/flux)
+- **Discord**: [Flux Discord](https://discord.com/invite/runonflux)
 - **Documentation**: See [DEPLOYMENT.md](./DEPLOYMENT.md)
 
 ---
