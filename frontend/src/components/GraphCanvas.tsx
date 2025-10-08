@@ -1,6 +1,6 @@
 import Sigma from 'sigma';
 import Graph from 'graphology';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, memo } from 'react';
 import type { AtlasEdge, AtlasNode } from '../types';
 import { getNodeColor, graphBackground } from '../theme';
 
@@ -24,7 +24,7 @@ const computeNodeSize = (node: AtlasNode) => {
   return Math.min(5, Math.max(node.kind === 'stub' ? 0.3 : 0.6, size * 0.85));
 };
 
-export const GraphCanvas = ({ nodes, edges, buildId, selectedNode, onNodeSelect, highlightedNodes = [], colorScheme = 'tier' }: GraphCanvasProps) => {
+const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelect, highlightedNodes = [], colorScheme = 'tier' }: GraphCanvasProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
 
@@ -245,3 +245,5 @@ export const GraphCanvas = ({ nodes, edges, buildId, selectedNode, onNodeSelect,
     />
   );
 };
+
+export const GraphCanvas = memo(GraphCanvasComponent);

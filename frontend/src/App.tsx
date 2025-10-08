@@ -25,10 +25,19 @@ export const App = () => {
   const build = atlasState?.data ?? null;
   const [selectedNode, setSelectedNode] = useSelectedNode(build, null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [colorScheme, setColorScheme] = useState<'arcane' | 'tier'>('tier');
   const [rebuildComplete, setRebuildComplete] = useState(false);
   const [lastSeenBuildId, setLastSeenBuildId] = useState<string | null>(null);
   const [wasBuilding, setWasBuilding] = useState(false);
+
+  // Debounce search query for performance
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Use build completion time from backend, not client fetch time
   const buildCompletedAt = build?.completedAt ? new Date(build.completedAt) : null;
@@ -88,8 +97,11 @@ export const App = () => {
 
   // Search and highlight matching nodes
   const searchResults = useMemo(() => {
-    if (!build || !searchQuery.trim()) return [];
-    const query = searchQuery.trim().toLowerCase();
+    if (!build || !debouncedSearchQuery.trim()) return [];
+    const query = debouncedSearchQuery.trim().toLowerCase();
+
+    // Only search if query is 3+ characters to reduce lag
+    if (query.length < 3) return [];
 
     return build.nodes.filter((node) => {
       // Search by IP
@@ -98,9 +110,16 @@ export const App = () => {
       if (node.meta.paymentAddress && String(node.meta.paymentAddress).toLowerCase().includes(query)) return true;
       // Search by collateral
       if (node.meta.collateral && String(node.meta.collateral).toLowerCase().includes(query)) return true;
+      // Search by app name
+      if (node.meta.apps && node.meta.apps.some(app => app.name.toLowerCase().includes(query))) return true;
       return false;
     });
-  }, [build, searchQuery]);
+  }, [build, debouncedSearchQuery]);
+
+  // Memoize highlighted node IDs to prevent GraphCanvas re-renders
+  const highlightedNodeIds = useMemo(() => {
+    return searchResults.map((n) => n.id);
+  }, [searchResults]);
 
   const graphPayload = useMemo(() => {
     if (!build) return null;
@@ -128,7 +147,7 @@ export const App = () => {
             buildId={graphPayload.buildId}
             selectedNode={selectedNode}
             onNodeSelect={setSelectedNode}
-            highlightedNodes={searchResults.map((n) => n.id)}
+            highlightedNodes={highlightedNodeIds}
             colorScheme={colorScheme}
           />
         ) : (

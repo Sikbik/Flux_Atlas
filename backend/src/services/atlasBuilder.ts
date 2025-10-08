@@ -1,7 +1,7 @@
 import seedrandom from 'seedrandom';
 import { forceLink, forceManyBody, forceSimulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
 import { config } from '../config/env.js';
-import { AtlasBuild, AtlasBounds, AtlasEdge, AtlasNode, AtlasState, NodeKind, NodeStatus, NodeTier, FluxNodeRecord } from '../types/atlas.js';
+import { AtlasBuild, AtlasBounds, AtlasEdge, AtlasNode, AtlasState, NodeKind, NodeStatus, NodeTier, FluxNodeRecord, FluxApp } from '../types/atlas.js';
 import { fetchFluxNodeList, fetchPeerData, PeerFetchResult } from './fluxApi.js';
 import { edgeKey, makeNodeId, normalizeIp, splitHostPort } from '../utils/net.js';
 import { logger } from '../utils/logger.js';
@@ -17,6 +17,7 @@ interface InternalNode {
     download_speed: number;
     upload_speed: number;
   };
+  apps?: FluxApp[];
 }
 
 interface InternalEdge {
@@ -60,7 +61,8 @@ const layoutExtent = 1000;
 const createFluxNode = (
   record: FluxNodeRecord,
   arcane?: boolean,
-  bandwidth?: { download_speed: number; upload_speed: number }
+  bandwidth?: { download_speed: number; upload_speed: number },
+  apps?: FluxApp[]
 ): InternalNode => {
   const id = makeNodeId(record.ip, record.collateral);
   return {
@@ -71,6 +73,7 @@ const createFluxNode = (
     status: determineStatus(arcane),
     record,
     bandwidth,
+    apps,
   };
 };
 
@@ -259,8 +262,8 @@ const buildGraph = (peerResults: PeerFetchResult[]): GraphSnapshot => {
   const nodes = new Map<string, InternalNode>();
   const edges = new Map<string, InternalEdge>();
 
-  peerResults.forEach(({ node, arcane, bandwidth }) => {
-    const fluxNode = createFluxNode(node, arcane, bandwidth);
+  peerResults.forEach(({ node, arcane, bandwidth, apps }) => {
+    const fluxNode = createFluxNode(node, arcane, bandwidth, apps);
     nodes.set(fluxNode.id, fluxNode);
   });
 
@@ -852,6 +855,7 @@ const toAtlasNodes = (
         isFluxNode: node.kind === 'flux',
         isStub: node.kind === 'stub',
         bandwidth: node.bandwidth,
+        apps: node.apps,
       },
     };
   });

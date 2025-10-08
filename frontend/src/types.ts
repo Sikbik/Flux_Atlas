@@ -2,6 +2,13 @@ export type NodeTier = 'CUMULUS' | 'NIMBUS' | 'STRATUS' | 'UNKNOWN';
 export type NodeStatus = 'ARCANE' | 'LEGACY' | 'UNVERIFIED';
 export type NodeKind = 'flux' | 'stub';
 
+export interface FluxApp {
+  name: string;
+  description: string;
+  version?: number;
+  owner?: string;
+}
+
 export interface AtlasNode {
   id: string;
   label: string;
@@ -35,6 +42,7 @@ export interface AtlasNode {
       download_speed: number;
       upload_speed: number;
     };
+    apps?: FluxApp[];
     [key: string]: unknown;
   };
 }

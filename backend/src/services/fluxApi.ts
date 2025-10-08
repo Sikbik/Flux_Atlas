@@ -1,6 +1,6 @@
 import pLimit from 'p-limit';
 import { config } from '../config/env.js';
-import { FluxNodeRecord } from '../types/atlas.js';
+import { FluxNodeRecord, FluxApp } from '../types/atlas.js';
 import { fetchJson } from '../utils/http.js';
 import { normalizeIp, splitHostPort } from '../utils/net.js';
 import { logger } from '../utils/logger.js';
@@ -25,6 +25,16 @@ interface FluxBenchmarkResponse {
   data: BenchmarkData;
 }
 
+interface FluxAppsResponse {
+  status: 'success' | 'error';
+  data: Array<{
+    name: string;
+    description: string;
+    version?: number;
+    owner?: string;
+  }>;
+}
+
 export interface BenchmarkData {
   download_speed: number;
   upload_speed: number;
@@ -36,6 +46,7 @@ export interface PeerFetchResult {
   incomingPeers: string[];
   arcane?: boolean;
   bandwidth?: BenchmarkData;
+  apps?: FluxApp[];
 }
 
 export async function fetchFluxNodeList(): Promise<FluxNodeRecord[]> {
@@ -169,12 +180,35 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
           });
         }
 
+        // Fetch installed apps
+        let apps: FluxApp[] | undefined;
+        try {
+          const appsEndpoint = `${baseUrl}/apps/installedapps`;
+          const appsResponse = await fetchJson<FluxAppsResponse>(appsEndpoint, {
+            timeoutMs: Math.min(config.rpcTimeout, 8000)
+          });
+          if (appsResponse.status === 'success' && appsResponse.data) {
+            apps = appsResponse.data.map(app => ({
+              name: app.name,
+              description: app.description,
+              version: app.version,
+              owner: app.owner
+            }));
+          }
+        } catch (error) {
+          logger.debug('Apps fetch failed', {
+            node: host,
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+
         return {
           node,
           outgoingPeers,
           incomingPeers,
           arcane,
-          bandwidth
+          bandwidth,
+          apps
         } satisfies PeerFetchResult;
       } catch (error) {
         logger.warn('Failed to fetch peer data', {

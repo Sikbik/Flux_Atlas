@@ -79,7 +79,7 @@ export const Sidebar = ({
         <h2>Search Nodes</h2>
         <input
           type="text"
-          placeholder="Search by IP or node address..."
+          placeholder="Search by IP, address, or app name..."
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           style={{
@@ -136,7 +136,12 @@ export const Sidebar = ({
             </div>
           </div>
         )}
-        {searchQuery && searchResults.length === 0 && (
+        {searchQuery && searchQuery.trim().length > 0 && searchQuery.trim().length < 3 && (
+          <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)' }}>
+            Type at least 3 characters to search
+          </p>
+        )}
+        {searchQuery && searchQuery.trim().length >= 3 && searchResults.length === 0 && (
           <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)' }}>
             No nodes found
           </p>
