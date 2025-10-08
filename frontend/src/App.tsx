@@ -21,7 +21,7 @@ function useSelectedNode(build: AtlasBuild | null, current: string | null) {
 }
 
 export const App = () => {
-  const { atlasState, isLoading, error, refresh } = useAtlasState();
+  const { atlasState, isLoading, error } = useAtlasState();
   const build = atlasState?.data ?? null;
   const [selectedNode, setSelectedNode] = useSelectedNode(build, null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -114,8 +114,8 @@ export const App = () => {
   const showOverlay = Boolean(atlasState?.building) || rebuildComplete;
 
   const handleRefreshAfterRebuild = () => {
-    setRebuildComplete(false);
-    refresh();
+    // Reload the page to get the new graph data
+    window.location.reload();
   };
 
   return (

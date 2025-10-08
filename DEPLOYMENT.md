@@ -87,9 +87,9 @@ environment:
 ## Accessing the Application
 
 Once running:
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:4000/api/state
-- **Health Check**: http://localhost:4000/healthz
+- **Application**: http://localhost:3000
+- **API Endpoint**: http://localhost:3000/api/state
+- **Health Check**: http://localhost:3000/healthz
 
 ## Health Monitoring
 
@@ -137,7 +137,7 @@ docker push your-dockerhub-username/flux-atlas:latest
   "enviromentParameters": [
     "FLUX_UPDATE_INTERVAL=1800000"
   ],
-  "containerPorts": "3000,4000",
+  "containerPorts": "3000",
   "containerData": "",
   "cpu": 1,
   "ram": 2048,
@@ -188,7 +188,7 @@ docker push your-dockerhub-username/flux-atlas:latest
 docker logs flux-atlas
 
 # Verify ports are available
-netstat -tuln | grep -E '3000|4000'
+netstat -tuln | grep 3000
 ```
 
 ### High memory usage
@@ -223,7 +223,7 @@ The health endpoint can be scraped by Prometheus:
 scrape_configs:
   - job_name: 'flux-atlas'
     static_configs:
-      - targets: ['localhost:4000']
+      - targets: ['localhost:3000']
     metrics_path: '/healthz'
 ```
 
