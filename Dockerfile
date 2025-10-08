@@ -47,7 +47,7 @@ COPY --from=backend-build /app/backend/dist ./dist
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
 # Set default environment variables (from backend/.env)
-ENV PORT=4000 \
+ENV PORT=3000 \
     FLUX_API_BASE_URL=https://api.runonflux.io \
     FLUX_DAEMON_LIST_ENDPOINT=/daemon/listfluxnodes \
     FLUX_RPC_PROTOCOL=http \
@@ -67,22 +67,13 @@ ENV PORT=4000 \
     FLUX_ALLOW_INSECURE_SSL=true \
     FLUX_ENABLE_ARCANE_PROBE=true
 
-# Install serve to host frontend
-RUN npm install -g serve
-
-# Create startup script
-WORKDIR /app
-RUN echo '#!/bin/sh' > start.sh && \
-    echo 'serve -s /app/frontend/dist -l 3000 &' >> start.sh && \
-    echo 'cd /app/backend && node dist/index.js' >> start.sh && \
-    chmod +x start.sh
-
-# Expose ports
-EXPOSE 3000 4000
+# Expose port
+EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:4000/healthz || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/healthz || exit 1
 
-# Run both services
-CMD ["/bin/sh", "/app/start.sh"]
+# Start backend (which will serve frontend)
+WORKDIR /app/backend
+CMD ["node", "dist/index.js"]

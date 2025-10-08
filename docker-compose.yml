@@ -8,11 +8,10 @@ services:
     image: flux-atlas:latest
     container_name: flux-atlas
     ports:
-      - "3000:3000"  # Frontend
-      - "4000:4000"  # Backend API
+      - "3000:3000"  # Serves both frontend and backend API
     environment:
       - NODE_ENV=production
-      - PORT=4000
+      - PORT=3000
       - FLUX_UPDATE_INTERVAL=1800000  # 30 minutes
       - FLUX_API_BASE_URL=https://api.runonflux.io
       - FLUX_RPC_TIMEOUT=15000
@@ -26,7 +25,7 @@ services:
       - FLUX_ENABLE_ARCANE_PROBE=true
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/healthz"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3

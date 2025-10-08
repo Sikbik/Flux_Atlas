@@ -2,7 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { atlasBuilder } from '../services/atlasBuilder.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const createServer = () => {
   const app = express();
@@ -68,6 +73,15 @@ export const createServer = () => {
 
   app.get('/api/state', (_req, res) => {
     res.json(atlasBuilder.getState());
+  });
+
+  // Serve static frontend files (for production)
+  const frontendPath = path.join(__dirname, '../../../frontend/dist');
+  app.use(express.static(frontendPath));
+
+  // SPA fallback - serve index.html for any non-API routes
+  app.use((_req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
   });
 
   return app;

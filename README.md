@@ -106,8 +106,9 @@ npm run dev
 ```
 
 5. **Access the application**
-- Frontend: http://localhost:5173
-- Backend: http://localhost:4000
+- Development Frontend: http://localhost:5173
+- Development Backend: http://localhost:4000
+- Production (Docker): http://localhost:3000 (serves both frontend and API)
 
 ### Production Deployment
 
@@ -251,7 +252,7 @@ docker-compose up -d
 
 # Or using Docker directly
 docker build -t flux-atlas:latest .
-docker run -d -p 3000:3000 -p 4000:4000 --name flux-atlas flux-atlas:latest
+docker run -d -p 3000:3000 --name flux-atlas flux-atlas:latest
 ```
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for comprehensive deployment documentation.

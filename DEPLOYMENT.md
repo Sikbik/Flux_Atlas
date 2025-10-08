@@ -6,7 +6,7 @@ Flux Atlas is a network visualization tool for the Flux blockchain. This guide c
 ## Prerequisites
 - Docker installed
 - At least 2GB RAM available
-- Ports 3000 (frontend) and 4000 (backend API) available
+- Port 3000 available (serves both frontend and backend API)
 
 ## Quick Start with Docker
 
@@ -37,7 +37,6 @@ docker build -t flux-atlas:latest .
 docker run -d \
   --name flux-atlas \
   -p 3000:3000 \
-  -p 4000:4000 \
   --restart unless-stopped \
   flux-atlas:latest
 
@@ -58,7 +57,7 @@ Edit `docker-compose.yml` or pass via Docker `-e` flags:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NODE_ENV` | `production` | Node environment |
-| `PORT` | `4000` | Backend API port |
+| `PORT` | `3000` | Server port (serves both frontend and API) |
 | `FLUX_UPDATE_INTERVAL` | `1800000` | Build interval in ms (30 min) |
 | `FLUX_SEED_NODE` | `https://api.runonflux.io` | Flux API endpoint |
 | `RPC_TIMEOUT` | `10000` | RPC request timeout (ms) |

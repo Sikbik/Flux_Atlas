@@ -1,8 +1,8 @@
 import type { AtlasState } from '../types';
 
-const DEFAULT_BASE_URL = 'http://localhost:4000';
 const POLL_INTERVAL_MS = Number(import.meta.env.VITE_POLL_INTERVAL_MS ?? 15000);
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? DEFAULT_BASE_URL;
+// Use relative URL so it works in both dev and production (Docker)
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
 
 export const resolvedPollInterval = Number.isFinite(POLL_INTERVAL_MS) && POLL_INTERVAL_MS > 0 ? POLL_INTERVAL_MS : 15000;
 
