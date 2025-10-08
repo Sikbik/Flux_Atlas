@@ -1,0 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  color-scheme: dark;
+  --color-bg: #050814;
+  --color-surface: #0f172a;
+  --color-surface-alt: #111c32;
+  --color-text: #e6ecff;
+  --color-text-muted: #a4b2d8;
+  --color-border: rgba(88, 105, 148, 0.35);
+  --color-accent: #38e8ff;
+  --color-danger: #ff6b6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body, html, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  background: radial-gradient(circle at top, #081029 0%, var(--color-bg) 52%, #050b16 100%);
+  color: var(--color-text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+#root {
+  display: flex;
+}
