@@ -1,34 +1,28 @@
 # Flux Network Atlas
 
-A real-time network visualization tool for the Flux blockchain, providing interactive exploration of node topology, bandwidth metrics, and network health.
+Flux Network Atlas is a real-time network visualization and analysis tool designed for the Flux blockchain ecosystem. It provides a comprehensive view of node topology, bandwidth metrics, and network health through an interactive WebGL interface.
 
-## Features
+## Key Capabilities
 
-### 🗺️ Network Visualization
-- **Interactive Graph**: WebGL-powered visualization using Sigma.js
-- **UPnP Clustering**: Automatically groups nodes sharing the same IP
-- **Weighted Layout**: Positions nodes based on connection count, centrality, and bandwidth
-- **Smart Search**: Find nodes by IP address or node address
+### Network Topology Visualization
+- **High-Performance Rendering**: Utilizes Sigma.js and WebGL to render thousands of nodes and connections with 60fps performance.
+- **Intelligent Clustering**: Automatically groups nodes sharing identical IP addresses (UPnP clusters) to reduce visual clutter and represent physical network topology accurately.
+- **Force-Directed Layout**: Employs d3-force algorithms to position nodes based on connection density, centrality, and bandwidth metrics.
 
-### 📊 Network Metrics
-- **Real-time Stats**: Track total nodes, edges, and ArcaneOS adoption
-- **Bandwidth Display**: Shows download/upload speeds (MB/s or GB/s)
-- **Centrality Analysis**: Identifies network hubs and critical nodes
-- **Tier Distribution**: CUMULUS, NIMBUS, STRATUS breakdown
+### Network Metrics & Analysis
+- **Real-Time Telemetry**: Monitors total node count, edge connections, and ArcaneOS adoption rates.
+- **Bandwidth Monitoring**: Visualizes download and upload throughput across the network.
+- **Centrality Computation**: Identifies critical network hubs and bridge nodes using graph centrality algorithms.
+- **Tier Distribution**: Analyzes the distribution of CUMULUS, NIMBUS, and STRATUS node tiers.
 
-### 🔄 Auto-Rebuilding
-- **Persistent State**: Graph persists between rebuilds
-- **30-Minute Intervals**: Automatic network updates
-- **Build Notifications**: Alerts when new data is available
-- **Background Polling**: Non-disruptive update detection
+### Automated Synchronization
+- **State Persistence**: Maintains graph state between rebuilds to ensure continuity.
+- **Background Polling**: Performs non-disruptive updates in 30-minute intervals.
+- **Event-Driven Updates**: Notifies connected clients immediately when new network data is available.
 
-### 🎨 Visual Design
-- **Color Schemes**: Toggle between ArcaneOS status and tier-based coloring
-- **Dark Theme**: Eye-friendly interface for extended use
-- **Responsive Layout**: Works on desktop and tablet displays
-- **Node Details**: Comprehensive sidebar with connection stats and bandwidth
+## System Architecture
 
-## Architecture
+The application follows a decoupled client-server architecture:
 
 ```
 ┌─────────────┐     HTTP      ┌─────────────┐
@@ -46,227 +40,163 @@ A real-time network visualization tool for the Flux blockchain, providing intera
                               └─────────────────┘
 ```
 
-### Tech Stack
+### Technical Stack
 
-**Frontend:**
-- React 19
-- Sigma.js 3 (WebGL graph rendering)
-- Graphology (graph data structure)
-- TypeScript
+**Frontend**
+- **Core**: React 19, TypeScript
+- **Visualization**: Sigma.js 3, Graphology
+- **State Management**: React Hooks
 
-**Backend:**
-- Express 5
-- d3-force (layout algorithm)
-- TypeScript
-- Helmet (security)
-- Express Rate Limit
+**Backend**
+- **Runtime**: Node.js, Express 5
+- **Computation**: d3-force (layout simulation)
+- **Security**: Helmet, Express Rate Limit
+- **Language**: TypeScript
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 20+
-- npm or yarn
-- Docker (for containerized deployment)
+- Node.js 20 or higher
+- npm or yarn package manager
+- Docker (optional, for containerized deployment)
 
 ### Development Setup
 
 1. **Clone the repository**
-```bash
-git clone https://github.com/Sikbik/Flux_Atlas.git
-cd Flux_Atlas
-```
+   ```bash
+   git clone https://github.com/Sikbik/Flux_Atlas.git
+   cd Flux_Atlas
+   ```
 
 2. **Install dependencies**
-```bash
-# Backend
-cd backend
-npm install
+   ```bash
+   # Install backend dependencies
+   cd backend
+   npm install
 
-# Frontend
-cd ../frontend
-npm install
-```
+   # Install frontend dependencies
+   cd ../frontend
+   npm install
+   ```
 
 3. **Configure environment**
-```bash
-cd backend
-cp .env.example .env
-# Edit .env with your settings
-```
+   ```bash
+   cd backend
+   cp .env.example .env
+   # Modify .env with appropriate settings
+   ```
 
-4. **Run development servers**
-```bash
-# Terminal 1 - Backend
-cd backend
-npm run dev
+4. **Start development servers**
+   ```bash
+   # Terminal 1: Start Backend
+   cd backend
+   npm run dev
 
-# Terminal 2 - Frontend
-cd frontend
-npm run dev
-```
+   # Terminal 2: Start Frontend
+   cd frontend
+   npm run dev
+   ```
 
 5. **Access the application**
-- Development Frontend: http://localhost:5173
-- Development Backend: http://localhost:4000
-- Production (Docker): http://localhost:3000 (serves both frontend and API)
-
-### Production Deployment
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions including:
-- Docker setup
-- Flux marketplace deployment
-- Configuration options
-- Monitoring and health checks
+   - Frontend: http://localhost:5173
+   - Backend API: http://localhost:4000
 
 ## Configuration
 
-### Backend Environment Variables
+The backend service is configured via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FLUX_UPDATE_INTERVAL` | `1800000` | Rebuild interval (ms) |
-| `FLUX_SEED_NODE` | `https://api.runonflux.io` | Flux API endpoint |
-| `RPC_TIMEOUT` | `10000` | Node RPC timeout (ms) |
-| `MAX_CONCURRENT_FETCHES` | `50` | Parallel fetch limit |
-| `LAYOUT_NODE_CAP` | `5000` | Max nodes for force layout |
+| `FLUX_UPDATE_INTERVAL` | `1800000` | Network rebuild interval in milliseconds (30 mins) |
+| `FLUX_SEED_NODE` | `https://api.runonflux.io` | Primary Flux API endpoint for initial discovery |
+| `RPC_TIMEOUT` | `10000` | Timeout for node RPC calls (ms) |
+| `MAX_CONCURRENT_FETCHES` | `50` | Maximum number of concurrent network requests |
+| `LAYOUT_NODE_CAP` | `5000` | Maximum number of nodes included in force-directed simulation |
 
 ## Project Structure
 
 ```
-Flux_Atlas_js_react_sigma/
+Flux_Atlas/
 ├── backend/
 │   ├── src/
-│   │   ├── config/          # Environment configuration
-│   │   ├── http/            # Express server setup
-│   │   ├── services/        # Core business logic
-│   │   │   ├── atlasBuilder.ts   # Graph building & layout
-│   │   │   └── fluxApi.ts        # Flux API client
-│   │   ├── types/           # TypeScript types
-│   │   └── utils/           # Utilities (logger, network)
-│   ├── dist/                # Compiled output
-│   └── package.json
+│   │   ├── config/          # Environment and runtime configuration
+│   │   ├── http/            # Express server and middleware
+│   │   ├── services/        # Core business logic (AtlasBuilder, FluxAPI)
+│   │   ├── types/           # TypeScript type definitions
+│   │   └── utils/           # Shared utilities
+│   └── dist/                # Compiled JavaScript output
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # React components
-│   │   ├── hooks/           # Custom React hooks
-│   │   ├── utils/           # Utilities (formatting)
-│   │   ├── App.tsx          # Main application
-│   │   └── types.ts         # TypeScript types
-│   ├── dist/                # Build output
-│   └── package.json
-├── Dockerfile               # Production container
-├── docker-compose.yml       # Docker Compose config
-└── DEPLOYMENT.md            # Deployment guide
+│   │   ├── components/      # React UI components
+│   │   ├── hooks/           # Custom state management hooks
+│   │   ├── utils/           # Frontend utilities
+│   │   └── types.ts         # Shared type definitions
+│   └── dist/                # Production build artifacts
+├── Dockerfile               # Multi-stage Docker build definition
+└── docker-compose.yml       # Container orchestration configuration
 ```
 
-## How It Works
+## System Operation
 
-### 1. Data Collection
-- Fetches node list from Flux API
-- Queries each node for peer connections
-- Retrieves bandwidth benchmarks
-- Collects ArcaneOS status
+1. **Data Collection**: The system queries the Flux API to retrieve the active node list, peer connections, and benchmark data.
+2. **Graph Construction**: Nodes and edges are instantiated. UPnP clusters are identified and normalized to prevent topology distortion.
+3. **Layout Simulation**: A physics-based simulation (d3-force) positions nodes. High-weight nodes are distributed to optimize visual clarity.
+4. **Visualization**: The frontend renders the computed graph state using WebGL, supporting interactive exploration.
 
-### 2. Graph Building
-- Creates nodes and edges from peer data
-- Normalizes UPnP cluster degrees
-- Computes centrality metrics
-- Calculates composite weights (connections + centrality + bandwidth)
-
-### 3. Layout Algorithm
-- Groups nodes by IP (UPnP clusters)
-- Applies force-directed layout with d3-force
-- Positions high-weight nodes further from center
-- Distributes edges randomly across cluster nodes
-
-### 4. Visualization
-- Renders graph using Sigma.js WebGL
-- Supports pan, zoom, and node selection
-- Updates reactively on state changes
-- Maintains persistent view between rebuilds
-
-## API Endpoints
+## API Reference
 
 ### `GET /api/state`
-Returns complete atlas state:
+Retrieves the current state of the network atlas.
+
+**Response:**
 ```json
 {
   "building": false,
   "data": {
-    "buildId": "...",
-    "nodes": [...],
-    "edges": [...],
-    "stats": {...},
-    "meta": {...}
+    "buildId": "uuid-string",
+    "nodes": [],
+    "edges": [],
+    "stats": {
+      "totalNodes": 1000,
+      "totalEdges": 5000
+    },
+    "meta": {
+      "timestamp": "ISO-8601"
+    }
   }
 }
 ```
 
 ### `GET /healthz`
-Health check endpoint:
+System health check endpoint.
+
+**Response:**
 ```json
 {
   "status": "ok",
   "uptime": 3600,
-  "nodes": 8521,
-  "edges": 128027,
   "memory": {
     "heapUsed": 245,
-    "heapTotal": 312,
-    "rss": 389
+    "heapTotal": 312
   }
 }
 ```
 
-## Performance
+## Performance & Security
 
-### Optimizations
-- ✅ Multi-stage Docker build (minimal image size)
-- ✅ Deterministic random seeding for consistent layouts
-- ✅ Edge distribution prevents node hotspots
-- ✅ Background polling with minimal API calls
-- ✅ WebGL rendering for smooth 60fps visualization
-- ✅ Rate limiting (100 req/min per IP)
+- **Optimization**: Implements multi-stage Docker builds, deterministic random seeding, and efficient edge distribution algorithms.
+- **Rendering**: WebGL-based rendering ensures 60fps performance with datasets exceeding 8,000 nodes.
+- **Security**: Protected via Helmet.js headers, CORS policies, and IP-based rate limiting.
 
-### Benchmarks
-- **Build time**: ~6-7 minutes for 8,500 nodes
-- **Memory usage**: ~250-400 MB heap
-- **Render performance**: 60 FPS with 8,500 nodes and 130k edges
-- **Docker image**: ~200 MB compressed
+## Deployment
 
-## Security
-
-- ✅ Helmet.js security headers
-- ✅ CORS protection
-- ✅ Rate limiting
-- ✅ Input validation
-- ✅ No exposed secrets
-- ✅ Dependency security audits
-
-## Docker Deployment
-
-### Quick Start
-```bash
-# Using Docker Compose (Recommended)
-docker-compose up -d
-
-# Or using Docker directly
-docker build -t flux-atlas:latest .
-docker run -d -p 3000:3000 --name flux-atlas flux-atlas:latest
-```
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for comprehensive deployment documentation.
+For production deployment instructions, including Docker configuration and Flux marketplace setup, refer to [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## License
 
-MIT License - See [LICENSE](./LICENSE) file for details
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/Sikbik/Flux_Atlas/issues)
-- **Discord**: [Flux Discord](https://discord.com/invite/runonflux)
-- **Documentation**: See [DEPLOYMENT.md](./DEPLOYMENT.md)
-
----
-
-Built with ❤️ for the Flux community
+- **Issue Tracking**: [GitHub Issues](https://github.com/Sikbik/Flux_Atlas/issues)
+- **Community**: [Flux Discord](https://discord.com/invite/runonflux)
