@@ -138,8 +138,8 @@ export const App = () => {
   };
 
   return (
-    <div className="app-shell" style={{ height: '100vh', width: '100%', display: 'flex', gap: '28px', padding: '28px', boxSizing: 'border-box' }}>
-      <div className="graph-panel" style={{ flex: 1, height: '100%', position: 'relative' }}>
+    <div className="app-shell">
+      <div className="graph-panel">
         {hasGraph && graphPayload ? (
           <GraphCanvas
             nodes={graphPayload.nodes}
@@ -171,7 +171,7 @@ export const App = () => {
           </div>
         ) : null}
       </div>
-      <div style={{ width: '380px', flexShrink: 0 }}>
+      <div className="sidebar-container">
         <Sidebar
           build={build}
           isBuilding={Boolean(atlasState?.building)}
@@ -185,39 +185,22 @@ export const App = () => {
           colorScheme={colorScheme}
           onColorSchemeChange={setColorScheme}
         />
-        <div style={{
-          padding: '16px',
-          textAlign: 'center',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-          fontSize: '16px',
-          color: 'rgba(255, 255, 255, 0.6)'
-        }}>
-          <div style={{ marginBottom: '8px' }}>Support Development ❤️</div>
-          <div style={{
-            fontFamily: 'monospace',
-            fontSize: '15px',
-            color: '#38e8ff',
-            wordBreak: 'break-all',
-            cursor: 'pointer',
-            marginBottom: '24px'
-          }}
-          onClick={() => navigator.clipboard.writeText('t3aYE1U7yncYeCoAGmfpbEXo3dbQSegZCSP')}
-          title="Click to copy">
+        <div className="footer-section">
+          <div className="footer-support">Support Development ❤️</div>
+          <div
+            className="footer-address"
+            onClick={() => navigator.clipboard.writeText('t3aYE1U7yncYeCoAGmfpbEXo3dbQSegZCSP')}
+            title="Click to copy"
+          >
             t3aYE1U7yncYeCoAGmfpbEXo3dbQSegZCSP
           </div>
           <a
             href="https://github.com/Sikbik/Flux_Atlas"
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              display: 'inline-block',
-              opacity: 0.7,
-              transition: 'opacity 0.2s'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+            className="footer-github-link"
           >
-            <img src="/GitHub_Logo_White.png" alt="GitHub" style={{ height: '24px' }} />
+            <img src="/GitHub_Logo_White.png" alt="GitHub" className="footer-github-logo" />
           </a>
         </div>
       </div>

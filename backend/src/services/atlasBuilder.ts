@@ -261,6 +261,7 @@ interface GraphSnapshot {
 const buildGraph = (peerResults: PeerFetchResult[]): GraphSnapshot => {
   const nodes = new Map<string, InternalNode>();
   const edges = new Map<string, InternalEdge>();
+  const rng = seedrandom(`${config.layoutSeed}:graph`);
 
   peerResults.forEach(({ node, arcane, bandwidth, apps }) => {
     const fluxNode = createFluxNode(node, arcane, bandwidth, apps);
@@ -366,8 +367,8 @@ const buildGraph = (peerResults: PeerFetchResult[]): GraphSnapshot => {
       if (targetIds.length === 1) {
         targetId = targetIds[0];
       } else {
-        // Multiple nodes at same IP: randomly distribute to avoid [0] hotspot
-        const randomIndex = Math.floor(Math.random() * targetIds.length);
+        // Multiple nodes at same IP: deterministically distribute to avoid [0] hotspot
+        const randomIndex = Math.floor(rng() * targetIds.length);
         targetId = targetIds[randomIndex];
       }
 
@@ -590,7 +591,7 @@ const applyLayout = (
 ) => {
   const totalNodes = nodes.size;
   const positions = new Map<string, { x: number; y: number }>();
-  const rngSeed = config.layoutSeed + ':' + Date.now().toString();
+  const rngSeed = config.layoutSeed;
   const rng = seedrandom(rngSeed);
 
   if (totalNodes === 0) {
@@ -1016,6 +1017,7 @@ export class AtlasBuilder {
   private state: AtlasState = { building: true };
   private lastCompletedBuild?: AtlasBuild;
   private timer?: NodeJS.Timeout;
+  private isRefreshing = false;
 
   public async start() {
     await this.refresh();
@@ -1041,6 +1043,12 @@ export class AtlasBuilder {
   }
 
   public async refresh() {
+    if (this.isRefreshing) {
+      logger.warn('Atlas build already in progress, skipping refresh');
+      return;
+    }
+
+    this.isRefreshing = true;
     logger.info('Starting atlas build');
     // Always preserve the last completed build while rebuilding
     this.state = { building: true, data: this.lastCompletedBuild };
@@ -1099,6 +1107,8 @@ export class AtlasBuilder {
         data: this.lastCompletedBuild,
         error: message,
       };
+    } finally {
+      this.isRefreshing = false;
     }
   }
 }

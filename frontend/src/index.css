@@ -37,3 +37,22 @@ button {
 #root {
   display: flex;
 }
+
+/* Mobile-specific global optimizations */
+@media (max-width: 768px) {
+  /* Smooth scrolling for mobile */
+  html {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent font size adjustments on orientation change */
+  body {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Improve tap highlight color */
+  * {
+    -webkit-tap-highlight-color: rgba(56, 232, 255, 0.2);
+  }
+}

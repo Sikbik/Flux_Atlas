@@ -137,6 +137,7 @@ export const NodeDetails = ({ node }: NodeDetailsProps) => {
             )}
             {showAppsModal && createPortal(
               <div
+                className="apps-modal-backdrop"
                 style={{
                   position: 'fixed',
                   top: 0,
@@ -154,6 +155,7 @@ export const NodeDetails = ({ node }: NodeDetailsProps) => {
                 onClick={() => setShowAppsModal(false)}
               >
                 <div
+                  className="apps-modal-content"
                   style={{
                     background: 'linear-gradient(135deg, rgba(16, 24, 45, 0.95) 0%, rgba(24, 32, 60, 0.95) 100%)',
                     border: '1px solid rgba(56, 232, 255, 0.3)',

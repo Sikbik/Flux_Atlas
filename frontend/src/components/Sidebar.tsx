@@ -53,6 +53,7 @@ export const Sidebar = ({
           href="https://runonflux.com/"
           target="_blank"
           rel="noopener noreferrer"
+          className="flux-logo-link"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -63,7 +64,7 @@ export const Sidebar = ({
           onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
           onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
         >
-          <img src="/Flux_symbol_blue-white.png" alt="Flux" style={{ height: '90px' }} />
+          <img src="/Flux_symbol_blue-white.png" alt="Flux" className="flux-logo" style={{ height: '90px' }} />
         </a>
       </header>
 

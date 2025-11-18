@@ -1,4 +1,4 @@
-/* Updated: 2025-10-06 - Fix graph panel height */
+/* Updated: 2025-10-21 - Mobile optimization and inline style removal */
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
@@ -17,6 +17,53 @@
   border-radius: 24px;
   overflow: hidden;
   box-shadow: 0 30px 60px rgba(2, 8, 23, 0.45);
+}
+
+.sidebar-container {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.footer-section {
+  padding: 16px;
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.footer-support {
+  margin-bottom: 8px;
+}
+
+.footer-address {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 15px;
+  color: #38e8ff;
+  word-break: break-all;
+  cursor: pointer;
+  margin-bottom: 24px;
+  transition: opacity 0.2s;
+}
+
+.footer-address:hover {
+  opacity: 0.8;
+}
+
+.footer-github-link {
+  display: inline-block;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.footer-github-link:hover {
+  opacity: 1;
+}
+
+.footer-github-logo {
+  height: 24px;
 }
 
 .graph-placeholder {
@@ -431,6 +478,7 @@
   gap: 10px;
 }
 
+/* Tablet breakpoint - stacks graph and sidebar */
 @media (max-width: 1280px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -444,14 +492,297 @@
   .sidebar {
     max-height: none;
   }
+
+  .sidebar-container {
+    width: 100%;
+  }
 }
 
+/* Small tablet/large phone breakpoint */
 @media (max-width: 768px) {
+  .app-shell {
+    padding: 16px;
+    gap: 20px;
+  }
+
+  .graph-panel {
+    min-height: 480px;
+    border-radius: 18px;
+  }
+
+  .sidebar {
+    padding: 20px 18px 28px;
+    gap: 20px;
+    border-radius: 18px;
+  }
+
   .stats-grid {
     grid-template-columns: 1fr;
   }
 
   .node-details__grid {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar__header h1 {
+    font-size: 1.2rem;
+  }
+
+  .sidebar__header p {
+    font-size: 0.85rem;
+  }
+
+  .flux-logo {
+    height: 75px !important;
+  }
+
+  .flux-logo-link {
+    margin-left: -15px !important;
+  }
+}
+
+/* Phone breakpoint - optimized for screens 480-640px */
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 12px;
+    gap: 16px;
+    padding-bottom: 60px;
+  }
+
+  .graph-panel {
+    min-height: 400px;
+    border-radius: 16px;
+  }
+
+  .sidebar {
+    padding: 18px 16px 24px;
+    gap: 18px;
+    border-radius: 16px;
+  }
+
+  .sidebar__header {
+    gap: 12px;
+  }
+
+  .sidebar__header h1 {
+    font-size: 1.15rem;
+  }
+
+  .sidebar__header p {
+    font-size: 0.8rem;
+  }
+
+  .sidebar__section h2 {
+    font-size: 0.95rem;
+  }
+
+  .stats-card {
+    padding: 14px;
+  }
+
+  .stats-card__value {
+    font-size: 1.4rem;
+  }
+
+  .ghost-button {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .node-details {
+    padding: 16px;
+  }
+
+  .flux-logo {
+    height: 65px !important;
+  }
+
+  .flux-logo-link {
+    margin-left: -10px !important;
+  }
+}
+
+/* Small phone breakpoint - optimized for screens under 480px */
+@media (max-width: 480px) {
+  .app-shell {
+    padding: 10px;
+    gap: 14px;
+    padding-bottom: 50px;
+  }
+
+  .graph-panel {
+    min-height: 350px;
+    border-radius: 14px;
+  }
+
+  .sidebar {
+    padding: 16px 14px 20px;
+    gap: 16px;
+    border-radius: 14px;
+  }
+
+  .sidebar__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .sidebar__header h1 {
+    font-size: 1.1rem;
+  }
+
+  .sidebar__header p {
+    font-size: 0.75rem;
+  }
+
+  .sidebar__section h2 {
+    font-size: 0.9rem;
+  }
+
+  .stats-grid {
+    gap: 12px;
+  }
+
+  .stats-card {
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .stats-card__label {
+    font-size: 0.75rem;
+  }
+
+  .stats-card__value {
+    font-size: 1.3rem;
+  }
+
+  .stats-card__helper {
+    font-size: 0.85rem;
+  }
+
+  .ghost-button {
+    padding: 8px 10px;
+    font-size: 12px;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .node-details {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .node-details__header h3 {
+    font-size: 0.95rem;
+  }
+
+  .node-details__badges {
+    gap: 6px;
+  }
+
+  .status-badge {
+    padding: 3px 8px;
+    font-size: 0.68rem;
+  }
+
+  .meta-label {
+    font-size: 0.72rem;
+  }
+
+  .meta-value {
+    font-size: 0.88rem;
+  }
+
+  .meta-value--mono {
+    font-size: 0.8rem;
+  }
+
+  .tier-list {
+    gap: 8px;
+  }
+
+  .tier-list li {
+    padding: 6px 0;
+    font-size: 0.9rem;
+  }
+
+  .graph-overlay {
+    top: 12px;
+    right: 12px;
+  }
+
+  .loading-indicator,
+  .rebuild-complete {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+
+  .loading-indicator .spinner {
+    width: 16px;
+    height: 16px;
+  }
+
+  .refresh-prompt-button {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+
+  .flux-logo {
+    height: 55px !important;
+  }
+
+  .flux-logo-link {
+    margin-left: 0 !important;
+    align-self: flex-start;
+  }
+
+  /* Mobile-optimized modal */
+  .apps-modal-backdrop {
+    padding: 10px !important;
+  }
+
+  .apps-modal-content {
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100vh - 20px) !important;
+    border-radius: 12px !important;
+  }
+
+  /* Mobile-optimized footer */
+  .footer-section {
+    padding: 12px;
+    font-size: 14px;
+  }
+
+  .footer-address {
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  .footer-github-logo {
+    height: 20px;
+  }
+}
+
+/* Additional mobile touch optimizations */
+@media (max-width: 640px) {
+  /* Increase touch target sizes for better mobile UX */
+  input[type="text"] {
+    padding: 10px 14px !important;
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+
+  button {
+    min-height: 40px;
+  }
+
+  /* Search results - better touch targets */
+  .sidebar__section button {
+    padding: 10px !important;
+    min-height: 44px;
+  }
+
+  /* Better spacing for ArcaneOS toggle button */
+  .sidebar__section > div button {
+    min-height: 36px;
   }
 }
