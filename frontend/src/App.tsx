@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import './App.css';
-import { GraphCanvas } from './components/GraphCanvas';
+import { GraphCanvas3D } from './components/GraphCanvas3D';
 import { Sidebar } from './components/Sidebar';
 import { LoadingIndicator } from './components/LoadingIndicator';
 import { useAtlasState } from './hooks/useAtlasState';
@@ -30,6 +30,7 @@ export const App = () => {
   const [rebuildComplete, setRebuildComplete] = useState(false);
   const [lastSeenBuildId, setLastSeenBuildId] = useState<string | null>(null);
   const [wasBuilding, setWasBuilding] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Debounce search query for performance
   useEffect(() => {
@@ -141,7 +142,7 @@ export const App = () => {
     <div className="app-shell">
       <div className="graph-panel">
         {hasGraph && graphPayload ? (
-          <GraphCanvas
+          <GraphCanvas3D
             nodes={graphPayload.nodes}
             edges={graphPayload.edges}
             buildId={graphPayload.buildId}
@@ -170,8 +171,36 @@ export const App = () => {
             )}
           </div>
         ) : null}
+
+        {/* Mobile sidebar toggle button */}
+        <button
+          className="mobile-sidebar-toggle"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+        >
+          {sidebarOpen ? (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          ) : (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="1"/>
+              <circle cx="12" cy="5" r="1"/>
+              <circle cx="12" cy="19" r="1"/>
+            </svg>
+          )}
+        </button>
       </div>
-      <div className="sidebar-container">
+
+      {/* Backdrop for mobile sidebar */}
+      {sidebarOpen && (
+        <div
+          className="mobile-sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <div className={`sidebar-container ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <Sidebar
           build={build}
           isBuilding={Boolean(atlasState?.building)}

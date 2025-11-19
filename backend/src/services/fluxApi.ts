@@ -2,8 +2,13 @@ import pLimit from 'p-limit';
 import { config } from '../config/env.js';
 import { FluxNodeRecord, FluxApp } from '../types/atlas.js';
 import { fetchJson } from '../utils/http.js';
-import { normalizeIp, splitHostPort } from '../utils/net.js';
+import { normalizeIp, splitHostPort, isPrivateOrReservedIp } from '../utils/net.js';
 import { logger } from '../utils/logger.js';
+import fs from 'fs/promises';
+import path from 'path';
+
+const CACHE_FILE = path.resolve(process.cwd(), 'data', 'peer_cache.json');
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 interface FluxDaemonResponse {
   status: 'success' | 'error';
@@ -87,6 +92,34 @@ const sanitizePeer = (value: string | { ip: string }, nodeIp: string) => {
 };
 
 export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchResult[]> {
+  // Try to load from cache first
+  try {
+    const cacheExists = await fs.stat(CACHE_FILE).then(() => true).catch(() => false);
+    if (cacheExists) {
+      const cacheContent = await fs.readFile(CACHE_FILE, 'utf-8');
+
+      // SECURITY: Validate JSON structure before using
+      const cache = JSON.parse(cacheContent);
+
+      // Validate cache structure
+      if (!cache || typeof cache !== 'object' || !cache.timestamp || !Array.isArray(cache.data)) {
+        logger.warn('Cache file has invalid structure, ignoring');
+        throw new Error('Invalid cache structure');
+      }
+
+      const age = Date.now() - cache.timestamp;
+
+      if (age < CACHE_TTL_MS) {
+        logger.info('Loading peer data from cache', { ageMs: age });
+        return cache.data;
+      } else {
+        logger.info('Cache expired', { ageMs: age });
+      }
+    }
+  } catch (err) {
+    logger.warn('Failed to read cache, will fetch fresh data', { err });
+  }
+
   const tasks = nodes.map((node) =>
     workerLimit(async () => {
       const { host, port } = splitHostPort(node.ip);
@@ -102,119 +135,9 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
         } satisfies PeerFetchResult;
       }
 
-      // Use port from API if available, otherwise default to 16127
-      const apiPort = port ?? config.rpcPort;
-      const baseUrl = `${config.rpcProtocol}://${host}:${apiPort}`;
-
-      let outgoingPeers: string[] = [];
-      let incomingPeers: string[] = [];
-      let arcane: boolean | undefined;
-
-      try {
-        // Fetch outgoing connections (connectedpeers)
-        const outgoingEndpoint = `${baseUrl}/flux/connectedpeers`;
-        const outgoingResponse = await fetchJson<FluxPeersResponse>(outgoingEndpoint, {
-          timeoutMs: config.rpcTimeout
-        });
-
-        if (outgoingResponse.status === 'success') {
-          outgoingPeers = outgoingResponse.data
-            .map((peer) => sanitizePeer(peer, host))
-            .filter((value): value is string => Boolean(value));
-        }
-
-        // Fetch incoming connections
-        const incomingEndpoint = `${baseUrl}/flux/incomingconnections`;
-        try {
-          const incomingResponse = await fetchJson<FluxPeersResponse>(incomingEndpoint, {
-            timeoutMs: config.rpcTimeout
-          });
-
-          if (incomingResponse.status === 'success') {
-            incomingPeers = incomingResponse.data
-              .map((peer) => sanitizePeer(peer, host))
-              .filter((value): value is string => Boolean(value));
-          }
-        } catch (error) {
-          logger.debug('Failed to fetch incoming connections', {
-            node: host,
-            message: error instanceof Error ? error.message : String(error)
-          });
-        }
-
-        // Probe for ArcaneOS
-        if (config.enableArcaneProbe) {
-          try {
-            const arcaneEndpoint = `${baseUrl}/flux/isarcaneos`;
-            const arcaneResponse = await fetchJson<FluxBooleanResponse>(arcaneEndpoint, {
-              timeoutMs: Math.min(config.rpcTimeout, 8000)
-            });
-            if (arcaneResponse.status === 'success') {
-              arcane = Boolean(arcaneResponse.data);
-            }
-          } catch (error) {
-            logger.debug('Arcane probe failed', {
-              node: host,
-              message: error instanceof Error ? error.message : String(error)
-            });
-          }
-        }
-
-        // Fetch bandwidth benchmarks
-        let bandwidth: BenchmarkData | undefined;
-        try {
-          const benchmarkEndpoint = `${baseUrl}/benchmark/getbenchmarks`;
-          const benchmarkResponse = await fetchJson<FluxBenchmarkResponse>(benchmarkEndpoint, {
-            timeoutMs: Math.min(config.rpcTimeout, 8000)
-          });
-          if (benchmarkResponse.status === 'success' && benchmarkResponse.data) {
-            bandwidth = {
-              download_speed: benchmarkResponse.data.download_speed || 0,
-              upload_speed: benchmarkResponse.data.upload_speed || 0
-            };
-          }
-        } catch (error) {
-          logger.debug('Benchmark fetch failed', {
-            node: host,
-            message: error instanceof Error ? error.message : String(error)
-          });
-        }
-
-        // Fetch installed apps
-        let apps: FluxApp[] | undefined;
-        try {
-          const appsEndpoint = `${baseUrl}/apps/installedapps`;
-          const appsResponse = await fetchJson<FluxAppsResponse>(appsEndpoint, {
-            timeoutMs: Math.min(config.rpcTimeout, 8000)
-          });
-          if (appsResponse.status === 'success' && appsResponse.data) {
-            apps = appsResponse.data.map(app => ({
-              name: app.name,
-              description: app.description,
-              version: app.version,
-              owner: app.owner
-            }));
-          }
-        } catch (error) {
-          logger.debug('Apps fetch failed', {
-            node: host,
-            message: error instanceof Error ? error.message : String(error)
-          });
-        }
-
-        return {
-          node,
-          outgoingPeers,
-          incomingPeers,
-          arcane,
-          bandwidth,
-          apps
-        } satisfies PeerFetchResult;
-      } catch (error) {
-        logger.warn('Failed to fetch peer data', {
-          node: host,
-          message: error instanceof Error ? error.message : String(error)
-        });
+      // SECURITY: Block private/reserved IPs to prevent SSRF attacks
+      if (isPrivateOrReservedIp(host)) {
+        logger.warn('Blocked request to private/reserved IP (SSRF protection)', { ip: host });
         return {
           node,
           outgoingPeers: [],
@@ -222,8 +145,119 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
           arcane: undefined
         } satisfies PeerFetchResult;
       }
+
+      // Use port from API if available, otherwise default to 16127
+      const apiPort = port ?? config.rpcPort;
+      const baseUrl = `${config.rpcProtocol}://${host}:${apiPort}`;
+
+      // Phase 1: Topology (Peers) - Critical for graph structure
+      // Run these in parallel
+      const outgoingPromise = fetchJson<FluxPeersResponse>(`${baseUrl}/flux/connectedpeers`, {
+        timeoutMs: config.rpcTimeout
+      });
+
+      const incomingPromise = fetchJson<FluxPeersResponse>(`${baseUrl}/flux/incomingconnections`, {
+        timeoutMs: config.rpcTimeout
+      });
+
+      const [outgoingResult, incomingResult] = await Promise.allSettled([outgoingPromise, incomingPromise]);
+
+      let outgoingPeers: string[] = [];
+      let incomingPeers: string[] = [];
+      let isAlive = false;
+
+      if (outgoingResult.status === 'fulfilled' && outgoingResult.value.status === 'success') {
+        outgoingPeers = outgoingResult.value.data
+          .map((peer) => sanitizePeer(peer, host))
+          .filter((value): value is string => Boolean(value));
+        isAlive = true;
+      }
+
+      if (incomingResult.status === 'fulfilled' && incomingResult.value.status === 'success') {
+        incomingPeers = incomingResult.value.data
+          .map((peer) => sanitizePeer(peer, host))
+          .filter((value): value is string => Boolean(value));
+        isAlive = true;
+      }
+
+      // Fail Fast: If we can't reach the node for peer data, it's likely down or blocking RPC.
+      // Skip metadata fetching to save time.
+      if (!isAlive) {
+        return {
+          node,
+          outgoingPeers: [],
+          incomingPeers: [],
+          arcane: undefined
+        } satisfies PeerFetchResult;
+      }
+
+      // Phase 2: Metadata (Arcane, Benchmarks, Apps) - Nice to have
+      // Run these in parallel only if node is alive
+      const arcanePromise = config.enableArcaneProbe
+        ? fetchJson<FluxBooleanResponse>(`${baseUrl}/flux/isarcaneos`, { timeoutMs: Math.min(config.rpcTimeout, 8000) })
+        : Promise.resolve(null);
+
+      const benchmarkPromise = fetchJson<FluxBenchmarkResponse>(`${baseUrl}/benchmark/getbenchmarks`, {
+        timeoutMs: Math.min(config.rpcTimeout, 8000)
+      });
+
+      const appsPromise = fetchJson<FluxAppsResponse>(`${baseUrl}/apps/installedapps`, {
+        timeoutMs: Math.min(config.rpcTimeout, 8000)
+      });
+
+      const [arcaneResult, benchmarkResult, appsResult] = await Promise.allSettled([
+        arcanePromise,
+        benchmarkPromise,
+        appsPromise
+      ]);
+
+      let arcane: boolean | undefined;
+      if (arcaneResult.status === 'fulfilled' && arcaneResult.value && arcaneResult.value.status === 'success') {
+        arcane = Boolean(arcaneResult.value.data);
+      }
+
+      let bandwidth: BenchmarkData | undefined;
+      if (benchmarkResult.status === 'fulfilled' && benchmarkResult.value.status === 'success' && benchmarkResult.value.data) {
+        bandwidth = {
+          download_speed: benchmarkResult.value.data.download_speed || 0,
+          upload_speed: benchmarkResult.value.data.upload_speed || 0
+        };
+      }
+
+      let apps: FluxApp[] | undefined;
+      if (appsResult.status === 'fulfilled' && appsResult.value.status === 'success' && appsResult.value.data) {
+        apps = appsResult.value.data.map(app => ({
+          name: app.name,
+          description: app.description,
+          version: app.version,
+          owner: app.owner
+        }));
+      }
+
+      return {
+        node,
+        outgoingPeers,
+        incomingPeers,
+        arcane,
+        bandwidth,
+        apps
+      } satisfies PeerFetchResult;
     })
   );
 
-  return Promise.all(tasks);
+  const results = await Promise.all(tasks);
+
+  // Save to cache
+  try {
+    await fs.mkdir(path.dirname(CACHE_FILE), { recursive: true });
+    await fs.writeFile(CACHE_FILE, JSON.stringify({
+      timestamp: Date.now(),
+      data: results
+    }, null, 2));
+    logger.info('Saved peer data to cache', { path: CACHE_FILE });
+  } catch (err) {
+    logger.warn('Failed to save cache', { err });
+  }
+
+  return results;
 }

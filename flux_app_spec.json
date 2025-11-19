@@ -1,0 +1,35 @@
+{
+    "version": 8,
+    "name": "FluxAtlas",
+    "description": "A high-performance 3D visualization of the Flux Network.",
+    "owner": "YOUR_ZELID_HERE",
+    "instances": 3,
+    "staticip": false,
+    "enterprise": "",
+    "compose": [
+        {
+            "name": "fluxatlas",
+            "description": "Main application",
+            "repotag": "littlestache/flux-atlas:2.0",
+            "ports": [
+                3000
+            ],
+            "containerPorts": [
+                3000
+            ],
+            "domains": [
+                ""
+            ],
+            "environmentParameters": [
+                "NODE_ENV=production",
+                "PORT=3000"
+            ],
+            "commands": [],
+            "containerData": "/app/backend/data",
+            "cpu": 0.5,
+            "ram": 512,
+            "hdd": 2,
+            "tiered": false
+        }
+    ]
+}

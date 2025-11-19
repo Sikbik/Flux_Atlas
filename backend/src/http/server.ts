@@ -12,9 +12,26 @@ const __dirname = path.dirname(__filename);
 export const createServer = () => {
   const app = express();
 
-  // Security headers
+  // Security headers with Content Security Policy
   app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' }
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Required for styled components
+        imgSrc: ["'self'", "data:", "https:"],
+        fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+        connectSrc: ["'self'", "https://api.runonflux.io"],
+        workerSrc: ["'self'", "blob:"], // For Three.js/WebGL workers
+        childSrc: ["'self'", "blob:"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
+      }
+    }
   }));
 
   // Rate limiting: 100 requests per minute per IP
@@ -26,11 +43,43 @@ export const createServer = () => {
   });
   app.use(limiter);
 
-  app.use(cors());
+  // SECURITY: Configure CORS properly for production
+  const corsOptions = {
+    origin: process.env.NODE_ENV === 'production'
+      ? process.env.ALLOWED_ORIGINS?.split(',') || false // Set ALLOWED_ORIGINS in production .env
+      : true, // Allow all origins in development
+    methods: ['GET', 'HEAD'],
+    credentials: false,
+    optionsSuccessStatus: 204
+  };
+  app.use(cors(corsOptions));
+
   app.use(express.json({ limit: '1mb' }));
 
-  app.get('/healthz', (_req, res) => {
+  app.get('/healthz', (req, res) => {
+    // SECURITY: Only expose detailed metrics to internal/local IPs
+    const clientIp = req.ip || req.socket.remoteAddress || '';
+    const isInternal =
+      clientIp.startsWith('127.') ||
+      clientIp.startsWith('::1') ||
+      clientIp.startsWith('::ffff:127.') ||
+      clientIp === '::1';
+
     const state = atlasBuilder.getState();
+
+    // External callers only get basic status
+    if (!isInternal) {
+      if (state.error) {
+        res.status(503).json({ status: 'error' });
+      } else if (state.building) {
+        res.status(202).json({ status: 'starting' });
+      } else {
+        res.json({ status: 'ok' });
+      }
+      return;
+    }
+
+    // Internal callers get detailed metrics
     const uptime = process.uptime();
     const memoryUsage = process.memoryUsage();
 

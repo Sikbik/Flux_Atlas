@@ -38,3 +38,6 @@ coverage/
 .next/
 .nuxt/
 .vercel/
+
+# Runtime data and caches
+data/
