@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import './App.css';
 import { GraphCanvas3D } from './components/GraphCanvas3D';
+import { GraphCanvas } from './components/GraphCanvas';
 import { Sidebar } from './components/Sidebar';
 import { LoadingIndicator } from './components/LoadingIndicator';
+import { LandingPage, type ViewMode } from './components/LandingPage';
 import { useAtlasState } from './hooks/useAtlasState';
 import { apiConfig } from './api/atlas';
 import type { AtlasBuild } from './types';
@@ -20,8 +22,13 @@ function useSelectedNode(build: AtlasBuild | null, current: string | null) {
   return [selected, setSelected] as const;
 }
 
+// Always start at landing page
+const getInitialViewMode = (): ViewMode | null => {
+  return null;
+};
+
 export const App = () => {
-  const { atlasState, isLoading, error } = useAtlasState();
+  const { atlasState, isLoading, error, refresh } = useAtlasState();
   const build = atlasState?.data ?? null;
   const [selectedNode, setSelectedNode] = useSelectedNode(build, null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,11 +39,25 @@ export const App = () => {
   const [wasBuilding, setWasBuilding] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Debounce search query for performance
+  // View mode state: null = landing page, '2d' or '3d' = graph view
+  const [viewMode, setViewMode] = useState<ViewMode | null>(getInitialViewMode);
+
+  // Handle view selection from landing page
+  const handleSelectView = useCallback((mode: ViewMode) => {
+    setViewMode(mode);
+  }, []);
+
+  // Handle returning to landing page
+  const handleBackToLanding = useCallback(() => {
+    setViewMode(null);
+  }, []);
+
+  // Smart debounce: shorter delay for longer queries (user knows what they want)
   useEffect(() => {
+    const debounceMs = searchQuery.length >= 3 ? 150 : 400;
     const timer = setTimeout(() => {
       setDebouncedSearchQuery(searchQuery);
-    }, 300);
+    }, debounceMs);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
@@ -96,16 +117,19 @@ export const App = () => {
 
   const hasGraph = Boolean(build && build.nodes.length > 0 && build.edges.length > 0);
 
-  // Search and highlight matching nodes
+  // Search matching nodes - return ALL matches for both list and highlighting
   const searchResults = useMemo(() => {
     if (!build || !debouncedSearchQuery.trim()) return [];
     const query = debouncedSearchQuery.trim().toLowerCase();
 
-    // Only search if query is 3+ characters to reduce lag
-    if (query.length < 3) return [];
+    // Allow 2+ character searches for better UX
+    if (query.length < 2) return [];
 
-    return build.nodes.filter((node) => {
-      // Search by IP
+    const results: typeof build.nodes = [];
+
+    // Helper to check if node matches query
+    const nodeMatches = (node: typeof build.nodes[0]): boolean => {
+      // Search by IP (most common)
       if (node.meta.ip && String(node.meta.ip).toLowerCase().includes(query)) return true;
       // Search by payment address
       if (node.meta.paymentAddress && String(node.meta.paymentAddress).toLowerCase().includes(query)) return true;
@@ -113,13 +137,24 @@ export const App = () => {
       if (node.meta.collateral && String(node.meta.collateral).toLowerCase().includes(query)) return true;
       // Search by app name
       if (node.meta.apps && node.meta.apps.some(app => app.name.toLowerCase().includes(query))) return true;
+      // Search by tier
+      if (node.tier.toLowerCase().includes(query)) return true;
       return false;
-    });
+    };
+
+    // Collect ALL matching nodes
+    for (const node of build.nodes) {
+      if (nodeMatches(node)) {
+        results.push(node);
+      }
+    }
+
+    return results;
   }, [build, debouncedSearchQuery]);
 
-  // Memoize highlighted node IDs to prevent GraphCanvas re-renders
+  // All matching node IDs for graph highlighting
   const highlightedNodeIds = useMemo(() => {
-    return searchResults.map((n) => n.id);
+    return searchResults.map(n => n.id);
   }, [searchResults]);
 
   const graphPayload = useMemo(() => {
@@ -138,24 +173,61 @@ export const App = () => {
     window.location.reload();
   };
 
+  // Show landing page if no view mode selected
+  if (viewMode === null) {
+    return (
+      <LandingPage
+        onSelectView={handleSelectView}
+        isLoading={isLoading}
+        nodeCount={build?.stats?.totalFluxNodes}
+        onDataReady={refresh}
+      />
+    );
+  }
+
+  // Render the selected graph view
+  const renderGraphView = () => {
+    if (!hasGraph || !graphPayload) {
+      return (
+        <div className="graph-placeholder">
+          {isLoading ? <LoadingIndicator label="Preparing network topology..." /> : <p>No data available yet.</p>}
+        </div>
+      );
+    }
+
+    if (viewMode === '2d') {
+      return (
+        <GraphCanvas
+          nodes={graphPayload.nodes}
+          edges={graphPayload.edges}
+          buildId={graphPayload.buildId}
+          selectedNode={selectedNode}
+          onNodeSelect={setSelectedNode}
+          highlightedNodes={highlightedNodeIds}
+          colorScheme={colorScheme}
+          onColorSchemeChange={setColorScheme}
+        />
+      );
+    }
+
+    return (
+      <GraphCanvas3D
+        nodes={graphPayload.nodes}
+        edges={graphPayload.edges}
+        buildId={graphPayload.buildId}
+        selectedNode={selectedNode}
+        onNodeSelect={setSelectedNode}
+        highlightedNodes={highlightedNodeIds}
+        colorScheme={colorScheme}
+        onColorSchemeChange={setColorScheme}
+      />
+    );
+  };
+
   return (
     <div className="app-shell">
       <div className="graph-panel">
-        {hasGraph && graphPayload ? (
-          <GraphCanvas3D
-            nodes={graphPayload.nodes}
-            edges={graphPayload.edges}
-            buildId={graphPayload.buildId}
-            selectedNode={selectedNode}
-            onNodeSelect={setSelectedNode}
-            highlightedNodes={highlightedNodeIds}
-            colorScheme={colorScheme}
-          />
-        ) : (
-          <div className="graph-placeholder">
-            {isLoading ? <LoadingIndicator label="Preparing network topology..." /> : <p>No data available yet.</p>}
-          </div>
-        )}
+        {renderGraphView()}
         {showOverlay ? (
           <div className="graph-overlay">
             {rebuildComplete ? (
@@ -171,6 +243,19 @@ export const App = () => {
             )}
           </div>
         ) : null}
+
+        {/* Back to landing button */}
+        <button
+          className="back-to-landing-btn"
+          onClick={handleBackToLanding}
+          aria-label="Back to view selection"
+          title="Change view mode"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+            <path d="M9 22V12h6v10"/>
+          </svg>
+        </button>
 
         {/* Mobile sidebar toggle button */}
         <button
@@ -210,6 +295,7 @@ export const App = () => {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           searchResults={searchResults}
+          totalSearchMatches={searchResults.length}
           onSearchResultClick={setSelectedNode}
           colorScheme={colorScheme}
           onColorSchemeChange={setColorScheme}

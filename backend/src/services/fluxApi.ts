@@ -91,7 +91,10 @@ const sanitizePeer = (value: string | { ip: string }, nodeIp: string) => {
   return cleaned;
 };
 
-export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchResult[]> {
+export async function fetchPeerData(
+  nodes: FluxNodeRecord[],
+  onProgress?: (completed: number, total: number) => void
+): Promise<PeerFetchResult[]> {
   // Try to load from cache first
   try {
     const cacheExists = await fs.stat(CACHE_FILE).then(() => true).catch(() => false);
@@ -120,6 +123,9 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
     logger.warn('Failed to read cache, will fetch fresh data', { err });
   }
 
+  let completedCount = 0;
+  const totalCount = nodes.length;
+
   const tasks = nodes.map((node) =>
     workerLimit(async () => {
       const { host, port } = splitHostPort(node.ip);
@@ -127,6 +133,8 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
       // Skip nodes with invalid/empty IP
       if (!host || host.trim() === '') {
         logger.warn('Skipping node with invalid IP', { nodeIp: node.ip });
+        completedCount++;
+        if (onProgress) onProgress(completedCount, totalCount);
         return {
           node,
           outgoingPeers: [],
@@ -138,6 +146,8 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
       // SECURITY: Block private/reserved IPs to prevent SSRF attacks
       if (isPrivateOrReservedIp(host)) {
         logger.warn('Blocked request to private/reserved IP (SSRF protection)', { ip: host });
+        completedCount++;
+        if (onProgress) onProgress(completedCount, totalCount);
         return {
           node,
           outgoingPeers: [],
@@ -183,6 +193,8 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
       // Fail Fast: If we can't reach the node for peer data, it's likely down or blocking RPC.
       // Skip metadata fetching to save time.
       if (!isAlive) {
+        completedCount++;
+        if (onProgress) onProgress(completedCount, totalCount);
         return {
           node,
           outgoingPeers: [],
@@ -193,16 +205,19 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
 
       // Phase 2: Metadata (Arcane, Benchmarks, Apps) - Nice to have
       // Run these in parallel only if node is alive
+      // Use shorter timeouts for metadata - not critical for graph structure
+      const metadataTimeout = Math.min(config.rpcTimeout, 3000);
+
       const arcanePromise = config.enableArcaneProbe
-        ? fetchJson<FluxBooleanResponse>(`${baseUrl}/flux/isarcaneos`, { timeoutMs: Math.min(config.rpcTimeout, 8000) })
+        ? fetchJson<FluxBooleanResponse>(`${baseUrl}/flux/isarcaneos`, { timeoutMs: metadataTimeout })
         : Promise.resolve(null);
 
       const benchmarkPromise = fetchJson<FluxBenchmarkResponse>(`${baseUrl}/benchmark/getbenchmarks`, {
-        timeoutMs: Math.min(config.rpcTimeout, 8000)
+        timeoutMs: metadataTimeout
       });
 
       const appsPromise = fetchJson<FluxAppsResponse>(`${baseUrl}/apps/installedapps`, {
-        timeoutMs: Math.min(config.rpcTimeout, 8000)
+        timeoutMs: metadataTimeout
       });
 
       const [arcaneResult, benchmarkResult, appsResult] = await Promise.allSettled([
@@ -232,6 +247,11 @@ export async function fetchPeerData(nodes: FluxNodeRecord[]): Promise<PeerFetchR
           version: app.version,
           owner: app.owner
         }));
+      }
+
+      completedCount++;
+      if (onProgress) {
+        onProgress(completedCount, totalCount);
       }
 
       return {

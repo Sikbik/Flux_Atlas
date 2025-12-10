@@ -71,8 +71,10 @@ export const config: FluxConfig = {
     ? 'https'
     : 'http',
   rpcPort: toNumber(rawEnv.FLUX_RPC_PORT, 16127),
-  rpcTimeout: toNumber(rawEnv.FLUX_RPC_TIMEOUT, 8000),
-  maxWorkers: Math.max(1, toNumber(rawEnv.FLUX_MAX_WORKERS, 24)),
+  // Reduced timeout for faster fail-fast on unresponsive nodes
+  rpcTimeout: toNumber(rawEnv.FLUX_RPC_TIMEOUT, 4000),
+  // Increased concurrency for faster network scans
+  maxWorkers: Math.max(1, toNumber(rawEnv.FLUX_MAX_WORKERS, 50)),
   maxNodes: Math.max(1, toNumber(rawEnv.FLUX_MAX_NODES, 9000)),
   quickSampleNodes: Math.max(0, toNumber(rawEnv.FLUX_QUICK_SAMPLE_NODES, 0)),
   maxPeersPerNode: Math.max(0, toNumber(rawEnv.FLUX_MAX_PEERS_PER_NODE, 48)),
@@ -81,7 +83,7 @@ export const config: FluxConfig = {
   maxStubNodes: Math.max(0, toNumber(rawEnv.FLUX_MAX_STUB_NODES, 6000)),
   includeExternalPeers: toBoolean(rawEnv.FLUX_INCLUDE_EXTERNAL_PEERS, true),
   layoutNodeCap: Math.max(0, toNumber(rawEnv.FLUX_LAYOUT_NODE_CAP, 4200)),
-  updateIntervalMs: Math.max(0, toNumber(rawEnv.FLUX_UPDATE_INTERVAL, 5 * 60_000)),
+  updateIntervalMs: Math.max(0, toNumber(rawEnv.FLUX_UPDATE_INTERVAL, 30 * 60_000)), // 30 minutes
   allowInsecureSSL: toBoolean(rawEnv.FLUX_ALLOW_INSECURE_SSL, true),
   enableArcaneProbe: toBoolean(rawEnv.FLUX_ENABLE_ARCANE_PROBE, true),
   layoutSeed: rawEnv.FLUX_LAYOUT_SEED ?? 'flux-atlas'

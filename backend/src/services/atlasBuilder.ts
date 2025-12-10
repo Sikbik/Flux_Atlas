@@ -1,5 +1,7 @@
 import seedrandom from 'seedrandom';
 import { forceLink, forceManyBody, forceSimulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
+// @ts-expect-error d3-force-3d has no types
+import * as d3Force3d from 'd3-force-3d';
 import { config } from '../config/env.js';
 import { AtlasBuild, AtlasBounds, AtlasEdge, AtlasNode, AtlasState, NodeKind, NodeStatus, NodeTier, FluxNodeRecord, FluxApp } from '../types/atlas.js';
 import { fetchFluxNodeList, fetchPeerData, PeerFetchResult } from './fluxApi.js';
@@ -795,6 +797,82 @@ const computeCentrality = (degree: Map<string, number>, totalNodes: number) => {
   return centrality;
 };
 
+/**
+ * Compute 3D positions using d3-force-3d simulation.
+ * This runs a full force simulation on the backend so the frontend can render instantly.
+ */
+interface Layout3DNode {
+  id: string;
+  x?: number;
+  y?: number;
+  z?: number;
+  connections: number;
+}
+
+const compute3DLayout = (
+  nodes: Map<string, InternalNode>,
+  edges: Map<string, InternalEdge>,
+  degree: Map<string, number>,
+): Map<string, { x: number; y: number; z: number }> => {
+  const positions3d = new Map<string, { x: number; y: number; z: number }>();
+
+  if (nodes.size === 0) return positions3d;
+
+  const rng = seedrandom(`${config.layoutSeed}:3d`);
+
+  // Create simulation nodes with random initial positions
+  const simNodes: Layout3DNode[] = Array.from(nodes.values()).map((node) => ({
+    id: node.id,
+    x: (rng() - 0.5) * 500,
+    y: (rng() - 0.5) * 500,
+    z: (rng() - 0.5) * 500,
+    connections: degree.get(node.id) || 0,
+  }));
+
+  // Create links for simulation
+  const simLinks = Array.from(edges.values()).map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+  }));
+
+  logger.info('[3D Layout] Starting simulation', { nodes: simNodes.length, links: simLinks.length });
+
+  // Run 3D force simulation with organic layout parameters
+  const simulation = d3Force3d.forceSimulation(simNodes, 3)
+    .force('charge', d3Force3d.forceManyBody()
+      .strength((d: Layout3DNode) => {
+        // More connections = less repulsion (stays central)
+        // Fewer connections = more repulsion (drifts outward)
+        const connections = d.connections || 0;
+        return -30 - (150 / (1 + connections * 0.3));
+      }))
+    .force('link', d3Force3d.forceLink(simLinks)
+      .id((d: Layout3DNode) => d.id)
+      .distance(60)
+      .strength(0.3))
+    .force('center', d3Force3d.forceCenter(0, 0, 0).strength(0.05))
+    .stop();
+
+  // Run 200 iterations for a well-settled organic layout
+  const iterations = 200;
+  for (let i = 0; i < iterations; i++) {
+    simulation.tick();
+  }
+
+  // Extract final positions
+  simNodes.forEach((node: Layout3DNode) => {
+    positions3d.set(node.id, {
+      x: node.x || 0,
+      y: node.y || 0,
+      z: node.z || 0,
+    });
+  });
+
+  logger.info('[3D Layout] Simulation complete');
+
+  return positions3d;
+};
+
 const computeHubThreshold = (nodes: Map<string, InternalNode>, centrality: Map<string, number>) => {
   const fluxCentralities = Array.from(nodes.values())
     .filter((node) => node.kind === 'flux')
@@ -809,6 +887,7 @@ const computeHubThreshold = (nodes: Map<string, InternalNode>, centrality: Map<s
 const toAtlasNodes = (
   nodes: Map<string, InternalNode>,
   positions: Map<string, { x: number; y: number }>,
+  positions3d: Map<string, { x: number; y: number; z: number }>,
   degree: Map<string, number>,
   centrality: Map<string, number>,
   hubThreshold: number,
@@ -821,6 +900,7 @@ const toAtlasNodes = (
     const incomingValue = incomingCounts.get(node.id) ?? 0;
     const centralityValue = centrality.get(node.id) ?? 0;
     const position = positions.get(node.id) ?? { x: 0, y: 0 };
+    const position3d = positions3d.get(node.id);
     const record = node.record;
 
     // Get actual port from node IP for RPC endpoint
@@ -844,6 +924,7 @@ const toAtlasNodes = (
         outgoingPeers: outgoingValue,
       },
       position,
+      position3d,
       meta: {
         tier: node.tier,
         status: node.status,
@@ -989,7 +1070,10 @@ const buildArtifacts = (peerResults: PeerFetchResult[], startedAt: number): Buil
   // Use composite weights for layout positioning
   const layout = applyLayout(nodes, edges, compositeWeights);
 
-  const atlasNodes = toAtlasNodes(nodes, layout.positions, normalizedDegree, centrality, hubThreshold, graph.outgoingCounts, graph.incomingCounts);
+  // Compute 3D positions for instant 3D graph rendering
+  const positions3d = compute3DLayout(nodes, edges, metrics.degree);
+
+  const atlasNodes = toAtlasNodes(nodes, layout.positions, positions3d, normalizedDegree, centrality, hubThreshold, graph.outgoingCounts, graph.incomingCounts);
   const atlasEdges = Array.from(edges.values()).map(toAtlasEdge);
 
   const durationMs = Date.now() - startedAt;
@@ -1018,9 +1102,26 @@ export class AtlasBuilder {
   private lastCompletedBuild?: AtlasBuild;
   private timer?: NodeJS.Timeout;
   private isRefreshing = false;
+  private buildProgress: { stage: string; progress: number } = { stage: 'initializing', progress: 0 };
+
+  public getProgress() {
+    return this.buildProgress;
+  }
+
+  private setProgress(stage: string, progress: number) {
+    this.buildProgress = { stage, progress };
+  }
 
   public async start() {
-    await this.refresh();
+    // Try to load from cache first for instant startup
+    await this.tryLoadFromCache();
+
+    // Then refresh in background
+    this.refresh().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to refresh atlas on startup', { message });
+    });
+
     if (config.updateIntervalMs > 0) {
       this.timer = setInterval(() => {
         this.refresh().catch((error) => {
@@ -1028,6 +1129,48 @@ export class AtlasBuilder {
           logger.error('Failed to refresh atlas', { message });
         });
       }, config.updateIntervalMs);
+    }
+  }
+
+  private async tryLoadFromCache() {
+    try {
+      const cacheFile = await import('fs/promises').then(fs =>
+        fs.readFile('data/atlas_build_cache.json', 'utf-8')
+      );
+      const cached = JSON.parse(cacheFile);
+
+      // Validate cache structure
+      if (cached && cached.buildId && cached.nodes && cached.edges) {
+        const cacheAge = Date.now() - new Date(cached.completedAt).getTime();
+        const maxCacheAge = 60 * 60 * 1000; // 1 hour
+
+        if (cacheAge < maxCacheAge) {
+          logger.info('Loaded atlas from cache', {
+            buildId: cached.buildId,
+            nodes: cached.nodes.length,
+            cacheAgeMinutes: Math.round(cacheAge / 60000)
+          });
+          this.lastCompletedBuild = cached;
+          this.state = { building: false, data: cached };
+          return true;
+        } else {
+          logger.info('Cache expired, will rebuild', { cacheAgeMinutes: Math.round(cacheAge / 60000) });
+        }
+      }
+    } catch {
+      logger.info('No valid cache found, starting fresh build');
+    }
+    return false;
+  }
+
+  private async saveToCache(build: AtlasBuild) {
+    try {
+      const fs = await import('fs/promises');
+      await fs.mkdir('data', { recursive: true });
+      await fs.writeFile('data/atlas_build_cache.json', JSON.stringify(build));
+      logger.info('Saved atlas build to cache');
+    } catch (err) {
+      logger.warn('Failed to save build cache', { err });
     }
   }
 
@@ -1055,10 +1198,20 @@ export class AtlasBuilder {
     const startedAt = Date.now();
 
     try {
+      this.setProgress('Fetching node list...', 5);
       const fluxNodes = await fetchFluxNodeList();
-      const peerResults = await fetchPeerData(fluxNodes);
+
+      this.setProgress('Scanning network peers...', 15);
+      const peerResults = await fetchPeerData(fluxNodes, (completed, total) => {
+        // Progress from 15% to 70% during peer scanning
+        const scanProgress = 15 + Math.round((completed / total) * 55);
+        this.setProgress(`Scanning peers... ${completed}/${total}`, scanProgress);
+      });
+
+      this.setProgress('Building graph structure...', 70);
       const artifacts = buildArtifacts(peerResults, startedAt);
 
+      this.setProgress('Finalizing...', 95);
       const buildId = Date.now().toString(36) + '-' + artifacts.nodes.length.toString();
 
       const build: AtlasBuild = {
@@ -1092,6 +1245,10 @@ export class AtlasBuilder {
         building: false,
         data: build,
       };
+
+      // Cache the build for instant startup next time
+      await this.saveToCache(build);
+      this.setProgress('Complete', 100);
 
       logger.info('Atlas build complete', {
         nodes: build.nodes.length,

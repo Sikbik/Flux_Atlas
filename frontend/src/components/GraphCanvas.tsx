@@ -1,8 +1,9 @@
 import Sigma from 'sigma';
 import Graph from 'graphology';
-import { useEffect, useMemo, useRef, memo } from 'react';
+import { useEffect, useMemo, useRef, memo, useCallback, useState } from 'react';
 import type { AtlasEdge, AtlasNode } from '../types';
 import { getNodeColor, graphBackground } from '../theme';
+import { GraphControls } from './GraphControls';
 
 interface GraphCanvasProps {
   nodes: AtlasNode[];
@@ -12,31 +13,34 @@ interface GraphCanvasProps {
   onNodeSelect: (nodeId: string | null) => void;
   highlightedNodes?: string[];
   colorScheme?: 'arcane' | 'tier';
+  onColorSchemeChange?: (scheme: 'arcane' | 'tier') => void;
 }
 
 const computeNodeSize = (node: AtlasNode, viewportWidth: number = window.innerWidth) => {
   const base = Math.log(1 + node.metrics.connectionCount);
-  const centralityBoost = Math.sqrt(Math.max(node.metrics.degreeCentrality, 0)) * 2;
-  let size = 0.5 + base * 0.3 + centralityBoost;
+  const centralityBoost = Math.sqrt(Math.max(node.metrics.degreeCentrality, 0)) * 0.7;
+  // Balanced node size
+  let size = 0.5 + base * 0.18 + centralityBoost;
   if (node.kind === 'stub') size *= 0.3;
-  if (node.isHub) size *= 1.4;
+  if (node.isHub) size *= 1.25;
 
   // Apply viewport-based scaling factor for mobile devices
   let scaleFactor = 1.0;
   if (viewportWidth <= 480) {
-    scaleFactor = 0.4; // Small phones: 40% of desktop size
+    scaleFactor = 0.55; // Small phones
   } else if (viewportWidth <= 640) {
-    scaleFactor = 0.5; // Phones: 50% of desktop size
+    scaleFactor = 0.65; // Phones
   } else if (viewportWidth <= 768) {
-    scaleFactor = 0.6; // Large phones: 60% of desktop size
+    scaleFactor = 0.75; // Large phones
   } else if (viewportWidth <= 1024) {
-    scaleFactor = 0.75; // Tablets: 75% of desktop size
+    scaleFactor = 0.875; // Tablets
   }
 
-  // Scale down slightly for crisper appearance and apply viewport scaling
-  size = size * 0.85 * scaleFactor;
+  // Apply scaling
+  size = size * scaleFactor;
 
-  return Math.min(5, Math.max(node.kind === 'stub' ? 0.3 : 0.6, size));
+  // Adjusted min/max
+  return Math.min(3.0, Math.max(node.kind === 'stub' ? 0.3 : 0.4, size));
 };
 
 const dimColor = (color: string): string => {
@@ -63,15 +67,61 @@ const dimColor = (color: string): string => {
   return color;
 };
 
-const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelect, highlightedNodes = [], colorScheme = 'tier' }: GraphCanvasProps) => {
+const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelect, highlightedNodes = [], colorScheme = 'tier', onColorSchemeChange }: GraphCanvasProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const viewportWidthRef = useRef<number>(window.innerWidth);
+  const centroidRef = useRef<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
+  const [hoveredNode, setHoveredNode] = useState<AtlasNode | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const nodeMap = useMemo(() => {
     const map = new Map<string, AtlasNode>();
     nodes.forEach((node) => map.set(node.id, node));
     return map;
   }, [nodes]);
+
+
+  // Zoom controls for 2D view
+  const handleZoomIn = useCallback(() => {
+    if (!sigmaRef.current) return;
+    const camera = sigmaRef.current.getCamera();
+    camera.animatedZoom({ duration: 300, factor: 1.5 });
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    if (!sigmaRef.current) return;
+    const camera = sigmaRef.current.getCamera();
+    camera.animatedUnzoom({ duration: 300, factor: 1.5 });
+  }, []);
+
+  const handleResetView = useCallback(() => {
+    if (!sigmaRef.current) return;
+    const camera = sigmaRef.current.getCamera();
+    // Center on the stored centroid
+    camera.animate({ x: centroidRef.current.x, y: centroidRef.current.y, ratio: 0.4 }, { duration: 500 });
+    onNodeSelect(null);
+  }, [onNodeSelect]);
+
+  const handleFitToScreen = useCallback(() => {
+    if (!sigmaRef.current) return;
+    const camera = sigmaRef.current.getCamera();
+    camera.animate({ x: 0.5, y: 0.5, ratio: 1.2 }, { duration: 500 });
+  }, []);
+
+  // Count all flux nodes for display (total network count, not just visible)
+  const nodeCount = useMemo(() => {
+    return nodes.filter(node => node.kind === 'flux').length;
+  }, [nodes]);
+
+  // Count edges
+  const edgeCount = useMemo(() => {
+    const uniqueEdges = new Map<string, AtlasEdge>();
+    edges.forEach(edge => {
+      const key = [edge.source, edge.target].sort().join('|');
+      if (!uniqueEdges.has(key)) uniqueEdges.set(key, edge);
+    });
+    return uniqueEdges.size;
+  }, [edges]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -109,18 +159,44 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
     // Create graph
     const graph = new Graph({ multi: false, type: 'undirected' });
 
-    // Add nodes (without labels - labels only show in sidebar)
+    // Normalize positions while preserving aspect ratio for proper shape
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    filteredNodes.forEach(node => {
+      if (node.position.x < minX) minX = node.position.x;
+      if (node.position.x > maxX) maxX = node.position.x;
+      if (node.position.y < minY) minY = node.position.y;
+      if (node.position.y > maxY) maxY = node.position.y;
+    });
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    // Use the larger range for both to preserve aspect ratio
+    const maxRange = Math.max(rangeX, rangeY);
+
+    // Compute centroid of normalized positions (where nodes actually cluster)
+    let sumNormX = 0, sumNormY = 0;
+    filteredNodes.forEach(node => {
+      sumNormX += (node.position.x - minX) / maxRange;
+      sumNormY += (node.position.y - minY) / maxRange;
+    });
+    const centroidX = sumNormX / filteredNodes.length;
+    const centroidY = sumNormY / filteredNodes.length;
+    centroidRef.current = { x: centroidX, y: centroidY };
+
+    // Add nodes with normalized positions (preserving aspect ratio)
     const highlightedSet = new Set(highlightedNodes);
     const viewportWidth = viewportWidthRef.current;
     filteredNodes.forEach(node => {
       const isHighlighted = highlightedSet.has(node.id);
       const nodeColor = getNodeColor(node.tier, node.kind, node.status, colorScheme);
+      // Normalize position using same scale for both axes to preserve shape
+      const normX = (node.position.x - minX) / maxRange;
+      const normY = (node.position.y - minY) / maxRange;
       graph.addNode(node.id, {
-        x: node.position.x,
-        y: node.position.y,
-        size: computeNodeSize(node, viewportWidth) * (isHighlighted ? 2 : 1), // Make highlighted nodes larger
-        color: isHighlighted ? '#FFD700' : nodeColor, // Gold color for highlighted
-        originalColor: nodeColor, // Store original
+        x: normX,
+        y: normY,
+        size: computeNodeSize(node, viewportWidth) * (isHighlighted ? 2 : 1),
+        color: isHighlighted ? '#FFD700' : nodeColor,
+        originalColor: nodeColor,
         highlighted: isHighlighted,
       });
     });
@@ -159,7 +235,38 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
       onNodeSelect(null);
     });
 
+    // Hover handlers for tooltip
+    sigma.on('enterNode', ({ node, event }) => {
+      const nodeData = nodeMap.get(node);
+      if (nodeData) {
+        setHoveredNode(nodeData);
+        setTooltipPos({ x: event.x, y: event.y });
+      }
+    });
+
+    sigma.on('leaveNode', () => {
+      setHoveredNode(null);
+    });
+
+    // Track mouse movement while hovering for tooltip position
+    const container = containerRef.current;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (hoveredNode) {
+        const rect = container?.getBoundingClientRect();
+        if (rect) {
+          setTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+        }
+      }
+    };
+    container?.addEventListener('mousemove', handleMouseMove);
+
     sigmaRef.current = sigma;
+
+    // Center on the actual centroid of nodes, not bounding box center
+    sigma.once('afterRender', () => {
+      const cam = sigma.getCamera();
+      cam.setState({ x: centroidX, y: centroidY, ratio: 0.4, angle: 0 });
+    });
 
     // Handle window resize to update node sizes on orientation change
     const handleResize = () => {
@@ -185,9 +292,10 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      container?.removeEventListener('mousemove', handleMouseMove);
       sigma.kill();
     };
-  }, [nodes, edges, buildId]);
+  }, [nodes, edges, buildId, nodeMap]);
 
   // Handle selection changes
   useEffect(() => {
@@ -232,7 +340,7 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
     graph.forEachEdge((edge, attrs) => {
       if (connectedEdges.has(edge)) {
         graph.setEdgeAttribute(edge, 'color', attrs.originalColor); // Full color
-        graph.setEdgeAttribute(edge, 'size', 2);
+        graph.setEdgeAttribute(edge, 'size', 0.8); // Thinner edges
       } else {
         graph.setEdgeAttribute(edge, 'color', '#00000000'); // Completely transparent
         graph.setEdgeAttribute(edge, 'size', 0.1);
@@ -308,16 +416,100 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
   }, [highlightedNodes, nodeMap]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        width: '100%',
-        height: '100%',
-        background: graphBackground,
-        borderRadius: '24px',
-        position: 'relative',
-      }}
-    />
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div
+        ref={containerRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          background: graphBackground,
+          borderRadius: '24px',
+          position: 'relative',
+        }}
+      />
+      {/* Hover Tooltip */}
+      {hoveredNode && (
+        <div
+          style={{
+            position: 'absolute',
+            left: tooltipPos.x + 15,
+            top: tooltipPos.y - 10,
+            background: 'linear-gradient(135deg, rgba(16, 24, 45, 0.95) 0%, rgba(24, 32, 60, 0.95) 100%)',
+            border: '1px solid rgba(56, 232, 255, 0.3)',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            minWidth: '220px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            pointerEvents: 'none',
+            zIndex: 1000,
+          }}
+        >
+          <div style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '10px', wordBreak: 'break-all' }}>
+            {String(hoveredNode.meta?.ip || hoveredNode.id)}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <span style={{
+              padding: '4px 10px',
+              background: 'rgba(56, 232, 255, 0.15)',
+              borderRadius: '5px',
+              color: '#38e8ff',
+              fontSize: '12px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+            }}>{hoveredNode.tier}</span>
+            {hoveredNode.isHub && (
+              <span style={{
+                padding: '4px 10px',
+                background: 'rgba(83, 242, 157, 0.15)',
+                borderRadius: '5px',
+                color: '#53f29d',
+                fontSize: '12px',
+                fontWeight: 600,
+              }}>HUB</span>
+            )}
+            {hoveredNode.status === 'ARCANE' && (
+              <span style={{
+                padding: '4px 10px',
+                background: 'rgba(97, 242, 255, 0.15)',
+                borderRadius: '5px',
+                color: '#61f2ff',
+                fontSize: '12px',
+                fontWeight: 600,
+              }}>ARCANE</span>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', fontSize: '13px' }}>
+            <div>
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', textTransform: 'uppercase' }}>Outgoing</div>
+              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{hoveredNode.metrics?.outgoingPeers || 0}</div>
+            </div>
+            <div>
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', textTransform: 'uppercase' }}>Incoming</div>
+              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{hoveredNode.metrics?.incomingPeers || 0}</div>
+            </div>
+            <div>
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', textTransform: 'uppercase' }}>Apps</div>
+              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{hoveredNode.meta?.apps?.length || 0}</div>
+            </div>
+          </div>
+          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
+            Click to select
+          </div>
+        </div>
+      )}
+      {/* Graph Controls */}
+      <GraphControls
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onResetView={handleResetView}
+        onFitToScreen={handleFitToScreen}
+        colorScheme={colorScheme}
+        onColorSchemeChange={onColorSchemeChange || (() => {})}
+        nodeCount={nodeCount}
+        edgeCount={edgeCount}
+      />
+    </div>
   );
 };
 

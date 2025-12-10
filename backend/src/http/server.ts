@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -11,6 +12,18 @@ const __dirname = path.dirname(__filename);
 
 export const createServer = () => {
   const app = express();
+
+  // Enable gzip/brotli compression for all responses
+  // This significantly reduces payload size (70-80% reduction for JSON)
+  app.use(compression({
+    level: 6, // Balanced compression level (1-9)
+    threshold: 1024, // Only compress responses > 1KB
+    filter: (req, res) => {
+      // Compress JSON and static assets
+      if (req.headers['x-no-compression']) return false;
+      return compression.filter(req, res);
+    }
+  }));
 
   // Security headers with Content Security Policy
   app.use(helmet({
@@ -127,10 +140,12 @@ export const createServer = () => {
   // Lightweight endpoint for polling - only returns build status, no graph data
   app.get('/api/status', (_req, res) => {
     const state = atlasBuilder.getState();
+    const progress = atlasBuilder.getProgress();
     res.json({
       building: state.building,
       buildId: state.data?.buildId,
       error: state.error,
+      progress: state.building ? progress : null,
     });
   });
 

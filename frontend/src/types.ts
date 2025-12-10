@@ -28,6 +28,11 @@ export interface AtlasNode {
     x: number;
     y: number;
   };
+  position3d?: {
+    x: number;
+    y: number;
+    z: number;
+  };
   meta: {
     tier: NodeTier;
     status: NodeStatus;

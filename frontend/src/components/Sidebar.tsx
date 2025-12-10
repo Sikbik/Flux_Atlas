@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import type { AtlasBuild, AtlasNode } from '../types';
 import { formatCompact, formatNumber, formatPercentage } from '../utils/format';
 import { StatsCard } from './StatsCard';
@@ -13,6 +14,7 @@ interface SidebarProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   searchResults: AtlasNode[];
+  totalSearchMatches: number;
   onSearchResultClick: (nodeId: string) => void;
   colorScheme: 'arcane' | 'tier';
   onColorSchemeChange: (scheme: 'arcane' | 'tier') => void;
@@ -24,6 +26,8 @@ const formatUpdatedLabel = (isBuilding: boolean, lastUpdated: Date | null) => {
   return `Latest network scan: ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 };
 
+const RESULTS_PER_PAGE = 25;
+
 export const Sidebar = ({
   build,
   isBuilding,
@@ -33,12 +37,26 @@ export const Sidebar = ({
   searchQuery,
   onSearchChange,
   searchResults,
+  totalSearchMatches,
   onSearchResultClick,
   colorScheme,
   onColorSchemeChange
 }: SidebarProps) => {
   const stats = build?.stats;
   const selected = build?.nodes.find((node) => node.id === selectedNode) ?? null;
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(0);
+  const totalPages = Math.ceil(searchResults.length / RESULTS_PER_PAGE);
+  const paginatedResults = searchResults.slice(
+    currentPage * RESULTS_PER_PAGE,
+    (currentPage + 1) * RESULTS_PER_PAGE
+  );
+
+  // Reset to first page when search changes
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [searchQuery]);
 
   return (
     <aside className="sidebar">
@@ -78,74 +96,89 @@ export const Sidebar = ({
       {/* Search Section */}
       <section className="sidebar__section">
         <h2>Search Nodes</h2>
-        <input
-          type="text"
-          placeholder="Search by IP, address, or app name..."
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            background: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '4px',
-            color: '#ffffff',
-            fontSize: '14px',
-            outline: 'none',
-          }}
-        />
+        <div className="search-input-wrapper">
+          <input
+            type="text"
+            placeholder="Search by IP, address, tier, or app..."
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="search-input"
+          />
+          {searchQuery && (
+            <button
+              className="search-clear-btn"
+              onClick={() => onSearchChange('')}
+              aria-label="Clear search"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          )}
+        </div>
         {searchResults.length > 0 && (
-          <div style={{ marginTop: '12px', maxHeight: '200px', overflowY: 'auto' }}>
-            <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: '8px' }}>
-              {searchResults.length} node{searchResults.length !== 1 ? 's' : ''} found
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {searchResults.map((node) => (
+          <div className="search-results">
+            <div className="search-results__header">
+              <p className="search-results__count">
+                {totalSearchMatches} node{totalSearchMatches !== 1 ? 's' : ''} found
+                {totalSearchMatches > searchResults.length && (
+                  <span className="search-results__all-highlighted"> (all highlighted)</span>
+                )}
+              </p>
+              {totalPages > 1 && (
+                <div className="search-results__pagination">
+                  <button
+                    className="search-results__page-btn"
+                    onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                    disabled={currentPage === 0}
+                    aria-label="Previous page"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M15 18l-6-6 6-6"/>
+                    </svg>
+                  </button>
+                  <span className="search-results__page-info">
+                    {currentPage + 1} / {totalPages}
+                  </span>
+                  <button
+                    className="search-results__page-btn"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={currentPage >= totalPages - 1}
+                    aria-label="Next page"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M9 18l6-6-6-6"/>
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="search-results__list">
+              {paginatedResults.map((node) => (
                 <button
                   key={node.id}
                   onClick={() => onSearchResultClick(node.id)}
-                  style={{
-                    padding: '8px',
-                    background: selectedNode === node.id ? 'rgba(123, 97, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    border: selectedNode === node.id ? '1px solid rgba(123, 97, 255, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '4px',
-                    color: '#ffffff',
-                    fontSize: '12px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (selectedNode !== node.id) {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (selectedNode !== node.id) {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                    }
-                  }}
+                  className={`search-result-item ${selectedNode === node.id ? 'selected' : ''}`}
                 >
-                  <div style={{ fontWeight: 500 }}>{String(node.meta.ip || node.id)}</div>
-                  {node.meta.paymentAddress && (
-                    <div style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)', marginTop: '2px' }}>
-                      {String(node.meta.paymentAddress).slice(0, 16)}...
-                    </div>
-                  )}
+                  <div className="search-result-item__ip">{String(node.meta.ip || node.id)}</div>
+                  <div className="search-result-item__meta">
+                    <span className="search-result-item__tier">{node.tier}</span>
+                    {node.meta.paymentAddress && (
+                      <span className="search-result-item__address">
+                        {String(node.meta.paymentAddress).slice(0, 12)}...
+                      </span>
+                    )}
+                  </div>
                 </button>
               ))}
             </div>
           </div>
         )}
-        {searchQuery && searchQuery.trim().length > 0 && searchQuery.trim().length < 3 && (
-          <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)' }}>
-            Type at least 3 characters to search
-          </p>
+        {searchQuery && searchQuery.trim().length === 1 && (
+          <p className="search-hint">Type one more character to search</p>
         )}
-        {searchQuery && searchQuery.trim().length >= 3 && searchResults.length === 0 && (
-          <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)' }}>
-            No nodes found
-          </p>
+        {searchQuery && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+          <p className="search-hint">No nodes found matching "{searchQuery}"</p>
         )}
       </section>
 

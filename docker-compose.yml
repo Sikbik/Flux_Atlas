@@ -5,10 +5,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: flux-atlas:latest
+    image: littlestache/flux-atlas:3.0
     container_name: flux-atlas
     ports:
       - "3000:3000"  # Serves both frontend and backend API
+    volumes:
+      - atlas-data:/app/backend/data  # Persist cached atlas builds
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -32,6 +34,9 @@ services:
       start_period: 40s
     networks:
       - flux-network
+
+volumes:
+  atlas-data:  # Named volume for persistent cache storage
 
 networks:
   flux-network:
