@@ -13,6 +13,10 @@ const __dirname = path.dirname(__filename);
 export const createServer = () => {
   const app = express();
 
+  // Trust first proxy hop (required when behind reverse proxy like Flux network)
+  // Using 1 instead of true is more secure - only trusts the immediate proxy
+  app.set('trust proxy', 1);
+
   // Enable gzip/brotli compression for all responses
   // This significantly reduces payload size (70-80% reduction for JSON)
   app.use(compression({

@@ -16,30 +16,14 @@ interface GraphCanvasProps {
   onColorSchemeChange?: (scheme: 'arcane' | 'tier') => void;
 }
 
-const computeNodeSize = (node: AtlasNode, viewportWidth: number = window.innerWidth) => {
+const computeNodeSize = (node: AtlasNode, isMobile: boolean) => {
   const base = Math.log(1 + node.metrics.connectionCount);
   const centralityBoost = Math.sqrt(Math.max(node.metrics.degreeCentrality, 0)) * 0.7;
-  // Balanced node size
   let size = 0.5 + base * 0.18 + centralityBoost;
   if (node.kind === 'stub') size *= 0.3;
   if (node.isHub) size *= 1.25;
-
-  // Apply viewport-based scaling factor for mobile devices
-  let scaleFactor = 1.0;
-  if (viewportWidth <= 480) {
-    scaleFactor = 0.55; // Small phones
-  } else if (viewportWidth <= 640) {
-    scaleFactor = 0.65; // Phones
-  } else if (viewportWidth <= 768) {
-    scaleFactor = 0.75; // Large phones
-  } else if (viewportWidth <= 1024) {
-    scaleFactor = 0.875; // Tablets
-  }
-
-  // Apply scaling
-  size = size * scaleFactor;
-
-  // Adjusted min/max
+  // Scale down on mobile for cleaner appearance
+  if (isMobile) size *= 0.6;
   return Math.min(3.0, Math.max(node.kind === 'stub' ? 0.3 : 0.4, size));
 };
 
@@ -70,15 +54,59 @@ const dimColor = (color: string): string => {
 const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelect, highlightedNodes = [], colorScheme = 'tier', onColorSchemeChange }: GraphCanvasProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
-  const viewportWidthRef = useRef<number>(window.innerWidth);
   const centroidRef = useRef<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
   const [hoveredNode, setHoveredNode] = useState<AtlasNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
   const nodeMap = useMemo(() => {
     const map = new Map<string, AtlasNode>();
     nodes.forEach((node) => map.set(node.id, node));
     return map;
   }, [nodes]);
+
+  // Pre-process graph data (memoized to avoid recalculation)
+  const graphData = useMemo(() => {
+    // Filter out stub nodes and nodes with no connections
+    const connectedNodeIds = new Set<string>();
+    edges.forEach(edge => {
+      connectedNodeIds.add(edge.source);
+      connectedNodeIds.add(edge.target);
+    });
+    const filteredNodes = nodes.filter(node =>
+      node.kind === 'flux' && (connectedNodeIds.has(node.id) || node.metrics.connectionCount > 0)
+    );
+
+    // Deduplicate edges - keep only unique pairs
+    const uniqueEdges = new Map<string, AtlasEdge>();
+    edges.forEach(edge => {
+      const key = [edge.source, edge.target].sort().join('|');
+      const existing = uniqueEdges.get(key);
+      if (!existing || edge.weight > existing.weight) {
+        uniqueEdges.set(key, edge);
+      }
+    });
+
+    // Compute bounds for normalization
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    filteredNodes.forEach(node => {
+      if (node.position.x < minX) minX = node.position.x;
+      if (node.position.x > maxX) maxX = node.position.x;
+      if (node.position.y < minY) minY = node.position.y;
+      if (node.position.y > maxY) maxY = node.position.y;
+    });
+    const maxRange = Math.max(maxX - minX || 1, maxY - minY || 1);
+
+    // Compute centroid
+    let sumNormX = 0, sumNormY = 0;
+    filteredNodes.forEach(node => {
+      sumNormX += (node.position.x - minX) / maxRange;
+      sumNormY += (node.position.y - minY) / maxRange;
+    });
+    const centroidX = filteredNodes.length > 0 ? sumNormX / filteredNodes.length : 0.5;
+    const centroidY = filteredNodes.length > 0 ? sumNormY / filteredNodes.length : 0.5;
+
+    return { filteredNodes, uniqueEdges, minX, minY, maxRange, centroidX, centroidY };
+  }, [nodes, edges]);
 
 
   // Zoom controls for 2D view
@@ -97,8 +125,12 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
   const handleResetView = useCallback(() => {
     if (!sigmaRef.current) return;
     const camera = sigmaRef.current.getCamera();
-    // Center on the stored centroid
-    camera.animate({ x: centroidRef.current.x, y: centroidRef.current.y, ratio: 0.4 }, { duration: 500 });
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) {
+      camera.animate({ x: centroidRef.current.x, y: centroidRef.current.y, ratio: 0.4 }, { duration: 500 });
+    } else {
+      camera.animate({ x: 0.5, y: 0.5, ratio: 0.8 }, { duration: 500 });
+    }
     onNodeSelect(null);
   }, [onNodeSelect]);
 
@@ -126,176 +158,167 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Update viewport width
-    viewportWidthRef.current = window.innerWidth;
-
     // Destroy previous instance
     if (sigmaRef.current) {
       sigmaRef.current.kill();
+      sigmaRef.current = null;
     }
 
-    // Filter out stub nodes and nodes with no connections
-    const connectedNodeIds = new Set<string>();
-    edges.forEach(edge => {
-      connectedNodeIds.add(edge.source);
-      connectedNodeIds.add(edge.target);
-    });
-    const filteredNodes = nodes.filter(node =>
-      node.kind === 'flux' && (connectedNodeIds.has(node.id) || node.metrics.connectionCount > 0)
-    );
-
-    // Deduplicate edges - keep only unique pairs
-    const uniqueEdges = new Map<string, AtlasEdge>();
-    edges.forEach(edge => {
-      // Create a sorted key to ensure A->B and B->A are treated as same edge
-      const key = [edge.source, edge.target].sort().join('|');
-      const existing = uniqueEdges.get(key);
-      // Keep edge with higher weight or first one
-      if (!existing || edge.weight > existing.weight) {
-        uniqueEdges.set(key, edge);
-      }
-    });
-
-    // Create graph
-    const graph = new Graph({ multi: false, type: 'undirected' });
-
-    // Normalize positions while preserving aspect ratio for proper shape
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    filteredNodes.forEach(node => {
-      if (node.position.x < minX) minX = node.position.x;
-      if (node.position.x > maxX) maxX = node.position.x;
-      if (node.position.y < minY) minY = node.position.y;
-      if (node.position.y > maxY) maxY = node.position.y;
-    });
-    const rangeX = maxX - minX || 1;
-    const rangeY = maxY - minY || 1;
-    // Use the larger range for both to preserve aspect ratio
-    const maxRange = Math.max(rangeX, rangeY);
-
-    // Compute centroid of normalized positions (where nodes actually cluster)
-    let sumNormX = 0, sumNormY = 0;
-    filteredNodes.forEach(node => {
-      sumNormX += (node.position.x - minX) / maxRange;
-      sumNormY += (node.position.y - minY) / maxRange;
-    });
-    const centroidX = sumNormX / filteredNodes.length;
-    const centroidY = sumNormY / filteredNodes.length;
+    const { filteredNodes, uniqueEdges, minX, minY, maxRange, centroidX, centroidY } = graphData;
     centroidRef.current = { x: centroidX, y: centroidY };
 
-    // Add nodes with normalized positions (preserving aspect ratio)
-    const highlightedSet = new Set(highlightedNodes);
-    const viewportWidth = viewportWidthRef.current;
-    filteredNodes.forEach(node => {
-      const isHighlighted = highlightedSet.has(node.id);
-      const nodeColor = getNodeColor(node.tier, node.kind, node.status, colorScheme);
-      // Normalize position using same scale for both axes to preserve shape
-      const normX = (node.position.x - minX) / maxRange;
-      const normY = (node.position.y - minY) / maxRange;
-      graph.addNode(node.id, {
-        x: normX,
-        y: normY,
-        size: computeNodeSize(node, viewportWidth) * (isHighlighted ? 2 : 1),
-        color: isHighlighted ? '#FFD700' : nodeColor,
-        originalColor: nodeColor,
-        highlighted: isHighlighted,
+    // Defer graph creation to allow UI to render first
+    const timeoutId = requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+
+      // Detect mobile for sizing adjustments (use viewport width, not touch)
+      const isMobile = window.innerWidth < 768;
+
+      // Create graph
+      const graph = new Graph({ multi: false, type: 'undirected' });
+
+      // Add nodes with normalized positions
+      const highlightedSet = new Set(highlightedNodes);
+      filteredNodes.forEach(node => {
+        const isHighlighted = highlightedSet.has(node.id);
+        const nodeColor = getNodeColor(node.tier, node.kind, node.status, colorScheme);
+        const normX = (node.position.x - minX) / maxRange;
+        const normY = (node.position.y - minY) / maxRange;
+        graph.addNode(node.id, {
+          x: normX,
+          y: normY,
+          size: computeNodeSize(node, isMobile) * (isHighlighted ? 2 : 1),
+          color: isHighlighted ? '#FFD700' : nodeColor,
+          originalColor: nodeColor,
+          highlighted: isHighlighted,
+        });
       });
-    });
 
-    // Add unique edges only - store original color for highlighting
-    uniqueEdges.forEach(edge => {
-      if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
-        try {
-          const originalColor = edge.kind === 'flux-flux' ? '#2E68FF' : '#7E98D1';
-          graph.addEdge(edge.source, edge.target, {
-            color: '#00000000', // Completely transparent by default
-            originalColor, // Store for highlighting
-            size: 0.1,
-          });
-        } catch (e) {
-          // Ignore errors
+      // Add unique edges
+      uniqueEdges.forEach(edge => {
+        if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
+          try {
+            const originalColor = edge.kind === 'flux-flux' ? '#2E68FF' : '#7E98D1';
+            graph.addEdge(edge.source, edge.target, {
+              color: '#00000000',
+              originalColor,
+              size: 0.1,
+            });
+          } catch {
+            // Ignore duplicate edge errors
+          }
         }
-      }
-    });
+      });
 
-    // Create Sigma instance with adjusted zoom limits
-    const sigma = new Sigma(graph, containerRef.current, {
-      renderEdgeLabels: false,
-      defaultNodeType: 'circle',
-      defaultEdgeType: 'line',
-      minCameraRatio: 0.02, // Zoom IN closer (lower = closer)
-      maxCameraRatio: 5,    // Zoom OUT limited (higher = further, was 50)
-    });
+      // Detect if touch device
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-    // Click handler
-    sigma.on('clickNode', ({ node }) => {
-      onNodeSelect(node);
-    });
+      // Create Sigma instance with performance optimizations
+      const sigma = new Sigma(graph, containerRef.current!, {
+        renderEdgeLabels: false,
+        defaultNodeType: 'circle',
+        defaultEdgeType: 'line',
+        minCameraRatio: 0.02,
+        maxCameraRatio: 5,
+        enableEdgeEvents: false,
+        renderLabels: false,
+        allowInvalidContainer: true,
+      });
 
-    sigma.on('clickStage', () => {
-      onNodeSelect(null);
-    });
-
-    // Hover handlers for tooltip
-    sigma.on('enterNode', ({ node, event }) => {
-      const nodeData = nodeMap.get(node);
-      if (nodeData) {
-        setHoveredNode(nodeData);
-        setTooltipPos({ x: event.x, y: event.y });
-      }
-    });
-
-    sigma.on('leaveNode', () => {
-      setHoveredNode(null);
-    });
-
-    // Track mouse movement while hovering for tooltip position
-    const container = containerRef.current;
-    const handleMouseMove = (e: MouseEvent) => {
-      if (hoveredNode) {
-        const rect = container?.getBoundingClientRect();
-        if (rect) {
-          setTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-        }
-      }
-    };
-    container?.addEventListener('mousemove', handleMouseMove);
-
-    sigmaRef.current = sigma;
-
-    // Center on the actual centroid of nodes, not bounding box center
-    sigma.once('afterRender', () => {
+      // Set camera position BEFORE first render to avoid visual shift
+      // Mobile: zoomed in on centroid, Desktop: zoomed out and centered
       const cam = sigma.getCamera();
-      cam.setState({ x: centroidX, y: centroidY, ratio: 0.4, angle: 0 });
-    });
+      if (isMobile) {
+        cam.setState({ x: centroidX, y: centroidY, ratio: 0.4, angle: 0 });
+      } else {
+        cam.setState({ x: 0.5, y: 0.5, ratio: 0.8, angle: 0 });
+      }
 
-    // Handle window resize to update node sizes on orientation change
-    const handleResize = () => {
-      const newWidth = window.innerWidth;
-      if (Math.abs(newWidth - viewportWidthRef.current) > 100) {
-        viewportWidthRef.current = newWidth;
+      // For touch devices, use custom click handler with larger hit area
+      if (isTouchDevice) {
+        const container = containerRef.current!;
 
-        // Update all node sizes
-        filteredNodes.forEach(node => {
-          if (graph.hasNode(node.id)) {
-            const attrs = graph.getNodeAttributes(node.id);
-            const isHighlighted = attrs.highlighted || false;
-            const newSize = computeNodeSize(node, newWidth) * (isHighlighted ? 2 : 1);
-            graph.setNodeAttribute(node.id, 'size', newSize);
+        // Custom touch handler for better mobile selection
+        const handleTouch = (e: TouchEvent) => {
+          if (e.touches.length !== 1) return; // Ignore multi-touch (pinch zoom)
+
+          const touch = e.touches[0];
+          const rect = container.getBoundingClientRect();
+          const x = touch.clientX - rect.left;
+          const y = touch.clientY - rect.top;
+
+          // Find nearest node within touch radius (40px)
+          const touchRadius = 40;
+          let nearestNode: string | null = null;
+          let nearestDist = touchRadius;
+
+          graph.forEachNode((nodeId) => {
+            const nodeDisplayData = sigma.getNodeDisplayData(nodeId);
+            if (!nodeDisplayData) return;
+
+            const dx = nodeDisplayData.x - x;
+            const dy = nodeDisplayData.y - y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < nearestDist) {
+              nearestDist = dist;
+              nearestNode = nodeId;
+            }
+          });
+
+          if (nearestNode) {
+            e.preventDefault();
+            onNodeSelect(nearestNode);
+          }
+        };
+
+        container.addEventListener('touchstart', handleTouch, { passive: false });
+
+        // Store cleanup function
+        (sigma as unknown as { _touchCleanup?: () => void })._touchCleanup = () => {
+          container.removeEventListener('touchstart', handleTouch);
+        };
+      }
+
+      // Click handlers (for desktop or as fallback)
+      sigma.on('clickNode', ({ node }) => {
+        onNodeSelect(node);
+      });
+
+      sigma.on('clickStage', () => {
+        onNodeSelect(null);
+      });
+
+      // Hover handlers for desktop only
+      const container = containerRef.current;
+      if (!isTouchDevice && container) {
+        sigma.on('enterNode', ({ node, event }) => {
+          const nodeData = nodeMap.get(node);
+          if (nodeData) {
+            setHoveredNode(nodeData);
+            setTooltipPos({ x: event.x, y: event.y });
           }
         });
 
-        sigma.refresh();
+        sigma.on('leaveNode', () => {
+          setHoveredNode(null);
+        });
       }
-    };
 
-    window.addEventListener('resize', handleResize);
+      sigmaRef.current = sigma;
+    });
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      container?.removeEventListener('mousemove', handleMouseMove);
-      sigma.kill();
+      cancelAnimationFrame(timeoutId);
+      if (sigmaRef.current) {
+        // Clean up touch handler if it exists
+        const cleanup = (sigmaRef.current as unknown as { _touchCleanup?: () => void })._touchCleanup;
+        if (cleanup) cleanup();
+        sigmaRef.current.kill();
+        sigmaRef.current = null;
+      }
     };
-  }, [nodes, edges, buildId, nodeMap]);
+  }, [graphData, buildId, nodeMap, colorScheme, highlightedNodes, onNodeSelect]);
 
   // Handle selection changes
   useEffect(() => {
@@ -382,7 +405,7 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
     const sigma = sigmaRef.current;
     const graph = sigma.getGraph();
     const highlightedSet = new Set(highlightedNodes);
-    const viewportWidth = viewportWidthRef.current;
+    const isMobile = window.innerWidth < 768;
 
     // Update all node colors and sizes based on highlight status
     graph.forEachNode((nodeId, attrs) => {
@@ -397,7 +420,7 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
         // Reset to base color and size when unhighlighting
         const node = nodeMap.get(nodeId);
         if (node) {
-          const baseSize = computeNodeSize(node, viewportWidth);
+          const baseSize = computeNodeSize(node, isMobile);
 
           if (isHighlighted) {
             // Apply highlight: gold color and 2x size
@@ -415,6 +438,11 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
     sigma.refresh();
   }, [highlightedNodes, nodeMap]);
 
+  // Show tooltip for either hovered node (desktop) or selected node (both)
+  const selectedNodeData = selectedNode ? nodeMap.get(selectedNode) : null;
+  const displayedNode = hoveredNode || selectedNodeData;
+  const isSelectedTooltip = !hoveredNode && !!selectedNodeData;
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div
@@ -427,28 +455,38 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
           position: 'relative',
         }}
       />
-      {/* Hover Tooltip */}
-      {hoveredNode && (
+      {/* Tooltip - shows on hover (desktop) or selection (mobile/desktop) */}
+      {displayedNode && (
         <div
           style={{
             position: 'absolute',
-            left: tooltipPos.x + 15,
-            top: tooltipPos.y - 10,
+            // For hover: follow cursor. For selection: fixed position at top
+            ...(isSelectedTooltip ? {
+              top: '20px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+            } : {
+              left: tooltipPos.x + 15,
+              top: tooltipPos.y - 10,
+            }),
             background: 'linear-gradient(135deg, rgba(16, 24, 45, 0.95) 0%, rgba(24, 32, 60, 0.95) 100%)',
-            border: '1px solid rgba(56, 232, 255, 0.3)',
+            border: `1px solid ${isSelectedTooltip ? 'rgba(56, 232, 255, 0.5)' : 'rgba(56, 232, 255, 0.3)'}`,
             borderRadius: '12px',
             padding: '16px 20px',
             fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
             minWidth: '220px',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            maxWidth: '90vw',
+            boxShadow: isSelectedTooltip
+              ? '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(56, 232, 255, 0.15)'
+              : '0 8px 32px rgba(0, 0, 0, 0.4)',
             pointerEvents: 'none',
             zIndex: 1000,
           }}
         >
           <div style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '10px', wordBreak: 'break-all' }}>
-            {String(hoveredNode.meta?.ip || hoveredNode.id)}
+            {String(displayedNode.meta?.ip || displayedNode.id)}
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
             <span style={{
               padding: '4px 10px',
               background: 'rgba(56, 232, 255, 0.15)',
@@ -457,8 +495,8 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
               fontSize: '12px',
               fontWeight: 600,
               textTransform: 'uppercase',
-            }}>{hoveredNode.tier}</span>
-            {hoveredNode.isHub && (
+            }}>{displayedNode.tier}</span>
+            {displayedNode.isHub && (
               <span style={{
                 padding: '4px 10px',
                 background: 'rgba(83, 242, 157, 0.15)',
@@ -468,7 +506,7 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
                 fontWeight: 600,
               }}>HUB</span>
             )}
-            {hoveredNode.status === 'ARCANE' && (
+            {displayedNode.status === 'ARCANE' && (
               <span style={{
                 padding: '4px 10px',
                 background: 'rgba(97, 242, 255, 0.15)',
@@ -482,20 +520,22 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', fontSize: '13px' }}>
             <div>
               <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', textTransform: 'uppercase' }}>Outgoing</div>
-              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{hoveredNode.metrics?.outgoingPeers || 0}</div>
+              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{displayedNode.metrics?.outgoingPeers || 0}</div>
             </div>
             <div>
               <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', textTransform: 'uppercase' }}>Incoming</div>
-              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{hoveredNode.metrics?.incomingPeers || 0}</div>
+              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{displayedNode.metrics?.incomingPeers || 0}</div>
             </div>
             <div>
               <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', textTransform: 'uppercase' }}>Apps</div>
-              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{hoveredNode.meta?.apps?.length || 0}</div>
+              <div style={{ color: '#fff', fontWeight: 600, fontSize: '15px' }}>{displayedNode.meta?.apps?.length || 0}</div>
             </div>
           </div>
-          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
-            Click to select
-          </div>
+          {!isSelectedTooltip && (
+            <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
+              Click to select
+            </div>
+          )}
         </div>
       )}
       {/* Graph Controls */}

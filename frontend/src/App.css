@@ -76,6 +76,7 @@ body {
   gap: 0;
   width: 100%;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(56, 232, 255, 0.08) 0%, transparent 50%),
@@ -430,6 +431,7 @@ body {
   position: relative;
   width: 400px;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   z-index: 10;
@@ -1182,28 +1184,78 @@ body {
 /* ============================================
    MOBILE SIDEBAR TOGGLE
    ============================================ */
+/* Mobile sidebar close button - edge tab on left side of sidebar */
+.sidebar-close-btn {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translate(-100%, -50%);
+  width: 32px;
+  height: 72px;
+  border: 1px solid rgba(56, 232, 255, 0.3);
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+  background: linear-gradient(135deg, rgba(56, 232, 255, 0.2) 0%, rgba(56, 232, 255, 0.08) 100%);
+  color: var(--atlas-accent);
+  cursor: pointer;
+  z-index: 10;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+  backdrop-filter: blur(12px);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(56, 232, 255, 0.05);
+}
+
+.sidebar-close-btn:hover {
+  background: linear-gradient(135deg, rgba(56, 232, 255, 0.3) 0%, rgba(56, 232, 255, 0.15) 100%);
+  border-color: rgba(56, 232, 255, 0.5);
+}
+
+.sidebar-close-btn:active {
+  transform: translate(-100%, -50%) scale(0.95);
+  transition: transform 0.1s ease;
+}
+
 .mobile-sidebar-toggle {
   display: none;
   position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: 60px;
-  height: 60px;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 72px;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--atlas-accent) 0%, #0891b2 100%);
-  border: none;
-  border-radius: 50%;
-  color: var(--atlas-bg-deep);
+  background: linear-gradient(135deg, rgba(56, 232, 255, 0.2) 0%, rgba(56, 232, 255, 0.08) 100%);
+  border: 1px solid rgba(56, 232, 255, 0.3);
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+  color: var(--atlas-accent);
   cursor: pointer;
   z-index: 1000;
-  box-shadow: 0 8px 32px var(--atlas-accent-glow), 0 0 0 4px rgba(56, 232, 255, 0.15);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(12px);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(56, 232, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .mobile-sidebar-toggle:hover {
-  transform: scale(1.1);
-  box-shadow: 0 12px 40px var(--atlas-accent-glow), 0 0 0 6px rgba(56, 232, 255, 0.2);
+  width: 40px;
+  background: linear-gradient(135deg, rgba(56, 232, 255, 0.3) 0%, rgba(56, 232, 255, 0.15) 100%);
+  box-shadow: -6px 0 30px rgba(0, 0, 0, 0.4), 0 0 30px rgba(56, 232, 255, 0.2);
+}
+
+.mobile-sidebar-toggle:active {
+  width: 36px;
+  transition: width 0.1s ease;
+}
+
+.mobile-sidebar-toggle svg {
+  transition: transform 0.3s ease;
+}
+
+.mobile-sidebar-toggle:hover svg {
+  transform: translateX(-2px);
 }
 
 .mobile-sidebar-backdrop {
@@ -1358,18 +1410,17 @@ body {
 
   .graph-panel {
     margin: 16px;
-    margin-bottom: 100px;
-    height: calc(100vh - 116px);
+    height: calc(100dvh - 32px);
   }
 
   .sidebar-container {
     position: fixed;
     right: -420px;
     top: 0;
-    height: 100vh;
+    height: 100dvh;
     width: 400px;
     max-width: 90vw;
-    transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: right 0.4s cubic-bezier(0.32, 0.72, 0, 1);
     box-shadow: -20px 0 60px rgba(0, 0, 0, 0.6);
     z-index: 950;
   }
@@ -1382,21 +1433,20 @@ body {
     display: flex;
   }
 
-  .mobile-sidebar-backdrop {
-    display: block;
-    opacity: 0;
-    pointer-events: none;
+  /* Only show close button when sidebar is open */
+  .sidebar-container.sidebar-open .sidebar-close-btn {
+    display: flex;
   }
 
-  .sidebar-open ~ .mobile-sidebar-backdrop,
-  .sidebar-container.sidebar-open ~ .mobile-sidebar-backdrop {
+  .mobile-sidebar-backdrop {
+    display: block;
     opacity: 1;
     pointer-events: auto;
   }
 
   /* Adjust controls for mobile - larger touch targets */
   .graph-controls {
-    bottom: 110px;
+    bottom: 24px;
     left: 16px;
   }
 
@@ -1430,8 +1480,7 @@ body {
 @media (max-width: 640px) {
   .graph-panel {
     margin: 12px;
-    margin-bottom: 100px;
-    height: calc(100vh - 112px);
+    height: calc(100dvh - 24px);
     border-radius: var(--atlas-radius-lg);
   }
 
@@ -1465,10 +1514,9 @@ body {
   }
 
   .mobile-sidebar-toggle {
-    bottom: 20px;
-    right: 20px;
-    width: 56px;
-    height: 56px;
+    /* Slightly smaller on small phones */
+    width: 28px;
+    height: 64px;
   }
 
   .node-details__grid {

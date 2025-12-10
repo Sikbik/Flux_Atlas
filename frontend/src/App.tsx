@@ -257,23 +257,15 @@ export const App = () => {
           </svg>
         </button>
 
-        {/* Mobile sidebar toggle button */}
+        {/* Mobile sidebar toggle - edge tab with left arrow */}
         <button
           className="mobile-sidebar-toggle"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open sidebar"
         >
-          {sidebarOpen ? (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          ) : (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <circle cx="12" cy="12" r="1"/>
-              <circle cx="12" cy="5" r="1"/>
-              <circle cx="12" cy="19" r="1"/>
-            </svg>
-          )}
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
         </button>
       </div>
 
@@ -285,7 +277,19 @@ export const App = () => {
         />
       )}
 
-      <div className={`sidebar-container ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      <div
+        className={`sidebar-container ${sidebarOpen ? 'sidebar-open' : ''}`}
+      >
+        {/* Mobile close button - arrow on left edge of sidebar */}
+        <button
+          className="sidebar-close-btn"
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close sidebar"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
         <Sidebar
           build={build}
           isBuilding={Boolean(atlasState?.building)}

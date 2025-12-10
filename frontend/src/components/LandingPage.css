@@ -879,12 +879,32 @@
 @media (max-width: 768px) {
   .landing__content {
     gap: 32px;
-    padding: 24px 16px;
+    padding: 24px 20px;
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    justify-content: flex-start;
+    padding-top: 48px;
   }
 
   .landing__logo-wrap {
     width: 80px;
     height: 80px;
+    flex-shrink: 0;
+  }
+
+  .landing__header {
+    gap: 20px;
+  }
+
+  .landing__title {
+    font-size: clamp(2.5rem, 12vw, 3.5rem);
+    letter-spacing: -0.04em;
+  }
+
+  .landing__tagline {
+    font-size: 1rem;
+    line-height: 1.5;
   }
 
   .landing__stats {
@@ -944,6 +964,12 @@
 }
 
 @media (max-width: 480px) {
+  .landing__content {
+    gap: 28px;
+    padding: 20px 16px;
+    padding-top: 36px;
+  }
+
   .landing__header {
     gap: 16px;
   }
@@ -953,12 +979,34 @@
     height: 64px;
   }
 
+  .landing__title {
+    font-size: clamp(2.2rem, 11vw, 2.8rem);
+    letter-spacing: -0.04em;
+  }
+
+  .landing__title-line {
+    flex-wrap: wrap;
+    gap: 0.15em;
+  }
+
+  .landing__tagline {
+    font-size: 0.95rem;
+  }
+
   .landing__card-features {
     display: none;
   }
 
   .landing__card-desc {
     font-size: 0.85rem;
+  }
+
+  .landing__views-title {
+    font-size: 1rem;
+  }
+
+  .landing__views-title-text {
+    font-size: 1rem;
   }
 }
 

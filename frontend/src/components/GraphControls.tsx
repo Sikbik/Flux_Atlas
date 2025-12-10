@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { tierColors, statusColors } from '../theme';
 
 interface GraphControlsProps {
@@ -23,6 +23,11 @@ export const GraphControls = ({
   edgeCount
 }: GraphControlsProps) => {
   const [showHelp, setShowHelp] = useState(false);
+
+  // Detect mobile for showing appropriate help controls
+  const isMobile = useMemo(() => {
+    return window.innerWidth < 768 || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+  }, []);
 
   const legendItems = colorScheme === 'tier'
     ? [
@@ -104,22 +109,41 @@ export const GraphControls = ({
       {showHelp && (
         <div className="graph-controls__help">
           <div className="graph-controls__help-title">Navigation</div>
-          <div className="graph-controls__help-item">
-            <span className="graph-controls__help-key">Drag</span>
-            <span>Rotate view</span>
-          </div>
-          <div className="graph-controls__help-item">
-            <span className="graph-controls__help-key">Scroll</span>
-            <span>Zoom in/out</span>
-          </div>
-          <div className="graph-controls__help-item">
-            <span className="graph-controls__help-key">Right-drag</span>
-            <span>Pan view</span>
-          </div>
-          <div className="graph-controls__help-item">
-            <span className="graph-controls__help-key">Click node</span>
-            <span>Select & focus</span>
-          </div>
+          {isMobile ? (
+            <>
+              <div className="graph-controls__help-item">
+                <span className="graph-controls__help-key">Drag</span>
+                <span>Pan / Rotate</span>
+              </div>
+              <div className="graph-controls__help-item">
+                <span className="graph-controls__help-key">Pinch</span>
+                <span>Zoom in/out</span>
+              </div>
+              <div className="graph-controls__help-item">
+                <span className="graph-controls__help-key">Tap node</span>
+                <span>Select & focus</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="graph-controls__help-item">
+                <span className="graph-controls__help-key">Drag</span>
+                <span>Rotate view</span>
+              </div>
+              <div className="graph-controls__help-item">
+                <span className="graph-controls__help-key">Scroll</span>
+                <span>Zoom in/out</span>
+              </div>
+              <div className="graph-controls__help-item">
+                <span className="graph-controls__help-key">Right-drag</span>
+                <span>Pan view</span>
+              </div>
+              <div className="graph-controls__help-item">
+                <span className="graph-controls__help-key">Click node</span>
+                <span>Select & focus</span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
