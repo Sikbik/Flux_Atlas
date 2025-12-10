@@ -54,7 +54,6 @@ const dimColor = (color: string): string => {
 const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelect, highlightedNodes = [], colorScheme = 'tier', onColorSchemeChange }: GraphCanvasProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
-  const centroidRef = useRef<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
   const [hoveredNode, setHoveredNode] = useState<AtlasNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -96,16 +95,7 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
     });
     const maxRange = Math.max(maxX - minX || 1, maxY - minY || 1);
 
-    // Compute centroid
-    let sumNormX = 0, sumNormY = 0;
-    filteredNodes.forEach(node => {
-      sumNormX += (node.position.x - minX) / maxRange;
-      sumNormY += (node.position.y - minY) / maxRange;
-    });
-    const centroidX = filteredNodes.length > 0 ? sumNormX / filteredNodes.length : 0.5;
-    const centroidY = filteredNodes.length > 0 ? sumNormY / filteredNodes.length : 0.5;
-
-    return { filteredNodes, uniqueEdges, minX, minY, maxRange, centroidX, centroidY };
+    return { filteredNodes, uniqueEdges, minX, minY, maxRange };
   }, [nodes, edges]);
 
 
@@ -127,7 +117,7 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
     const camera = sigmaRef.current.getCamera();
     const isMobile = window.innerWidth < 768;
     if (isMobile) {
-      camera.animate({ x: centroidRef.current.x, y: centroidRef.current.y, ratio: 0.4 }, { duration: 500 });
+      camera.animate({ x: 0.5, y: 0.5, ratio: 0.4 }, { duration: 500 });
     } else {
       camera.animate({ x: 0.5, y: 0.5, ratio: 0.8 }, { duration: 500 });
     }
@@ -164,8 +154,7 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
       sigmaRef.current = null;
     }
 
-    const { filteredNodes, uniqueEdges, minX, minY, maxRange, centroidX, centroidY } = graphData;
-    centroidRef.current = { x: centroidX, y: centroidY };
+    const { filteredNodes, uniqueEdges, minX, minY, maxRange } = graphData;
 
     // Defer graph creation to allow UI to render first
     const timeoutId = requestAnimationFrame(() => {
@@ -226,10 +215,11 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
       });
 
       // Set camera position BEFORE first render to avoid visual shift
-      // Mobile: zoomed in on centroid, Desktop: zoomed out and centered
+      // Both mobile and desktop center on 0.5, 0.5 (normalized graph center)
+      // Mobile is more zoomed in (ratio 0.4) than desktop (ratio 0.8)
       const cam = sigma.getCamera();
       if (isMobile) {
-        cam.setState({ x: centroidX, y: centroidY, ratio: 0.4, angle: 0 });
+        cam.setState({ x: 0.5, y: 0.5, ratio: 0.4, angle: 0 });
       } else {
         cam.setState({ x: 0.5, y: 0.5, ratio: 0.8, angle: 0 });
       }
