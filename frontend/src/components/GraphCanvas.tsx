@@ -19,7 +19,7 @@ interface GraphCanvasProps {
 const computeNodeSize = (node: AtlasNode, isMobile: boolean) => {
   const base = Math.log(1 + node.metrics.connectionCount);
   const centralityBoost = Math.sqrt(Math.max(node.metrics.degreeCentrality, 0)) * 0.7;
-  let size = 0.5 + base * 0.18 + centralityBoost;
+  let size = 0.4 + base * 0.18 + centralityBoost;
   if (node.kind === 'stub') size *= 0.3;
   if (node.isHub) size *= 1.25;
   // Scale down on mobile for cleaner appearance
@@ -93,9 +93,16 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
       if (node.position.y < minY) minY = node.position.y;
       if (node.position.y > maxY) maxY = node.position.y;
     });
-    const maxRange = Math.max(maxX - minX || 1, maxY - minY || 1);
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    const maxRange = Math.max(rangeX, rangeY);
 
-    return { filteredNodes, uniqueEdges, minX, minY, maxRange };
+    // Compute offsets to center the graph at 0.5, 0.5
+    // After scaling by maxRange, we need to shift so the midpoint is at 0.5
+    const offsetX = (1 - rangeX / maxRange) / 2;
+    const offsetY = (1 - rangeY / maxRange) / 2;
+
+    return { filteredNodes, uniqueEdges, minX, minY, maxRange, offsetX, offsetY };
   }, [nodes, edges]);
 
 
@@ -154,7 +161,7 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
       sigmaRef.current = null;
     }
 
-    const { filteredNodes, uniqueEdges, minX, minY, maxRange } = graphData;
+    const { filteredNodes, uniqueEdges, minX, minY, maxRange, offsetX, offsetY } = graphData;
 
     // Defer graph creation to allow UI to render first
     const timeoutId = requestAnimationFrame(() => {
@@ -171,8 +178,9 @@ const GraphCanvasComponent = ({ nodes, edges, buildId, selectedNode, onNodeSelec
       filteredNodes.forEach(node => {
         const isHighlighted = highlightedSet.has(node.id);
         const nodeColor = getNodeColor(node.tier, node.kind, node.status, colorScheme);
-        const normX = (node.position.x - minX) / maxRange;
-        const normY = (node.position.y - minY) / maxRange;
+        // Normalize and center: scale to [0,1] then add offset to center at 0.5
+        const normX = (node.position.x - minX) / maxRange + offsetX;
+        const normY = (node.position.y - minY) / maxRange + offsetY;
         graph.addNode(node.id, {
           x: normX,
           y: normY,
