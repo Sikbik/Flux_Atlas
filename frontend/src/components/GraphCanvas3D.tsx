@@ -312,12 +312,24 @@ export const GraphCanvas3D = ({
                 }}
 
                 // PERFORMANCE: Use sprites with shared texture
+                // Material is cached on the node to prevent memory leaks
                 nodeThreeObject={(node: any) => {
                     const isHighlighted = highlightedSet.has(node.id);
                     const isSelected = selectedNode === node.id;
 
                     let color = getNodeColor(node.tier, node.kind, node.status, colorScheme);
                     if (isHighlighted || isSelected) color = '#FFD700';
+
+                    // Reuse existing sprite if available, only update color
+                    if (node.__sprite) {
+                        node.__sprite.material.color.set(color);
+                        const base = Math.log(1 + node.metrics.connectionCount);
+                        const mobileMultiplier = isMobile ? 1.2 : 1;
+                        let size = Math.max(1.5, 0.5 + base * 0.3) * mobileMultiplier;
+                        if (isHighlighted || isSelected) size *= 1.5;
+                        node.__sprite.scale.set(size, size, 1);
+                        return node.__sprite;
+                    }
 
                     const material = new THREE.SpriteMaterial({
                         map: particleTexture,
@@ -329,11 +341,11 @@ export const GraphCanvas3D = ({
 
                     const base = Math.log(1 + node.metrics.connectionCount);
                     const mobileMultiplier = isMobile ? 1.2 : 1;
-                    // Smaller, crisper nodes - matching nodeVal
                     let size = Math.max(1.5, 0.5 + base * 0.3) * mobileMultiplier;
                     if (isHighlighted || isSelected) size *= 1.5;
 
                     sprite.scale.set(size, size, 1);
+                    node.__sprite = sprite; // Cache for reuse
                     return sprite;
                 }}
                 nodeThreeObjectExtend={false}
