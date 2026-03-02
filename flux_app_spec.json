@@ -26,9 +26,9 @@
             ],
             "commands": [],
             "containerData": "/app/backend/data",
-            "cpu": 0.5,
-            "ram": 512,
-            "hdd": 2,
+            "cpu": 1.0,
+            "ram": 1000,
+            "hdd": 5,
             "tiered": false
         }
     ]
