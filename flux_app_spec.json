@@ -10,7 +10,7 @@
         {
             "name": "fluxatlas",
             "description": "Main application",
-            "repotag": "littlestache/flux-atlas:2.0",
+            "repotag": "littlestache/flux-atlas:latest",
             "ports": [
                 3000
             ],
