@@ -5,4 +5,8 @@ import type { NodeId } from "./NodeId";
 /**
  * A predicted payment for an operator's node.
  */
-export type NextPayment = { node: NodeId, eta_blocks: number, eta_ms: number, amount: Amount, };
+export type NextPayment = { node: NodeId, eta_blocks: number, 
+/**
+ * Estimated unix ms of the paying block.
+ */
+eta_ms: number, amount: Amount, };

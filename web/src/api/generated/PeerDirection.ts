@@ -3,4 +3,4 @@
 /**
  * Direction of a peer link as reported by the crawled node.
  */
-export type PeerDirection = "outbound" | "inbound" | "both";
+export type PeerDirection = "outbound" | "inbound" | "both" | "unknown";

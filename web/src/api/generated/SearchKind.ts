@@ -3,4 +3,4 @@
 /**
  * What a search hit points at.
  */
-export type SearchKind = "node" | "block" | "tx" | "address" | "app" | "host" | "shielded";
+export type SearchKind = "node" | "block" | "tx" | "address" | "app" | "host" | "shielded" | "operator" | "country" | "provider" | "version";

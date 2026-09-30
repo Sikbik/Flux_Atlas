@@ -3,4 +3,4 @@
 /**
  * Kinds of human-readable feed items. The UI maps `text_key` to copy; it never parses text.
  */
-export type FeedKind = "node_joined" | "node_left" | "node_expired" | "node_at_risk" | "node_ip_changed" | "node_recovered" | "node_unreachable" | "app_deployed" | "app_updated" | "app_renewed" | "app_expired" | "node_dosed" | "collateral_spent" | "app_pending" | "app_install_failed" | "version_milestone" | "large_transfer" | "reorg" | "reward_reduction";
+export type FeedKind = "node_joined" | "node_left" | "node_expired" | "node_at_risk" | "node_ip_changed" | "node_recovered" | "node_unreachable" | "app_deployed" | "app_updated" | "app_renewed" | "app_expired" | "node_dosed" | "collateral_spent" | "app_pending" | "app_install_failed" | "version_milestone" | "large_transfer" | "reorg" | "reward_reduction" | "node_started" | "node_heartbeat" | "node_paid";

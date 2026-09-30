@@ -298,6 +298,12 @@ pub enum FeedKind {
     LargeTransfer,
     Reorg,
     RewardReduction,
+    /// A start transaction for the node was mined.
+    NodeStarted,
+    /// A periodic confirm (heartbeat) for the node was mined.
+    NodeHeartbeat,
+    /// The node received a block payout.
+    NodePaid,
 }
 
 /// Entity referenced by a feed item.
