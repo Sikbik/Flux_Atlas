@@ -1,0 +1,293 @@
+/* Neutral base styles driven entirely by the design tokens (tokens.css). The designed shell and
+   windows replace the placeholder surfaces; this file keeps only resets and utilities. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal, 1.45);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold, 600);
+  margin: 0;
+}
+
+h2 {
+  font-size: var(--fs-md);
+  margin-block: var(--space-6) var(--space-4);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent-400));
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--selection-bg, var(--accent-800));
+}
+
+/* Utilities */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.muted {
+  color: var(--text-3);
+}
+
+.error {
+  color: var(--status-crit);
+}
+
+.link {
+  color: var(--accent-400);
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.button {
+  font: inherit;
+  color: var(--text-1);
+  background: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  padding: var(--space-3) var(--space-5);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--ink-3);
+}
+
+/* Layers: the globe is the desktop; the shell and windows float over it. */
+.atlas {
+  position: relative;
+  min-height: 100%;
+}
+
+.globe-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-globe, 0);
+  background: var(--globe-space, var(--void));
+}
+
+.shell-frame {
+  position: relative;
+  z-index: var(--z-window, 10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  padding-inline: max(var(--space-6), env(safe-area-inset-left));
+}
+
+.windows {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 1200px;
+}
+
+/* Placeholder window surface */
+.panel {
+  background: var(--slab-bg-solid, var(--ink-0));
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.panel-title {
+  font-size: var(--fs-xl);
+}
+
+.panel-kind {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.panel-body {
+  padding: var(--space-6);
+}
+
+.panel-body.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-6);
+}
+
+.panel-body .wide {
+  grid-column: 1 / -1;
+}
+
+.kv {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.kv-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 40%) 1fr;
+  gap: var(--space-4);
+}
+
+.kv dt {
+  color: var(--text-3);
+}
+
+.kv dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.table thead th {
+  color: var(--text-3);
+  font-weight: var(--fw-medium, 500);
+}
+
+.log {
+  margin: 0;
+  padding-left: var(--space-7);
+  max-height: 320px;
+  overflow: auto;
+  color: var(--text-2);
+}
+
+.list {
+  margin: 0;
+  padding-left: var(--space-6);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.field {
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  padding: var(--space-5);
+}
+
+.radio {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-right: var(--space-6);
+}
+
+/* Minimal status line (until the shell's status bar lands) */
+.status-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-off);
+}
+
+.dot-live {
+  background: var(--status-ok);
+}
+
+.dot-syncing,
+.dot-connecting {
+  background: var(--status-pending);
+}
+
+.dot-reconnecting {
+  background: var(--status-warn);
+}
+
+.dot-offline {
+  background: var(--status-crit);
+}
+
+.fatal {
+  max-width: 40rem;
+  margin: 15vh auto;
+  padding: var(--space-8);
+}
+
+.ambient {
+  position: relative;
+  z-index: var(--z-ambient, 10);
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.ambient-clock {
+  font-family: var(--font-display);
+  font-size: var(--fs-ambient);
+  font-weight: var(--fw-light, 300);
+  margin: 0;
+}
+
+@media (max-width: 719px) {
+  .shell-frame {
+    padding: var(--space-5);
+  }
+}
