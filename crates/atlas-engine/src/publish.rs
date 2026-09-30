@@ -101,8 +101,51 @@ pub fn nodes_bin_body<S: std::hash::BuildHasher>(
     )
 }
 
-/// Builds the next published state. Runs on a blocking thread.
+type MeshReq = (u64, u64, Vec<(NodeId, NodeId, u8)>);
+type MeshResp = (std::io::Result<PrebuiltBody>, u64);
+
+fn mesh_body(seq: u64, generated_ms: u64, edges: &[(NodeId, NodeId, u8)]) -> MeshResp {
+    let s = Instant::now();
+    let raw = encode_mesh_bin(seq, generated_ms, edges.iter().copied());
+    let b = PrebuiltBody::build("application/octet-stream", raw);
+    (b, s.elapsed().as_millis() as u64)
+}
+
+/// A long-lived thread that builds `mesh.bin` (the largest body, at most every 10 s) in
+/// parallel with the other bodies, so it never adds to the latency of a block publish.
+/// Long-lived threads (rather than a fresh thread or a pool thread per publish) keep the large
+/// body allocations in a stable allocator heap, which keeps RSS flat.
+pub struct MeshWorker {
+    tx: std::sync::mpsc::Sender<MeshReq>,
+    rx: std::sync::mpsc::Receiver<MeshResp>,
+}
+
+impl MeshWorker {
+    pub fn spawn() -> std::io::Result<Self> {
+        let (tx, req_rx) = std::sync::mpsc::channel::<MeshReq>();
+        let (resp_tx, rx) = std::sync::mpsc::channel::<MeshResp>();
+        std::thread::Builder::new()
+            .name("atlas-mesh-body".to_owned())
+            .spawn(move || {
+                while let Ok((seq, ms, edges)) = req_rx.recv() {
+                    let out = mesh_body(seq, ms, &edges);
+                    drop(edges);
+                    if resp_tx.send(out).is_err() {
+                        break;
+                    }
+                }
+            })?;
+        Ok(Self { tx, rx })
+    }
+}
+
+/// Builds the next published state on the calling thread.
 pub fn build(job: PublishJob) -> (Published, BuildTiming) {
+    build_with(job, None)
+}
+
+/// Builds the next published state, handing `mesh.bin` to `mesh` when given.
+pub fn build_with(mut job: PublishJob, mesh: Option<&MeshWorker>) -> (Published, BuildTiming) {
     let started = Instant::now();
     let mut t = BuildTiming::default();
     let prev = &job.prev.bodies;
@@ -113,6 +156,54 @@ pub fn build(job: PublishJob) -> (Published, BuildTiming) {
         apps_index: prev.apps_index.clone(),
     };
 
+    let mut pending = false;
+    let mut local = None;
+    if let Some(edges) = job.mesh.take() {
+        match mesh {
+            Some(w) => match w.tx.send((job.seq, job.generated_ms, edges)) {
+                Ok(()) => pending = true,
+                Err(back) => local = Some(back.0.2),
+            },
+            None => local = Some(edges),
+        }
+    }
+    build_rest(&job, &mut bodies, &mut t);
+    let resp = if pending {
+        mesh.and_then(|w| w.rx.recv().ok())
+    } else {
+        local.map(|edges| mesh_body(job.seq, job.generated_ms, &edges))
+    };
+    match resp {
+        Some((Ok(b), ms)) => {
+            bodies.mesh_bin = Some(b);
+            t.mesh_bin_ms = ms;
+        }
+        Some((Err(e), _)) => tracing::error!(error = %e, "mesh.bin build failed"),
+        None if pending => tracing::error!("mesh.bin worker stopped"),
+        None => {}
+    }
+    t.total_ms = started.elapsed().as_millis() as u64;
+
+    let published = Published {
+        seq: job.seq,
+        generated_ms: job.generated_ms,
+        stale: job.stale,
+        server: job.server,
+        network: job.network,
+        nodes: job.nodes,
+        apps: job.apps,
+        blocks: job.blocks,
+        bodies,
+        tiers: job.tiers.into(),
+        freshness: job.freshness.into(),
+        next_payees: job.next_payees.into(),
+        mesh_edge_count: job.mesh_edge_count,
+    };
+    (published, t)
+}
+
+/// Builds every body except `mesh.bin`.
+fn build_rest(job: &PublishJob, bodies: &mut PrebuiltBodies, t: &mut BuildTiming) {
     if job.nodes_changed || bodies.nodes_bin.is_none() {
         let s = Instant::now();
         match nodes_bin_body(
@@ -126,15 +217,6 @@ pub fn build(job: PublishJob) -> (Published, BuildTiming) {
             Err(e) => tracing::error!(error = %e, "nodes.bin build failed"),
         }
         t.nodes_bin_ms = s.elapsed().as_millis() as u64;
-    }
-    if let Some(edges) = &job.mesh {
-        let s = Instant::now();
-        let raw = encode_mesh_bin(job.seq, job.generated_ms, edges.iter().copied());
-        match PrebuiltBody::build("application/octet-stream", raw) {
-            Ok(b) => bodies.mesh_bin = Some(b),
-            Err(e) => tracing::error!(error = %e, "mesh.bin build failed"),
-        }
-        t.mesh_bin_ms = s.elapsed().as_millis() as u64;
     }
     if job.apps_changed || bodies.apps_index.is_none() {
         let s = Instant::now();
@@ -166,22 +248,4 @@ pub fn build(job: PublishJob) -> (Published, BuildTiming) {
         Err(e) => tracing::error!(error = %e, "bootstrap build failed"),
     }
     t.bootstrap_ms = s.elapsed().as_millis() as u64;
-    t.total_ms = started.elapsed().as_millis() as u64;
-
-    let published = Published {
-        seq: job.seq,
-        generated_ms: job.generated_ms,
-        stale: job.stale,
-        server: job.server,
-        network: job.network,
-        nodes: job.nodes,
-        apps: job.apps,
-        blocks: job.blocks,
-        bodies,
-        tiers: job.tiers.into(),
-        freshness: job.freshness.into(),
-        next_payees: job.next_payees.into(),
-        mesh_edge_count: job.mesh_edge_count,
-    };
-    (published, t)
 }

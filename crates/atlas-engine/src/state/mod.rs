@@ -304,6 +304,8 @@ pub struct IntervalCounters {
 pub struct NetworkState {
     pub nodes: NodeTable,
     pub queue: PaymentQueue,
+    /// The queue as clients hold it by rotation (rank contract).
+    pub client_ranks: self::queue::ClientRanks,
     pub apps: AppTable,
     pub mesh: Mesh,
     /// Recent blocks, ascending height (bounded).
@@ -657,6 +659,48 @@ impl Tick {
     pub fn count(&self, kind: &str) -> usize {
         self.events.iter().filter(|(e, _)| e.kind() == kind).count()
     }
+}
+
+/// Applies one tick's node deltas (in emission order) to the client rank model exactly as
+/// clients do (see [`queue::ClientRanks`]), then returns the nodes whose client rank differs
+/// from the true queue; the model is reset to the truth. Block rotations were applied to the
+/// model by the block derivation already.
+pub fn rank_corrections(
+    st: &mut NetworkState,
+    deltas: &[(DeltaCause, NodesDeltaBuilder)],
+) -> Vec<NodeId> {
+    st.apply_ranks();
+    let nodes = &st.nodes;
+    let cr = &mut st.client_ranks;
+    for (_, b) in deltas {
+        for id in &b.removed {
+            cr.remove(*id);
+        }
+        for (id, m) in &b.changed {
+            if m & mask::STATUS != 0
+                && nodes
+                    .rec(*id)
+                    .is_some_and(|r| r.status != NodeStatus::Confirmed)
+            {
+                cr.remove(*id);
+            }
+        }
+        let ranked = |id: NodeId| nodes.rec(id).and_then(|r| r.rank.map(|k| (k, id, r.tier)));
+        let mut entering: Vec<(u32, NodeId, Tier)> = Vec::new();
+        for id in &b.added {
+            entering.extend(ranked(*id));
+        }
+        for (id, m) in &b.changed {
+            if m & mask::RANK != 0 {
+                entering.extend(ranked(*id));
+            }
+        }
+        entering.sort_unstable();
+        for (rank, id, tier) in entering {
+            cr.insert(tier, rank, id);
+        }
+    }
+    cr.sync(&st.queue)
 }
 
 /// Builds the live `nodes` message body for a delta.

@@ -2,8 +2,11 @@
 //!
 //! Every `/flux/topology` call returns the peer lists that about 60 reporters sent to the
 //! queried node. Each reporter's list replaces its previous one. An undirected edge `{a, b}`
-//! exists while a fresh report of `a` lists `b` or a fresh report of `b` lists `a`; it is
-//! bidirectional when both do. Reports expire after [`REPORT_TTL_MS`].
+//! is decided by the newer of the two reports (a connection one side dropped since the other
+//! side last reported is gone); with one report, that report decides. It is bidirectional
+//! when both reports list each other. Edges are undirected `NodeId` pairs (`a < b`) and
+//! peers that resolve to no node never enter the set. Reports expire after
+//! [`REPORT_TTL_MS`], about two full sweep cycles, and their edges are removed.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -11,7 +14,7 @@ use atlas_core::NodeId;
 use atlas_core::codec::mesh_bin::flags;
 
 /// A reporter's peer list is dropped when not refreshed for this long.
-pub const REPORT_TTL_MS: u64 = 3 * 3_600_000;
+pub const REPORT_TTL_MS: u64 = 3_600_000;
 
 /// One reporter's latest peer list.
 #[derive(Debug, Clone, Default)]
@@ -65,13 +68,25 @@ fn ordered(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
 }
 
 impl Mesh {
-    /// Restores persisted edges (reports are rebuilt by the next sweeps).
-    pub fn restore(edges: Vec<(NodeId, NodeId, u8, u64)>) -> Self {
+    /// Restores persisted edges. Each edge is backed by a synthetic report stamped `now_ms`, so
+    /// newer sweeps override it and unrefreshed edges expire like any other report.
+    pub fn restore(edges: Vec<(NodeId, NodeId, u8, u64)>, now_ms: u64) -> Self {
         let mut m = Self::default();
         for (a, b, f, first) in edges {
             let k = ordered(a, b);
             m.edges.insert(k, f);
             m.first_seen.insert(k, first);
+            let mut add = |from: NodeId, to: NodeId| {
+                let r = m.reports.entry(from).or_insert_with(|| Report {
+                    at_ms: now_ms,
+                    ..Report::default()
+                });
+                r.outbound.insert(to);
+            };
+            add(k.0, k.1);
+            if f & flags::BIDIRECTIONAL != 0 {
+                add(k.1, k.0);
+            }
         }
         m.dirty = true;
         m
@@ -116,6 +131,12 @@ impl Mesh {
             for p in rep.peers() {
                 if p != r {
                     candidates.insert(ordered(r, p));
+                }
+            }
+            // Edges held up only by other reporters' older lists are re-decided too.
+            for (o, orep) in &self.reports {
+                if *o != r && orep.lists(r) {
+                    candidates.insert(ordered(r, *o));
                 }
             }
             self.reports.insert(r, rep);
@@ -180,10 +201,17 @@ impl Mesh {
         diff: &mut MeshDiff,
     ) {
         for (a, b) in candidates {
-            let by_a = self.reports.get(&a).is_some_and(|r| r.lists(b));
-            let by_b = self.reports.get(&b).is_some_and(|r| r.lists(a));
+            let ra = self.reports.get(&a);
+            let rb = self.reports.get(&b);
+            let by_a = ra.is_some_and(|r| r.lists(b));
+            let by_b = rb.is_some_and(|r| r.lists(a));
+            let present = match (ra, rb) {
+                (Some(x), Some(y)) if x.at_ms > y.at_ms => by_a,
+                (Some(x), Some(y)) if y.at_ms > x.at_ms => by_b,
+                _ => by_a || by_b,
+            };
             let key = (a, b);
-            if by_a || by_b {
+            if present {
                 let mut f = 0u8;
                 if by_a && by_b {
                     f |= flags::BIDIRECTIONAL;

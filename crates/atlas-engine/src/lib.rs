@@ -369,10 +369,24 @@ impl Engine {
             first_ingest,
             last_snapshot,
         );
-        let mut tasks = vec![
-            tokio::spawn(red.run(obs_rx)),
-            tokio::spawn(ping_loop(handle.clone())),
-        ];
+        // The reducer runs on its own thread (a current-thread runtime): it owns the state and
+        // its allocations then stay in one allocator heap instead of migrating across the
+        // worker pool, which keeps RSS flat. It stops after the shutdown flush.
+        let spawned = std::thread::Builder::new()
+            .name("atlas-reducer".to_owned())
+            .spawn(move || {
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt.block_on(red.run(obs_rx)),
+                    Err(e) => tracing::error!(error = %e, "reducer runtime failed to start"),
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::error!(error = %e, "could not spawn the reducer thread");
+        }
+        let mut tasks = vec![tokio::spawn(ping_loop(handle.clone()))];
         if let Some(rx) = cmd_rx {
             let ctx = jobs::JobCtx::new(
                 clients,
@@ -435,6 +449,7 @@ fn restore(store: &Store) -> NetworkState {
             .into_iter()
             .map(|(a, b, e)| (a, b, e.flags, e.first_seen_ms))
             .collect(),
+        atlas_core::now_ms(),
     );
     let mut recent = ok(
         "recent blocks",

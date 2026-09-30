@@ -89,8 +89,10 @@ pub fn apply_block(
                 e.touched = h;
             }
             st.queue.upsert(id, p.tier, (h, CLASS_PAID, 0));
+            // Clients rotate the payee themselves from the block's payouts (rank contract).
+            st.client_ranks.rotate(id);
             st.nodes.touch_persist(id);
-            tick.node_changed(DEV, id, mask::PAID | mask::RANK);
+            tick.node_changed(DEV, id, mask::PAID);
         }
         tick.event(
             Event::NodePaid {
@@ -160,7 +162,7 @@ pub fn apply_block(
                 if created || old.is_some_and(|s| !crate::state::is_listed(s)) {
                     tick.node_added(DEV, id);
                 } else {
-                    tick.node_changed(DEV, id, mask::STATUS | mask::RANK);
+                    tick.node_changed(DEV, id, mask::STATUS);
                 }
                 if let Some(r) = st.node_ref(id) {
                     starts.push(r);
@@ -345,12 +347,9 @@ pub fn apply_block(
         .collect();
 
     // Ranks and next payees.
+    // Ranks are not streamed per block: clients rotate them, and the reducer sends
+    // authoritative corrections wherever that rotation diverges from this model.
     st.apply_ranks();
-    for w in st.watched.clone() {
-        if st.nodes.rec(w).is_some() {
-            tick.node_changed(DEV, w, mask::RANK);
-        }
-    }
     let payees = next_payees(st);
     st.next_payees.clone_from(&payees);
 
@@ -600,7 +599,7 @@ pub fn derive_expiry(st: &mut NetworkState, tick: &mut Tick, h: u32, t: u64) {
             },
             Some(t),
         );
-        tick.node_changed(DEV, id, mask::STATUS | mask::RANK);
+        tick.node_changed(DEV, id, mask::STATUS);
         tick.feed(FeedKind::NodeExpired, vec![FeedRef::Node { id }], &[], t);
     }
     for id in dosed {

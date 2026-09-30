@@ -70,6 +70,9 @@ pub struct EngineStats {
     pub winner_mismatches: u64,
     /// currentwinner answers that still named the tip block's winners (re-asked).
     pub winner_stale: u64,
+    /// Authoritative rank corrections sent (nodes, messages) under the rank contract.
+    pub rank_corrections: u64,
+    pub rank_correction_msgs: u64,
     pub winner_checks: u64,
     /// Reorgs handled.
     pub reorgs: u64,

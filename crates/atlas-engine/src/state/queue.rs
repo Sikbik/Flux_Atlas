@@ -146,6 +146,90 @@ impl PaymentQueue {
     }
 }
 
+/// The payment queue as clients hold it (ARCHITECTURE section 8, rank contract). Clients never
+/// receive per-block rank streams; they rotate ranks themselves:
+///
+/// 1. `block`: each known payee moves to the back of its tier, the nodes behind it move up.
+/// 2. `nodes` deltas, in message order: `removed` nodes leave (the gap closes); a change to a
+///    status other than `Confirmed` leaves the queue too; `added` nodes, and changed nodes
+///    that carry a rank while unranked, enter at that rank (ascending, the rest shifts back);
+///    a rank on an already ranked node is authoritative and set as is.
+///
+/// The engine applies the same rules here, then diffs against the true queue and sends a
+/// `nodes` delta (`cause: reconcile`) with authoritative ranks for every node that differs,
+/// after which this model equals the truth again.
+#[derive(Debug, Default, Clone)]
+pub struct ClientRanks {
+    tiers: [Vec<NodeId>; 3],
+}
+
+impl ClientRanks {
+    /// Resets the model to the true queue.
+    pub fn reset(&mut self, q: &PaymentQueue) {
+        for (i, t) in q.tiers.iter().enumerate() {
+            self.tiers[i] = t.iter().collect();
+        }
+    }
+
+    fn position(&self, id: NodeId) -> Option<(usize, usize)> {
+        self.tiers
+            .iter()
+            .enumerate()
+            .find_map(|(t, v)| v.iter().position(|x| *x == id).map(|p| (t, p)))
+    }
+
+    pub fn contains(&self, id: NodeId) -> bool {
+        self.position(id).is_some()
+    }
+
+    /// Rule 1: a payee moves to the back of its tier.
+    pub fn rotate(&mut self, id: NodeId) {
+        if let Some((t, p)) = self.position(id) {
+            let v = &mut self.tiers[t];
+            v.remove(p);
+            v.push(id);
+        }
+    }
+
+    /// Leaves the queue (the gap closes).
+    pub fn remove(&mut self, id: NodeId) {
+        if let Some((t, p)) = self.position(id) {
+            self.tiers[t].remove(p);
+        }
+    }
+
+    /// Enters `tier` at `rank` (clamped to the tier size); the rest shifts back.
+    pub fn insert(&mut self, tier: Tier, rank: u32, id: NodeId) {
+        self.remove(id);
+        if let Some(i) = tier.index() {
+            let v = &mut self.tiers[i];
+            let at = (rank as usize).min(v.len());
+            v.insert(at, id);
+        }
+    }
+
+    /// Nodes whose client-model rank differs from the true queue (including nodes the
+    /// clients do not rank at all); the model is reset to the truth afterwards.
+    pub fn sync(&mut self, q: &PaymentQueue) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        for (i, t) in q.tiers.iter().enumerate() {
+            let truth: Vec<NodeId> = t.iter().collect();
+            let model = &self.tiers[i];
+            let mut pos: HashMap<NodeId, usize> = HashMap::with_capacity(model.len());
+            for (p, id) in model.iter().enumerate() {
+                pos.insert(*id, p);
+            }
+            for (r, id) in truth.iter().enumerate() {
+                if pos.get(id) != Some(&r) {
+                    out.push(*id);
+                }
+            }
+            self.tiers[i] = truth;
+        }
+        out
+    }
+}
+
 /// Counts queue-order inversions against the verified rule over a set of records that carry
 /// upstream ranks: within each tier, sorted by rank, the key `max(last_paid, confirmed)` must
 /// never decrease.

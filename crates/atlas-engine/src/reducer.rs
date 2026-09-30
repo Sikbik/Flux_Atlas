@@ -27,7 +27,7 @@ use crate::derive::block::{Attribution, apply_block, payee_dto};
 use crate::derive::reconcile::{apply_dos_list, apply_start_list, reconcile};
 use crate::derive::round::{apply_round, geo_material_change, watched_feed};
 use crate::obs::{Obs, TopologyReport};
-use crate::publish::{PublishJob, block_lite, build};
+use crate::publish::{PublishJob, block_lite, build, build_with};
 use crate::state::apps::index_entry;
 use crate::state::mesh::Report;
 use crate::state::{
@@ -96,6 +96,8 @@ pub fn spawn_writer(
 
 /// Minimum time between coalesced publishes.
 const PUBLISH_MIN_INTERVAL: Duration = Duration::from_secs(1);
+/// Minimum time between `mesh.bin` rebuilds.
+const MESH_BODY_INTERVAL: Duration = Duration::from_secs(10);
 /// Mempool additions are coalesced for this long.
 const MEMPOOL_COALESCE: Duration = Duration::from_millis(500);
 
@@ -103,6 +105,7 @@ pub struct Reducer {
     pub st: NetworkState,
     handle: EngineHandle,
     writer: std::sync::mpsc::Sender<WriterCmd>,
+    publisher: Option<std::sync::mpsc::Sender<PublishJob>>,
     cmds: Option<JobCmds>,
     obs_tx: mpsc::Sender<Obs>,
     watch_rx: watch::Receiver<WatchSet>,
@@ -113,6 +116,7 @@ pub struct Reducer {
     publish_pending: bool,
     publish_urgent: bool,
     last_publish: Instant,
+    last_mesh_body: Option<Instant>,
     nodes_arc: Option<Arc<[NodeRecord]>>,
     nodes_bin_tip: u32,
     apps_arc: Option<Arc<[AppIndexEntry]>>,
@@ -145,8 +149,11 @@ impl Reducer {
         let now = now_ms();
         let hour = 3_600_000;
         let live_floor_saved = st.live_floor;
+        let mut st = st;
+        st.client_ranks.reset(&st.queue);
         Self {
             st,
+            publisher: spawn_publisher(handle.clone(), obs_tx.clone()),
             handle,
             writer,
             cmds,
@@ -159,6 +166,7 @@ impl Reducer {
             publish_pending: true,
             publish_urgent: true,
             last_publish: Instant::now(),
+            last_mesh_body: None,
             nodes_arc: None,
             nodes_bin_tip: 0,
             apps_arc: None,
@@ -215,8 +223,10 @@ impl Reducer {
                     }
                     self.finish(tick);
                     if let Some(ack) = flush {
+                        // Only shutdown flushes: persist everything, then stop.
                         self.flush_mempool();
                         let _ = self.writer.send(WriterCmd::Flush(ack));
+                        break;
                     }
                     self.maybe_publish();
                 }
@@ -668,8 +678,15 @@ impl Reducer {
             }
             return;
         }
+        // Before the registry is loaded the local queue only holds nodes seen in blocks (no
+        // payment address yet); that is not a disagreement worth counting.
+        let ready = self
+            .st
+            .next_payees
+            .iter()
+            .all(|p| p.node.is_some() && !p.address.is_empty());
         let mut mismatch = false;
-        for (t, n, _) in &resolved {
+        for (t, n, _) in resolved.iter().filter(|_| ready) {
             let local = self
                 .st
                 .next_payees
@@ -680,14 +697,18 @@ impl Reducer {
                 mismatch = true;
             }
         }
-        self.stats().with(|s| {
-            s.winner_checks += 1;
+        if ready {
+            self.stats().with(|s| {
+                s.winner_checks += 1;
+                if mismatch {
+                    s.winner_mismatches += 1;
+                }
+            });
+        }
+        if mismatch || !ready {
             if mismatch {
-                s.winner_mismatches += 1;
+                tracing::warn!(height, ?resolved, local = ?self.st.next_payees, "currentwinner disagrees with the local queue (bug signal)");
             }
-        });
-        if mismatch {
-            tracing::warn!(height, ?resolved, local = ?self.st.next_payees, "currentwinner disagrees with the local queue (bug signal)");
             let payees: Vec<atlas_core::event::NextPayee> = resolved
                 .iter()
                 .map(|(t, n, a)| atlas_core::event::NextPayee {
@@ -1078,9 +1099,36 @@ impl Reducer {
         for (body, ms) in std::mem::take(&mut tick.primary) {
             emit(self, body, ms);
         }
-        for (cause, b) in tick.take_node_deltas() {
+        let deltas = tick.take_node_deltas();
+        let fixes = if deltas.is_empty() {
+            Vec::new()
+        } else {
+            self.rank_corrections(&deltas)
+        };
+        for (cause, b) in deltas {
             let body = nodes_body(&self.st.nodes, cause, &b, self.last_nodes_seq, tip, now);
             self.last_nodes_seq = emit(self, body, None);
+        }
+        // Rank contract: authoritative ranks wherever the clients' rotation diverged, after
+        // every other delta of this tick.
+        if !fixes.is_empty() {
+            let mut b = crate::state::NodesDeltaBuilder::default();
+            for id in &fixes {
+                b.changed.insert(*id, mask::RANK);
+            }
+            let body = nodes_body(
+                &self.st.nodes,
+                DeltaCause::Reconcile,
+                &b,
+                self.last_nodes_seq,
+                tip,
+                now,
+            );
+            self.last_nodes_seq = emit(self, body, None);
+            self.stats().with(|s| {
+                s.rank_corrections += fixes.len() as u64;
+                s.rank_correction_msgs += 1;
+            });
         }
         for (cause, b) in tick.take_app_deltas() {
             let body = LiveBody::Apps(AppsDelta {
@@ -1155,6 +1203,13 @@ impl Reducer {
         }
     }
 
+    fn rank_corrections(
+        &mut self,
+        deltas: &[(DeltaCause, crate::state::NodesDeltaBuilder)],
+    ) -> Vec<NodeId> {
+        crate::state::rank_corrections(&mut self.st, deltas)
+    }
+
     fn flush_mempool(&mut self) {
         if self.mempool_buf.is_empty() {
             return;
@@ -1167,6 +1222,9 @@ impl Reducer {
 
     fn housekeeping(&mut self) {
         let mut tick = Tick::new(now_ms());
+        if self.st.mesh.dirty {
+            tick.publish = true;
+        }
         dapps::expire_pending(&mut self.st, &mut tick);
         let before = self.st.mempool.len();
         let cutoff = tick.now_ms.saturating_sub(3_600_000);
@@ -1376,8 +1434,16 @@ impl Reducer {
             self.blocks_arc = Some(v.into());
             self.st.blocks_dirty = false;
         }
-        let mesh = if self.st.mesh.dirty {
+        // mesh.bin is the largest body; live mesh deltas carry every change at once, so the
+        // snapshot body is rebuilt at most every MESH_BODY_INTERVAL (housekeeping re-arms a
+        // publish for a pending change).
+        let mesh = if self.st.mesh.dirty
+            && self
+                .last_mesh_body
+                .is_none_or(|t| t.elapsed() >= MESH_BODY_INTERVAL)
+        {
             self.st.mesh.dirty = false;
+            self.last_mesh_body = Some(Instant::now());
             Some(self.st.mesh.edge_list())
         } else {
             None
@@ -1412,6 +1478,13 @@ impl Reducer {
             next_payees: self.st.next_payees.iter().map(payee_dto).collect(),
             prev: self.handle.published(),
         };
+        let job = match &self.publisher {
+            Some(p) => match p.send(job) {
+                Ok(()) => return,
+                Err(back) => back.0,
+            },
+            None => job,
+        };
         let handle = self.handle.clone();
         let tx = self.obs_tx.clone();
         tokio::task::spawn_blocking(move || {
@@ -1421,6 +1494,46 @@ impl Reducer {
                 elapsed_ms: t.total_ms,
             });
         });
+    }
+}
+
+/// Spawns the long-lived publisher thread (and its mesh body worker). Publishes are
+/// single-flight, so one thread suffices, and keeping the large body allocations on stable
+/// threads keeps allocator heaps (and RSS) flat.
+fn spawn_publisher(
+    handle: EngineHandle,
+    obs_tx: mpsc::Sender<Obs>,
+) -> Option<std::sync::mpsc::Sender<PublishJob>> {
+    let (tx, rx) = std::sync::mpsc::channel::<PublishJob>();
+    let spawned = std::thread::Builder::new()
+        .name("atlas-publisher".to_owned())
+        .spawn(move || {
+            let mesh = match crate::publish::MeshWorker::spawn() {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    tracing::warn!(error = %e, "mesh body worker unavailable; building inline");
+                    None
+                }
+            };
+            while let Ok(job) = rx.recv() {
+                let (p, t) = build_with(job, mesh.as_ref());
+                handle.install(p);
+                if obs_tx
+                    .blocking_send(Obs::PublishDone {
+                        elapsed_ms: t.total_ms,
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+    match spawned {
+        Ok(_) => Some(tx),
+        Err(e) => {
+            tracing::warn!(error = %e, "publisher thread unavailable; using the blocking pool");
+            None
+        }
     }
 }
 

@@ -16,7 +16,7 @@ use atlas_engine::derive::reconcile::reconcile;
 use atlas_engine::derive::round::{RoundNode, apply_round};
 use atlas_engine::state::mesh::{Mesh, Report};
 use atlas_engine::state::queue::rank_inversions;
-use atlas_engine::state::{NetworkState, Tick};
+use atlas_engine::state::{NetworkState, Tick, mask, rank_corrections};
 use atlas_flux::decode::{AppPayment, SpentOutpoint};
 
 const NOW: u64 = 1_790_800_000_000;
@@ -196,6 +196,42 @@ fn payouts_hit_queue_heads_and_move_them_to_the_back() {
     // Fees and dev fund.
     assert_eq!(msg.dev_fund, d.summary.dev_fund);
     assert_eq!(msg.reward, Amount::from_flux(14));
+}
+
+#[test]
+fn rank_contract_rotation_and_corrections() {
+    let mut st = common::seeded();
+    st.client_ranks.reset(&st.queue);
+    let heads: Vec<NodeId> = Tier::ALL
+        .iter()
+        .map(|t| st.queue.head(*t).unwrap())
+        .collect();
+    let d = common::block("flux/daemon_getblock_2996916_verbosity2.json");
+    let mut tick = Tick::new(NOW);
+    apply_block(&mut st, &mut tick, &d, false);
+    let deltas = tick.take_node_deltas();
+    // No per-block rank stream: payees carry no rank; clients rotate them from the payouts.
+    for (_, b) in &deltas {
+        for h in &heads {
+            assert_eq!(b.changed.get(h).copied().unwrap_or(0) & mask::RANK, 0);
+        }
+    }
+    let fixes = rank_corrections(&mut st, &deltas);
+    println!("corrections after block: {}", fixes.len());
+    // Rotation plus ranked additions explain the block: no corrections needed.
+    assert!(fixes.is_empty(), "unexpected corrections {fixes:?}");
+    // A divergence (a node the model moved without telling clients) is corrected with
+    // authoritative ranks for exactly the nodes that differ.
+    let q = st.queue.tier(Tier::Stratus).unwrap();
+    let ids: Vec<NodeId> = q.iter().take(3).collect();
+    let r = st.nodes.rec(ids[0]).unwrap().clone();
+    st.queue.upsert(ids[0], Tier::Stratus, (u32::MAX, 0, 0));
+    let fixes = rank_corrections(&mut st, &[]);
+    assert!(fixes.contains(&ids[0]) && fixes.contains(&ids[1]) && fixes.contains(&ids[2]));
+    assert_eq!(st.nodes.rec(ids[1]).unwrap().rank, Some(0));
+    assert_eq!(st.nodes.rec(ids[0]).unwrap().tier, r.tier);
+    // The model is exact again afterwards.
+    assert!(rank_corrections(&mut st, &[]).is_empty());
 }
 
 #[test]
@@ -598,15 +634,29 @@ fn mesh_diff() {
     let d = m.merge(vec![(n(2), rep(&[1], &[], 20))], &cross);
     assert!(d.added.is_empty());
     assert_eq!(d.reflagged, vec![(n(1), n(2), 1)]);
-    // 1 drops 100: removed; 1 still listed by 2 so 1-2 stays.
-    let d = m.merge(vec![(n(1), rep(&[], &[], 30))], &cross);
+    // 1 drops 100 but keeps 2: 1-100 removed, 1-2 unchanged and still bidirectional.
+    let d = m.merge(vec![(n(1), rep(&[2], &[], 30))], &cross);
     assert_eq!(d.removed, vec![(n(1), n(100))]);
-    assert_eq!(d.reflagged, vec![(n(1), n(2), 0)]);
+    assert!(d.reflagged.is_empty() && d.added.is_empty());
     assert_eq!(m.edge_count(), 1);
-    // Report of 2 expires: the edge disappears.
-    let d = m.expire(25, &cross);
+    // 2 reports again without 1: the newer report wins over 1's older list, so the dropped
+    // connection disappears instead of lingering until 1 reports again.
+    let d = m.merge(vec![(n(2), rep(&[3], &[], 40))], &cross);
     assert_eq!(d.removed, vec![(n(1), n(2))]);
+    assert_eq!(d.added, vec![(n(2), n(3), 0)]);
+    // Duplicate reporting of one connection from both sides is still one undirected edge.
+    let d = m.merge(vec![(n(3), rep(&[], &[2], 45))], &cross);
+    assert_eq!(d.reflagged, vec![(n(2), n(3), 1)]);
+    assert_eq!(m.edge_count(), 1);
+    // Every report older than the cutoff expires: the edge disappears.
+    let d = m.expire(50, &cross);
+    assert_eq!(d.removed, vec![(n(2), n(3))]);
     assert_eq!(m.edge_count(), 0);
+    // Restored edges expire unless a sweep refreshes them.
+    let mut r = Mesh::restore(vec![(n(8), n(9), 1, 1)], 100);
+    assert_eq!(r.edge_count(), 1);
+    assert!(r.expire(50, &cross).is_empty());
+    assert_eq!(r.expire(101, &cross).removed, vec![(n(8), n(9))]);
     // mesh.bin round trip of the current edges.
     m.merge(vec![(n(5), rep(&[6, 7], &[], 40))], &cross);
     let raw = atlas_core::codec::mesh_bin::encode_mesh_bin(1, 2, m.edge_list());
