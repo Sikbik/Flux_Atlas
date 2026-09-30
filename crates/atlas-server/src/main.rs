@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
+use atlas_server::config::{
+    EngineOverrides, ServeConfig, apply_upstream_rps, parse_duration, parse_intervals,
+};
+use clap::{Args, Parser, Subcommand};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -24,14 +27,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Cmd {
     /// Run the server.
-    Serve {
-        /// Listen address.
-        #[arg(long, env = "ATLAS_BIND", default_value = "0.0.0.0:3000")]
-        bind: SocketAddr,
-        /// Directory holding the database.
-        #[arg(long, env = "ATLAS_DATA_DIR", default_value = "/data")]
-        data_dir: PathBuf,
-    },
+    Serve(Box<ServeArgs>),
     /// Probe a running server's `/healthz`; exit status 0 when healthy (container HEALTHCHECK).
     Healthcheck {
         #[arg(long, env = "ATLAS_HEALTHCHECK_ADDR", default_value = "127.0.0.1:3000")]
@@ -44,6 +40,96 @@ enum Cmd {
         #[arg(long, default_value = "web/src/api/generated")]
         out: PathBuf,
     },
+}
+
+#[derive(Args, Debug)]
+struct ServeArgs {
+    /// Listen address.
+    #[arg(long, env = "ATLAS_BIND", default_value = "0.0.0.0:3000")]
+    bind: SocketAddr,
+    /// Directory holding the database.
+    #[arg(long, env = "ATLAS_DATA_DIR", default_value = "/data")]
+    data_dir: PathBuf,
+    /// FluxOS gateway base URL.
+    #[arg(long, env = "ATLAS_FLUX_API")]
+    flux_api: Option<String>,
+    /// Insight explorer base URLs, primary first (comma-separated).
+    #[arg(long, env = "ATLAS_EXPLORER_API", value_delimiter = ',')]
+    explorer_api: Vec<String>,
+    /// stats.runonflux.io base URL.
+    #[arg(long, env = "ATLAS_STATS_API")]
+    stats_api: Option<String>,
+    /// Optional local GeoIP database (.mmdb).
+    #[arg(long, env = "ATLAS_GEOIP_DB")]
+    geoip_db: Option<PathBuf>,
+    /// Requests per second allowed to each upstream host.
+    #[arg(long, env = "ATLAS_UPSTREAM_RPS")]
+    upstream_rps: Option<u32>,
+    /// Engine job interval overrides: `job=duration,...` (for example `ping=20s,app_placement=90s`).
+    #[arg(long, env = "ATLAS_INTERVALS", value_parser = parse_intervals_arg)]
+    intervals: Option<IntervalMap>,
+    /// Live messages kept for reconnect replay.
+    #[arg(long, env = "ATLAS_REPLAY_CAPACITY")]
+    replay_capacity: Option<usize>,
+    /// Trust `X-Forwarded-For` from the reverse proxy in front of the server.
+    #[arg(long, env = "ATLAS_TRUST_PROXY", default_value_t = false)]
+    trust_proxy: bool,
+    /// Upstream-reaching requests per second per client IP (cache hits are free).
+    #[arg(long, env = "ATLAS_CLIENT_RPS", default_value_t = 5)]
+    client_rps: u32,
+    /// Burst size of the per-client upstream limiter.
+    #[arg(long, env = "ATLAS_CLIENT_BURST", default_value_t = 20)]
+    client_burst: u32,
+    /// Maximum concurrent WebSocket connections.
+    #[arg(long, env = "ATLAS_WS_MAX_CONNECTIONS", default_value_t = 10_000)]
+    ws_max_connections: usize,
+    /// Maximum concurrent WebSocket connections per client IP.
+    #[arg(long, env = "ATLAS_WS_MAX_PER_IP", default_value_t = 16)]
+    ws_max_per_ip: u32,
+    /// Protocol ping cadence for WebSocket clients (`20s`).
+    #[arg(long, env = "ATLAS_WS_PING", value_parser = parse_duration_arg)]
+    ws_ping: Option<Duration>,
+}
+
+type IntervalMap = std::collections::BTreeMap<String, Duration>;
+
+fn parse_intervals_arg(s: &str) -> Result<IntervalMap, String> {
+    parse_intervals(s)
+}
+
+fn parse_duration_arg(s: &str) -> Result<Duration, String> {
+    parse_duration(s)
+}
+
+fn serve_config(a: ServeArgs) -> ServeConfig {
+    let mut cfg = ServeConfig::new(a.bind, a.data_dir);
+    if let Some(u) = a.flux_api {
+        cfg.clients.fluxos_gateway = u;
+    }
+    if !a.explorer_api.is_empty() {
+        cfg.clients.insight_bases = a.explorer_api;
+    }
+    if let Some(u) = a.stats_api {
+        cfg.clients.stats_base = u;
+    }
+    if let Some(rps) = a.upstream_rps {
+        apply_upstream_rps(&mut cfg.clients, rps);
+    }
+    cfg.engine_overrides = EngineOverrides {
+        intervals: a.intervals.unwrap_or_default(),
+        replay_capacity: a.replay_capacity,
+        geoip_db: a.geoip_db,
+    };
+    cfg.server.trust_proxy = a.trust_proxy;
+    cfg.server.limits.rps = a.client_rps.max(1);
+    cfg.server.limits.burst = a.client_burst.max(1);
+    cfg.server.ws.max_connections = a.ws_max_connections.max(1);
+    cfg.server.ws.max_per_ip = a.ws_max_per_ip.max(1);
+    if let Some(p) = a.ws_ping {
+        cfg.server.ws.ping_interval = p;
+        cfg.server.ws.idle_timeout = p * 3 + Duration::from_secs(15);
+    }
+    cfg
 }
 
 fn init_tracing() {
@@ -59,18 +145,14 @@ fn init_tracing() {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.cmd {
-        Cmd::Serve { bind, data_dir } => {
+        Cmd::Serve(args) => {
             init_tracing();
+            let cfg = serve_config(*args);
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
                 .map_err(anyhow::Error::from)
-                .and_then(|rt| {
-                    rt.block_on(atlas_server::serve(atlas_server::ServeConfig {
-                        bind,
-                        data_dir,
-                    }))
-                })
+                .and_then(|rt| rt.block_on(atlas_server::serve(cfg)))
         }
         Cmd::Healthcheck { addr, timeout_s } => tokio::runtime::Builder::new_current_thread()
             .enable_all()

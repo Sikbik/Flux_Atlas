@@ -1,0 +1,85 @@
+//! Route table (ARCHITECTURE section 6).
+
+pub mod apps;
+pub mod explorer;
+pub mod hot;
+pub mod network;
+pub mod nodes;
+pub mod ops;
+pub mod timeline;
+
+use axum::Router;
+use axum::middleware::{from_fn, from_fn_with_state};
+use axum::response::IntoResponse;
+use axum::routing::get;
+
+use crate::error::ApiError;
+use crate::live::ws::ws_handler;
+use crate::metrics::{cors, track};
+use crate::state::AppState;
+
+async fn api_not_found() -> impl IntoResponse {
+    ApiError::not_found("no such API endpoint")
+}
+
+/// `/api/v1` routes.
+fn api() -> Router<AppState> {
+    Router::new()
+        // Hot snapshot bodies.
+        .route("/bootstrap", get(hot::bootstrap))
+        .route("/nodes.bin", get(hot::nodes))
+        .route("/mesh.bin", get(hot::mesh))
+        .route("/apps", get(hot::apps))
+        // Nodes.
+        .route("/nodes", get(nodes::list))
+        .route("/nodes/{key}", get(nodes::detail))
+        .route("/nodes/{key}/history", get(nodes::history))
+        .route("/nodes/{key}/payments", get(nodes::payments))
+        .route("/nodes/{key}/peers", get(nodes::peers))
+        .route("/operator/{address}", get(nodes::operator))
+        // Apps.
+        .route("/apps/{name}", get(apps::detail))
+        .route("/apps/{name}/history", get(apps::history))
+        // Analytics.
+        .route("/network/summary", get(network::summary))
+        .route("/network/geo", get(network::geo))
+        .route("/network/providers", get(network::providers))
+        .route("/network/versions", get(network::versions))
+        .route("/network/capacity", get(network::capacity))
+        .route("/network/decentralization", get(network::decentralization))
+        .route("/metrics", get(network::series))
+        // Explorer.
+        .route("/blocks", get(explorer::blocks))
+        .route("/blocks/{id}", get(explorer::block))
+        .route("/tx/{txid}", get(explorer::tx))
+        .route("/address/{addr}", get(explorer::address))
+        .route("/address/{addr}/txs", get(explorer::address_txs))
+        .route("/address/{addr}/utxos", get(explorer::address_utxos))
+        .route("/address/{addr}/nodes", get(explorer::address_nodes))
+        .route("/mempool", get(explorer::mempool))
+        .route("/supply", get(explorer::supply))
+        .route("/richlist", get(explorer::richlist))
+        .route("/search", get(crate::search::handler))
+        // Time machine.
+        .route("/timeline", get(timeline::index))
+        .route("/timeline/state", get(timeline::state))
+        // Live and ops (also mounted at the root).
+        .route("/ws", get(ws_handler))
+        .route("/healthz", get(ops::healthz))
+        .route("/readyz", get(ops::readyz))
+        .fallback(api_not_found)
+        .layer(from_fn(cors))
+}
+
+/// The full application router.
+pub fn router(state: AppState) -> Router {
+    Router::new()
+        .nest("/api/v1", api())
+        .route("/ws", get(ws_handler))
+        .route("/healthz", get(ops::healthz))
+        .route("/readyz", get(ops::readyz))
+        .route("/metrics/prometheus", get(ops::prometheus))
+        .fallback(crate::web::serve)
+        .layer(from_fn_with_state(state.clone(), track))
+        .with_state(state)
+}
