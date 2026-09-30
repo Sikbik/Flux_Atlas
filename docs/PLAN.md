@@ -13,7 +13,7 @@ commits at each milestone. Status values: done, running, queued.
 | R1 Legacy analysis | Opus | `docs/research/legacy-brief.md` | done |
 | R2 Flux API map (live-verified) | Opus | `docs/research/flux-api.md`, `docs/research/fixtures/flux/` | done |
 | R3 Explorer API map | Opus | `docs/research/explorer-api.md`, `docs/research/fixtures/explorer/` | done |
-| D1 Design direction + tokens + mock | Sonnet (sonnet-max) | `docs/design/**` | running |
+| D1 Design direction + tokens + mock | Sonnet (sonnet-max) | `docs/design/**` | done (v0.3, a4265be) |
 | D2 Globe + ambient renderer lab | Sonnet (sonnet-max) | `labs/globe/**` | running |
 
 ## Phase 1 — Blueprint (lead)
