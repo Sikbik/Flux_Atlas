@@ -54,6 +54,8 @@ export function createRuntime(
   let live: LiveClient | null = null;
   const store = new NetworkStore({
     onGap: (topic) => live?.requestResync(`gap:${topic}`),
+    // Server time, so mempool first-seen times compare with block header times.
+    now: () => clock.now(),
   });
   let forward: EffectSink = nullSink;
   const forwarding = new Proxy({} as EffectSink, {
@@ -100,7 +102,7 @@ export function createRuntime(
     getResumeSeq: () => (store.loaded ? store.seq : null),
     getSnapshotServerStart: () => (store.loaded ? (store.server?.started_ms ?? null) : null),
     onMessage: (msg, received) => {
-      store.apply(msg, received);
+      store.apply(msg, received + (live?.clockOffsetMs ?? 0));
       if (msg.t === 'block') clock.setLastBlock(msg.height, msg.time_ms, msg.observed_ms);
       choreo.handle(msg);
       invalidate(msg);
