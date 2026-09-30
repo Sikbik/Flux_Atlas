@@ -80,6 +80,24 @@ pub struct MetricsRow {
     pub avg_block_time_ms: u32,
     /// How many raw samples this row aggregates (1 for a minute row written directly).
     pub samples: u32,
+
+    // Gauges added by the engine (B2). Appended so existing field order is unchanged.
+    /// Distinct providers (ASN, falling back to org) with at least one active node.
+    pub provider_count: u32,
+    /// Active nodes 560 or more blocks past their last confirmation.
+    pub at_risk_count: u32,
+    /// Nodes started but not yet confirmed.
+    pub started_count: u32,
+    /// Nodes on the DOS list.
+    pub dos_count: u32,
+    /// Sum of benchmarked SSD over active nodes, GB.
+    pub total_ssd_gb: u64,
+    /// CPU cores locked by running apps (stats round).
+    pub locked_cores: f64,
+    /// RAM locked by running apps, GB (stats round).
+    pub locked_ram_gb: f64,
+    /// Storage locked by running apps, GB (stats round).
+    pub locked_storage_gb: f64,
 }
 
 impl MetricsRow {

@@ -11,4 +11,8 @@ job: string, last_ok_ms: number | null, last_error: string | null, last_error_ms
 /**
  * True when the job's data is older than its freshness tier allows.
  */
-stale: boolean, };
+stale: boolean, 
+/**
+ * When the job runs next (unix ms); `None` for push-driven or event-triggered jobs.
+ */
+next_run_ms: number | null, };

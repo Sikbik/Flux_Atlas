@@ -181,6 +181,25 @@ pub struct BlockMsg {
     pub reward: Amount,
     pub fees: Amount,
     pub dev_fund: Amount,
+    /// App register/update payments mined in this block (OP_RETURN with the message hash).
+    #[serde(default)]
+    pub app_payments: Vec<BlockAppPayment>,
+    /// Nodes whose collateral this block spent (they leave the network now).
+    #[serde(default)]
+    pub collateral_spent: Vec<NodeId>,
+}
+
+/// An app-message payment inside a block. `app` and `kind` are known when the message was
+/// already seen as pending; otherwise they follow in an `apps` delta once resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct BlockAppPayment {
+    pub txid: Hash32,
+    /// Message hash carried in the OP_RETURN.
+    pub hash: Hash32,
+    /// FLUX paid to the app address.
+    pub value: Amount,
+    pub app: Option<String>,
+    pub kind: Option<AppMessageKind>,
 }
 
 /// `reorg`.
