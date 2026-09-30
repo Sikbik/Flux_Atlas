@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en" data-perf="balanced">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flux Atlas, boot</title>
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="assets/brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="manifest" href="assets/brand/manifest.webmanifest">
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="assets/atlas.css">
+<link rel="stylesheet" href="assets/brand.css">
+<style>
+  /* Boot is real data loading. Each line is a request. The four pieces of the Flux symbol arrive as their data does,
+     the symbol is whole when the nodes are loaded, then it lifts off and becomes the moon. */
+  body[data-view="boot"] { background: var(--void); }
+  .bt-pat { position: fixed; left: 0; bottom: 0; width: 760px; height: 560px; z-index: 2; pointer-events: none; background-image: var(--pattern-hex); background-size: var(--pattern-hex-size);
+    -webkit-mask: radial-gradient(90% 90% at 0% 100%, #000 0, transparent 72%); mask: radial-gradient(90% 90% at 0% 100%, #000 0, transparent 72%); }
+  .bt-brand { position: fixed; left: 48px; top: 36px; z-index: 10; display: flex; align-items: center; gap: 12px; opacity: 0; animation: bt-in 700ms var(--ease-out) 200ms forwards; }
+  .bt-brand .fx-sym { width: 34px; height: 34px; display: block; }
+  .bt-brand .fx-sym svg { width: 100%; height: auto; display: block; }
+  .bt-brand .fx-word { font: 600 24px/1 var(--font-display); letter-spacing: -0.006em; }
+  .bt-brand small { color: var(--text-3); font-size: var(--fs-sm); margin-left: 6px; }
+  @keyframes bt-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .bt-tip { position: fixed; right: 48px; top: 36px; z-index: 10; text-align: right; display: grid; gap: 4px; transition: opacity 600ms var(--ease-out); }
+  .bt-tip small { color: var(--text-3); font-size: var(--fs-xs); }
+  .bt-tip b { font: 600 24px/1 var(--font-display); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .bt-tip i { font-style: normal; color: var(--text-1); }
+  .bt-log { position: fixed; left: 48px; bottom: 64px; z-index: 10; width: 460px; display: grid; gap: 0; transition: opacity 600ms var(--ease-out); }
+  .bt-log .ln { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: center; height: 32px; color: var(--text-4); font-size: var(--fs-md); transition: color var(--dur-base) var(--ease-out); }
+  .bt-log .ln .s { width: 18px; height: 18px; display: grid; place-items: center; }
+  .bt-log .ln .s::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--ink-4); }
+  .bt-log .ln .v { font: 500 12px/1 var(--font-mono); color: var(--text-4); font-variant-numeric: tabular-nums; }
+  .bt-log .ln.run { color: var(--text-1); }
+  .bt-log .ln.run .s::before { width: 14px; height: 14px; background: none; border: 2px solid rgb(134 161 218 / .3); border-top-color: #fff; animation: spin 800ms linear infinite; }
+  .bt-log .ln.run .v { color: var(--text-1); }
+  .bt-log .ln.done { color: var(--text-2); }
+  .bt-log .ln.done .s::before { display: none; }
+  .bt-log .ln.done .s { color: var(--status-ok); }
+  .bt-log .ln.done .v { color: var(--text-3); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .bt-pct { position: fixed; right: 48px; bottom: 56px; z-index: 10; display: flex; align-items: flex-start; gap: 6px; transition: opacity 600ms var(--ease-out); }
+  .bt-pct b { font: 300 132px/.82 var(--font-display); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; text-shadow: 0 0 80px rgb(43 97 209 / .45); }
+  .bt-pct span { font: 300 30px/1 var(--font-display); color: var(--text-3); margin-top: 4px; }
+  .bt-cap { position: fixed; right: 52px; bottom: 28px; z-index: 10; color: var(--text-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; transition: opacity 600ms var(--ease-out); }
+  .bt-line { position: fixed; left: 0; right: 0; bottom: 0; height: 2px; z-index: 10; background: rgb(255 255 255 / .05); }
+  .bt-line i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent-600), var(--accent-400) 70%, #fff); box-shadow: 0 0 14px rgb(43 97 209 / .8); }
+  .bt-hint { position: fixed; left: 50%; bottom: 26px; translate: -50% 0; z-index: 10; color: var(--text-4); font-size: var(--fs-xs); display: flex; gap: 8px; align-items: center; transition: opacity 600ms var(--ease-out); }
+  .bt-tiers { position: fixed; z-index: 10; display: flex; gap: 10px; left: 50%; translate: -50% 0; transition: opacity 500ms var(--ease-out); }
+  .bt-tiers .tc { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px 0 9px; border-radius: 14px; background: rgb(8 10 15 / .7); border: 1px solid var(--line-2); font: 500 12px/1 var(--font-mono); color: var(--text-2); font-variant-numeric: tabular-nums; opacity: .4; transition: opacity 300ms, border-color 300ms; }
+  .bt-tiers .tc.on { opacity: 1; border-color: var(--tier-line); background: var(--tier-soft); color: var(--text-1); }
+  .bt-tiers .tc svg { color: var(--tier); }
+  .bt-scrim { display: none; position: fixed; left: 0; right: 0; bottom: 0; height: 52%; z-index: 1; pointer-events: none; background: linear-gradient(to top, rgb(0 0 0 / .96) 0, rgb(0 0 0 / .92) 40%, transparent 100%); transition: opacity 600ms var(--ease-out); }
+  body.is-late .bt-scrim { opacity: 0; }
+  .bt-whole { position: fixed; z-index: 9; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+  body.is-late .bt-log, body.is-late .bt-pct, body.is-late .bt-cap, body.is-late .bt-hint, body.is-late .bt-tip, body.is-late .bt-tiers { opacity: 0; }
+  @media (max-width: 820px) {
+    .bt-brand { left: 24px; top: 26px; } .bt-brand small { display: none; }
+    .bt-tip { right: 24px; top: 28px; } .bt-tip b { font-size: 18px; }
+    .bt-log { left: 24px; right: 24px; width: auto; bottom: 120px; } .bt-log .ln:nth-child(n+6) { display: none; }
+    .bt-log .ln { gap: 10px; font-size: 14px; white-space: nowrap; } .bt-log .ln .v { font-size: 11px; }
+    .bt-scrim { display: block; }
+    .bt-pct { right: 24px; bottom: 32px; } .bt-pct b { font-size: 84px; } .bt-cap { right: 26px; bottom: 16px; } .bt-hint { display: none; }
+    .bt-pat { width: 100%; height: 420px; }
+  }
+</style>
+</head>
+<body data-view="boot" data-mode="live">
+
+<canvas id="globe" aria-label="The Flux network, lighting up as data loads. The Flux symbol assembles, then becomes the moon."></canvas>
+<div class="vignette"></div>
+<div class="bt-pat" aria-hidden="true"></div>
+<div class="bt-scrim" aria-hidden="true"></div>
+
+<div class="bt-brand"><span class="fx-sym" data-brand="round" data-s="34" data-title="Flux"></span><b class="fx-word">Atlas</b><small>Live map of the Flux network</small></div>
+<div class="bt-tip"><small>Chain tip</small><b id="tip">2,996,929</b><small>next block in <i id="nx">18</i> s</small></div>
+
+<div class="bt-tiers" id="tiers" aria-hidden="true">
+  <span class="tc" data-tier="cumulus"><span data-tier-meter="cumulus" data-s="14"></span><span id="t0">0</span></span>
+  <span class="tc" data-tier="nimbus"><span data-tier-meter="nimbus" data-s="14"></span><span id="t1">0</span></span>
+  <span class="tc" data-tier="stratus"><span data-tier-meter="stratus" data-s="14"></span><span id="t2">0</span></span>
+</div>
+
+<div class="bt-log" id="log" aria-live="polite"></div>
+
+<div class="bt-pct" aria-hidden="true"><b id="pct">0</b><span>%</span></div>
+<div class="bt-cap" id="cap">Starting</div>
+<div class="bt-line"><i id="bar"></i></div>
+<div class="bt-hint"><span class="kbd">esc</span>skip the boot</div>
+<div class="grain"></div>
+
+<script src="assets/brand.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/land.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/globe.js"></script>
+<script src="assets/moon.js"></script>
+<script>
+(function () {
+  'use strict';
+  var D = window.ATLAS_DATA, I = window.atlasIcon, qs = new URLSearchParams(location.search);
+  var fixed = qs.get('p') != null ? parseFloat(qs.get('p')) : null, auto = qs.get('autoplay') === '1';
+  var $ = function (s) { return document.querySelector(s); };
+  var f0 = function (n) { return Math.round(n).toLocaleString('en-US'); };
+  var W = window.innerWidth, H = window.innerHeight, phone = W < 820;
+  var globe = new window.AtlasGlobe($('#globe'), D, { dprCap: 2, moonScale: phone ? 0.86 : 1 });
+  globe.setLayers({ aim: false, labels: false, mesh: 'off', graticule: true });
+  var reduced = globe.reduced;
+  /* the wave starts at the hero node, Helsinki, and expands over the world */
+  var origin = D.hero.idx;
+  var easeInOut = function (t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+  var clamp = function (x, a, b) { return x < a ? a : (x > b ? b : x); };
+
+  /* each step is a real request in the app: name, what it reports, share of the bar */
+  var TC = [3378, 1582, 1764];
+  var steps = [
+    { n: 'Connect to Atlas', d: 0.06, v: function (u) { return u < 1 ? 'opening' : 'WebSocket open, 41 ms'; } },
+    { n: 'Sync the chain tip', d: 0.08, v: function (u) { return u < 1 ? 'asking' : 'block 2,996,929'; } },
+    { n: 'Load nodes', d: 0.30, v: function (u) { return f0(6724 * u) + ' of 6,724'; } },
+    { n: 'Place hosts and sites', d: 0.12, v: function (u) { return u < 1 ? f0(2655 * u) + ' hosts' : '2,655 hosts, 553 sites'; } },
+    { n: 'Read apps', d: 0.10, v: function (u) { return u < 1 ? f0(1882 * u) + ' apps' : '1,882 apps, 8,274 instances'; } },
+    { n: 'Set the sun', d: 0.06, v: function (u) { return u < 1 ? 'reading the clock' : '19:46 UTC, terminator set'; } },
+    { n: 'Open the live stream', d: 0.28, v: function (u) { return u < 1 ? 'subscribing' : 'next block in 18 s'; } }
+  ];
+  var log = $('#log');
+  log.innerHTML = steps.map(function (s, i) { return '<div class="ln" data-i="' + i + '"><span class="s"></span><span class="n">' + s.n + '</span><span class="v"></span></div>'; }).join('');
+  var lines = Array.prototype.slice.call(log.children);
+  var cum = 0; steps.forEach(function (s) { s.a = cum; cum += s.d; s.b = cum; });
+  var check = I('check', { size: 16, sw: 2.4 });
+  window.atlasHydrate && window.atlasHydrate();
+
+  /* the free area the moon will live in once the shell is up: where boot hands off to */
+  var SHELL = phone ? { left: 0, right: 0, top: 120, bottom: 380 } : { left: 80, right: 444, top: 40, bottom: 128 };
+  var START = phone ? { left: 0, right: 0, top: 60, bottom: 300 } : { left: 420, right: 0, top: 20, bottom: 60 };
+  var lerp = function (a, b, t) { return a + (b - a) * t; };
+  var SIZE = phone ? 150 : 250;
+
+  function stageProgress(p) {
+    var st = steps[1], nodes = steps[2], stream = steps[6];
+    var spark = clamp((p - st.a) / (st.b - st.a), 0, 1);
+    var nu = clamp((p - nodes.a) / (nodes.b - nodes.a), 0, 1);
+    var small = clamp(nu * 3, 0, 1), big = clamp(nu * 3 - 1, 0, 1), cap = clamp(nu * 3 - 2, 0, 1);
+    var lift = clamp((p - stream.a) / (stream.b - stream.a) / 0.7, 0, 1);
+    return { pieces: [spark, cap, big, small], nu: nu, lift: lift };
+  }
+
+  function render(p) {
+    p = clamp(p, 0, 1);
+    lines.forEach(function (el, i) {
+      var s = steps[i], u = clamp((p - s.a) / (s.b - s.a), 0, 1), state = u >= 1 ? 'done' : (u > 0 ? 'run' : '');
+      if (el.className !== 'ln ' + state) { el.className = 'ln ' + state; el.querySelector('.s').innerHTML = state === 'done' ? check : ''; }
+      el.querySelector('.v').textContent = u > 0 ? s.v(u) : '';
+    });
+    $('#pct').textContent = Math.floor(p * 100);
+    $('#bar').style.width = (p * 100) + '%';
+    var cur = lines.filter(function (l) { return l.classList.contains('run'); })[0];
+    $('#cap').textContent = p >= 1 ? 'Ready' : (cur ? steps[+cur.dataset.i].n : 'Starting');
+    var sp = stageProgress(p), L = sp.lift, e = easeInOut(L);
+    /* the wave: angular radius grows with progress; the camera drifts in */
+    var th = Math.PI * 1.06 * Math.pow(p, 1.5);
+    globe.setReveal(p >= 1 ? null : origin, th);
+    var ie = easeInOut(clamp((p - steps[6].a) / (steps[6].b - steps[6].a), 0, 1));
+    globe.inset = { left: lerp(START.left, SHELL.left, ie), right: lerp(START.right, SHELL.right, ie), top: lerp(START.top, SHELL.top, ie), bottom: lerp(START.bottom, SHELL.bottom, ie) }; globe.insetT = null;
+    globe.pose.lat = 40; globe.pose.lon = lerp(-36 + 14 * p, -14, ie); globe.pose.size = lerp(70 + 26 * Math.min(p, 0.7), 96, ie); globe.pose.roll = -14;
+    /* the symbol, drawn by the same renderer as the moon */
+    var cx = START.left + (W - START.left - START.right) / 2, cy = phone ? H * 0.36 : START.top + (H - START.top - START.bottom) / 2;
+    var whole = Math.max.apply(null, sp.pieces) >= 1 && sp.pieces[1] >= 1;
+    var flashU = clamp((p - (steps[2].b)) / 0.035, 0, 1), white = whole && L <= 0 ? Math.sin(Math.PI * Math.min(1, flashU)) * (flashU < 1 ? 1 : 0) : 0;
+    var breathe = whole && L <= 0 ? 1 + 0.012 * Math.sin(p * 90) : 1;
+    var lift = reduced ? (L > 0.5 ? 1 : 0) : L;
+    globe.setMoonBoot(p >= 1 && !fixed ? null : { pieces: sp.pieces, lift: lift, cx: cx, cy: cy, size: SIZE * breathe, white: white, flat: reduced ? (lift >= 1 ? 0 : 1) : undefined, glow: 0.3 + 0.7 * e, alpha: 1 });
+    if (p >= 1 && fixed == null) globe.setMoonBoot(null);
+    /* ring of tier counts while the nodes load */
+    var tc = $('#tiers'); tc.style.top = (cy + SIZE * 0.66) + 'px';
+    [0, 1, 2].forEach(function (k) { var u = clamp(sp.nu * 3 - k, 0, 1); $('#t' + k).textContent = f0(TC[k] * u); tc.children[k].classList.toggle('on', u >= 1); });
+    document.body.classList.toggle('is-late', L > 0.15);
+    var nx = Math.max(0, Math.round(18 - p * 4)); $('#nx').textContent = nx;
+    globe.setBeat(0.4 + p * 0.1);
+  }
+
+  if (fixed != null) { globe.paused = true; render(fixed); }
+  else {
+    var t0 = performance.now(), total = auto ? 6200 : 8200;
+    (function loop(now) {
+      var u = Math.min(1, (now - t0) / total);
+      render(u < 1 ? 0.03 + 0.97 * u : 1);
+      if (u < 1) requestAnimationFrame(loop);
+      else { globe.setMoonBoot(null); if (auto) setTimeout(function () { location.href = 'shell.html?from=boot'; }, 1000); }
+    })(t0);
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') location.href = 'shell.html?from=boot'; });
+  window.atlasBoot = { render: render, globe: globe };
+})();
+</script>
+</body>
+</html>

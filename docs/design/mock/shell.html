@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" data-perf="balanced">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flux Atlas, desktop shell</title>
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="assets/brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="manifest" href="assets/brand/manifest.webmanifest">
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="assets/atlas.css">
+<link rel="stylesheet" href="assets/views.css">
+<link rel="stylesheet" href="assets/brand.css">
+</head>
+<body data-view="node" data-mode="live">
+
+<canvas id="globe" aria-label="Live globe of all Flux nodes. Drag to rotate, scroll to zoom."></canvas>
+<div class="vignette"></div>
+<div class="archive-fx"></div>
+<svg id="hud" aria-hidden="true"><g id="tether"></g></svg>
+
+<!-- top bar -->
+<header class="topbar glass" role="banner">
+  <button class="brand" aria-label="Flux Atlas, home"><span class="fx-sym" data-brand="round" data-s="26"></span><b class="fx-word">Atlas</b></button>
+  <nav class="menus" aria-label="Menus"><button>View</button><button>Go</button><button>Window</button></nav>
+  <button class="omni" id="omni" aria-label="Search, press Control K"><span data-i="search" data-s="16"></span><span class="ph">Search nodes, apps, blocks<span class="ph-more">, addresses</span></span><span class="kbd">ctrl</span><span class="kbd">K</span></button>
+  <div class="topright">
+    <div class="beat" id="beat" title="The chain's 30 second pulse" style="--beat:.4">
+      <div class="beat-wrap"><div class="beat-ring"></div><span class="core"></span></div>
+      <div class="beat-txt"><b id="tip">2,996,929</b><small>next in <i id="cd">18</i> s</small></div>
+    </div>
+    <div class="livechip" id="live"><i class="dot dot--live"></i>Live<span class="ms" id="ms">41 ms</span></div>
+    <span class="clock" id="clock">19:46:46 UTC</span>
+    <span class="sep"></span>
+    <button class="iconbtn" aria-label="Layers"><span data-i="layers" data-s="19"></span></button>
+    <button class="iconbtn" aria-label="Ambient mode" id="btn-ambient"><span data-i="orbit" data-s="19"></span></button>
+    <button class="opchip" aria-label="Operator view"><span data-i="user-round-check" data-s="15"></span>t1cz5P&hellip;Dg9</button>
+  </div>
+</header>
+
+<!-- launcher dock -->
+<nav class="dock glass" aria-label="Launcher">
+  <button class="dk is-focus" data-label="Globe  G" data-open="globe" style="--dk-accent:var(--accent-500)"><span data-i="globe" data-s="21"></span></button>
+  <button class="dk" data-label="Nodes  N" data-open="node" style="--dk-accent:var(--tier-stratus)"><span data-i="server" data-s="21"></span></button>
+  <button class="dk" data-label="Apps  A" data-open="app" style="--dk-accent:var(--accent-app)"><span data-i="boxes" data-s="21"></span></button>
+  <button class="dk" data-label="Explorer  E" data-open="tx" style="--dk-accent:var(--accent-chain)"><span data-i="blocks" data-s="21"></span></button>
+  <button class="dk" data-label="Payment queue  Q" data-open="queue" style="--dk-accent:var(--accent-pulse)"><span data-i="coins" data-s="21"></span></button>
+  <button class="dk" data-label="Analytics  S" data-open="analytics" style="--dk-accent:var(--accent-analytics)"><span data-i="chart-no-axes-combined" data-s="21"></span></button>
+  <button class="dk" data-label="Time machine  T" data-open="time" style="--dk-accent:var(--accent-time)"><span data-i="history" data-s="21"></span></button>
+  <button class="dk" data-label="Operator  O" data-open="operator" style="--dk-accent:var(--accent-operator)"><span data-i="user-round-check" data-s="21"></span></button>
+  <button class="dk" data-label="Terminal  `" data-open="terminal" style="--dk-accent:var(--accent-terminal)"><span data-i="square-terminal" data-s="21"></span></button>
+  <hr>
+  <button class="dk" data-label="Weather layer  W" data-open="weather" style="--dk-accent:var(--status-warn)"><span data-i="cloud-rain" data-s="21"></span></button>
+  <button class="dk" data-label="Ambient mode  Shift A" data-open="ambient" style="--dk-accent:var(--hot)"><span data-i="orbit" data-s="21"></span></button>
+  <button class="dk" data-label="Settings" style="--dk-accent:var(--text-2)"><span data-i="sliders-horizontal" data-s="21"></span></button>
+  <button class="dk" data-label="About Flux  M" data-open="about" style="--dk-accent:var(--accent-400)"><span data-brand="mark" data-s="19" data-variant="white"></span></button>
+</nav>
+
+<!-- next payout: known one block ahead -->
+<div class="aimstrip glass" id="aimstrip" aria-live="polite">
+  <span class="lead">Next payout in <b id="aim-cd">18 s</b></span>
+  <span class="aimchip is-mine" data-tier="stratus">
+    <span data-tier-meter="stratus" data-s="13"></span>Helsinki <i>9.0</i></span>
+  <span class="aimchip" data-tier="nimbus"><span data-tier-meter="nimbus" data-s="13"></span>Raleigh <i>3.5</i></span>
+  <span class="aimchip" data-tier="cumulus"><span data-tier-meter="cumulus" data-s="13"></span>Taganrog <i>1.0</i></span>
+</div>
+
+<!-- pulse: the live activity feed -->
+<section class="pulse glass" id="pulse" aria-label="Live activity">
+  <div class="pulse-head"><i class="dot dot--live"></i><b>Pulse</b>
+    <div class="filters" role="tablist"><button class="on">All</button><button>Blocks</button><button>Nodes</button><button>Apps</button><button>Mine</button></div></div>
+  <ul class="pulse-list" id="pulse-list" aria-live="polite"></ul>
+</section>
+
+<!-- block rail and time machine strip -->
+<section class="railwrap" id="railwrap" aria-label="Blocks">
+  <div class="timeline" id="timeline">
+    <div class="tl-label"><span data-i="history" data-s="13"></span>Time machine <span class="kbd">T</span></div>
+    <div class="tl-track"><span class="tl-now"></span></div>
+    <span class="tl-live">Live</span>
+  </div>
+  <div class="rail">
+    <div class="rail-track" id="rail-track"></div>
+  </div>
+</section>
+
+<!-- status bar -->
+<footer class="statusbar glass" id="statusbar">
+  <div class="grp">
+    <span class="conn"><i class="dot dot--live"></i><b>Live</b> WebSocket, <b id="ms2">41 ms</b></span>
+    <span class="fresh" data-fresh-age="4">tip 2 s</span>
+    <span class="fresh" id="f-nodes">nodes 4 s</span>
+    <span class="fresh" id="f-apps">apps 41 s</span>
+    <span class="fresh aging" id="f-stats">stats 7 min</span>
+    <span class="fresh aging" id="f-mesh">mesh 12 min</span>
+  </div>
+  <div class="grp r">
+    <span class="cut">Reward cut in <b id="cut">25d 18h</b></span>
+    <span><b>6,724</b> nodes &middot; <b>2,655</b> hosts &middot; <b>1,882</b> apps</span>
+    <span>FLUX <b>$0.0746</b> <span class="up">+1.95%</span></span>
+    <span class="dim">mock v0.1</span>
+  </div>
+</footer>
+
+<button class="moon-hit" id="moon-hit" aria-label="About Flux, live network totals" aria-haspopup="dialog"></button>
+<div class="windows" id="windows"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<!-- command palette -->
+<div class="palette-layer" id="palette-layer" hidden>
+  <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="pal-in"><span data-i="search" data-s="20"></span><input id="pal-input" placeholder="Search nodes, apps, blocks, addresses, or type a command" autocomplete="off" spellcheck="false" value="65.109"><span class="kbd">esc</span></div>
+    <div class="pal-kinds"><button class="on">All</button><button>Nodes</button><button>Apps</button><button>Blocks</button><button>Addresses</button><button>Go to</button></div>
+    <div class="pal-list" id="pal-list" role="listbox"></div>
+    <div class="pal-foot"><span><span class="kbd">&uarr;</span><span class="kbd">&darr;</span>move</span><span><span class="kbd">enter</span>open</span><span><span class="kbd">tab</span>filter by kind</span><span class="r dim">Understands heights, hashes, txids, addresses, IPs, apps</span></div>
+  </div>
+</div>
+
+<!-- ambient overlay -->
+<div class="ambient" id="ambient" aria-hidden="true">
+  <div class="amb-mark"><span class="fx-sym" data-brand="round" data-s="24"></span><b class="fx-word">Atlas</b></div>
+  <div class="amb-hint">Move the mouse to wake</div>
+  <div class="amb-clock"><div class="t" id="amb-t">19:46</div><div class="d">Wednesday, 30 September</div><div class="bk" id="amb-blk">Block 2,996,929 &middot; 12 s ago</div></div>
+  <div class="amb-cap"><div class="l1" id="amb-l1">Helsinki is next in line to be paid</div><div class="l2" id="amb-l2">Stratus, 9.00 FLUX, in 18 s</div></div>
+  <div class="amb-tick" id="amb-tick"></div>
+</div>
+
+<div class="grain"></div>
+
+<script src="assets/brand.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/land.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/globe.js"></script>
+<script src="assets/moon.js"></script>
+<script src="assets/views.js"></script>
+<script src="assets/shell.js"></script>
+</body>
+</html>

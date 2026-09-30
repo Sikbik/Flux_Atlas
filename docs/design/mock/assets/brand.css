@@ -1,0 +1,100 @@
+/* Flux Atlas design mock: the Flux brand layer. Loaded after atlas.css, views.css, phone.css.
+   1 type roles (Montserrat leads, Open Sans carries text, Lora is the accent, Plex Mono is data)
+   2 logo lockups and clear space
+   3 the moon: hit target, tooltip, focus
+   4 About Flux window
+   5 brand sheet primitives
+   Every value comes from ../../tokens.css. */
+
+/* ---------- 1. type roles ---------- */
+.win-bar .ttl b:not(.mono), .pulse-head b, .sec > h3, .flowbox h4, .card h4, .state b, .toast b, .aimstrip .lead b, .blk.ghost .cdwn,
+.tile .v, .paytile .big b, .blk .r1 b, .beat-txt b, .wheel text.t1, .ab-tip .v, .ab-ring b, .pal-group { font-family: var(--font-display); }
+.btn, .win-tabs button, .menus button, .pal-kinds button, .pulse-head .filters button { font-family: var(--font-display); letter-spacing: 0; }
+.btn { font-weight: 600; font-size: 12px; }
+.btn--sm { font-size: 11.5px; }
+.win-tabs button { font-weight: 600; font-size: 12.5px; }
+.menus button { font-weight: 500; font-size: 12.5px; }
+.pal-kinds button, .pulse-head .filters button { font-weight: 500; }
+.tile .k, .cap, .kv dt, .evt, .toast p { font-family: var(--font-sans); }
+.tile .v, .paytile .big b, .blk .r1 b, .beat-txt b, .aimstrip .lead b { font-variant-numeric: tabular-nums; } /* Montserrat is proportional by default */
+.pal-group { font-weight: 600; font-size: 11.5px; letter-spacing: 0; }
+.ps .b { background: var(--accent-600); }
+em.lora, .lora { font-family: var(--font-accent); font-style: italic; font-weight: 400; }
+
+/* ---------- 2. logo lockups ---------- */
+/* L1, the chrome lockup: round symbol + "Atlas". Gap = x (0.2174 x symbol), clear space >= x on every side. */
+.brand .fx-sym { display: block; flex: none; width: var(--logo-chrome); height: var(--logo-chrome); }
+.brand .fx-sym svg { display: block; width: 100%; height: auto; }
+.brand .fx-word { font: var(--logo-word) var(--logo-word-size)/1 var(--font-display); letter-spacing: -0.006em; color: var(--text-1); }
+.fx-lockup { display: inline-flex; align-items: center; gap: calc(var(--logo-chrome) * var(--logo-x) * 1.5); }
+.fx-lockup .fx-word { font: var(--logo-word) 18px/1 var(--font-display); color: var(--text-1); }
+.fx-brand svg { display: block; overflow: visible; }
+/* brand marks in tinted chrome use brand greys only: rest = Flux Gray, active = white */
+.dock .dk .fx-brand path { fill: var(--flux-gray-mark); transition: fill var(--dur-fast); }
+.dock .dk:hover .fx-brand path, .dock .dk.is-open .fx-brand path, .dock .dk.is-focus .fx-brand path { fill: #ffffff; }
+.dk .fx-brand { display: block; }
+.pal-row .ic .fx-brand path { fill: #ffffff; }
+
+/* ---------- 3. the moon ---------- */
+.moon-hit {
+  position: fixed; z-index: calc(var(--z-globe-hud) + 1); left: 0; top: 0; width: 56px; height: 56px; border-radius: 50%;
+  background: transparent; pointer-events: none; outline: 0; translate: -50% -50%;
+}
+.moon-hit:focus-visible { box-shadow: 0 0 0 2px var(--ink-0), 0 0 0 4px var(--accent-400), 0 0 24px 4px rgb(43 97 209 / .55); }
+.tip.moon-tip { min-width: 224px; gap: 6px; padding: 10px 13px 11px; border-radius: 14px; }
+.tip.moon-tip .tt { display: flex; align-items: center; gap: 8px; font: 600 13px/1 var(--font-display); color: var(--text-1); }
+.tip.moon-tip .row { color: var(--text-2); }
+.tip.moon-tip .row .mono { color: var(--text-1); font-size: 12px; }
+.tip.moon-tip .hint { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: 11px; padding-top: 6px; border-top: 1px solid var(--line-1); }
+body[data-view="about"] .aimstrip { opacity: .0; pointer-events: none; }
+
+/* ---------- 4. About Flux ---------- */
+.ab-hero { position: relative; padding: 26px 24px 22px; overflow: hidden; border-bottom: 1px solid rgb(0 0 0 / .5);
+  background: radial-gradient(110% 150% at 100% 0%, rgb(134 161 218 / .42), transparent 62%), linear-gradient(162deg, var(--flux-blue) 0%, var(--accent-700) 135%); }
+.ab-pat { position: absolute; inset: 0; background-image: var(--pattern-hex-solid); background-size: var(--pattern-hex-size); background-position: 12px 8px;
+  -webkit-mask: radial-gradient(85% 140% at 100% 0%, #000 0, transparent 74%); mask: radial-gradient(85% 140% at 100% 0%, #000 0, transparent 74%); }
+.ab-logo { position: relative; line-height: 0; }
+.ab-kick { position: relative; margin: 16px 0 0; max-width: 330px; color: #fff; opacity: .94; font: 400 13.5px/1.5 var(--font-sans); }
+.ab-chain { display: flex; gap: 16px; align-items: center; }
+.ab-ring { position: relative; width: 64px; height: 64px; flex: none; display: grid; place-items: center; align-content: center; }
+.ab-ring svg { position: absolute; inset: 2px; width: 60px; height: 60px; transform: rotate(-90deg); overflow: visible; }
+.ab-ring .trk { fill: none; stroke: rgb(255 255 255 / .09); stroke-width: 3; }
+.ab-ring .prg { fill: none; stroke: var(--accent-400); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 157; stroke-dashoffset: calc(157 * (1 - var(--beat, 0))); filter: drop-shadow(0 0 5px rgb(79 122 212 / .8)); transition: stroke-dashoffset 250ms linear; }
+.ab-ring b { font-size: 18px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.ab-ring small { color: var(--text-3); font-size: 10px; line-height: 1; margin-top: 2px; }
+.ab-tip .k { color: var(--text-3); font-size: var(--fs-xs); }
+.ab-tip .v { font-size: 32px; font-weight: 600; line-height: 1.05; letter-spacing: var(--tracking-display); font-variant-numeric: tabular-nums; }
+.ab-tip .d { margin-top: 4px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.4; }
+.ab-tip .d .mono { color: var(--text-2); }
+.ab-bars { display: grid; gap: 7px; margin-top: 12px; }
+.ab-bar { display: grid; grid-template-columns: 96px 1fr 44px; gap: 10px; align-items: center; font-size: var(--fs-xs); color: var(--text-2); }
+.ab-bar .nm { display: inline-flex; align-items: center; gap: 7px; }
+.ab-bar .nm svg { color: var(--tier); }
+.ab-bar .tr { height: 6px; border-radius: 6px; background: var(--ink-3); overflow: hidden; }
+.ab-bar .tr i { display: block; height: 100%; border-radius: 6px; background: var(--tier-ink); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06); }
+.ab-bar .mono { text-align: right; font-size: 11.5px; }
+.ab-anat { display: grid; grid-template-columns: 124px 1fr; gap: 18px; align-items: center; }
+.ab-anat .sym { display: grid; place-items: center; height: 146px; border-radius: var(--r-lg); background: radial-gradient(70% 70% at 50% 45%, rgb(43 97 209 / .30), transparent 70%), var(--ink-1); border: 1px solid var(--line-1); }
+.ab-anat .sym svg { filter: drop-shadow(0 0 14px rgb(43 97 209 / .7)); }
+.ab-anat .legs { display: grid; gap: 6px; }
+.ab-leg { display: grid; grid-template-columns: 30px 1fr 16px auto; gap: 9px; align-items: center; height: 38px; padding: 0 10px 0 6px; border-radius: 10px; background: var(--ink-1); border: 1px solid var(--line-1); }
+.ab-leg .pc { display: grid; place-items: center; width: 30px; }
+.ab-leg .lb { display: grid; line-height: 1.15; min-width: 0; }
+.ab-leg .lb b { font: 600 12.5px/1.15 var(--font-display); }
+.ab-leg .lb small { color: var(--text-3); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ab-leg .tm { display: grid; place-items: center; }
+.ab-leg .am { font-size: 11.5px; color: var(--text-1); text-align: right; }
+.ab-quote { padding-top: 18px; }
+.ab-quote blockquote { margin: 0; padding: 0 0 0 16px; position: relative; font: italic 400 17px/1.5 var(--font-accent); color: var(--text-1); }
+.ab-quote blockquote::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 3px; background: var(--accent-600); }
+.ab-quote cite { display: block; margin: 10px 0 0 16px; font: 500 11.5px/1 var(--font-display); color: var(--text-3); font-style: normal; }
+.ab-foot .cap { margin: 12px 0 0; }
+
+/* ---------- 5. brand sheet primitives ---------- */
+.bs-sw { display: grid; gap: 4px; align-content: start; }
+.bs-sw i { display: block; height: 56px; border-radius: 10px; border: 1px solid var(--line-2); }
+.bs-sw b { font: 600 12px/1.2 var(--font-display); }
+.bs-sw span { font: 500 11px/1.2 var(--font-mono); color: var(--text-3); }
+
+/* ---------- reduced motion: the moon is parked, nothing orbits ---------- */
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .dock .dk:hover { transform: none; } }

@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en" data-perf="high">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#000000">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flux Atlas, component sheet</title>
+<link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="assets/brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="manifest" href="assets/brand/manifest.webmanifest">
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="assets/atlas.css">
+<link rel="stylesheet" href="assets/views.css">
+<link rel="stylesheet" href="assets/components.css">
+<link rel="stylesheet" href="assets/brand.css">
+</head>
+<body class="cs">
+
+<header class="cs-head">
+  <div class="cs-logo"><span data-brand="logo" data-s="46" data-variant="dark" data-word="atlas" data-title="Flux Atlas"></span></div>
+  <h1>Component sheet</h1>
+  <p>Every component with every state, drawn from the tokens. Forced-state classes exist only on this page so hover, active and focus can sit side by side. Numbers are real fixture values from 2026-09-30 unless marked illustrative.</p>
+</header>
+<nav class="cs-nav" aria-label="Sections">
+  <a href="#brand">Brand</a><a href="#surfaces">Surfaces</a><a href="#type">Type</a><a href="#controls">Controls</a><a href="#badges">Badges and status</a><a href="#moon">The moon</a><a href="#tiles">Tiles and numbers</a><a href="#live">Live lists</a><a href="#blocks">Block rail</a><a href="#windows">Windows and dock</a><a href="#overlays">Overlays</a><a href="#data">Data</a><a href="#states">Empty, loading, error</a><a href="brand-sheet.html" class="out">Brand sheet</a>
+</nav>
+
+<!-- ============ brand ============ -->
+<section class="cs-sec" id="brand">
+  <h2>Brand: the Flux symbol and Atlas</h2>
+  <p class="lead">Atlas wears the Flux brand. Blue Wave #2B61D1 is the one accent, Montserrat and Open Sans carry the words, and the symbol appears only in white, black, Blue Wave and the book's grays. The full rules, clear space and misuse are on the <a class="lnk" href="brand-sheet.html">brand sheet</a>.</p>
+  <div class="cs-grid cs-g3">
+    <figure class="f"><div class="stage chrome-strip"><div class="brand" style="cursor:default"><span class="fx-sym" data-brand="round" data-s="26"></span><b class="fx-word">Atlas</b></div><span class="cap" style="margin-left:auto">top bar, 52 px</span></div><figcaption><b>L1, the chrome lockup</b>. Round symbol 26 px, a gap of 9 px (1.6 x, never under x = 0.2174 of the symbol), then Atlas in Montserrat SemiBold 18 px. Clear space at least x on every side.</figcaption></figure>
+    <figure class="f"><div class="stage bluewave"><span data-brand="logo" data-s="62" data-variant="onblue" data-word="atlas" data-title="Flux Atlas"></span></div><figcaption><b>L2, the full lockup</b> on Blue Wave. The official logo, untouched, with the sub-brand word top right in Montserrat SemiBold as the Foundation lockup does. About Flux, boot and the brand sheet use it.</figcaption></figure>
+    <figure class="f"><div class="stage" id="variants" style="gap:14px;align-items:flex-end"></div><figcaption><b>The symbol, allowed colours</b>: white, Blue Wave, black, graphite, the book's gray, and the two tonal versions the moon wears. Tier and status colours never touch it.</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g3" style="margin-top:16px">
+    <figure class="f" style="grid-column: span 2"><div class="stage col" style="gap:10px"><div class="bs-row bs-7" id="swBrand"></div></div><figcaption><b>Brand anchors</b>. Blue Wave with its two book shades, Flux Black, Graphite, Flux Gray and white.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="ramp" id="swRamp"></div><div class="cap">accent-950 to accent-50, hue held, 600 is Blue Wave</div></div><figcaption><b>Interaction ramp</b>, derived from Blue Wave. 400 is the text accent, 600 fills buttons (white on it is 5.6:1).</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g2" style="margin-top:16px">
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="bs-row bs-4" id="swTier"></div></div><figcaption><b>Tier colours</b> appear only where a payout arrives or a node is named. They never touch the logo or the moon.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="bs-row bs-4" id="swStatus"></div></div><figcaption><b>Status</b> colours carry state with an icon and a word, and are never reused as a series colour.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ surfaces ============ -->
+<section class="cs-sec" id="surfaces">
+  <h2>Surfaces and materials</h2>
+  <p class="lead">Depth comes from one light source at the top left. Windows are opaque slabs because the globe repaints every frame behind them; only small chrome uses glass.</p>
+  <div class="cs-grid cs-g4">
+    <figure class="f"><div class="stage" style="padding:12px"><div class="sw" style="background:var(--void)">void #000000</div></div><figcaption><b>Void</b> is Flux Black, true black, behind the globe and in the letterbox. Every surface lifts from it toward Graphite with a Blue Wave cast.</figcaption></figure>
+    <figure class="f"><div class="stage" style="padding:12px;background:var(--void)"><div class="sw" style="background:var(--slab-spill),var(--slab-bg);border-color:rgb(255 255 255 / .25)">slab ink-0 at 94%</div></div><figcaption><b>Slab</b> window body. Rim is hot along the top, quiet elsewhere. No backdrop blur.</figcaption></figure>
+    <figure class="f"><div class="stage" style="padding:12px;background:var(--void)"><div class="sw" style="background:var(--ink-1)">raised ink-1</div></div><figcaption><b>Raised</b> tiles and cards inside a slab. One step up, one hairline.</figcaption></figure>
+    <figure class="f"><div class="stage globe" style="padding:12px"><div class="sw glass" style="border-radius:12px">glass 58% + 22px blur</div></div><figcaption><b>Glass</b> top bar, dock, aim strip, status bar, tooltips. Small areas only.</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g4" style="margin-top:16px">
+    <figure class="f"><div class="stage"><div class="shape" style="clip-path:var(--clip-chamfer-sm)">chamfer sm, 8 px</div></div><figcaption><b>Chamfer</b> for the payment tile, primary button, achievement toast. The cut follows the hexagon edge.</figcaption></figure>
+    <figure class="f"><div class="stage"><div class="shape" style="clip-path:var(--clip-chamfer-md)">chamfer md, 14 px</div></div><figcaption>Cut at the symbol's own hexagon angle, 30 degrees. Window top-right corner uses md, applied with a mask plus a drop-shadow wrapper.</figcaption></figure>
+    <figure class="f"><div class="stage"><div class="shape" style="clip-path:var(--clip-chamfer-dual-sm)">dual, top right and bottom left</div></div><figcaption>The Flux dual-concave cut, used sparingly: one per view.</figcaption></figure>
+    <figure class="f"><div class="stage" style="position:relative;height:108px"><div class="grain" style="position:absolute;inset:0;border-radius:14px;opacity:.5"></div><div style="position:relative;color:var(--text-2);font:500 11px/1.4 var(--font-mono)">grain, 3.5% soft-light<br>over the stage only</div></div><figcaption><b>Grain</b> kills banding in the dark gradients. Off in the lite tier.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ type ============ -->
+<section class="cs-sec" id="type">
+  <h2>Typography</h2>
+  <p class="lead">The brand book pairs Montserrat with Open Sans and keeps Lora for accents. Montserrat carries titles, display numerals, buttons and tier names. Open Sans carries text. Lora appears once per view as an editorial line. IBM Plex Mono carries data. Live numbers use tabular figures so columns never jitter. Sentence case everywhere.</p>
+  <div class="cs-grid cs-g3">
+    <figure class="f"><div class="stage col" style="gap:12px;font-family:var(--font-display)">
+      <div style="font-size:80px;font-weight:300;letter-spacing:-0.03em;line-height:.92;font-variant-numeric:tabular-nums">2,996,929</div>
+      <div style="font-size:32px;font-weight:600;letter-spacing:-0.02em;line-height:1.1">Stratus, 9.00 FLUX</div>
+      <div style="font-size:20px;font-weight:600;letter-spacing:-0.012em">Payment queue</div>
+      <div style="font-size:13px;font-weight:600;letter-spacing:.08em">NEXT BLOCK</div>
+    </div><figcaption><b>Montserrat</b> 300 for display numerals, 600 for titles, buttons and badges. Tracking -0.03em at display size, -0.012em at headings, +0.08em on the one caps badge style.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:12px;font-family:var(--font-sans)">
+      <div style="font-size:17px;font-weight:600">Helsinki, Uusimaa, Finland</div>
+      <div style="font-size:15px;line-height:1.55;max-width:38ch">Next in line to be paid. Rank 0 is paid in the next block, and the queue is known one block ahead.</div>
+      <div style="font-size:13px;color:var(--text-2)">Hetzner Online GmbH, AS24940</div>
+      <div style="font-size:12px;color:var(--text-3)">Seen 41 s ago, not yet mined</div>
+      <div style="font-size:12px;font-weight:600;color:var(--accent-400)">View operator</div>
+    </div><figcaption><b>Open Sans</b> 400 and 600 at 12, 13, 15 and 17 px for body and interface text. Line length under 70 characters.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:12px">
+      <div class="lora" style="font-size:22px;line-height:1.35">Block 2,996,929 came from Reston.</div>
+      <div class="lora" style="font-size:16px;line-height:1.5;color:var(--text-2)">To build a scalable, decentralized network of computing power for the people, by the people.</div>
+      <div class="mono" style="font-size:13px">65.109.26.93:16147  <span class="dim">Helsinki, Hetzner</span></div>
+      <div class="mono" style="font-size:12px;color:var(--text-2);word-break:break-all">8aa97365b148e2125de355988b4c1be4870edc0e869587f831f8c0d65871beec</div>
+      <div class="mono" style="font-size:11px;color:var(--text-3)">block 2,996,929, 12 s ago, 17 tx, 3.6 KB</div>
+    </div><figcaption><b>Lora italic</b> for one editorial line per view, and <b>IBM Plex Mono</b> for every address, hash, port and timestamp. Scale 11, 12, 13, 15, 17, 20, 26, 34, 46, 64, 92.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ controls ============ -->
+<section class="cs-sec" id="controls">
+  <h2>Buttons, inputs, tabs</h2>
+  <p class="lead">Five button levels. Only one chamfered primary per view. Focus is a two-ring outline that works on every surface.</p>
+  <div class="cs-grid cs-g3">
+    <figure class="f"><div class="stage"><button class="btn btn--primary">Return to live</button><button class="btn btn--primary is-hover">Hover</button><button class="btn btn--primary is-focus">Focus</button><button class="btn btn--primary is-disabled">Disabled</button></div><figcaption><b>Primary</b>, chamfered, 5.6:1 white on Blue Wave.</figcaption></figure>
+    <figure class="f"><div class="stage"><button class="btn">Copy</button><button class="btn is-hover">Hover</button><button class="btn is-active">Active</button><button class="btn is-focus">Focus</button><button class="btn is-disabled">Disabled</button></div><figcaption><b>Secondary</b> on a slab.</figcaption></figure>
+    <figure class="f"><div class="stage"><button class="btn btn--ghost">Add</button><button class="btn btn--sm" data-i-l="locate-fixed">Fly to</button><button class="btn btn--sm btn--pill">Pill</button><button class="btn btn--icon" aria-label="Pin" data-fill="icon:pin"></button><button class="btn btn--danger btn--sm">Stop watching</button></div><figcaption><b>Ghost, small, pill, icon, danger.</b> Destructive actions are never the default.</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g3" style="margin-top:16px">
+    <figure class="f"><div class="stage col"><div class="field"><span data-fill="icon:search"></span><span>Search nodes, apps, blocks</span><span class="kbd" style="margin-left:auto">ctrl</span><span class="kbd">K</span></div><div class="field is-focus"><span data-fill="icon:search"></span><span class="v">65.109</span><span class="kbd">esc</span></div><div class="field is-error"><span data-fill="icon:triangle-alert"></span><span class="v">t1nonsense</span><span class="dim" style="font-size:11.5px">Not an address</span></div><div class="field is-disabled"><span>Read only while offline</span></div></div><figcaption><b>Field</b>: rest, focus, error, disabled. Errors name the problem in the field.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:16px"><div class="seg"><button class="on">All</button><button>Blocks</button><button>Nodes</button><button>Apps</button><button>Mine</button></div><div class="tabs"><button class="on">Overview</button><button>Inputs and outputs</button><button>Raw</button></div><div class="row" style="gap:16px"><span class="switch on"></span><span class="switch"></span><span class="cap">Reveal peers on the globe</span></div></div><figcaption><b>Segmented, tabs, switch.</b> Tabs carry a glowing underline in the window accent.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="kbdrow"><span class="kbd">ctrl</span><span class="kbd">K</span> command palette</div><div class="kbdrow"><span class="kbd">G</span><span class="kbd">H</span> fly to Helsinki</div><div class="kbdrow"><span class="kbd">T</span> time machine</div><div class="kbdrow"><span class="kbd">shift</span><span class="kbd">A</span> ambient mode</div><div class="kbdrow"><span class="kbd">esc</span> close the top layer</div></div><figcaption><b>Key caps</b> show the real shortcut everywhere it is offered.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ badges ============ -->
+<section class="cs-sec" id="badges">
+  <h2>Badges, status, freshness, connection</h2>
+  <p class="lead">Tier colour is reserved for tiers and always paired with the three-capsule glyph. Status colour is reserved for state and always paired with an icon and a word.</p>
+  <div class="cs-grid cs-g3">
+    <figure class="f"><div class="stage" id="tierchips"></div><figcaption><b>Tier chips</b> and the capsule glyph at 12, 16 and 24 px. One, two or three capsules lit: Cumulus, Nimbus, Stratus.</figcaption></figure>
+    <figure class="f"><div class="stage" id="statuschips"></div><figcaption><b>Status</b>: ok, pending, warning, critical, off. Icon plus word, never colour alone.</figcaption></figure>
+    <figure class="f"><div class="stage" id="freshchips" style="gap:8px"></div><figcaption><b>Freshness</b> counts up once a second and is judged against its source's cadence: fresh under 1.5x, aging to 3x, stale beyond, dead past 10x. Here nodes refresh every 2 min, stats every 10, apps every 2 and the mesh every 30.</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g2" style="margin-top:16px">
+    <figure class="f"><div class="stage" style="gap:12px" id="connstates"></div><figcaption><b>Connection indicator</b> in the status bar: live with latency, syncing, reconnecting with a countdown, offline, and upstream stale when the Flux API itself is behind.</figcaption></figure>
+    <figure class="f"><div class="stage" style="gap:14px;align-items:center"><div class="beat" style="--beat:.4;height:40px"><div class="beat-wrap"><div class="beat-ring"></div><span class="core"></span></div><div class="beat-txt"><b>2,996,929</b><small>next in <i>18</i> s</small></div></div><div class="beat" style="--beat:.92;height:40px"><div class="beat-wrap ping"><div class="beat-ring"></div><span class="core"></span></div><div class="beat-txt"><b>2,996,929</b><small>next in <i>2</i> s</small></div></div><div class="beat" style="--beat:0;height:40px;opacity:.6"><div class="beat-wrap"><div class="beat-ring"></div><span class="core"></span></div><div class="beat-txt"><b>2,996,929</b><small>waiting for upstream</small></div></div></div><figcaption><b>The Beat</b>: a ring that fills over the 30 s block interval. Ring at 40%, at the landing threshold, and stalled.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ the moon ============ -->
+<section class="cs-sec" id="moon">
+  <h2>The moon</h2>
+  <p class="lead">The Flux symbol, extruded in Blue Wave, orbits the globe: the moon is the chain. A hexagon ring fills over the 30 second block interval. The pieces map to payouts: the cap is Stratus, the big hexagon is Nimbus, the small hexagon is Cumulus, and the bar is the development fund. All of it is drawn live in canvas; these are stills of the same renderer.</p>
+  <div class="cs-grid cs-g5">
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.4}'></canvas></div><figcaption><b>Rest</b>. White and gray faces, Blue Wave extrusion and rim, dotted orbit, ring at 40%.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.4,"hover":1,"size":90}'></canvas></div><figcaption><b>Hover</b>. Brightens, the orbit eases to 15% speed and a hairline ring appears. Tooltip below.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":1,"flash":0.9}'></canvas></div><figcaption><b>Block received</b>. The whole symbol flashes white as the producer beam arrives, the ring closes.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.4,"lite":true}'></canvas></div><figcaption><b>Lite</b> performance tier. Flat faces, no extrusion, no glow. Same shape, same ring.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.4,"yaw":0,"sim":0}'></canvas><span class="mtag">parked</span></div><figcaption><b>Reduced motion</b>. Parked beside the planet: no orbit, no wobble, no sweep. Payouts show as static fading lines.</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g4" style="margin-top:16px">
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.6,"pf":[1,0,0,0]}'></canvas><span class="mtag">Dev fund +0.50</span></div><figcaption><b>The bar</b> blooms first, for the 0.50 FLUX development fund (output 0 of the coinbase). A white chip, no beam.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.6,"pf":[0,0,0,1]}'></canvas><span class="mtag" data-tier="cumulus">Cumulus +1.00</span></div><figcaption><b>Small hexagon</b> fires Cumulus 0.13 s later (output 1). The beam is cyan.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.6,"pf":[0,0,1,0]}'></canvas><span class="mtag" data-tier="nimbus">Nimbus +3.50</span></div><figcaption><b>Big hexagon</b> fires Nimbus 0.13 s after that (output 2). The beam is violet.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.6,"pf":[0,1,0,0]}'></canvas><span class="mtag" data-tier="stratus">Stratus +9.00</span></div><figcaption><b>The cap</b> fires last, the Stratus payout and the largest (output 3). The piece blooms white, the beam that leaves it is amber.</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g4" style="margin-top:16px">
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0}'></canvas></div><figcaption><b>Ring at 0 s</b>: a new block has just landed.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.34}'></canvas></div><figcaption><b>10 s</b>: two sides of the hexagon lit.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><canvas class="mn" data-mn='{"beat":0.67}'></canvas></div><figcaption><b>20 s</b>: four sides, the next payees are pre-aimed.</figcaption></figure>
+    <figure class="f"><div class="stage globe moonstage"><div id="moontip" class="tip moon-tip" style="position:static;pointer-events:auto"></div></div><figcaption><b>Tooltip</b>. Block, countdown, network size, and the way in: click, Enter or the key M opens About Flux.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ tiles ============ -->
+<section class="cs-sec" id="tiles">
+  <h2>Stat tiles, numbers, sparklines</h2>
+  <p class="lead">Numbers that change roll like an odometer, digit by digit, only the digits that changed. Reduced motion swaps to a 120 ms cross-fade.</p>
+  <div class="cs-grid cs-g4">
+    <figure class="f"><div class="stage" style="padding:0;border:0;background:none"><div class="tile" style="width:100%"><div class="k">Nodes</div><div class="v">6,724</div><div class="d up">+23 today</div></div></div><figcaption>Default</figcaption></figure>
+    <figure class="f"><div class="stage" style="padding:0;border:0;background:none"><div class="tile" style="width:100%"><div class="k">FLUX price</div><div class="v">$0.0746</div><div class="d up">+1.95%</div><span class="spark" id="sp1"></span></div></div><figcaption>With sparkline and delta</figcaption></figure>
+    <figure class="f"><div class="stage" style="padding:0;border:0;background:none"><div class="tile" style="width:100%"><div class="k">Nodes</div><div class="skel" style="height:26px;width:70%"></div><div class="skel" style="height:12px;width:45%"></div></div></div><figcaption>Loading, skeleton shimmer</figcaption></figure>
+    <figure class="f"><div class="stage" style="padding:0;border:0;background:none"><div class="tile" style="width:100%"><div class="k">Nodes</div><div class="v" style="color:var(--text-4)">No data</div><div class="d" style="color:var(--status-warn)">Stats are 12 min old. Retrying.</div></div></div><figcaption>Stale upstream, never a blank</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g3" style="margin-top:16px">
+    <figure class="f"><div class="stage" style="gap:26px;align-items:flex-end"><span class="odo"><span class="col"><span>6</span></span><span class="sep">,</span><span class="col"><span>7</span></span><span class="col"><span>2</span></span><span class="col roll"><span>4</span><span>5</span></span></span><span class="cap" style="flex:1">Only the last digit rolls when 6,724 becomes 6,725. The roll is 420 ms, ease-out-expo, and the digit that left fades as it goes.</span></div><figcaption><b>Odometer</b> shown mid-loop.</figcaption></figure>
+    <figure class="f"><div class="stage col" id="sparks" style="gap:14px"></div><figcaption><b>Sparkline</b> forms: line with end dot, area, bars. 1.6 px strokes, end dot carries a surface ring.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="cutbar"><i style="width:92.9%"></i><b style="left:92.9%"></b></div><div class="row" style="justify-content:space-between;font:500 10.5px/1 var(--font-mono);color:var(--text-4)"><span>2,020,000</span><span>92.9%</span><span>3,071,200</span></div><div class="meter locked"><i style="width:27%"></i></div><div class="meter locked"><i style="width:16%"></i></div></div><figcaption><b>Progress</b>: emission countdown and locked-capacity bars.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ live lists ============ -->
+<section class="cs-sec" id="live">
+  <h2>Live lists: Pulse feed</h2>
+  <p class="lead">Every live item enters the same way: row height opens in 280 ms, a coloured bar decays over 1.6 s, and bursts collapse instead of scrolling.</p>
+  <div class="cs-grid cs-g3">
+    <figure class="f"><div class="stage pad0"><ul class="pulse-list" id="evts" style="max-height:none;-webkit-mask:none;mask:none;display:block;width:100%;margin:0;padding:6px 0"></ul></div><figcaption><b>Event kinds</b>: block, watched node paid, join, expiry, app update, app pending, heartbeat batch, version. The newest row wears the fresh bar.</figcaption></figure>
+    <figure class="f"><div class="stage pad0" style="flex-direction:column;align-items:stretch;gap:0;position:relative"><div class="collapse"><span class="ei" data-fill="icon:activity"></span><span><b>14 more events</b> confirmed nodes, 3 joins</span><span class="kbd">open</span></div><ul class="pulse-list" id="evts2" style="max-height:none;-webkit-mask:none;mask:none;display:block;margin:0;padding:4px 0 10px"></ul><button class="newpill" style="top:52px">3 new</button></div><figcaption><b>Burst rule</b>: more than 5 events in 2 s become one collapsed row. While the pointer is over the list, new rows queue behind a pill.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="aimstrip glass" style="position:relative;left:auto;top:auto;translate:none;width:100%;justify-content:flex-start;overflow:hidden"><span class="lead">Next payout in <b>12 s</b></span><span class="aimchip is-mine" data-tier="stratus"><span data-tier-meter="stratus" data-s="13"></span>Helsinki <i>9.0</i></span><span class="aimchip" data-tier="nimbus"><span data-tier-meter="nimbus" data-s="13"></span>Raleigh <i>3.5</i></span></div><div class="row" style="gap:8px"><span class="chip chip--mono">Helsinki, in 12 s</span><span class="chip chip--mono">#417 in line, paid in about 3.5 h</span></div></div><figcaption><b>Aim strip</b>: the next three payees, known one block ahead. A watched node gets a hot ring.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ blocks ============ -->
+<section class="cs-sec" id="blocks">
+  <h2>Block rail and time machine</h2>
+  <p class="lead">Newest block on the right. A hatched ghost card stands for the block in progress and fills over 30 s.</p>
+  <div class="cs-grid cs-g5">
+    <figure class="f"><div class="stage" id="b1"></div><figcaption>Default</figcaption></figure>
+    <figure class="f"><div class="stage" id="b2"></div><figcaption><b>New</b>: lands with a 360 ms overshoot and a hot rim for 1.6 s</figcaption></figure>
+    <figure class="f"><div class="stage" id="b3"></div><figcaption><b>Selected</b> or hovered: border step and a 2 px lift</figcaption></figure>
+    <figure class="f"><div class="stage" id="b4"></div><figcaption><b>Next block</b>: hatched ghost with countdown and pending count</figcaption></figure>
+    <figure class="f"><div class="stage" id="b5"></div><figcaption><b>Loading</b> history: skeleton card</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g2" style="margin-top:16px">
+    <figure class="f"><div class="stage pad0" style="height:88px;position:relative" id="tl"></div><figcaption><b>Time machine scrubber</b>: live edge at the right, the hot handle marks the archive time, the curve is node count over the same range.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:8px"><div class="aimstrip glass" style="position:relative;left:auto;top:auto;translate:none;width:100%;justify-content:flex-start"><span class="lead" style="color:var(--accent-time)"><b style="color:var(--text-1)">Archive view</b> 4 d 11 h ago</span><span class="chip chip--mono">6,512 nodes</span><span class="chip chip--mono">block 2,978,201</span></div><div class="cap">While the archive is showing, the globe wears a cool desaturated grade with faint scanlines, and every live animation is paused.</div></div><figcaption><b>Archive banner</b></figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ windows ============ -->
+<section class="cs-sec" id="windows">
+  <h2>Windows, dock, inspector parts</h2>
+  <p class="lead">A window is one content component hosted by a frame. The same component fills a desktop window, a docked inspector, a tablet sheet or a phone sheet.</p>
+  <div class="cs-grid cs-g3">
+    <figure class="f"><div class="stage" style="padding:0;border:0;background:none"><div class="mini-win focus" data-tier="stratus"><div class="bar"><span class="ap" id="ap1"></span><div><b class="mono">65.109.26.93:16147</b><small>Node, Stratus, Helsinki</small></div></div><div class="body"><div class="cap">Focused: hot rim, accent sweep along the top edge, full-strength title.</div></div></div></div><figcaption><b>Focused</b></figcaption></figure>
+    <figure class="f"><div class="stage" style="padding:0;border:0;background:none"><div class="mini-win dim" data-accent="chain"><div class="bar"><span class="ap" id="ap2"></span><div><b>Transaction</b><small>8aa97365...71beec</small></div></div><div class="body"><div class="cap">Unfocused: a quiet rim, no sweep and no glow. The content never dims. Clicking anywhere raises it.</div></div></div></div><figcaption><b>Unfocused</b></figcaption></figure>
+    <figure class="f"><div class="stage" style="padding:0;border:0;background:none"><div class="mini-win focus" data-accent="app"><div class="bar"><span class="ap" id="ap3"></span><div><b>BitcoinWhitepaper</b><small>App</small></div></div><div class="body"><div class="skel" style="height:14px;width:60%;margin-bottom:8px"></div><div class="skel" style="height:14px;width:80%;margin-bottom:8px"></div><div class="skel" style="height:54px"></div></div></div></div><figcaption><b>Loading</b>: skeleton in the shape of the final content, never a spinner alone</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g3" style="margin-top:16px">
+    <figure class="f"><div class="stage" style="gap:24px"><div class="dockrow" id="dockrow"></div></div><figcaption><b>Dock</b>: rest, hover (scale 1.08, label), open (left tick), focused (tint and glow), with a hot notification dot.</figcaption></figure>
+    <figure class="f"><div class="stage globe col" style="gap:12px;align-items:flex-start"><div class="tip-static"><b class="mono">65.109.26.93:16147</b><div class="row"><span class="chip chip--tier" data-tier="stratus" data-fill="tierchip:stratus"></span><span>Helsinki</span></div></div><div class="tip-static"><b class="mono">Stratus, 1,764 nodes</b><div class="row"><span>9.00 FLUX per payment, every 14.7 h</span></div></div></div><figcaption><b>Tooltip</b>: 120 ms delay, never covers the thing it describes.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="toast toast-static is-pay"><span class="ti" data-fill="icon:coins"></span><div><b>Payment received, +9.00 FLUX</b><p>Watched node 65.109.26.93:16147, block 2,996,930.</p></div></div><div class="toast toast-static" style="--tk:var(--status-warn)"><span class="ti" data-fill="icon:triangle-alert"></span><div><b>Node at risk</b><p>560 blocks since the last check-in. It expires at 640.</p></div></div><div class="toast toast-static is-ach"><span class="ti" data-fill="icon:award"></span><div><b>First lookup</b><p>You searched for a node by address.</p></div></div></div><figcaption><b>Toasts</b>: payment, warning, achievement (the only chamfered toast).</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ overlays ============ -->
+<section class="cs-sec" id="overlays">
+  <h2>Command palette rows</h2>
+  <p class="lead">One field resolves heights, hashes, transaction ids, addresses, IPs, ports and app names. Results are grouped and keyboard-first.</p>
+  <div class="cs-grid cs-g3">
+    <figure class="f"><div class="stage"><div class="palbox" id="pal1"></div></div><figcaption><b>Results</b>: active row, tier-coloured icon, match highlight in white.</figcaption></figure>
+    <figure class="f"><div class="stage"><div class="palbox" id="pal2"></div></div><figcaption><b>Recent and suggestions</b> when the field is empty.</figcaption></figure>
+    <figure class="f"><div class="stage"><div class="palbox" id="pal3"></div></div><figcaption><b>No match</b> says what to try, not just that it failed.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ data ============ -->
+<section class="cs-sec" id="data">
+  <h2>Data components</h2>
+  <p class="lead">Tables are dense and sticky-headed. Health runs on one stepper with real thresholds. Secrets are never drawn.</p>
+  <div class="cs-grid cs-g3">
+    <figure class="f"><div class="stage pad0"><table class="tbl"><thead><tr><th>Node</th><th>Tier</th><th class="r">Rank</th><th class="r">Next</th></tr></thead><tbody id="tbl"></tbody></table></div><figcaption><b>Table</b>: header, row, hover, selected, and the insertion wash.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:14px" id="steppers"></div><figcaption><b>Lifecycle</b>: started, joined, heartbeat, at risk (560+ blocks), expired (640). Shown healthy, at risk and expired.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:12px"><div class="gauge" style="--at:12%"><span class="mk"></span></div><div class="gauge-l"><span>0</span><span style="margin-left:50%">500 due</span><span>560</span><span>640</span></div><div class="gauge" style="--at:90%;margin-top:14px"><span class="mk"></span></div><div class="uptime" id="upt"></div><div class="masked">lock<!----></div></div><figcaption><b>Check-in gauge</b> with due, at-risk and expiry bands; the 90 day uptime strip; a masked secret.</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g3" style="margin-top:16px">
+    <figure class="f"><div class="stage col" style="gap:8px"><div class="ladder" id="ladder"></div></div><figcaption><b>Port ladder</b>: the eight UPnP ports of one host, each with its tier glyph and queue rank; the open node is ringed.</figcaption></figure>
+    <figure class="f"><div class="stage col"><div class="hist" id="hist"></div></div><figcaption><b>Spec history</b>: renewals grouped into one row, real changes carry a diff.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:8px"><div class="dv" id="dv1"></div><div class="dv" id="dv3"></div><div class="dv" id="dv2"></div><div class="legend" id="lg"></div></div><figcaption><b>Data-viz palettes</b>: sequential, Blue Wave up to white, for magnitude; diverging, Flux blue against coral with a neutral middle, for polarity; six categorical slots in a fixed order, then grey for other.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ states ============ -->
+<section class="cs-sec" id="states">
+  <h2>Empty, loading, error</h2>
+  <p class="lead">Each state says what happened and what to do next, in the voice of the interface. Errors never apologise and are never vague.</p>
+  <div class="cs-grid cs-g4">
+    <figure class="f"><div class="stage" style="min-height:236px"><div class="state" style="width:100%"><span class="si" data-fill="icon:search"></span><b>Nothing at that address</b><span>No node, app, block or address matches <span class="mono" style="color:var(--text-2)">8aa9736</span>. Try a full id, or an IP with a port.</span><button class="btn btn--sm">Clear search</button></div></div><figcaption><b>Empty result</b></figcaption></figure>
+    <figure class="f"><div class="stage" style="min-height:236px"><div class="state err" style="width:100%"><span class="si" data-fill="icon:wifi"></span><b>Lost the live stream</b><span>Showing data from 41 s ago. Reconnecting in 4 s.</span><button class="btn btn--sm">Retry now</button></div></div><figcaption><b>Error</b>, with a time to recovery</figcaption></figure>
+    <figure class="f"><div class="stage" style="min-height:236px"><div class="state warn" style="width:100%"><span class="si" data-fill="icon:cloud-rain"></span><b>Flux API is behind</b><span>The newest block we can see is 3 min old. Figures may lag the chain.</span></div></div><figcaption><b>Upstream stale</b></figcaption></figure>
+    <figure class="f"><div class="stage" style="min-height:236px"><div class="state" style="width:100%"><span class="si" data-fill="icon:user-round-check"></span><b>Paste a payment address</b><span>Atlas lists the nodes that pay it and warns you before they are at risk. Nothing leaves this browser.</span><div class="field" style="min-width:0;width:100%"><span>t1...</span></div></div></div><figcaption><b>Empty operator view</b> is an invitation</figcaption></figure>
+  </div>
+  <div class="cs-grid cs-g3" style="margin-top:16px">
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="alert"><span class="ai" data-fill="icon:lock"></span><div><b>Encrypted specification</b>This enterprise app keeps its compose file private. Atlas shows what the network can see: instances, expiry and the owner.</div></div><div class="masked" style="height:30px"><span data-fill="icon:lock"></span>Environment hidden, 0 of 12 values shown</div></div><figcaption><b>Enterprise app</b> and masked environment values: the UI never reveals secrets, even when the API returns them.</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="alert"><span class="ai" data-fill="icon:triangle-alert"></span><div><b>Concentration risk</b>All 7 nodes share one IP in one datacenter. A single outage would stop 100% of your payouts.</div></div><div class="alert" style="background:var(--status-crit-soft);border-color:rgb(255 84 112 / .34)"><span class="ai" style="color:var(--status-crit);background:rgb(255 84 112 / .14)" data-fill="icon:octagon-x"></span><div><b>Node expired</b>No check-in for 640 blocks. It left the payment queue at block 2,996,102.</div></div></div><figcaption><b>Operator alerts</b>: warning and critical</figcaption></figure>
+    <figure class="f"><div class="stage col" style="gap:10px"><div class="row" style="gap:10px"><div class="skel" style="width:40px;height:40px;border-radius:12px"></div><div style="flex:1;display:grid;gap:7px"><div class="skel" style="height:12px;width:60%"></div><div class="skel" style="height:10px;width:38%"></div></div></div><div class="skel" style="height:84px;border-radius:14px"></div><div class="row" style="gap:8px"><div class="skel" style="height:54px;flex:1;border-radius:12px"></div><div class="skel" style="height:54px;flex:1;border-radius:12px"></div><div class="skel" style="height:54px;flex:1;border-radius:12px"></div></div></div><figcaption><b>Skeleton</b> of the node inspector, the shape of what is coming.</figcaption></figure>
+  </div>
+</section>
+
+<script src="assets/brand.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/land.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/globe.js"></script>
+<script src="assets/moon.js"></script>
+<script src="assets/views.js"></script>
+<script>
+(function () {
+  var D = window.ATLAS_DATA, V = window.ATLAS_VIEWS, I = window.atlasIcon, $ = function (s) { return document.querySelector(s); };
+  var tn = ['cumulus', 'nimbus', 'stratus'], tl = ['Cumulus', 'Nimbus', 'Stratus'];
+  /* generic fills */
+  document.querySelectorAll('[data-fill]').forEach(function (el) {
+    var p = el.dataset.fill.split(':');
+    if (p[0] === 'icon') el.innerHTML = I(p[1], { size: el.classList.contains('ti') ? 18 : 16 });
+    if (p[0] === 'tierchip') el.innerHTML = window.atlasTier(p[1], 13) + p[1].charAt(0).toUpperCase() + p[1].slice(1);
+  });
+  document.querySelectorAll('[data-i-l]').forEach(function (b) { b.innerHTML = I(b.dataset.iL, { size: 14 }) + b.textContent; });
+  /* brand: variants and swatches */
+  var FB = window.FluxBrand, VAR = [['white', 'white on black', '#000'], ['blue', 'Blue Wave on white', '#fff'], ['tonal', 'tonal, as the moon', '#000'], ['bluetone', 'blue tones', '#fff'], ['graphite', 'graphite on white', '#fff'], ['gray', 'Flux Gray on black', '#000']];
+  $('#variants').innerHTML = VAR.map(function (v) { return '<span class="vr" style="background:' + v[2] + '"><span>' + FB.mark({ size: 46, fill: FB.VARIANT[v[0]].fill }) + '</span></span>'; }).join('');
+  var sw = function (n, hex, cls, note) { return '<div class="bs-sw"><i style="background:' + hex + '"></i><b>' + n + '</b><span>' + hex + (note ? ' ' + note : '') + '</span></div>'; };
+  $('#swBrand').innerHTML = sw('Blue Wave', '#2b61d1') + sw('Shade 1', '#4f7ad4') + sw('Shade 2', '#86a1da') + sw('Flux Black', '#000000') + sw('Graphite', '#2d2d2d') + sw('Flux Gray', '#717171') + sw('White', '#ffffff');
+  $('#swRamp').innerHTML = ['950', '900', '800', '700', '600', '500', '400', '300', '200', '100', '50'].map(function (k) { return '<i style="background:var(--accent-' + k + ')" title="accent-' + k + '"><small>' + k + '</small></i>'; }).join('');
+  var tv = function (n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); };
+  $('#swTier').innerHTML = sw('Cumulus', tv('--tier-cumulus')) + sw('Nimbus', tv('--tier-nimbus')) + sw('Stratus', tv('--tier-stratus'));
+  $('#swStatus').innerHTML = sw('Ok', tv('--status-ok')) + sw('Pending', tv('--status-pending')) + sw('Warn', tv('--status-warn')) + sw('Critical', tv('--status-crit'));
+  /* the moon: stills of the real renderer */
+  Array.prototype.forEach.call(document.querySelectorAll('canvas.mn'), function (cv) { var o = JSON.parse(cv.dataset.mn); o.w = 300; o.h = 300; o.size = o.size || 84; window.AtlasGlobe.moonSpecimen(cv, o); });
+  $('#moontip').innerHTML = '<span class="tt">' + FB.mark({ size: 14, fill: '#ffffff' }) + 'Flux chain</span><div class="row"><span>Block</span><b class="mono">2,996,929</b></div><div class="row"><span>Next block in</span><b class="mono">18 s</b></div><div class="row"><span>Network</span><b class="mono">6,724 nodes</b></div><div class="hint">' + I('mouse-pointer-click', { size: 12 }) + 'Click for About Flux<span class="kbd" style="margin-left:auto">M</span></div>';
+  /* tier chips and glyphs */
+  $('#tierchips').innerHTML = [0, 1, 2].map(function (t) { return V.chipTier(t); }).join('') + '<span style="width:100%"></span>' + [12, 16, 24].map(function (s) { return '<span style="color:var(--tier-stratus)" data-tier="stratus">' + window.atlasTier('stratus', s) + '</span>'; }).join('') + [0, 1, 2].map(function (t) { return '<span data-tier="' + tn[t] + '" style="color:var(--tier)">' + window.atlasTier(tn[t], 24) + '</span>'; }).join('');
+  var sts = [['ok', 'circle-check', 'Confirmed'], ['pending', 'loader', 'Syncing'], ['warn', 'triangle-alert', 'At risk'], ['crit', 'octagon-x', 'Expired'], ['off', 'circle-dashed', 'Unreachable']];
+  $('#statuschips').innerHTML = sts.map(function (s) { return '<span class="st" data-status="' + s[0] + '">' + I(s[1], { size: 14 }) + s[2] + '</span>'; }).join('');
+  $('#freshchips').innerHTML = [['', 'nodes 4 s'], ['aging', 'stats 25 min'], ['stale', 'apps 11 min'], ['dead', 'mesh 6 h']].map(function (f) { return '<span class="fr ' + f[0] + '">' + f[1] + '</span>'; }).join('');
+  $('#connstates').innerHTML = [
+    '<span class="conn2" data-status="ok"><i class="dot dot--live"></i><b>Live</b><span class="m">WebSocket, 41 ms</span></span>',
+    '<span class="conn2" data-status="pending"><i class="spin"></i><b>Syncing</b><span class="m">block 2,996,901 of 2,996,929</span></span>',
+    '<span class="conn2" data-status="warn"><i class="pulse-warn"></i><b>Reconnecting</b><span class="m">retry in 4 s</span></span>',
+    '<span class="conn2" data-status="crit">' + I('wifi-off', { size: 14 }) + '<b>Offline</b><span class="m">cached view, 2 min old</span></span>',
+    '<span class="conn2" data-status="warn">' + I('cloud-rain', { size: 14 }) + '<b>Upstream stale</b><span class="m">Flux API 3 min behind</span></span>'
+  ].join('');
+  /* sparks */
+  var pr = [.0718, .0722, .0719, .0731, .0729, .0741, .0738, .0736, .0744, .0741, .0749, .0746];
+  $('#sp1').innerHTML = V.spark(pr, 64, 26, 'var(--viz-1)', true);
+  $('#sparks').innerHTML = '<div class="row" style="gap:16px">' + V.spark(pr, 120, 34, 'var(--viz-1)', false) + V.spark(pr, 120, 34, 'var(--viz-1)', true) + '<span style="display:flex;align-items:flex-end;gap:2px;height:34px;width:120px">' + pr.map(function (v) { return '<i style="flex:1;height:' + ((v - .071) / .005 * 28 + 4) + 'px;border-radius:2px 2px 1px 1px;background:var(--viz-1);opacity:.9"></i>'; }).join('') + '</span></div>';
+  /* events */
+  var ev = function (k, ic, txt, sub, age, tier, fresh) { return '<li class="evt k-' + k + (fresh ? ' is-fresh' : '') + '"' + (tier ? ' data-tier="' + tier + '"' : '') + '><span class="ei">' + I(ic, { size: 14 }) + '</span><div><span class="t">' + txt + '</span><span class="sub">' + sub + '</span></div><time>' + age + '</time></li>'; };
+  $('#evts').innerHTML = [
+    ev('block', 'blocks', 'Block <b>2,996,929</b> produced', '213.32.246.1:16137, 17 tx, 3.6 KB', '12 s', 'cumulus', true),
+    ev('mine', 'eye', 'Watched node is next in line', '65.109.26.93:16147, Stratus, 9.00 FLUX', '12 s', 'stratus'),
+    ev('join', 'rocket', 'Node joined, Stratus in Falkenstein', '162.55.4.10:16167', '34 s', 'stratus'),
+    ev('leave', 'triangle-alert', 'Node expired, no check-in for 640 blocks', '213.32.246.9:16167', '2 min', 'cumulus'),
+    ev('app', 'boxes', 'Fluxtracker updated, 2 instances', 'spec v6, 6.48 FLUX', '27 s'),
+    ev('app-pending', 'hourglass', 'Update pending, EthereumNodeSnap', 'seen 41 s ago, not yet mined', '41 s'),
+    ev('heartbeat', 'activity', 'Confirmed 14 nodes', 'block 2,996,929', '16 s'),
+    ev('version', 'badge-check', 'FluxOS 8.20.0 on 99.9% of nodes', '6,565 of 6,571 reachable', '5 min')
+  ].join('');
+  $('#evts2').innerHTML = [ev('block', 'blocks', 'Block <b>2,996,930</b> produced', '135.148.27.2:16187, 14 tx, 2.0 KB', 'now', 'cumulus', true), ev('mine', 'eye', 'Watched node paid <b>+9.00</b> FLUX', '65.109.26.93:16147, block 2,996,930', 'now', 'stratus', true)].join('');
+  /* blocks */
+  var bl = D.blocks[0], pct = [1, 3.5, 9, .5].map(function (v) { return v / 14 * 100; });
+  var card = function (cls, h, age) { return '<article class="blk ' + cls + '" data-tier="cumulus"><div class="r1"><b>' + V.f0(h) + '</b><time>' + age + '</time></div><div class="r2">17 tx &middot; 3.6 KB</div><div class="r3"><span class="pr">' + I('producer', { size: 14 }) + '</span>213.32.246.1<em>Copenhagen</em></div><div class="strip"><i style="width:' + pct[0] + '%;background:var(--tier-cumulus)"></i><i style="width:' + pct[1] + '%;background:var(--tier-nimbus)"></i><i style="width:' + pct[2] + '%;background:var(--tier-stratus)"></i><i style="width:' + pct[3] + '%;background:var(--text-4)"></i></div></article>'; };
+  $('#b1').innerHTML = card('', 2996929, '1 min'); $('#b2').innerHTML = card('is-new', 2996930, 'now'); $('#b3').innerHTML = card('', 2996928, '2 min').replace('class="blk "', 'class="blk" style="border-color:var(--line-3);background:linear-gradient(180deg,rgb(255 255 255 / .08),rgb(255 255 255 / .03));transform:translateY(-2px)"');
+  $('#b4').innerHTML = '<article class="blk ghost" style="--beat:.4"><div class="r1"><b>2,996,931</b><span class="cdwn">18 s</span></div><div class="r2">Next block &middot; 20 tx, 4.0 KB waiting</div><div class="bar"><i></i></div></article>';
+  $('#b5').innerHTML = '<article class="blk"><div class="skel" style="height:16px;width:60%"></div><div class="skel" style="height:11px;width:40%;margin-top:6px"></div><div class="skel" style="height:11px;width:80%;margin-top:10px"></div></article>';
+  /* timeline */
+  var pts = [], n = 90; for (var i = 0; i < n; i++) pts.push(6330 + 400 * (i / n) + 50 * Math.sin(i / 7) + 28 * Math.sin(i / 2.3));
+  var w = 700, h = 40, mn = Math.min.apply(null, pts) - 40, mx = Math.max.apply(null, pts) + 40, path = pts.map(function (v, i) { return (i ? 'L' : 'M') + (i / (n - 1) * w).toFixed(1) + ' ' + (h - (v - mn) / (mx - mn) * h).toFixed(1); }).join(' ');
+  $('#tl').innerHTML = '<div style="position:absolute;left:20px;right:20px;top:26px;height:60px"><svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" width="100%" height="' + h + '" style="overflow:visible"><path d="' + path + ' L' + w + ' ' + h + ' L0 ' + h + ' Z" fill="var(--accent-time)" opacity=".10"/><path d="' + path + '" fill="none" stroke="var(--accent-time)" stroke-width="1.5"/></svg><div style="position:absolute;left:83%;top:-14px;bottom:0;width:2px;background:var(--hot);box-shadow:var(--glow-hot)"></div><div style="position:absolute;left:83%;top:-24px;translate:-50% 0;height:20px;padding:0 9px;border-radius:10px;background:var(--hot);color:#080a0f;font:600 11px/20px var(--font-mono);white-space:nowrap">2026-09-26 08:00 UTC</div><span style="position:absolute;right:-6px;top:30px;color:var(--hot);font-size:11px;font-weight:500">Live</span></div>';
+  /* dock */
+  var dk = [['globe', 'is-focus', '--accent-500', 0], ['server', '', '--tier-stratus', 0], ['boxes', 'is-hover', '--accent-app', 0], ['blocks', 'is-open', '--accent-chain', 0], ['coins', 'is-open is-focus', '--accent-pulse', 1], ['chart-no-axes-combined', '', '--accent-analytics', 0]];
+  $('#dockrow').innerHTML = dk.map(function (d) { return '<span class="dk2 ' + d[1] + '" style="--dk-accent:var(' + d[2] + ')">' + I(d[0], { size: 21 }) + (d[3] ? '<i class="badge"></i>' : '') + '</span>'; }).join('');
+  ['#ap1', '#ap2', '#ap3'].forEach(function (s, i) { $(s).innerHTML = i === 0 ? window.atlasTier('stratus', 16) : I(i === 1 ? 'arrow-left-right' : 'boxes', { size: 16 }); });
+  /* palette */
+  var rows = V.paletteRows('65.109'); var pr1 = function (r, active) { var ic = /^(cumulus|nimbus|stratus)$/.test(r.ic) ? window.atlasTier(r.ic, 16) : I(r.ic, { size: 16 }); return '<div class="pal-row' + (active ? ' is-active' : '') + '" style="--k:' + r.k + '"><span class="ic">' + ic + '</span><span class="tx"><b' + (r.m ? ' class="mono"' : '') + '>' + r.t + '</b><small>' + r.s + '</small></span><span class="meta">' + (active ? '<span class="kbd">enter</span>' : '') + '</span></div>'; };
+  $('#pal1').innerHTML = '<div class="pal-group">Nodes</div>' + rows[0].rows.slice(0, 3).map(function (r, i) { return pr1(r, i === 0); }).join('') + '<div class="pal-group">Go to</div>' + pr1(rows[2].rows[0], false);
+  $('#pal2').innerHTML = '<div class="pal-group">Recent</div>' + pr1({ ic: 'stratus', k: 'var(--tier-stratus)', t: '65.109.26.93:16147', m: true, s: 'Node, Stratus, Helsinki' }, true) + pr1({ ic: 'boxes', k: 'var(--accent-app)', t: 'BitcoinWhitepaper', m: false, s: 'App, 3 instances' }, false) + '<div class="pal-group">Try</div>' + pr1({ ic: 'hash', k: 'var(--accent-chain)', t: '2996929', m: true, s: 'A block height' }, false) + pr1({ ic: 'user-round-check', k: 'var(--accent-operator)', t: 'Paste a payment address', m: false, s: 'See the nodes that pay it' }, false);
+  $('#pal3').innerHTML = '<div class="state" style="padding:26px 12px"><span class="si">' + I('search', { size: 20 }) + '</span><b>No match for "zzz"</b><span>Try a block height, a hash, a transaction id, an address, an IP with a port, or an app name.</span></div>';
+  /* table */
+  var trs = [[2, '65.109.26.93:16147', '#1', 'next block', 'sel'], [0, '80.72.20.160:16137', '#1', 'next block', ''], [1, '38.247.82.140:16147', '#1', 'next block', ''], [2, '65.109.26.93:16137', '#812', '6.8 h', 'new']];
+  $('#tbl').innerHTML = trs.map(function (r, i) { return '<tr' + (r[4] === 'sel' ? ' style="background:linear-gradient(90deg,rgb(79 122 212 / .2),rgb(79 122 212 / .05))"' : (r[4] === 'new' ? ' style="background:linear-gradient(90deg,rgb(255 255 255 / .10),transparent)"' : (i === 1 ? ' style="background:var(--ink-1)"' : ''))) + '><td class="mono">' + r[1] + '</td><td><span class="chip chip--tier" data-tier="' + tn[r[0]] + '" style="height:20px">' + window.atlasTier(tn[r[0]], 12) + tl[r[0]] + '</span></td><td class="r mono">' + r[2] + '</td><td class="r mono">' + r[3] + '</td></tr>'; }).join('');
+  /* steppers */
+  var step = function (prog, now, warn, crit) { var dn = function (t, s) { return '<div class="stp done"><i>' + I('check', { size: 12, sw: 2.2 }) + '</i>' + t + '<small>' + s + '</small></div>'; };
+    return '<div class="stepper" style="--prog:' + prog + '">' + dn('Started', '2,846,353') + dn('Joined', '2,846,356') + '<div class="stp ' + (now === 3 ? 'done' : 'now') + '"><i>' + I('activity', { size: 12, sw: 2 }) + '</i>Heartbeat<small>every ~4.2 h</small></div><div class="stp ' + (warn ? 'warn now' : '') + '"><i>' + I('triangle-alert', { size: 12 }) + '</i>At risk<small>560 blocks</small></div><div class="stp ' + (crit ? 'crit' : '') + '"><i>' + I('octagon-x', { size: 12 }) + '</i>Expired<small>640 blocks</small></div></div>'; };
+  $('#steppers').innerHTML = step('40%', 2, false, false) + step('65%', 2, true, false) + step('80%', 3, false, true);
+  var up = ''; for (var u = 0; u < 90; u++) up += '<i class="' + (u === 31 || u === 32 ? 'gap' : (u < 6 ? 'none' : '')) + '"></i>'; $('#upt').innerHTML = up;
+  document.querySelector('.masked').innerHTML = I('lock', { size: 13 }) + 'Environment hidden';
+  /* ladder and history */
+  var lad = ''; for (var p = 16127; p <= 16197; p += 10) { var o = D.heroHost.filter(function (x) { return x.port === p; })[0]; lad += o ? '<div class="slot used' + (p === 16147 ? ' sel' : '') + '" data-tier="' + tn[o.tier] + '">' + window.atlasTier(tn[o.tier], 14) + '<span>' + p + '</span><small>#' + V.f0(o.rank + 1) + '</small></div>' : '<div class="slot free"><span>' + p + '</span><small>free</small></div>'; } $('#ladder').innerHTML = lad;
+  $('#hist').innerHTML = '<div class="hi update"><div class="t">Spec updated<time>2026-09-02</time></div><div class="m">Block 2,950,118 &middot; paid <span class="mono">3.61 FLUX</span></div><div class="diff"><div class="ctx">{ "name": "BitcoinWhitepaper",</div><div class="del">"version": 2,</div><div class="add">"version": 3,</div><div class="ctx">  "cpu": 0.1 }</div></div></div><div class="hi renew"><div class="t">Renewed 9 times<time>2025-09 to 2026-08</time></div><div class="m">Same spec each time</div></div><div class="hi register"><div class="t">Registered<time>2020-11-03</time></div><div class="m">Block 1,161,000 &middot; spec v1</div></div>';
+  /* dataviz swatches */
+  $('#dv1').innerHTML = [1, 2, 3, 4, 5, 6, 7].map(function (k) { return '<i style="background:var(--seq-' + k + ')"></i>'; }).join('');
+  $('#dv3').innerHTML = [['--div-neg', 100], ['--div-neg', 66], ['--div-neg', 33], ['--div-mid', 100], ['--div-pos', 33], ['--div-pos', 66], ['--div-pos', 100]].map(function (s) { return '<i style="background:' + (s[1] === 100 ? 'var(' + s[0] + ')' : 'color-mix(in srgb, var(' + s[0] + ') ' + s[1] + '%, var(--div-mid))') + '"></i>'; }).join('');
+  $('#dv2').innerHTML = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)', 'var(--viz-4)', 'var(--viz-5)', 'var(--viz-6)', 'var(--viz-other)'].map(function (c) { return '<i style="background:' + c + '"></i>'; }).join('');
+  $('#lg').innerHTML = '<span style="--c:var(--div-pos)"><i></i>Joined</span><span style="--c:var(--div-neg)"><i></i>Left</span><span style="--c:var(--viz-other)"><i></i>Other</span>';
+})();
+</script>
+</body>
+</html>

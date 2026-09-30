@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-perf="balanced">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flux Atlas, phone</title>
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="assets/brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="manifest" href="assets/brand/manifest.webmanifest">
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="assets/atlas.css">
+<link rel="stylesheet" href="assets/views.css">
+<link rel="stylesheet" href="assets/phone.css">
+<link rel="stylesheet" href="assets/brand.css">
+</head>
+<body data-view="phone" data-screen="node" data-mode="live">
+
+<canvas id="globe" aria-label="Live globe of all Flux nodes. Drag to rotate, pinch to zoom."></canvas>
+<div class="vignette"></div>
+
+<button class="moon-hit" id="moon-hit" aria-label="About Flux, live network totals" aria-haspopup="dialog"></button>
+<div class="ph-scrim"></div>
+<header class="ph-top">
+  <div class="ph-brand brand"><span class="fx-sym" data-brand="round" data-s="26"></span><b class="fx-word">Atlas</b></div>
+  <div class="ph-beat" id="beat" style="--beat:.4">
+    <div class="beat-wrap"><div class="beat-ring"></div><span class="core"></span></div>
+    <div><b id="tip">2,996,929</b><small>next in <i id="cd" style="font-style:normal;color:var(--text-2)">18</i> s</small></div>
+  </div>
+  <div class="ph-live"><i class="dot dot--live"></i>Live</div>
+</header>
+
+<button class="ph-search" id="open-search" aria-label="Search nodes, apps, blocks, addresses">
+  <span data-i="search" data-s="18"></span><span class="ph">Search nodes, apps, blocks</span><span class="scan" data-i="scan-line" data-s="17"></span>
+</button>
+
+<div class="ph-aim" id="aim" aria-live="polite"></div>
+
+<section class="ph-sheet" id="sheet" data-snap="half" data-tier="stratus" aria-label="Details"></section>
+
+<nav class="ph-tabs" aria-label="Sections">
+  <button data-tab="globe" class="on"><span class="ic" data-i="globe" data-s="21"></span>Globe</button>
+  <button data-tab="live"><span class="ic" data-i="activity" data-s="21"></span>Live<i class="dot-live"></i></button>
+  <button data-tab="search"><span class="ic" data-i="search" data-s="21"></span>Search</button>
+  <button data-tab="apps"><span class="ic" data-i="boxes" data-s="21"></span>Apps</button>
+  <button data-tab="you"><span class="ic" data-i="user-round-check" data-s="21"></span>You</button>
+</nav>
+
+<div class="ph-searchscreen" id="searchscreen" role="dialog" aria-label="Search">
+  <div class="ph-sin"><span data-i="search" data-s="20"></span><input id="q" value="65.109" autocomplete="off" spellcheck="false" inputmode="search"><button class="cancel" id="cancel">Cancel</button></div>
+  <div class="ph-kinds"><button class="on">All</button><button>Nodes</button><button>Apps</button><button>Blocks</button><button>Addresses</button><button>Go to</button></div>
+  <div class="ph-results" id="results"></div>
+  <div class="ph-hints">Understands heights, hashes, transaction ids, addresses, IPs and app names.</div>
+</div>
+
+<div id="toasts"></div>
+<div class="grain"></div>
+
+<script src="assets/brand.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/land.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/globe.js"></script>
+<script src="assets/moon.js"></script>
+<script src="assets/views.js"></script>
+<script src="assets/phone.js"></script>
+</body>
+</html>

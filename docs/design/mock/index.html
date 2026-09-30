@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-perf="balanced">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#000000">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flux Atlas, design mock</title>
+<link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="assets/brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="manifest" href="assets/brand/manifest.webmanifest">
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="assets/atlas.css">
+<link rel="stylesheet" href="assets/brand.css">
+<style>
+  html, body { height: auto; }
+  body { overflow: auto; position: static; background: var(--void); }
+  #globe { position: fixed; inset: 0; z-index: 0; opacity: .92; }
+  .ix { position: relative; z-index: 2; max-width: 1480px; margin: 0 auto; padding: 0 56px 96px; }
+  .hero { min-height: 66vh; display: grid; align-content: end; padding: 110px 0 40px; max-width: 760px; }
+  .hero .mk { line-height: 0; margin-bottom: 30px; }
+  .hero h1 { margin: 0; font: 600 clamp(40px, 5.4vw, 76px)/1.02 var(--font-display); letter-spacing: var(--tracking-display); text-wrap: balance; }
+  .hero p { margin: 22px 0 0; color: var(--text-2); font-size: 17px; line-height: 1.55; max-width: 620px; }
+  .hero p.small { color: var(--text-3); font-size: 14px; margin-top: 12px; }
+  .row { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; }
+  h2 { margin: 60px 0 6px; font: 600 22px/1.2 var(--font-display); letter-spacing: var(--tracking-heading); }
+  p.lead { margin: 0 0 20px; color: var(--text-3); font-size: 14px; max-width: 720px; }
+  .grid { display: grid; gap: 18px; }
+  .g3 { grid-template-columns: repeat(3, 1fr); } .g2 { grid-template-columns: repeat(2, 1fr); } .g4 { grid-template-columns: repeat(4, 1fr); } .g6 { grid-template-columns: repeat(6, 1fr); }
+  a.card { position: relative; display: block; border-radius: 18px; overflow: hidden; background: var(--ink-1); border: 1px solid var(--line-2); color: var(--text-1); transition: transform var(--dur-base) var(--ease-out), border-color var(--dur-fast), box-shadow var(--dur-base); }
+  a.card:hover { transform: translateY(-3px); border-color: rgb(134 161 218 / .7); box-shadow: 0 24px 50px -24px #000, 0 0 40px -16px var(--accent-glow, rgb(43 97 209 / .6)); }
+  a.card .im { aspect-ratio: 16 / 9; background: var(--ink-0) center / cover no-repeat; border-bottom: 1px solid var(--line-1); }
+  a.card.wide { grid-column: span 2; } a.card.wide .im { aspect-ratio: 32 / 9; }
+  a.card.tall .im { aspect-ratio: 9 / 15; }
+  a.card .tx { padding: 14px 16px 16px; display: grid; gap: 3px; }
+  a.card .tx b { font: 600 15px/1.3 var(--font-display); }
+  a.card .tx span { color: var(--text-3); font-size: 12.5px; line-height: 1.4; }
+  a.card .tx code { font: 500 11px/1 var(--font-mono); color: var(--text-4); margin-top: 6px; }
+  a.card.brand-card { background: radial-gradient(110% 150% at 100% 0%, rgb(134 161 218 / .42), transparent 62%), linear-gradient(162deg, var(--flux-blue), var(--accent-700) 135%); border-color: rgb(0 0 0 / .4); }
+  a.card.brand-card .im { background-color: transparent; border-bottom-color: rgb(255 255 255 / .18); }
+  a.card.brand-card .tx span, a.card.brand-card .tx code { color: rgb(255 255 255 / .86); }
+  .phones { display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px; }
+  .note { margin-top: 56px; padding: 18px 20px; border-radius: 14px; background: var(--ink-1); border: 1px solid var(--line-1); color: var(--text-3); font-size: 13px; line-height: 1.6; max-width: 900px; }
+  .note b { color: var(--text-2); font-weight: 600; }
+  @media (max-width: 1100px) { .g3, .g4 { grid-template-columns: repeat(2, 1fr); } .phones { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 640px) { .ix { padding: 0 20px 64px; } .g3, .g2, .g4 { grid-template-columns: 1fr; } a.card.wide { grid-column: auto; } .phones { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<canvas id="globe" aria-hidden="true"></canvas>
+<div class="vignette"></div>
+
+<main class="ix">
+  <section class="hero">
+    <div class="mk"><span data-brand="logo" data-s="64" data-variant="dark" data-word="atlas" data-title="Flux Atlas"></span></div>
+    <h1>The Flux network, live, as a place you can open.</h1>
+    <p>A globe of every node with the chain's 30 second heartbeat running through it, and windows you open on top: nodes, apps, blocks, payments, analytics. The moon that orbits it is the Flux symbol, and it is the chain. Everything below is interactive HTML on the real tokens.</p>
+    <p class="small">Numbers are real fixture values from 2026-09-30 19:46 UTC. The globe is a Canvas2D reference for the art-direction contract, not the production renderer.</p>
+    <div class="row"><a class="btn btn--primary" href="boot.html?autoplay=1">Play the boot</a><a class="btn" href="shell.html">Open the desktop shell</a><a class="btn" href="phone.html">Open the phone layout</a><a class="btn" href="brand-sheet.html">Brand sheet</a></div>
+  </section>
+
+  <h2>The moon is the chain</h2>
+  <p class="lead">Click the moon, or press M. A producer sends a beam up to it. The bar sets aside the development fund, then the moon fires three payouts down, small to large: the small hexagon to Cumulus, the big hexagon to Nimbus, the cap to Stratus.</p>
+  <div class="grid g3">
+    <a class="card" href="shell.html?view=about"><div class="im" style="background-image:url(../shots/desktop-about.webp)"></div><div class="tx"><b>About Flux</b><span>Opens from the moon with a tether: the live block ring, network totals, the symbol anatomy, the emission countdown.</span><code>shell.html?view=about</code></div></a>
+    <a class="card" href="shell.html?view=landing&at=1650"><div class="im" style="background-image:url(../shots/desktop-landing.webp)"></div><div class="tx"><b>A block lands</b><span>Producer flare, uplink to the moon, the bar's chip, three tier-coloured downlinks in coinbase order. Frozen at 1.65 s.</span><code>shell.html?view=landing&at=1650</code></div></a>
+    <a class="card" href="shell.html?view=landing"><div class="im" style="background-image:url(../shots/landing-sequence.webp)"></div><div class="tx"><b>The choreography, eight frames</b><span>From 0.15 s to 2.8 s: flare, shockwave, uplink, receive ring, the bar's chip, downlinks, arrivals and chips.</span><code>landing-sequence.png</code></div></a>
+  </div>
+
+  <h2>Desktop shell, 1600 by 900</h2>
+  <p class="lead">Drag the globe, press Ctrl and K for the palette, click the dock. A block lands every 30 seconds with the full choreography, or add ?speed=3 to the URL.</p>
+  <div class="grid g3">
+    <a class="card" href="shell.html"><div class="im" style="background-image:url(../shots/desktop-shell.webp)"></div><div class="tx"><b>Node inspector over the globe</b><span>Default view: the next payee, its host ladder and health, the Pulse feed, the block rail.</span><code>shell.html</code></div></a>
+    <a class="card" href="shell.html?view=palette"><div class="im" style="background-image:url(../shots/desktop-palette.webp)"></div><div class="tx"><b>Command palette</b><span>One field for heights, hashes, txids, addresses, IPs and app names.</span><code>shell.html?view=palette</code></div></a>
+    <a class="card" href="shell.html?view=tx"><div class="im" style="background-image:url(../shots/desktop-explorer-tx.webp)"></div><div class="tx"><b>Explorer, transaction</b><span>Where the value went, drawn as a flow. Real transaction from the fixtures.</span><code>shell.html?view=tx</code></div></a>
+    <a class="card" href="shell.html?view=app"><div class="im" style="background-image:url(../shots/desktop-app.webp)"></div><div class="tx"><b>App constellation</b><span>Where an app runs, expiry countdown, spec history with diffs.</span><code>shell.html?view=app</code></div></a>
+    <a class="card" href="shell.html?view=queue"><div class="im" style="background-image:url(../shots/desktop-queue.webp)"></div><div class="tx"><b>Payment queue wheel</b><span>A ring per tier, a cursor that advances one slot per block.</span><code>shell.html?view=queue</code></div></a>
+    <a class="card" href="shell.html?view=operator"><div class="im" style="background-image:url(../shots/desktop-operator.webp)"></div><div class="tx"><b>Operator view</b><span>Seven nodes on one host: the fan, and the warning it earns.</span><code>shell.html?view=operator</code></div></a>
+    <a class="card" href="shell.html?view=analytics"><div class="im" style="background-image:url(../shots/desktop-analytics.webp)"></div><div class="tx"><b>Network analytics</b><span>Reward cut countdown, decentralization, capacity, versions, churn.</span><code>shell.html?view=analytics</code></div></a>
+    <a class="card" href="shell.html?view=time"><div class="im" style="background-image:url(../shots/desktop-time-machine.webp)"></div><div class="tx"><b>Time machine</b><span>Scrub the network back in time; the globe takes an archive grade.</span><code>shell.html?view=time</code></div></a>
+    <a class="card" href="shell.html?view=weather"><div class="im" style="background-image:url(../shots/desktop-weather.webp)"></div><div class="tx"><b>Network weather</b><span>Unreachable nodes and benchmark failures as haze over the globe.</span><code>shell.html?view=weather</code></div></a>
+    <a class="card" href="shell.html?view=terminal"><div class="im" style="background-image:url(../shots/desktop-terminal.webp)"></div><div class="tx"><b>Terminal</b><span>Type next, node, goto, moon. Everything the UI does, from the keyboard.</span><code>shell.html?view=terminal</code></div></a>
+    <a class="card" href="shell.html?view=ambient"><div class="im" style="background-image:url(../shots/desktop-ambient.webp)"></div><div class="tx"><b>Ambient mode</b><span>The screensaver: the planet, a larger moon, the clock, one Lora sentence, a quiet ticker.</span><code>shell.html?view=ambient</code></div></a>
+    <a class="card" href="shell.html"><div class="im" style="background-image:url(../shots/desktop-moon-hover.webp)"></div><div class="tx"><b>Hovering the moon</b><span>The orbit slows to 15%, a hairline ring appears, and a tooltip shows the block, the countdown and the way in.</span><code>shell.html, hover the moon</code></div></a>
+  </div>
+
+  <h2>Boot</h2>
+  <p class="lead">Boot is real data loading. The four pieces of the Flux symbol assemble as each request completes, the finished symbol lifts off, and the same canvas hands it to the globe as the moon.</p>
+  <div class="grid g3">
+    <a class="card wide" href="boot.html?autoplay=1"><div class="im" style="background-image:url(../shots/boot-sequence.webp)"></div><div class="tx"><b>Boot, playing</b><span>Runs for about six seconds, then hands over to the shell. Six frames: spark, small hexagon, big hexagon, cap, whole, lift-off.</span><code>boot.html?autoplay=1</code></div></a>
+    <a class="card" href="boot.html?p=0.6"><div class="im" style="background-image:url(../shots/boot.webp)"></div><div class="tx"><b>Boot at 60%</b><span>Fixed progress for review: the whole symbol, the three tier counts.</span><code>boot.html?p=0.6</code></div></a>
+  </div>
+
+  <h2>Phone, 390 by 844</h2>
+  <p class="lead">The globe stays the stage. One bottom sheet hosts the same content the desktop shows in windows; five tabs replace the dock. Tap the moon for About Flux.</p>
+  <div class="phones">
+    <a class="card tall" href="phone.html?screen=node"><div class="im" style="background-image:url(../shots/phone-node.webp)"></div><div class="tx"><b>Globe</b><span>Node sheet</span></div></a>
+    <a class="card tall" href="phone.html?screen=live"><div class="im" style="background-image:url(../shots/phone-live.webp)"></div><div class="tx"><b>Live</b><span>Beat, payees, Pulse</span></div></a>
+    <a class="card tall" href="phone.html?screen=search"><div class="im" style="background-image:url(../shots/phone-search.webp)"></div><div class="tx"><b>Search</b><span>Palette as a screen</span></div></a>
+    <a class="card tall" href="phone.html?screen=apps"><div class="im" style="background-image:url(../shots/phone-apps.webp)"></div><div class="tx"><b>Apps</b><span>Constellation</span></div></a>
+    <a class="card tall" href="phone.html?screen=you"><div class="im" style="background-image:url(../shots/phone-you.webp)"></div><div class="tx"><b>You</b><span>Operator fan</span></div></a>
+    <a class="card tall" href="phone.html?screen=about"><div class="im" style="background-image:url(../shots/phone-about.webp)"></div><div class="tx"><b>About Flux</b><span>From the moon</span></div></a>
+    <a class="card tall" href="phone.html?screen=node&landing=1&at=1700&toast=1"><div class="im" style="background-image:url(../shots/phone-landing.webp)"></div><div class="tx"><b>A block lands</b><span>With the payment toast</span></div></a>
+  </div>
+
+  <h2>Brand and components</h2>
+  <p class="lead">The Flux brand governs colour, type and the symbol. The component sheet shows every component with every state; the brand sheet shows the lockups, clear space, colour, type and what is never done.</p>
+  <div class="grid g3">
+    <a class="card brand-card" href="brand-sheet.html"><div class="im" style="background-image:url(../shots/brand-sheet-top.webp)"></div><div class="tx"><b>Brand sheet</b><span>Two lockups, clear space, the symbol piece by piece, colour, type, misuse, app icons, the checklist.</span><code>brand-sheet.html</code></div></a>
+    <a class="card" href="components.html"><div class="im" style="background-image:url(../shots/components-top.webp)"></div><div class="tx"><b>Component sheet</b><span>Brand, surfaces, controls, badges, the moon, tiles, live lists, block rail, windows, dock, overlays, data, empty and error states.</span><code>components.html</code></div></a>
+    <a class="card" href="shell.html"><div class="im" style="background-image:url(../shots/desktop-compact-1366.webp)"></div><div class="tx"><b>Other sizes</b><span>1366 by 768 compact laptop shown. Also captured: 1920 by 1080, a 2x retina capture, and a 1180 by 820 tablet landscape.</span><code>desktop-compact-1366.png</code></div></a>
+  </div>
+
+  <div class="note"><b>Open it from disk.</b> Everything is classic scripts, inline icons and local fonts, so the pages work straight from file:// with no server. Fonts are Montserrat, Open Sans, Lora and IBM Plex Mono (SIL Open Font License 1.1, licences beside the files), icons are Lucide (ISC) plus original glyphs, the Flux symbol files are the official media kit, and the land mask is Natural Earth (public domain). Flux and the Flux symbol are trademarks of their owners; Atlas is an ecosystem tool for the Flux network.</div>
+</main>
+
+<div class="grain"></div>
+<script src="assets/brand.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/land.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/globe.js"></script>
+<script src="assets/moon.js"></script>
+<script>
+(function () {
+  var g = new window.AtlasGlobe(document.getElementById('globe'), window.ATLAS_DATA, { dprCap: 1.5, moonScale: 1.15 });
+  g.setLayers({ aim: false, labels: false, mesh: 'flow' }); g.setMode('ambient');
+  g.setInset({ left: window.innerWidth > 900 ? 620 : 0, right: 0, top: 0, bottom: 0 }, 0);
+  g.setPose({ lat: 26, lon: -20, size: window.innerWidth > 900 ? 118 : 90, roll: -16 });
+  var t0 = performance.now(); (function tick() { g.setBeat(((performance.now() - t0) / 30000) % 1); requestAnimationFrame(tick); })();
+})();
+</script>
+</body>
+</html>
