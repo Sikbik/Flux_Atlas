@@ -4,4 +4,12 @@ import type { Amount } from "./Amount";
 /**
  * When a node will next be paid.
  */
-export type PaymentEta = { rank: number, tier_size: number, eta_blocks: number, eta_ms: number, amount: Amount, };
+export type PaymentEta = { rank: number, tier_size: number, 
+/**
+ * Blocks until the payment (queue rank + 1).
+ */
+eta_blocks: number, 
+/**
+ * Estimated unix ms of the paying block (tip time + blocks x 30 s, never in the past).
+ */
+eta_ms: number, amount: Amount, };

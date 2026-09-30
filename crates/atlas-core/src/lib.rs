@@ -69,6 +69,7 @@ pub fn export_typescript(dir: &Path) -> Result<(), ts_rs::ExportError> {
         api::AddressDto,
         api::AddressTxsPage,
         api::AddressNodesDto,
+        api::AddressUtxosDto,
         api::MempoolDto,
         api::SupplyDto,
         api::RichListDto,

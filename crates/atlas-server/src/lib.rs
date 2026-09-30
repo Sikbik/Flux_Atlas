@@ -1,73 +1,87 @@
-//! Flux Atlas HTTP and WebSocket server (skeleton).
+//! Flux Atlas HTTP and WebSocket server.
 //!
-//! The router serves `/healthz` only; the `/api/v1` routes and `/ws` are to be added on top of
-//! [`AppState`], reading the engine's published state and prebuilt bodies.
+//! Everything is served from the engine's [`atlas_engine::Published`] state (plus its prebuilt
+//! bodies), the store, and on-demand upstream lookups:
+//!
+//! - hot snapshot bodies (`/bootstrap`, `/nodes.bin`, `/mesh.bin`, `/apps`) come straight from
+//!   the engine's pre-compressed bodies with ETag / 304 and content negotiation;
+//! - derived views (node index, analytics) are computed once per publish ([`views`]);
+//! - explorer lookups go through a TTL cache with single-flight fills and a per-client-IP
+//!   limiter ([`proxy`], [`explorer`]);
+//! - the live stream is serialized once per message and fanned out to every WebSocket
+//!   ([`live`]).
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+pub mod body;
+pub mod config;
+pub mod error;
+pub mod explorer;
+pub mod extract;
+pub mod fixtures;
+pub mod live;
+pub mod metrics;
+pub mod proxy;
+pub mod routes;
+pub mod search;
+pub mod state;
+pub mod views;
+pub mod watch;
+pub mod watch_shim;
+pub mod web;
+
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
-use atlas_core::api::HealthDto;
-use atlas_engine::{Engine, EngineConfig, EngineHandle};
-use axum::extract::State;
-use axum::routing::get;
-use axum::{Json, Router};
+use atlas_engine::Engine;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-/// Shared request state.
-#[derive(Clone, Debug)]
-pub struct AppState {
-    pub engine: EngineHandle,
-    pub started: Instant,
-}
+pub use config::{ServeConfig, ServerConfig};
+pub use routes::router;
+pub use state::AppState;
+pub use watch::WatchHooks;
 
-/// Builds the router.
-pub fn router(state: AppState) -> Router {
-    Router::new()
-        .route("/healthz", get(healthz))
-        .with_state(state)
-}
-
-async fn healthz(State(s): State<AppState>) -> Json<HealthDto> {
-    let p = s.engine.published();
-    Json(HealthDto {
-        status: if p.stale { "starting" } else { "ok" }.to_owned(),
-        seq: s.engine.seq(),
-        uptime_s: s.started.elapsed().as_secs(),
-        tip_height: p.network.tip.as_ref().map(|t| t.height),
-    })
-}
-
-/// `atlas serve` settings.
-#[derive(Debug, Clone)]
-pub struct ServeConfig {
-    pub bind: SocketAddr,
-    pub data_dir: PathBuf,
-}
-
-/// Opens the store, starts the engine and serves until SIGINT or SIGTERM.
+/// Opens the store, starts the engine and serves until SIGINT or SIGTERM. Shutdown closes live
+/// connections with 1001 before the engine and store stop.
 pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
     std::fs::create_dir_all(&cfg.data_dir)
         .with_context(|| format!("creating data dir {}", cfg.data_dir.display()))?;
     let db = cfg.data_dir.join("atlas.redb");
     let store =
         atlas_store::Store::open(&db).with_context(|| format!("opening {}", db.display()))?;
-    let clients = atlas_flux::Clients::new(atlas_flux::ClientsConfig::default())
-        .context("building upstream clients")?;
-    let engine = Engine::start(EngineConfig::default(), store.clone(), clients);
-    let app = router(AppState {
-        engine: engine.clone(),
-        started: Instant::now(),
-    });
+    let clients =
+        atlas_flux::Clients::new(cfg.clients.clone()).context("building upstream clients")?;
+    let mut engine_cfg = cfg.engine.clone();
+    let unapplied = cfg.engine_overrides.apply(&mut engine_cfg);
+    if !unapplied.is_empty() {
+        tracing::warn!(
+            ?unapplied,
+            "engine settings not supported by this engine build"
+        );
+    }
+    let engine = Engine::start(engine_cfg, store.clone(), clients);
+    let state = AppState::new(engine.clone(), cfg.server.clone());
+    let app = router(state.clone());
     let listener = tokio::net::TcpListener::bind(cfg.bind)
         .await
         .with_context(|| format!("binding {}", cfg.bind))?;
     tracing::info!(addr = %cfg.bind, data = %cfg.data_dir.display(), "listening");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    let st = state.clone();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        st.begin_shutdown();
+    })
+    .await?;
+    // Upgraded WebSocket connections are not tracked by the HTTP server: wait for them to send
+    // their close frames.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while state.hub.connections() > 0 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
     engine.shutdown().await;
     store.flush().context("final store flush")?;
     tracing::info!("stopped");
@@ -125,18 +139,15 @@ pub async fn healthcheck(addr: SocketAddr, timeout: Duration) -> anyhow::Result<
 
 #[cfg(test)]
 mod tests {
+    use atlas_core::api::HealthDto;
+
     use super::*;
 
     #[tokio::test]
     async fn healthz_and_healthcheck() {
         let dir = tempfile::tempdir().unwrap();
-        let store = atlas_store::Store::open(dir.path().join("atlas.redb")).unwrap();
-        let clients = atlas_flux::Clients::new(atlas_flux::ClientsConfig::default()).unwrap();
-        let engine = Engine::start(EngineConfig::default(), store, clients);
-        let app = router(AppState {
-            engine: engine.clone(),
-            started: Instant::now(),
-        });
+        let engine = fixtures::offline_engine(&dir.path().join("atlas.redb")).unwrap();
+        let app = router(AppState::new(engine.clone(), ServerConfig::default()));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await });

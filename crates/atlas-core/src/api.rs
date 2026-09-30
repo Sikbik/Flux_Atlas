@@ -344,7 +344,9 @@ pub struct NodeDto {
 pub struct PaymentEta {
     pub rank: u32,
     pub tier_size: u32,
+    /// Blocks until the payment (queue rank + 1).
     pub eta_blocks: u32,
+    /// Estimated unix ms of the paying block (tip time + blocks x 30 s, never in the past).
     pub eta_ms: u64,
     pub amount: Amount,
 }
@@ -415,6 +417,8 @@ pub enum PeerDirection {
     Outbound,
     Inbound,
     Both,
+    /// The edge is known but its direction was not reported.
+    Unknown,
 }
 
 /// One peer of a node.
@@ -737,6 +741,30 @@ pub struct AddressTxsPage {
     pub next_cursor: Option<String>,
 }
 
+/// One unspent output of an address.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct UtxoDto {
+    pub txid: Hash32,
+    pub vout: u32,
+    pub value: Amount,
+    /// `None` while unconfirmed.
+    pub height: Option<u32>,
+    pub confirmations: u32,
+    pub coinbase: bool,
+}
+
+/// `GET /address/{addr}/utxos?cursor&limit`, largest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct AddressUtxosDto {
+    pub address: String,
+    pub items: Vec<UtxoDto>,
+    /// Total number of unspent outputs.
+    pub total: u32,
+    /// Sum over all unspent outputs (not just this page).
+    pub total_value: Amount,
+    pub next_cursor: Option<String>,
+}
+
 /// `GET /address/{addr}/nodes`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct AddressNodesDto {
@@ -797,6 +825,14 @@ pub enum SearchKind {
     App,
     Host,
     Shielded,
+    /// Operator view (payment address or ZelID owning nodes); key is the address or ZelID.
+    Operator,
+    /// Country; key is the ISO-3166 alpha-2 code.
+    Country,
+    /// Provider; key is `AS<number>` when the ASN is known, else the org name.
+    Provider,
+    /// Software version; key is `<component>:<version>` (for example `flux_os:8.20.0`).
+    Version,
 }
 
 /// A typed search result.
@@ -831,6 +867,7 @@ pub struct TimelineDto {
 pub struct NextPayment {
     pub node: NodeId,
     pub eta_blocks: u32,
+    /// Estimated unix ms of the paying block.
     pub eta_ms: u64,
     pub amount: Amount,
 }
@@ -857,6 +894,8 @@ pub enum ApiErrorCode {
     Unavailable,
     RateLimited,
     Internal,
+    /// The endpoint exists but is not implemented yet (HTTP 501).
+    NotImplemented,
 }
 
 /// Error body inside [`ApiErrorDto`].
