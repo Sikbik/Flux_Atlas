@@ -107,14 +107,43 @@ expensive payload only when that indicator moves. v1 rebuilt everything every 30
 | T1 | **PayoutAttribution** | Our own payment-queue model per tier (rank order from the node list, advanced locally on every block; the paid node moves to the back). Match each coinbase payee `(tier, address)` against the head of that tier's queue. Reconcile with `last_paid_height` from NodeReconcile. **Must be recorded at ingest time**, since `last_paid_height` is overwritten on the next payment and one address can own 180+ nodes. | per block | `NodePaid` with an exact node; drives the **"next to be paid"** predictive highlight (head of each tier queue) before the block lands |
 | T1 | **MempoolStream** | the same Insight socket, `tx` events (~23/min; ~91% are fluxnode confirms/starts with empty `vout`, ~2/min regular transfers carrying value + outputs). Push transfers immediately. Show node txs as pending check-ins, fully classified when their block lands. Optional enrichment: `/api/tx/{txid}` for node txs (≤ 0.4 req/s) to animate check-ins before inclusion. Reconcile the set every 60 s. | push | `MempoolTx` (transfer / pending node tx) |
 | T1 | **Expiry watch** | derived: a node expires after **640 blocks** without a confirm; confirms are allowed every **≥ 500 blocks** | per block | `NodeAtRisk` (≥ 560 blocks since last confirm), `NodeExpired` (predicted, then confirmed by reconcile) |
-| T2 | **AppMessages** | pending (temporary) app messages + permanent messages, diffed by hash | 10–15 s | `AppRegistered`, `AppUpdated` (with spec diff), `AppRenewed` |
-| T2 | **AppPlacement** | app locations, diffed per (app, ip) | 20–30 s | `AppInstanceStarted`, `AppInstanceRemoved` |
-| T2 | **NodeReconcile** | full deterministic node list (ground truth for rank, status, expiry, IP changes) | 60 s, or on tip if cheap; skip the parse when the body hash is unchanged | `NodeConfirmed`, `NodeExpired`, `NodeIpChanged`, `RankShift` (coalesced) |
-| T2 | **Chain** | chain info / supply / tier counts | per block (piggyback) | `Stats` |
-| T3 | **HostSweep** (rolling crawl) | per-host FluxOS API: connected peers, incoming connections, ArcaneOS, benchmarks, installed apps, geolocation | continuous at a fixed rate (≈ 3–5 hosts/s, concurrency ≤ 32): full cycle over ~2.7k hosts ≤ 20 min, each host result emitted immediately. Priority queue: hosts touched by T1/T2 events (new starts, IP changes, instance moves), hosts of client-watched nodes, and stale hosts first | `PeerLinksChanged`, `NodeUnreachable` / `NodeRecovered`, `NodeBenchmarkChanged`, `NodeVersionChanged`, `NodeAppsChanged`, `HostSwept` (freshness) |
-| T3 | **GeoResolve** | per-node geolocation (crawl) with local GeoIP (mmdb) as instant fallback, so new nodes land on the globe immediately | on first sight + in sweep | `NodeLocated` |
+| T1 | **AppChainFeed** | app register/update payments are txs with an OP_RETURN (message hash) to the app address; seen in the decoded block → `GET /apps/permanentmessages?hash=<h>` for the exact spec + price paid | per block | `AppRegistered`, `AppUpdated` (spec diff + FLUX paid) |
+| T2 | **AppPending** | `/apps/temporarymessages` (5 s apicache, 12.8 KB br). Pending deploys appear a median ~168 s before they're mined; ~15% never get mined (show as pending, expire after 1 h) | 10 s | `AppPending` → promoted when the OP_RETURN lands, or `AppPendingExpired` |
+| T2 | **AppInstalling** | `/apps/installinglocations` (30 B when empty) | 10 s | `AppInstalling` |
+| T2 | **AppPlacement** | `/apps/locations` (318 KB br), diffed on `(name, ip)`: new key = spawn, missing = removal/expiry, changed `hash` = rolling update. **Hot apps** (open in any client) are polled via `/apps/location/<name>` every 5–10 s | 90 s (configurable 60–120) | `AppInstanceStarted`, `AppInstanceRemoved`, `AppInstanceUpdated` |
+| T2 | **AppCatalog** | `/apps/globalappsspecifications` (1.22 MB) with `If-None-Match`, plus an immediate refresh on AppChainFeed; `/apps/installingerrorslocations` every 15 min; marketplace list hourly | 10 min | reconciliation + `AppInstallFailed` |
+| T2 | **NodeRegistry** | a **block-driven state machine**: starts, initial confirms (joins), heartbeats (every ~500–520 blocks), IP changes, payouts, collateral spends (from block vins), expiry (>640 blocks since confirm) and DOS (unconfirmed start after 240 blocks) are all derived per block. Rank is recomputed locally: per tier, ascending `max(last_paid_height, confirmed_height)`, verified zero inversions. Reconciled against `/daemon/viewdeterministicfluxnodelist` (546 KB br) every 10 min, or immediately if `getfluxnodecount` (60 s) totals disagree. `getstartlist` / `getdoslist` every 60 s as cross-checks. Any reconcile diff is logged as a bug signal | per block + 10 min | `NodeStarted`, `NodeConfirmed`, `NodeHeartbeat`, `NodeIpChanged`, `NodeExpired`, `NodeDosed`, `NodeCollateralSpent`, `RankShift` (coalesced) |
+| T2 | **NextPayees** | local queue model (rank 0 per tier), validated against `fluxnodecurrentwinner?nc=<ts>` after each tip (it names the exact payees of the next block; ignore it if stale) | per block | `NextPayees` (drives the pre-aimed payout glow) |
+| T2 | **Chain** | `getfluxnodecount`, socket `info` (supply per block) | 60 s / push | `Stats` |
 | T2 | **Price** | Insight `/api/markets/info` (Flux-provided; also pushed as socket `markets_info`), CoinGecko `ids=zelcash` as fallback | 60 s / push | `Price` |
 | T2 | **Supply** | FluxOS `gettxoutsetinfo` (3 s upstream; cache 10 min) + `getblockchaininfo.valuePools`; socket `info.supply` per block | per block (socket) / 10 min | `Stats` |
+| T3 | **StatsRound** | `stats.runonflux.io/fluxinfo` (1.63 MB br full; `?projection=` variants), fetched whenever `roundTime` changes (check every 5 min; rounds take ~15–18 min). Gives hardware/benchmarks, FluxOS/fluxd/bench/ArcaneOS versions, geolocation (ip-api: lat/lon, country, region, org, ASN, hosting flags), running apps and locked resources for every node. ~150 unreachable nodes come back with an `error` and **zeroed placeholders: treat them as missing, never as (0,0)** | per round | `NodeHardwareChanged`, `NodeVersionChanged`, `NodeUnreachable`/`NodeRecovered`, `NodeLocated`, `StatsRound` (freshness) |
+| T3 | **GeoResolve** | `stats.runonflux.io/fluxlocation/<ip>` (0.5 s, works for any node IP) **immediately** for every new or changed IP (so new nodes land on the globe within seconds), and for zero-geo nodes; cached 7 days per IP. Local fallback for org/country/region: Flux's own `iplocation.bin.gz` (the table FluxOS placement uses; weekly). Optional DB-IP City Lite mmdb for lat/lon (CC-BY, attribution) if configured | on event | `NodeLocated` |
+| T3 | **TopologySweep** | `/flux/topology` on rotating reachable nodes (each call returns ~60 reporters' peer lists). **Rolling: one call every ~12 s**, and each result streams immediately, so the whole overlay graph refreshes about every 30 min without a batch | continuous | `PeerLinksChanged` (mesh deltas) |
+| T3 | **WatchProbe** | direct, SSRF-guarded probes of **watched** nodes only (clients' watchlists): `/flux/version` (or `/flux/uptime`) every 60 s. This gives operators near-real-time offline detection, which is otherwise impossible at network scale | 60 s per watched host | `NodeUnreachable`/`NodeRecovered` (fast path) |
+
+**No full-network per-node crawl.** Aggregated sources (stats rounds, topology) replace it. We only touch individual
+node APIs for TopologySweep, WatchProbe and failover reads, always through the SSRF guard.
+
+**Bootstrap backfills (background, resumable, polite):** `stats /fluxhistorystats` (30 days of tier counts at
+~15-min resolution → metrics); `/apps/permanentmessages` full (one call, 24.5 MB, 6 years of app history →
+app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` (≤ 2 req/s), extendable to 30 days.
+
+**FluxOS caching facts:** apicache keys on the full URL (30 s default; 5 s for topology/temporarymessages;
+2 min for permanentmessages), and **a unique query string (`?nc=<ts>`) bypasses it**. Only use that where freshness
+matters (currentwinner, fallback tip detection). A second, internal 20 s daemon-RPC cache cannot be bypassed,
+except that errors are never cached. `getblock`/`getrawtransaction` are cached by hash, so they're always fresh.
+`api.runonflux.io` appears pinned to one backend (`fluxnode:` response header), so node-local endpoints through
+it describe that one node. Keep a pool of healthy direct nodes for failover.
+
+**Tip-detection fallbacks** (only while both explorer sockets are unhealthy): Insight `getLastBlockHash` every
+2 s; then, if Insight is down too, FluxOS `getblockhash/<tip+1>?nc=<ts>` at 1 req/s rotated across 3–5 healthy
+nodes (errors are uncached, so it is detected within 0.9–2.2 s). Steady-state polling cost is zero.
+
+**Parsing quirks:** ints arrive as strings (`outidx`, `activesince`, `lastpaid`, `amount`, v2/v3 ports), objects as
+strings (`apps.fluxusage: "0"`), typos (`explorerScannedHeigth`, `enviromentParameters`), node-list IPs omit `:16127`
+while other sources always include the port (normalize to `host:port`), and pre-PoN app `expire` values are in
+2-minute blocks (×4 after height 2,020,000).
 
 **Chain facts (verified 2026-09-30):** Proof of Node since height 2,020,000 (2025-10-25). 30 s target spacing
 (29.98 s measured). 14 FLUX/block. **The first 10% reward cut is at height 3,071,200 (~2026-10-26)**, then every
@@ -124,9 +153,9 @@ Insight's `minedBy` is the Stratus payee, **not** the producer, so never label i
 it to Trezor Suite.
 
 **Upstream budget:** ~3 calls per block for the chain path regardless of viewer count, ≤ 4 req/s per upstream host
-overall, circuit breaker on 5xx/timeouts. Backfill: the last 7 days of blocks at startup (~20k `getblock` calls
-at ≤ 2 req/s, background priority, resumable), then extend to 30 days. Older blocks are proxied on demand and
-cached forever beyond the finality window.
+overall, circuit breaker on 5xx/timeouts. Total steady-state transfer is ~0.7–1.1 GB/day, dominated by the
+`/apps/locations` diff (its interval is the main lever). Older blocks are proxied on demand and cached forever
+beyond the finality window.
 
 Detection budget: T1 events should reach the browser ≤ 3 s after the block/tx is visible upstream (target ≤ 1 s
 with push). The server stamps every event with `observed_ms` and the upstream `event_ms` (block time / first-seen),
@@ -136,18 +165,17 @@ so clients can show true latency.
 its child events (heartbeats, payouts, starts). The client then stages the animation (producer beam → payout
 arcs → heartbeat ripple over a few seconds) instead of receiving a burst of unrelated messages. Non-block events
 stream individually. The server never drops events to save bandwidth, but it may coalesce `RankShift` /
-`HostSwept` into periodic summaries.
+`StatsRound` into periodic summaries.
 
 **SSRF guard (mandatory):** node IPs come from a public list anyone can register into. Never connect to
 loopback, private (RFC1918/ULA), link-local, CGNAT, multicast, documentation, or unspecified ranges. Only
 connect on the node's advertised port (or the 16127 default), and cap response sizes (e.g. 4 MB).
 
-**UPnP facts (legacy analysis, 2026-09-30):** 6,724 nodes on only ~2,655 distinct hosts. 64% of nodes
-advertise `ip:port` (UPnP). A node's API port = advertised port (default 16127), and its UI port = API port − 1.
-Crawl per **host** and fan results out to the nodes behind it.
+**Addressing facts (verified 2026-09-30):** 6,724 nodes (Cumulus 3,378 / Nimbus 1,582 / Stratus 1,764) on 2,655 IPs.
+Up to 8 nodes per IP on UPnP API ports 16137/16147/…/16197; default 16127 (TLS on API port + 1; UI port = API
+port − 1). No IPv6 or onion nodes today (parse bracketed IPv6 anyway). 12 confirmed nodes have an empty IP: keep
+them, but they can't be located.
 
-On first boot, bounded backfills run: the last N blocks (default 2 880 ≈ one day at 30 s blocks), and
-long-range history series if an upstream offers them [TBD research].
 
 ### 3.3 Identity
 - **Canonical node identity = collateral outpoint** (`txid:vout`), since IPs change. Internally every node
@@ -293,7 +321,7 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
 
 - Server → `hello { server, seq, tip, now_ms }`
 - Client → `sub { topics: ["chain","mempool","nodes","apps","mesh","stats","feed"], since_seq?: u64, watch?: [NodeId] }`
-  (`watch` raises HostSweep priority for those nodes' hosts and guarantees their events are never coalesced)
+  (`watch` enrolls those nodes in WatchProbe (fast offline detection) and guarantees their events are never coalesced; `watch_apps?: [name]` enables hot-app instance polling)
 - Server keeps a ring buffer of the last 2,048 messages. If `since_seq` is inside the buffer it replays;
   otherwise it sends `resync { seq }` and the client refetches `/bootstrap` + `/nodes.bin`.
 - Every message carries `seq`, `observed_ms`, and (when known) `event_ms`, so clients show true latency.
@@ -306,7 +334,9 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
   - `nodes { prev_seq, added: [NodeLite], removed: [id], changed: [{id, …changed fields}], cause }`
     (`cause`: reconcile | block | sweep | geo)
   - `apps { prev_seq, upserted: [AppLite], removed: [name], instances: [{app, started: [id], removed: [id]}], cause }`
-  - `mesh { added: [[a, b]], removed: [[a, b]], host_swept?: HostRef }` (streamed per swept host)
+  - `mesh { added: [[a, b]], removed: [[a, b]], reporters: [NodeId] }` (streamed per TopologySweep call)
+  - `next_payees { height, payees: [{tier, node}] }` (after every tip; pre-aims the payout glow)
+  - `app_pending { hash, app, kind: register|update, received_ms, expires_ms }`, `app_installing { app, node }`
   - `stats { summary }` (coalesced to ≤ 1/s)
   - `feed { kind, ts, text_key, refs }` (human-readable activity items: node joined/left, app deployed/updated,
     version rollout milestones, large transfers). The UI renders these; it never parses free text.

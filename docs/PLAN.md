@@ -11,7 +11,7 @@ commits at each milestone. Status values: done, running, queued.
 | WP | Owner | Output | Status |
 |---|---|---|---|
 | R1 Legacy analysis | Opus | `docs/research/legacy-brief.md` | done |
-| R2 Flux API map (live-verified) | Opus | `docs/research/flux-api.md`, `docs/research/fixtures/flux/` | running |
+| R2 Flux API map (live-verified) | Opus | `docs/research/flux-api.md`, `docs/research/fixtures/flux/` | done |
 | R3 Explorer API map | Opus | `docs/research/explorer-api.md`, `docs/research/fixtures/explorer/` | done |
 | D1 Design direction + tokens + mock | Sonnet (sonnet-max) | `docs/design/**` | running |
 | D2 Globe + ambient renderer lab | Sonnet (sonnet-max) | `labs/globe/**` | running |
