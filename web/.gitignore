@@ -1,0 +1,8 @@
+# The web app pins its dependency tree (the root .gitignore ignores lockfiles for v1).
+!package-lock.json
+
+node_modules/
+dist/
+test-results/
+e2e/artifacts/
+*.tsbuildinfo
