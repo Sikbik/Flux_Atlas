@@ -1,0 +1,46 @@
+{
+  "name": "flux-atlas-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Flux Atlas v2 web app: live globe and explorer for the Flux network.",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "node --test e2e/",
+    "shot": "node scripts/shot.mjs",
+    "sync-tokens": "node scripts/sync-tokens.mjs"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.104.0",
+    "@tanstack/react-router": "^1.170.41",
+    "cmdk": "^1.1.1",
+    "lucide-react": "^1.49.0",
+    "motion": "^13.4.6",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "uplot": "^1.6.32",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^30.1.1",
+    "playwright-core": "^1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.3"
+  }
+}
