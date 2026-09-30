@@ -161,6 +161,11 @@ impl Hub {
         self.conns.load(Ordering::Acquire)
     }
 
+    /// Connections currently subscribed to the live stream.
+    pub fn subscribers(&self) -> usize {
+        self.tx.receiver_count()
+    }
+
     pub fn shutdown_rx(&self) -> watch::Receiver<bool> {
         self.shutdown.subscribe()
     }

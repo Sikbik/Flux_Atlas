@@ -174,8 +174,7 @@ async fn per_ip_rate_limit_charges_only_upstream_misses() {
             StatusCode::OK
         );
     }
-    // Another client (by trusted X-Forwarded-For is off; by socket peer in the harness they share
-    // 127.0.0.1), so check the counter instead.
+    // Per-client isolation is covered by the trusted-proxy test below.
     assert!(e.state.explorer.guard.rate_limited.load(Ordering::Relaxed) >= 1);
     assert_eq!(
         mock.hits(&format!("tx/{c}")),
