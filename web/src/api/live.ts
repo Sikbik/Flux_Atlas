@@ -558,7 +558,7 @@ export class LiveClient {
   private async runResync(reason: string): Promise<void> {
     if (!this.running || this.resyncing) return;
     this.resyncing = true;
-    this.counters.resyncs++;
+    if (reason !== 'initial') this.counters.resyncs++;
     this.clearTimers();
     this.dropSocket(CloseCode.Normal, 'resync');
     this.setStatus({ status: 'syncing', retryAtMs: null });

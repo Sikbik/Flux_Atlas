@@ -144,6 +144,18 @@ describe('pre-aim', () => {
     expect(clear[0]!.at).toBe(timeline('payoutLanded').at(-1)!.at);
   });
 
+  it('never clears the next aim with the previous landing', () => {
+    const { c, sink } = setup();
+    c.handle(fresh('next_payees', 1, { height: 100, payees: [{ tier: 'stratus', node: 1, address: 'a' }] }));
+    c.handle(block(100));
+    c.handle(fresh('next_payees', 3, { height: 101, payees: [{ tier: 'stratus', node: 2, address: 'b' }] }));
+    vi.advanceTimersByTime(10_000);
+    const seq = sink.log
+      .filter((e) => e.name === 'aim' || e.name === 'clearAim')
+      .map((e) => (e.name === 'aim' ? `aim:${(e.cmd as { height: number }).height}` : 'clear'));
+    expect(seq).toEqual(['aim:100', 'clear', 'aim:101']);
+  });
+
   it('computes the ETA from the last block time', () => {
     const { c, timeline } = setup();
     const b = blockMsg(100);

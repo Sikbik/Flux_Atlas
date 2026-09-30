@@ -136,6 +136,8 @@ interface Landing {
   start: number;
   /** Scheduler time when the last payout lands. */
   landsAt: number;
+  /** True once the beams have landed (the aim may be placed for the next block). */
+  done: boolean;
   /** Pending P0 steps (flushed, not dropped, when the next block arrives). */
   p0: Map<TimerHandle, () => void>;
   /** Pending texture steps (dropped when the next block arrives). */
@@ -169,7 +171,8 @@ export class Choreographer {
   private lastBlock: { height: number; timeMs: number } | null = null;
   private nextPayees: NextPayeesMsg | null = null;
   private aimedHeight: number | null = null;
-  private aimTimer: TimerHandle | undefined;
+  /** A `next_payees` arrived during a landing; aim when the beams have landed. */
+  private aimPending = false;
   private readonly p2: TokenBucket;
   private readonly p3: TokenBucket;
   private readonly bursts = new Map<string, Burst>();
@@ -339,13 +342,11 @@ export class Choreographer {
       height: m.height,
       start: now,
       landsAt: now,
+      done: false,
       p0: new Map(),
       texture: new Set(),
     };
     this.landing = landing;
-
-    // An aim for this height collapses into the landing; nothing re-aims until the next message.
-    this.sched.clearTimeout(this.aimTimer);
 
     this.play(() =>
       this.sink.beat({
@@ -374,12 +375,12 @@ export class Choreographer {
           }),
         );
       }
-      if (aimed) this.clearAim();
       const hb = [...m.heartbeats, ...m.confirms];
       if (hb.length)
         this.play(() => this.sink.heartbeats({ height: m.height, nodes: this.sampleForBudget(hb, 1) }));
       this.focusPulses(m);
       landing.landsAt = now;
+      this.landed(landing, aimed);
       return;
     }
 
@@ -427,7 +428,8 @@ export class Choreographer {
     this.p0(landing, flareAt + (compact ? T.moonFlashMs : T.devFundAfterFlare), () =>
       this.sink.devFund({ height: m.height, amount: m.dev_fund }),
     );
-    if (aimed) this.p0(landing, lastLand, () => this.clearAim());
+    // The last beam arrives: the reticles collapse, then the next block's payees may be aimed.
+    this.p0(landing, lastLand, () => this.landed(landing, aimed));
     landing.landsAt = now + lastLand;
 
     // P1: focus nodes among the heartbeats, confirms and starts pulse individually.
@@ -473,6 +475,16 @@ export class Choreographer {
           else this.coalesce('started', 1);
         });
       });
+  }
+
+  /** End of a landing's beams: clear this height's aim, then place any aim that was waiting. */
+  private landed(l: Landing, aimed: boolean): void {
+    l.done = true;
+    if (aimed && this.aimedHeight === l.height) this.clearAim();
+    if (this.aimPending) {
+      this.aimPending = false;
+      this.reaim();
+    }
   }
 
   private focusPulses(m: BlockMsg): void {
@@ -536,31 +548,28 @@ export class Choreographer {
     const np = this.nextPayees;
     if (!np || this.motion === 'off' || !this.visible) return;
     if (this.lastBlock && np.height <= this.lastBlock.height) return;
-    this.sched.clearTimeout(this.aimTimer);
-    const now = this.sched.now();
-    const wait = this.landing ? Math.max(0, this.landing.landsAt - now) : 0;
-    const fire = () => {
-      const etaMs = this.lastBlock
-        ? Math.max(
-            0,
-            this.lastBlock.timeMs + this.blockMs * (np.height - this.lastBlock.height) - this.serverNow(),
-          )
-        : this.blockMs;
-      this.aimedHeight = np.height;
-      const mine = np.payees
-        .filter((p) => p.node !== null && this.focus.has(p.node))
-        .map((p) => p.node as number);
-      this.play(() =>
-        this.sink.aim({
-          height: np.height,
-          payees: np.payees.map((p) => ({ tier: p.tier, node: p.node })),
-          etaMs,
-          mine,
-        }),
-      );
-    };
-    if (wait === 0) fire();
-    else this.aimTimer = this.sched.setTimeout(fire, wait);
+    if (this.landing && !this.landing.done) {
+      this.aimPending = true;
+      return;
+    }
+    const etaMs = this.lastBlock
+      ? Math.max(
+          0,
+          this.lastBlock.timeMs + this.blockMs * (np.height - this.lastBlock.height) - this.serverNow(),
+        )
+      : this.blockMs;
+    this.aimedHeight = np.height;
+    const mine = np.payees
+      .filter((p) => p.node !== null && this.focus.has(p.node))
+      .map((p) => p.node as number);
+    this.play(() =>
+      this.sink.aim({
+        height: np.height,
+        payees: np.payees.map((p) => ({ tier: p.tier, node: p.node })),
+        etaMs,
+        mine,
+      }),
+    );
   }
 
   private clearAim(): void {
@@ -752,7 +761,7 @@ export class Choreographer {
     }
     for (const h of this.misc) this.sched.clearTimeout(h);
     this.misc.clear();
-    this.sched.clearTimeout(this.aimTimer);
+    this.aimPending = false;
   }
 }
 
