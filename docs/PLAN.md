@@ -25,13 +25,13 @@ commits at each milestone. Status values: done, running, queued.
 | WP | Owner | Boundary | Acceptance |
 |---|---|---|---|
 | B1 Backend foundation (done, 01ef4fd) | Opus | `Cargo.toml`, `crates/atlas-core`, `crates/atlas-flux`, `crates/atlas-store`, skeletons of `atlas-engine` + `atlas-server` | fmt/clippy/test green; every parser passes on every fixture; the nodes.bin codec round-trips and a golden file is written; redb tables round-trip; SSRF guard unit-tested; ts-rs exports into `web/src/api/generated/` |
-| F1 Frontend foundation | Opus | `web/**` (initial) | Vite app boots; tokens + fonts load; router; the nodes.bin decoder passes the golden test; WS client handles resync; NetworkStore; mock mode with a fake live feed; globe engine ported and mounted as the persistent wallpaper; window-manager + dock primitives; Playwright smoke + screenshot script; `tsc`/biome/vitest green |
+| F1a Frontend foundation: logic core (running, worktree). F1b: globe port + window-manager core after D1/D2 | Opus | `web/**` (initial) | Vite app boots; tokens + fonts load; router; the nodes.bin decoder passes the golden test; WS client handles resync; NetworkStore; mock mode with a fake live feed; globe engine ported and mounted as the persistent wallpaper; window-manager + dock primitives; Playwright smoke + screenshot script; `tsc`/biome/vitest green |
 
 ## Phase 3 — Features (parallel)
 | WP | Owner | Boundary | Acceptance |
 |---|---|---|---|
 | B2 Engine & ingest (running, worktree) | Opus | `crates/atlas-engine` | runs against the live API for 30+ min with no errors; events derived correctly (unit tests from fixture pairs); metrics/snapshots/time machine persist and reload; peer crawl respects the SSRF guard and rate limits; memory stays flat |
-| B3 API server + live hub (running, worktree) | Opus | `crates/atlas-server` | every §6 endpoint is implemented and tested; pre-built bodies with ETag/compression; WS protocol incl. replay/resync; search resolution; explorer proxy cache; SPA embed; `oha` p99 < 5 ms on hot endpoints |
+| B3 API server + live hub (done, merged 62bb028) | Opus | `crates/atlas-server` | every §6 endpoint is implemented and tested; pre-built bodies with ETag/compression; WS protocol incl. replay/resync; search resolution; explorer proxy cache; SPA embed; `oha` p99 < 5 ms on hot endpoints |
 | F2 Shell & signature moments | Sonnet | `web/src/shell/**`, `web/src/ui/**` | boot sequence on real load progress; windows (drag/snap/stack/minimize); dock; ⌘K palette; terminal; toasts; achievements; ambient mode; phone layout |
 | F3 Inspectors | Sonnet | `web/src/features/{node,app,operator}/**` | node + app inspectors, app constellation, operator view, watchlist |
 | F4 Explorer & analytics | Sonnet | `web/src/features/{explorer,analytics,timemachine,search}/**` | live block rail, block/tx/address/mempool, analytics dashboards, time-machine scrubber |
