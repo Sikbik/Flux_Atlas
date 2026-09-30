@@ -1,0 +1,31 @@
+[package]
+name = "atlas-flux"
+description = "Flux Atlas upstream clients: FluxOS, Insight explorer, stats service; parsers, failover, rate limits, SSRF guard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+atlas-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+compact_str.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
+governor.workspace = true
+rand.workspace = true
+url.workspace = true
+bytes.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

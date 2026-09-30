@@ -1,0 +1,23 @@
+[package]
+name = "atlas-store"
+description = "Flux Atlas persistence: redb tables, versioned postcard codec, batched write-behind commits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+atlas-core.workspace = true
+redb.workspace = true
+postcard.workspace = true
+zstd.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

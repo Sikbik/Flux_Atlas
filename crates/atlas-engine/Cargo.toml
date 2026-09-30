@@ -1,0 +1,30 @@
+[package]
+name = "atlas-engine"
+description = "Flux Atlas ingest engine: jobs, projections, publisher and live fan-out"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+atlas-core = { path = "../atlas-core" }
+atlas-flux = { path = "../atlas-flux" }
+atlas-store = { path = "../atlas-store" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+arc-swap.workspace = true
+bytes.workspace = true
+blake3.workspace = true
+brotli.workspace = true
+flate2.workspace = true
+zstd.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

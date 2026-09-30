@@ -1,0 +1,23 @@
+[package]
+name = "atlas-core"
+description = "Flux Atlas domain model, API DTOs, live protocol messages and binary codecs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+hex.workspace = true
+compact_str.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+postcard.workspace = true
+
+[lints]
+workspace = true

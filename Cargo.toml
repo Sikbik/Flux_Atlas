@@ -1,0 +1,108 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/atlas-core",
+    "crates/atlas-flux",
+    "crates/atlas-store",
+    "crates/atlas-engine",
+    "crates/atlas-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+repository = "https://github.com/Sikbik/Flux_Atlas"
+publish = false
+
+[workspace.dependencies]
+# Internal crates
+atlas-core = { path = "crates/atlas-core" }
+atlas-flux = { path = "crates/atlas-flux" }
+atlas-store = { path = "crates/atlas-store" }
+atlas-engine = { path = "crates/atlas-engine" }
+
+# Serialization
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
+postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }
+ts-rs = { version = "12.0.1", default-features = false, features = ["serde-compat", "no-serde-warnings"] }
+hex = "0.4.3"
+
+# Small containers
+compact_str = { version = "0.10.0", features = ["serde"] }
+smallvec = { version = "1.16.2", features = ["serde", "const_generics", "union"] }
+
+# Errors, logging
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "ansi", "std"] }
+
+# Async runtime and networking
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "signal"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["std", "sink"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "gzip", "brotli", "zstd"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+governor = { version = "0.10.4", default-features = false, features = ["std", "quanta", "jitter"] }
+rand = "0.10.3"
+url = "2.5.8"
+bytes = "1.12.1"
+http = "1.5.0"
+
+# Storage and compression
+redb = "4.3.0"
+zstd = { version = "0.14.0", default-features = false }
+brotli = { version = "9.0.0", default-features = false, features = ["std"] }
+flate2 = "1.1.10"
+blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
+
+# Server
+axum = { version = "0.8.9", default-features = false, features = ["http1", "http2", "tokio", "json", "query", "ws"] }
+arc-swap = "1.9.2"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+mimalloc = { version = "0.1.52", default-features = false }
+
+# Dev
+tempfile = "3.27.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+# Pedantic, minus the lints that are mostly noise for this codebase.
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+struct_excessive_bools = "allow"
+doc_markdown = "allow"
+items_after_statements = "allow"
+struct_field_names = "allow"
+return_self_not_must_use = "allow"
+# Hard rules. Tests opt out with `cfg_attr(test, allow(...))` at the crate root.
+unwrap_used = "deny"
+dbg_macro = "deny"
+todo = "warn"
+unimplemented = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+strip = "debuginfo"
+panic = "unwind"
+
+[profile.dev.package."*"]
+# Dependencies are compiled with light optimization so tests over large dumps stay fast.
+opt-level = 1

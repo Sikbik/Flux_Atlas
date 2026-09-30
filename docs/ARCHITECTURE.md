@@ -242,6 +242,12 @@ byte. Large blobs are **zstd**-compressed.
 | `app_events` | `(&str name, u64 ts, u32 seq)` | AppEvent | spec updates, instance moves |
 | `geo_cache` | `IpAddr bytes` | (Geo, fetched_ms) | enrichment cache (TTL 7 d) |
 
+> **Implemented (B1): 23 tables**, see `crates/atlas-store/src/tables.rs`. Added: `node_ids_rev`,
+> `block_payouts`, `node_txs` + `node_txs_by_node`, `app_messages` + `app_messages_by_app`,
+> `pending_app_messages`, `mesh_edges` + `mesh_events`. Notes: the global event key is a store row counter
+> (not the live `seq`). Non-durable commits use `Durability::None`, fsynced at most every 10 s (a crash can lose
+> up to 10 s of history, which re-ingest recovers). Event pruning is not implemented yet (B2).
+
 A retention task runs hourly: prune `metrics_1m` older than 30 d, roll up `metrics_1h`, keep hourly
 snapshots for 30 d, then daily keyframes forever. `compact()` runs weekly. **Time machine:** state at `t` =
 nearest snapshot ≤ `t` + replay of `events` in (snapshot_ts, t]. Target < 50 ms per reconstruction; cache
@@ -280,6 +286,12 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 
 ## 7. Binary node snapshot — `nodes.bin` (format v1)
 
+> **Authoritative byte layout: `crates/atlas-core/src/codec/README.md`** (implemented and golden-tested in B1).
+> Refinements over the sketch below: string tables start with a `u32 n`; the rank column stores `rank + 1`
+> (0 = not queued); index 0 means "unknown" in the country/org/version/location tables; `mesh.bin` uses the
+> same sectioned container (magic `FXMS`) instead of bare arrays. Golden file:
+> `crates/atlas-core/tests/golden/nodes.bin` + `nodes.expected.json`.
+
 Little-endian and columnar. Every section starts on an 8-byte boundary, so the client can wrap sections as
 typed-array views with zero copying.
 
@@ -315,6 +327,12 @@ backend test suite (`crates/atlas-core/tests/golden/nodes.bin` + `.json` expecta
 read the same file. Both sides must pass.
 
 ## 8. Live protocol — WebSocket `/ws`
+
+> **Authoritative schema: `crates/atlas-core/src/live.rs`** (exported to `web/src/api/generated/`). Refinements
+> over the sketch below: the envelope (`seq`, `observed_ms`, `event_ms`) is flattened into each message body;
+> `resync` carries a `reason`; the client also sends `pong`; `block` adds `confirms`, `prev_hash`, `fees`, `dev_fund`;
+> `mesh` adds `reporters`. Enums serialize lowercase. Amounts are always 8-decimal FLUX strings. `u64` is exported
+> to TS as `number` (all our u64 values are < 2^53).
 
 Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rust enums in
 `atlas-core::live`, exported to TS.

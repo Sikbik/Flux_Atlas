@@ -41,3 +41,6 @@ coverage/
 
 # Runtime data and caches
 data/
+
+# Rust (v2)
+/target

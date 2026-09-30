@@ -1,0 +1,400 @@
+{
+  "byte_len": 4480,
+  "checks": {
+    "located": 24,
+    "sum_app_count": 26,
+    "sum_flags": 802,
+    "sum_ids": 1176,
+    "sum_last_paid": 143704529,
+    "sum_loc": 157,
+    "sum_rank": 367,
+    "tier_counts": [
+      45,
+      2,
+      2
+    ]
+  },
+  "count": 49,
+  "countries": [
+    "",
+    "AR\u001fArgentina",
+    "FR\u001fFrance",
+    "US\u001fUnited States",
+    "DE\u001fGermany",
+    "PF\u001fFrench Polynesia",
+    "PT\u001fPortugal",
+    "FI\u001fFinland",
+    "NO\u001fNorway",
+    "AT\u001fAustria",
+    "MX\u001fMexico",
+    "PL\u001fPoland"
+  ],
+  "first5": [
+    {
+      "app_count": 0,
+      "cores": 0,
+      "country": 0,
+      "flags": 128,
+      "id": 0,
+      "ip": "5.230.173.203:16127",
+      "last_paid": 2993598,
+      "lat": null,
+      "loc": 0,
+      "lon": null,
+      "org": 0,
+      "ram_gb": 0,
+      "rank": 1,
+      "ssd_gb": 0,
+      "status": 1,
+      "tier": 1,
+      "version": 0
+    },
+    {
+      "app_count": 0,
+      "cores": 0,
+      "country": 0,
+      "flags": 132,
+      "id": 1,
+      "ip": "67.165.64.194:16137",
+      "last_paid": 2993599,
+      "lat": null,
+      "loc": 0,
+      "lon": null,
+      "org": 0,
+      "ram_gb": 0,
+      "rank": 2,
+      "ssd_gb": 0,
+      "status": 1,
+      "tier": 1,
+      "version": 0
+    },
+    {
+      "app_count": 0,
+      "cores": 0,
+      "country": 0,
+      "flags": 132,
+      "id": 2,
+      "ip": "80.72.20.160:16137",
+      "last_paid": 2993600,
+      "lat": null,
+      "loc": 0,
+      "lon": null,
+      "org": 0,
+      "ram_gb": 0,
+      "rank": 3,
+      "ssd_gb": 0,
+      "status": 1,
+      "tier": 1,
+      "version": 0
+    },
+    {
+      "app_count": 0,
+      "cores": 0,
+      "country": 0,
+      "flags": 4,
+      "id": 3,
+      "ip": "80.208.17.20:16167",
+      "last_paid": 2993601,
+      "lat": null,
+      "loc": 0,
+      "lon": null,
+      "org": 0,
+      "ram_gb": 0,
+      "rank": 4,
+      "ssd_gb": 0,
+      "status": 1,
+      "tier": 1,
+      "version": 0
+    },
+    {
+      "app_count": 0,
+      "cores": 0,
+      "country": 0,
+      "flags": 4,
+      "id": 4,
+      "ip": "170.203.128.89:16167",
+      "last_paid": 2993602,
+      "lat": null,
+      "loc": 0,
+      "lon": null,
+      "org": 0,
+      "ram_gb": 0,
+      "rank": 5,
+      "ssd_gb": 0,
+      "status": 1,
+      "tier": 1,
+      "version": 0
+    }
+  ],
+  "flags": 0,
+  "format": "nodes.bin",
+  "generated_ms": 1790797000000,
+  "locations": [
+    {
+      "city": "",
+      "country": 0,
+      "lat": null,
+      "lon": null,
+      "node_count": 25
+    },
+    {
+      "city": "",
+      "country": 1,
+      "lat": -34.683998107910156,
+      "lon": -58.31919860839844,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 2,
+      "lat": 50.490699768066406,
+      "lon": 2.8564000129699707,
+      "node_count": 5
+    },
+    {
+      "city": "",
+      "country": 3,
+      "lat": 35.583099365234375,
+      "lon": -78.78810119628906,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 2,
+      "lat": 48.85749816894531,
+      "lon": 2.3513801097869873,
+      "node_count": 4
+    },
+    {
+      "city": "",
+      "country": 3,
+      "lat": 43.077301025390625,
+      "lon": -89.39939880371094,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 4,
+      "lat": 50.15919876098633,
+      "lon": 8.481730461120605,
+      "node_count": 2
+    },
+    {
+      "city": "",
+      "country": 3,
+      "lat": 43.07310104370117,
+      "lon": -86.2291030883789,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 2,
+      "lat": 45.74800109863281,
+      "lon": 4.849999904632568,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 5,
+      "lat": -17.53459930419922,
+      "lon": -149.57029724121094,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 6,
+      "lat": 41.23460006713867,
+      "lon": -8.618300437927246,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 7,
+      "lat": 60.17190170288086,
+      "lon": 24.93470001220703,
+      "node_count": 2
+    },
+    {
+      "city": "",
+      "country": 8,
+      "lat": 59.411598205566406,
+      "lon": 5.2677001953125,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 9,
+      "lat": 48.204898834228516,
+      "lon": 16.366199493408203,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 10,
+      "lat": 19.404699325561523,
+      "lon": -99.15390014648438,
+      "node_count": 1
+    },
+    {
+      "city": "",
+      "country": 11,
+      "lat": 52.229698181152344,
+      "lon": 21.01219940185547,
+      "node_count": 1
+    }
+  ],
+  "magic": "FXAT",
+  "orgs": [
+    "",
+    "Telefonica de Argentina",
+    "N9uf DYN DSL",
+    "CenturyLink Communications, LLC",
+    "Fr Nbz Ionos Cloud Nbz",
+    "ProXad network / Free SA",
+    "DIRECTNETWORKSINC",
+    "GHOSTnet Network used for Internet Access Services",
+    "Spectrum",
+    "BOUYGUES Telecom",
+    "ONATI",
+    "PT Comunicacoes S.A.",
+    "Hetzner Online GmbH",
+    "Altibox",
+    "ANX",
+    "DataVex"
+  ],
+  "sections": [
+    {
+      "byte_len": 196,
+      "dtype": 3,
+      "kind": 1,
+      "offset": 288
+    },
+    {
+      "byte_len": 196,
+      "dtype": 5,
+      "kind": 2,
+      "offset": 488
+    },
+    {
+      "byte_len": 196,
+      "dtype": 5,
+      "kind": 3,
+      "offset": 688
+    },
+    {
+      "byte_len": 49,
+      "dtype": 1,
+      "kind": 4,
+      "offset": 888
+    },
+    {
+      "byte_len": 49,
+      "dtype": 1,
+      "kind": 5,
+      "offset": 944
+    },
+    {
+      "byte_len": 49,
+      "dtype": 1,
+      "kind": 6,
+      "offset": 1000
+    },
+    {
+      "byte_len": 196,
+      "dtype": 3,
+      "kind": 7,
+      "offset": 1056
+    },
+    {
+      "byte_len": 98,
+      "dtype": 2,
+      "kind": 8,
+      "offset": 1256
+    },
+    {
+      "byte_len": 98,
+      "dtype": 2,
+      "kind": 9,
+      "offset": 1360
+    },
+    {
+      "byte_len": 98,
+      "dtype": 2,
+      "kind": 10,
+      "offset": 1464
+    },
+    {
+      "byte_len": 196,
+      "dtype": 3,
+      "kind": 11,
+      "offset": 1568
+    },
+    {
+      "byte_len": 196,
+      "dtype": 3,
+      "kind": 12,
+      "offset": 1768
+    },
+    {
+      "byte_len": 98,
+      "dtype": 2,
+      "kind": 13,
+      "offset": 1968
+    },
+    {
+      "byte_len": 98,
+      "dtype": 2,
+      "kind": 14,
+      "offset": 2072
+    },
+    {
+      "byte_len": 196,
+      "dtype": 3,
+      "kind": 15,
+      "offset": 2176
+    },
+    {
+      "byte_len": 98,
+      "dtype": 2,
+      "kind": 16,
+      "offset": 2376
+    },
+    {
+      "byte_len": 1109,
+      "dtype": 16,
+      "kind": 32,
+      "offset": 2480
+    },
+    {
+      "byte_len": 180,
+      "dtype": 16,
+      "kind": 33,
+      "offset": 3592
+    },
+    {
+      "byte_len": 336,
+      "dtype": 16,
+      "kind": 34,
+      "offset": 3776
+    },
+    {
+      "byte_len": 32,
+      "dtype": 16,
+      "kind": 35,
+      "offset": 4112
+    },
+    {
+      "byte_len": 332,
+      "dtype": 17,
+      "kind": 36,
+      "offset": 4144
+    }
+  ],
+  "seq": 42,
+  "version": 1,
+  "versions": [
+    "",
+    "8.20.0",
+    "8.18.0"
+  ]
+}
