@@ -1,0 +1,362 @@
+# Flux Atlas v2 — Architecture
+
+> Status: **DRAFT v0.1** (tech lead, 2026-09-30). Sections marked **[TBD research]** are finalized once
+> `docs/research/*.md` land. This document is the contract every team member builds against. If you
+> need to deviate, say so in your report. Don't silently diverge.
+>
+> **Clean-room rule:** v2 is a whole rewrite. **No code is carried over from v1** (`backend/`, `frontend/`) —
+> no snippets, formulas, layouts, styles, or structure. v1 is a reference for the product's purpose and for
+> facts about the network/API only.
+
+## 1. Goals
+
+| Goal | Target |
+|---|---|
+| See the whole Flux network live | every node, app, and block, with history from first ingest |
+| Hot API latency | p99 < 5 ms for snapshot endpoints (served from memory, pre-serialized, pre-compressed) |
+| **Live-first** | Every change reaches browsers as an event, animated as it happens. Freshness tiers: T1 ≤ 3 s (blocks, producer, payouts, node heartbeats/starts, mempool), T2 ≤ 60 s (app deploys/updates, instance placement, node-list reconciliation), T3 continuous rolling crawl (peers, reachability, benchmarks, installed apps; each host revisited ≤ 20 min, and updates stream out per host, never as a batch) |
+| Frontend perf | 60 fps globe at 1440p with 15k nodes + 200 arcs + 50 pulses; first meaningful paint < 2 s |
+| Footprint | one self-contained binary (API + embedded web app) + one data dir; < 250 MB RSS; fits the Flux app spec (1 vCPU / 1 GB / 5 GB) |
+| Upstream etiquette | bounded req/s, conditional requests where possible, failover, no hammering of individual nodes |
+| Resilience | serves the last-known state instantly on restart; degrades gracefully when upstream is down |
+
+Non-goals: running a Flux daemon or indexing the whole chain ourselves. The explorer proxies upstream
+explorer APIs with caching, and we index only what we observe from first ingest (plus a bounded backfill).
+
+## 2. Repository layout
+
+```
+Cargo.toml                 # Rust workspace (resolver 3, edition 2024)
+crates/
+  atlas-core/              # domain model, ids, enums, API DTOs + WS messages (serde + ts-rs), binary codecs
+  atlas-flux/              # upstream clients (FluxOS API, explorer, aggregators), raw models, parsers, failover, rate limits
+  atlas-store/             # redb persistence: tables, value codecs, migrations, retention/compaction
+  atlas-engine/            # ingest schedulers, reducer (single-writer state), diff→events, metrics, snapshots, time machine
+  atlas-server/            # axum HTTP + WebSocket, pre-built bodies, search, explorer proxy cache, static web embed, CLI (bin: `atlas`)
+web/                       # React 19 + TypeScript + Vite frontend
+labs/globe/                # standalone globe/ambient renderer lab (ported into web/src/globe)
+docs/                      # ARCHITECTURE.md, PLAN.md, research/, design/
+deploy/                    # Dockerfile, flux_app_spec.json, docker-compose.yml
+```
+
+The v1 dirs (`backend/`, `frontend/`, root Dockerfile/compose/spec) stay until the v2 cut-over (PLAN phase 5),
+then get deleted.
+
+Environment: the Rust toolchain lives in `~/.cargo/bin` (`export PATH="$HOME/.cargo/bin:$PATH"`). Node 26 + npm.
+
+## 3. Backend runtime model
+
+```
+            ┌──────────── atlas-flux (clients) ─────────────┐
+ schedulers │ TipWatcher  NodeList  Geo/Bench  Apps  Chain  │  ← rate-limited, retrying, failover
+            └───────┬───────────────────────────────────────┘
+                    │ Observation (typed, parsed upstream result)
+                    ▼
+            ┌──────────────── Reducer (1 task) ─────────────┐
+            │ owns mutable NetworkState; applies observations│
+            │ diff → Vec<Event>; recompute derived views     │
+            └──┬─────────────┬──────────────────┬───────────┘
+               │ ArcSwap     │ broadcast        │ mpsc (batched)
+               ▼             ▼                  ▼
+        Published (immut.)  LiveHub (WS)    StoreWriter (redb, 1 write txn per tick)
+        + PrebuiltBodies    ring buffer     events, node history, metrics, snapshots, blocks
+               ▲
+        axum handlers (lock-free reads)
+```
+
+- **Single-writer reducer.** Only the reducer mutates state, so there are no locks on the hot path. After each
+  applied batch it builds a new immutable `Published` (Arc-shared, structurally reusing unchanged parts) and
+  swaps it in with `arc_swap`. Readers never block.
+- **Pre-built bodies.** On publish, the reducer (or a helper task it spawns) serializes the hot endpoints once
+  (`bootstrap.json`, `nodes.bin`, `apps.json`, …), pre-compresses each one (br + gzip + zstd), and computes a
+  strong ETag. Handlers just pick the right encoding: zero serialization per request.
+- **Sequencing.** Every publish increments `seq: u64`. Snapshot bodies carry `seq`; WS deltas carry
+  `seq` / `prev_seq`, so clients can detect gaps and resync.
+- **Persistence is write-behind.** The StoreWriter batches everything from a tick into one redb write
+  transaction. It commits with `Durability::Immediate` at most every 10 s and `Eventual` otherwise
+  (settle the exact policy in atlas-store).
+- **Startup.** Open the DB → load the last state (node records, apps, recent blocks, latest snapshot) → publish
+  immediately (API is ready in < 1 s with last-known data, flagged `stale: true`) → start schedulers.
+- **Allocator:** mimalloc. **Runtime:** tokio multi-thread.
+
+### 3.1 Upstream client rules (atlas-flux)
+- reqwest + rustls, HTTP/2 where offered, gzip/br/zstd decode, pooled connections, 20 s default timeout
+  (per-endpoint overrides for big payloads).
+- A per-upstream `governor` token bucket (default ≤ 4 req/s to `api.runonflux.io`) plus a concurrency
+  semaphore.
+- Retries: 3 attempts, jittered exponential backoff; never retry 4xx except 429 (honor `Retry-After`).
+- **Failover pool:** the primary is `https://api.runonflux.io`. The secondaries are healthy FluxOS nodes picked
+  from the current node list (`http://<ip>:<apiport>`), health-scored and rotated. A response is only accepted
+  if its chain height is within ±2 of the best known tip (this guards against stale nodes).
+- Parsers are tolerant: unknown fields are ignored, and missing optional fields become `None`. Every parser has
+  a unit test against `docs/research/fixtures/**`.
+- Large JSON (multi-MB node lists): parse from bytes with serde_json, or `sonic-rs` if a benchmark shows ≥ 2×
+  gain. Measure first.
+
+### 3.2 Live-first ingest [TBD research: exact endpoints, push channels, latencies]
+
+**Principle.** The system is an event stream, not a rebuild loop. Every ingest path produces fine-grained
+events the moment it learns something. Snapshots exist only to bootstrap and resync clients. Where the upstream
+offers push, use it. Where it doesn't, poll the cheapest possible change indicator tightly, and fetch the
+expensive payload only when that indicator moves. v1 rebuilt everything every 30 min; v2 never batches.
+
+| Tier | Job | Source (prefer push, else tight poll) | Cadence | Events |
+|---|---|---|---|---|
+| T1 | **ChainStream** | Insight socket.io (Engine.IO 3) `wss://explorer.runonflux.io/socket.io/?EIO=3&transport=websocket`, send `42["subscribe","inv"]`, ping `2` every 25 s. Run **two sockets at once** (main + `explorer2.runonflux.io`), dedupe by hash. Unhealthy after 90 s without a block or a ping timeout. Fallback only while no socket is healthy: poll Insight `/api/status?q=getLastBlockHash` every 2 s. **Never** poll the FluxOS gateway for liveness (30 s apicache, measured 27 s lag). | push (0.94 s median after block time) | `NewTip(hash)` |
+| T1 | **BlockDecoder** | FluxOS `GET /daemon/getblock/{hash}` (verbosity 2, ~160 ms, ~10 KB): every tx decoded, including fluxnode fields. Producer = header `collateral` (10-hex prefix + index), resolved against the local node table (Insight `/api/block/{hash}` `nodesCollateral` for the full txid if ambiguous). Payouts: classify the coinbase outputs **by amount** (Cumulus 1.0 / Nimbus 3.5 / Stratus 9.0 × reduction factor; the remainder, 0.5 + fees, goes to the dev fund `t3hPu1YDeGUCp8m7BQCnnNUmRMJBa5RadyA`). Reorg-aware: check `previousblockhash` against our tip, walk back on mismatch, fill gaps. 10-block finality window. Optional `getblockdeltas/{hash}` for transfer inputs. | per block (~30 s), ~3 upstream calls | `BlockAdded` (producer, payouts, dev fund, tx mix), `NodeHeartbeat` (confirm tx, `update_type` 1), `NodeConfirmed` (`update_type` 0 = initial confirm), `NodeStarted` (start tx, v5/v6, incl. P2SH/multisig), `NodePaid`, `NodeIpChanged` (confirm carries IP), `LargeTransfer` |
+| T1 | **PayoutAttribution** | Our own payment-queue model per tier (rank order from the node list, advanced locally on every block; the paid node moves to the back). Match each coinbase payee `(tier, address)` against the head of that tier's queue. Reconcile with `last_paid_height` from NodeReconcile. **Must be recorded at ingest time**, since `last_paid_height` is overwritten on the next payment and one address can own 180+ nodes. | per block | `NodePaid` with an exact node; drives the **"next to be paid"** predictive highlight (head of each tier queue) before the block lands |
+| T1 | **MempoolStream** | the same Insight socket, `tx` events (~23/min; ~91% are fluxnode confirms/starts with empty `vout`, ~2/min regular transfers carrying value + outputs). Push transfers immediately. Show node txs as pending check-ins, fully classified when their block lands. Optional enrichment: `/api/tx/{txid}` for node txs (≤ 0.4 req/s) to animate check-ins before inclusion. Reconcile the set every 60 s. | push | `MempoolTx` (transfer / pending node tx) |
+| T1 | **Expiry watch** | derived: a node expires after **640 blocks** without a confirm; confirms are allowed every **≥ 500 blocks** | per block | `NodeAtRisk` (≥ 560 blocks since last confirm), `NodeExpired` (predicted, then confirmed by reconcile) |
+| T2 | **AppMessages** | pending (temporary) app messages + permanent messages, diffed by hash | 10–15 s | `AppRegistered`, `AppUpdated` (with spec diff), `AppRenewed` |
+| T2 | **AppPlacement** | app locations, diffed per (app, ip) | 20–30 s | `AppInstanceStarted`, `AppInstanceRemoved` |
+| T2 | **NodeReconcile** | full deterministic node list (ground truth for rank, status, expiry, IP changes) | 60 s, or on tip if cheap; skip the parse when the body hash is unchanged | `NodeConfirmed`, `NodeExpired`, `NodeIpChanged`, `RankShift` (coalesced) |
+| T2 | **Chain** | chain info / supply / tier counts | per block (piggyback) | `Stats` |
+| T3 | **HostSweep** (rolling crawl) | per-host FluxOS API: connected peers, incoming connections, ArcaneOS, benchmarks, installed apps, geolocation | continuous at a fixed rate (≈ 3–5 hosts/s, concurrency ≤ 32): full cycle over ~2.7k hosts ≤ 20 min, each host result emitted immediately. Priority queue: hosts touched by T1/T2 events (new starts, IP changes, instance moves), hosts of client-watched nodes, and stale hosts first | `PeerLinksChanged`, `NodeUnreachable` / `NodeRecovered`, `NodeBenchmarkChanged`, `NodeVersionChanged`, `NodeAppsChanged`, `HostSwept` (freshness) |
+| T3 | **GeoResolve** | per-node geolocation (crawl) with local GeoIP (mmdb) as instant fallback, so new nodes land on the globe immediately | on first sight + in sweep | `NodeLocated` |
+| T2 | **Price** | Insight `/api/markets/info` (Flux-provided; also pushed as socket `markets_info`), CoinGecko `ids=zelcash` as fallback | 60 s / push | `Price` |
+| T2 | **Supply** | FluxOS `gettxoutsetinfo` (3 s upstream; cache 10 min) + `getblockchaininfo.valuePools`; socket `info.supply` per block | per block (socket) / 10 min | `Stats` |
+
+**Chain facts (verified 2026-09-30):** Proof of Node since height 2,020,000 (2025-10-25). 30 s target spacing
+(29.98 s measured). 14 FLUX/block. **The first 10% reward cut is at height 3,071,200 (~2026-10-26)**, then every
+1,051,200 blocks, up to 20 cuts. Collateral: 1,000 / 12,500 / 40,000 FLUX. The producer earns nothing extra.
+Insight's `minedBy` is the Stratus payee, **not** the producer, so never label it "miner". FluxOS errors arrive as
+**HTTP 200 with `status:"error"`**, so always check the envelope. Blockbook is **not used**: its operator restricts
+it to Trezor Suite.
+
+**Upstream budget:** ~3 calls per block for the chain path regardless of viewer count, ≤ 4 req/s per upstream host
+overall, circuit breaker on 5xx/timeouts. Backfill: the last 7 days of blocks at startup (~20k `getblock` calls
+at ≤ 2 req/s, background priority, resumable), then extend to 30 days. Older blocks are proxied on demand and
+cached forever beyond the finality window.
+
+Detection budget: T1 events should reach the browser ≤ 3 s after the block/tx is visible upstream (target ≤ 1 s
+with push). The server stamps every event with `observed_ms` and the upstream `event_ms` (block time / first-seen),
+so clients can show true latency.
+
+**Choreography contract (server side):** the events of one block are emitted as one `block` message carrying
+its child events (heartbeats, payouts, starts). The client then stages the animation (producer beam → payout
+arcs → heartbeat ripple over a few seconds) instead of receiving a burst of unrelated messages. Non-block events
+stream individually. The server never drops events to save bandwidth, but it may coalesce `RankShift` /
+`HostSwept` into periodic summaries.
+
+**SSRF guard (mandatory):** node IPs come from a public list anyone can register into. Never connect to
+loopback, private (RFC1918/ULA), link-local, CGNAT, multicast, documentation, or unspecified ranges. Only
+connect on the node's advertised port (or the 16127 default), and cap response sizes (e.g. 4 MB).
+
+**UPnP facts (legacy analysis, 2026-09-30):** 6,724 nodes on only ~2,655 distinct hosts. 64% of nodes
+advertise `ip:port` (UPnP). A node's API port = advertised port (default 16127), and its UI port = API port − 1.
+Crawl per **host** and fan results out to the nodes behind it.
+
+On first boot, bounded backfills run: the last N blocks (default 2 880 ≈ one day at 30 s blocks), and
+long-range history series if an upstream offers them [TBD research].
+
+### 3.3 Identity
+- **Canonical node identity = collateral outpoint** (`txid:vout`), since IPs change. Internally every node
+  gets an interned `NodeId(u32)` on first sight, persisted in `node_ids`, so ids stay stable across
+  restarts and are safe for clients to cache.
+- Apps: name (case-insensitive, stored lowercase + display name).
+- Blocks: height (u32) + hash.
+
+## 4. Domain model (atlas-core) — sketch, finalize from research
+
+```rust
+pub struct NodeId(pub u32);
+pub struct Outpoint { pub txid: [u8; 32], pub vout: u32 }
+#[repr(u8)] pub enum Tier { Unknown = 0, Cumulus = 1, Nimbus = 2, Stratus = 3 }   // [TBD] new node types?
+#[repr(u8)] pub enum NodeStatus { Unknown = 0, Confirmed = 1, Started = 2, /* [TBD] */ }
+pub struct Geo { lat: f32, lon: f32, continent: CompactStr, country_code: CompactStr, country: CompactStr,
+                 region: CompactStr, city: CompactStr, org: CompactStr, asn: Option<u32>, source: GeoSource }
+pub struct Hardware { cores: u16, threads: u16, ram_gb: f32, ssd_gb: f32, eps: f32,
+                      down_mbps: f32, up_mbps: f32, arch: Arch, bench_status: BenchStatus }
+pub struct Versions { flux_os: Option<CompactStr>, daemon: Option<CompactStr>, bench: Option<CompactStr> }
+pub struct NodeRecord { id: NodeId, outpoint: Outpoint, ip: IpAddr, api_port: u16, tier: Tier, status: NodeStatus,
+                        payment_address: CompactStr, rank: Option<u32>, added_height: u32, confirmed_height: Option<u32>,
+                        last_confirmed_height: Option<u32>, last_paid_height: Option<u32>,
+                        geo: Option<Geo>, hw: Option<Hardware>, versions: Versions,
+                        app_count: u16, first_seen_ms: u64, last_seen_ms: u64 }
+pub struct AppRecord { name, display_name, owner, spec_version, description, registered_height, expire_height,
+                       target_instances, components: Vec<Component>, domains, ports, totals: Resources,
+                       enterprise: bool, geo_rules, locations: Vec<AppInstance>, spec_hash, first_seen_ms, updated_ms }
+pub struct BlockSummary { height: u32, hash: [u8; 32], time: u64, size: u32, tx_count: u32,
+                          producer: Option<NodeId>, payouts: SmallVec<[Payout; 4]>, reward: Amount }
+pub enum Event { NodeAdded, NodeRemoved, NodeStatusChanged, NodeIpChanged, NodePaid, NodeVersionChanged,
+                 NodeHardwareChanged, AppRegistered, AppUpdated, AppExpired, AppInstanceAdded,
+                 AppInstanceRemoved, BlockAdded /* … */ }
+```
+
+Conventions:
+- Time is `u64` unix **milliseconds** everywhere (DB, API, WS). Heights are `u32`.
+- **Money:** `Amount(i64)` in base units (1e-8 FLUX). It crosses the wire as a **decimal string in FLUX**
+  (e.g. `"1234.56789012"`), because JS numbers lose precision on supply-sized values. Aggregates/analytics
+  may use `f64` FLUX, and the field name must say so (`*_flux_f64`).
+- Strings: `compact_str::CompactString` for small repeated strings. Country/org/city/version strings are
+  interned into tables in binary payloads.
+
+## 5. Persistence — redb (pure-Rust, ACID, MVCC, single writer / many readers)
+
+Why redb: pure Rust, stable file format, crash-safe, zero-copy reads, and a simple embedded model that fits a
+single-writer design. Values are encoded as **postcard** (stable wire format) with a leading schema-version
+byte. Large blobs are **zstd**-compressed.
+
+| Table | Key | Value | Notes |
+|---|---|---|---|
+| `meta` | `&str` | bytes | schema version, ingest cursors, first-ingest time |
+| `node_ids` | outpoint `&[u8;36]` | `u32` | interning; `node_ids_rev` u32 → outpoint |
+| `node_state` | `u32` | NodeRecord | latest known record (includes departed nodes, flagged) |
+| `node_events` | `(u32 node, u64 ts, u32 seq)` | NodeEvent | per-node history (uptime/status/ip/version/paid) |
+| `events` | `(u64 ts, u32 seq)` | Event | global feed + time-machine replay |
+| `snapshots` | `u64 ts` | zstd(postcard(NetworkSnapshot)) | hourly keyframes + one at startup |
+| `metrics_1m` | `u64 minute_ts` | MetricsRow | fixed struct of network gauges; retention 30 d |
+| `metrics_1h` | `u64 hour_ts` | MetricsRow | rollups; retained forever |
+| `blocks` | `u32 height` | BlockSummary | all observed + backfilled blocks |
+| `block_hash` | `[u8;32]` | `u32` | hash → height |
+| `payments` | `(u32 node, u32 height)` | Amount | payment history per node |
+| `apps` | `&str name` | AppRecord | latest spec + first seen |
+| `app_events` | `(&str name, u64 ts, u32 seq)` | AppEvent | spec updates, instance moves |
+| `geo_cache` | `IpAddr bytes` | (Geo, fetched_ms) | enrichment cache (TTL 7 d) |
+
+A retention task runs hourly: prune `metrics_1m` older than 30 d, roll up `metrics_1h`, keep hourly
+snapshots for 30 d, then daily keyframes forever. `compact()` runs weekly. **Time machine:** state at `t` =
+nearest snapshot ≤ `t` + replay of `events` in (snapshot_ts, t]. Target < 50 ms per reconstruction; cache
+recent reconstructions.
+
+## 6. HTTP API (atlas-server) — `/api/v1`
+
+JSON unless noted. Every response carries an `ETag` and `Cache-Control`; hot bodies are pre-compressed.
+Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for GET (a public data API).
+
+| Method & path | Returns |
+|---|---|
+| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job |
+| `GET /nodes.bin` | **binary columnar node snapshot** (§7), feeds the globe + tables |
+| `GET /mesh.bin` | binary P2P mesh: header + `u32 edge_count` + `u32 a[]`, `u32 b[]` (NodeIds, a<b, deduped) + `u8 flags[]` (bit0 bidirectional, bit1 cross-continent); refreshed per PeerCrawl sweep |
+| `GET /nodes/{id}/peers` | the node's peers with geo, for selection-reveal |
+| `GET /nodes?…` | JSON node table with filters/sort/pagination (`tier`, `status`, `country`, `org`, `q`, `sort`, `cursor`) |
+| `GET /nodes/{id\|ip\|outpoint}` | full node detail: record, geo, hw, versions, rank + payment ETA, hosted apps, recent events |
+| `GET /nodes/{id}/history?from&to` | status timeline, uptime %, events |
+| `GET /nodes/{id}/payments?cursor` | payment history |
+| `GET /apps` / `GET /apps/{name}` | app index / full app: normalized spec, components, instances (node ids), history |
+| `GET /apps/{name}/history` | spec versions with diffs |
+| `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates |
+| `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{t:[…], a:[…], b:[…]}`) |
+| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs |
+| `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations) |
+| `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
+| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras [TBD research] |
+| `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
+| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t |
+| `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |
+| `GET /ws` | WebSocket live stream (§8) |
+| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops |
+
+Everything else serves the embedded web app (SPA fallback to `index.html`, immutable caching for hashed assets).
+
+## 7. Binary node snapshot — `nodes.bin` (format v1)
+
+Little-endian and columnar. Every section starts on an 8-byte boundary, so the client can wrap sections as
+typed-array views with zero copying.
+
+```
+Header (32 B):  magic "FXAT" | u16 version=1 | u16 flags | u64 seq | u64 generated_ms | u32 count | u32 section_count
+Section table:  section_count × { u16 kind, u16 dtype, u32 offset, u32 byte_len }   (then pad to 8)
+Sections (kind → dtype[count] unless noted):
+  1 ids            u32      NodeId
+  2 lat            f32      degrees (NaN = unknown location)
+  3 lon            f32
+  4 tier           u8       Tier
+  5 status         u8       NodeStatus
+  6 flags          u8       bit0 has_apps, bit1 ipv6, bit2 non-default port, bit3 geo_approx, bit4 arcane(?), bit5 enterprise(?), bit6 recently_paid, bit7 new_24h
+  7 loc            u32      location id (co-located cluster; index into LOCATIONS)
+  8 country        u16      index into COUNTRIES
+  9 org            u16      index into ORGS
+ 10 app_count      u16
+ 11 rank           u32      0 = n/a
+ 12 last_paid      u32      height, 0 = never
+ 13 cores          u16      (0 = unknown)
+ 14 ram_gb         u16
+ 15 ssd_gb         u32
+ 16 version        u16      index into VERSIONS
+ 32 ips            string table: u32 offsets[count+1] + UTF-8 blob
+ 33 COUNTRIES      string table (code\u001Fname)
+ 34 ORGS           string table
+ 35 VERSIONS       string table
+ 36 LOCATIONS      u32 n, then n × {f32 lat, f32 lon, u16 country, u16 pad, u32 node_count} + string table of city names
+```
+
+Clients must ignore unknown section kinds; that's how the format evolves. A **golden fixture** is written by the
+backend test suite (`crates/atlas-core/tests/golden/nodes.bin` + `.json` expectation) and the web decoder's tests
+read the same file. Both sides must pass.
+
+## 8. Live protocol — WebSocket `/ws`
+
+Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rust enums in
+`atlas-core::live`, exported to TS.
+
+- Server → `hello { server, seq, tip, now_ms }`
+- Client → `sub { topics: ["chain","mempool","nodes","apps","mesh","stats","feed"], since_seq?: u64, watch?: [NodeId] }`
+  (`watch` raises HostSweep priority for those nodes' hosts and guarantees their events are never coalesced)
+- Server keeps a ring buffer of the last 2,048 messages. If `since_seq` is inside the buffer it replays;
+  otherwise it sends `resync { seq }` and the client refetches `/bootstrap` + `/nodes.bin`.
+- Every message carries `seq`, `observed_ms`, and (when known) `event_ms`, so clients show true latency.
+- Messages (all live-first; each maps 1:1 to something that really happened):
+  - `block { height, hash, time, size, tx_count, producer?: NodeRef, payouts: [{tier, node?, address, amount}],
+    heartbeats: [NodeId], starts: [NodeRef], updates: [NodeId], transfers_over_threshold: [TxLite], reward }`.
+    One message per block with its child events, so the client can stage the choreography.
+  - `reorg { from_height, to_height, orphaned: [hash] }`
+  - `mempool { txs: [TxLite{txid, value, kind, size}] }` (coalesced per ≤ 500 ms)
+  - `nodes { prev_seq, added: [NodeLite], removed: [id], changed: [{id, …changed fields}], cause }`
+    (`cause`: reconcile | block | sweep | geo)
+  - `apps { prev_seq, upserted: [AppLite], removed: [name], instances: [{app, started: [id], removed: [id]}], cause }`
+  - `mesh { added: [[a, b]], removed: [[a, b]], host_swept?: HostRef }` (streamed per swept host)
+  - `stats { summary }` (coalesced to ≤ 1/s)
+  - `feed { kind, ts, text_key, refs }` (human-readable activity items: node joined/left, app deployed/updated,
+    version rollout milestones, large transfers). The UI renders these; it never parses free text.
+- Heartbeats: ping every 20 s. Slow consumers are dropped when their per-connection queue (1,024) is full.
+  Clients reconnect with jittered backoff and `since_seq`.
+
+**Client choreographer (web).** Incoming events go into a scheduler with a visual budget (max concurrent
+pulses/arcs, per-type rate caps), not straight onto the screen. A block plays as a staged sequence: producer
+flare → payout beams → heartbeat ripple staggered over 2–4 s. Bursts collapse into aggregate effects plus
+"+N" feed items. Selected and watched nodes bypass the budget. While the tab is hidden, animations are skipped
+and state is applied directly; on return, only a short summary replays. The live feed, counters, "seconds ago"
+labels and the next-block progress (~30 s cadence) all run off the same event clock.
+
+## 9. Frontend architecture (web/)
+
+**Stack:** Vite · React 19 · TypeScript (strict) · three.js (engine ported from `labs/globe`, imperative,
+framework-agnostic) · TanStack Router (typed routes + search params) · TanStack Query (request/response data) ·
+Zustand (UI state) · `motion` (UI animation) · `cmdk` (palette) · uPlot (large time series) + hand-built SVG
+micro-viz · CSS Modules + `tokens.css` from `docs/design` (no CSS-in-JS runtime) · lucide icons · Biome (lint +
+format) · Vitest · Playwright (system Chromium) for smoke + screenshot tests.
+
+```
+web/src/
+  app/          providers, router, routes, error boundaries
+  styles/       tokens.css (synced from docs/design/tokens.css), global.css, fonts
+  api/          generated/ (ts-rs output — never hand-edit), http.ts, nodesBin.ts (decoder), live.ts (WS client), queries.ts, mock/ (fixture-backed mock mode)
+  store/        network.ts (NetworkStore: typed arrays + versioned subscriptions via useSyncExternalStore), ui.ts (zustand)
+  globe/        engine/ (from labs/globe), GlobeCanvas.tsx (mounted once as the living wallpaper), bindings.ts (store → engine)
+  shell/        desktop, dock, window manager, command palette, terminal, boot sequence, toasts, ambient mode, achievements
+  features/     node/, app/, explorer/ (block, tx, address, mempool), analytics/, timemachine/, operator/, search/
+  ui/           primitives: StatTile, Sparkline, Badge, Table, Tabs, Tooltip, Skeleton, Ticker, …
+  lib/          format (FLUX amounts, heights→time), geo, time, keyboard
+```
+
+- The **NetworkStore** lives outside React: typed arrays decoded from `nodes.bin`, patched by WS deltas,
+  with a monotonically increasing version. The globe subscribes directly (no React re-renders), and React
+  components subscribe through selectors.
+- **Mock mode** (`VITE_ATLAS_MOCK=1`) serves fixtures + synthetic generators and a fake live feed, so the UI can be
+  built before the backend is live.
+- Dev: Vite proxies `/api` and `/ws` to `127.0.0.1:3000`. Prod: the Rust binary embeds `web/dist`.
+
+## 10. Build, deploy, quality gates
+
+- `deploy/Dockerfile`: node stage (build web) → rust stage (build `atlas` with embedded dist, `--release`,
+  LTO thin, `codegen-units=1`) → `gcr.io/distroless/cc-debian12` runtime, non-root, volume `/data`.
+  `atlas healthcheck` subcommand for Docker HEALTHCHECK.
+- `deploy/flux_app_spec.json`: Flux app spec (see legacy spec; ports/containerData [TBD research: current spec version & port rules]).
+- Config: env vars `ATLAS_BIND` (default `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`), `ATLAS_FLUX_API`,
+  `ATLAS_EXPLORER_API`, `ATLAS_GEOIP_DB` (optional .mmdb), `ATLAS_LOG`, `ATLAS_UPSTREAM_RPS`, per-job interval
+  overrides.
+- Gates. Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. Web: `tsc --noEmit`,
+  `biome check`, `vitest run`, Playwright smoke. Perf: an ingest-cycle benchmark on the full raw node dump, `oha`
+  load test on `/api/v1/nodes.bin` and `/bootstrap`, globe FPS via the team shot tool `--gpu --fps`.
