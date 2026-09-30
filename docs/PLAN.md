@@ -18,7 +18,7 @@ commits at each milestone. Status values: done, running, queued.
 
 ## Phase 1 — Blueprint (lead)
 - Finalize `docs/ARCHITECTURE.md`: endpoints, ingest cadences, domain model, binary formats, live protocol.
-- Write `docs/FEATURES.md`: the feature spec, merging research opportunities with the design IA.
+- Write `docs/FEATURES.md`: the feature spec, merging research opportunities with the design IA. (draft written; reconcile with the design IA when D1 lands)
 - Choose the globe art direction from the D2 shots and reconcile it with D1 tokens.
 
 ## Phase 2 — Foundations (parallel)
@@ -53,5 +53,8 @@ commits at each milestone. Status values: done, running, queued.
 - Rust: `export PATH="$HOME/.cargo/bin:$PATH"`. Web: Node 26 + npm.
 - Visual verification tool: `node $SCRATCH/team/tools/shot.mjs <url|file> <out.png> [--gpu --fps --frames N --mobile --eval js]`,
   where `$SCRATCH` is the session scratchpad the lead gives in each brief.
-- Agents don't commit. The lead reviews and commits per milestone.
+- Agents in the main tree don't commit. The lead reviews and commits per milestone.
+- Parallel work packages that touch dependent code (B2/B3, F2/F3/F4) run in **isolated git worktrees** and commit to
+  their worktree branch only. The lead merges into `development`. Each Rust agent uses its own `CARGO_TARGET_DIR`
+  to avoid build-lock contention.
 - Contract changes (DTOs, binary formats, WS messages) go through `docs/ARCHITECTURE.md` first.
