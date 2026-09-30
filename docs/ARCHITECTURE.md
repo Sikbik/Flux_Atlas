@@ -361,6 +361,18 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
 - Heartbeats: ping every 20 s. Slow consumers are dropped when their per-connection queue (1,024) is full.
   Clients reconnect with jittered backoff and `since_seq`.
 
+**Rank contract (payment queue).** Ranks are never streamed per node per block (that would be ~6.7k changes
+every 30 s). Each tier's queue is a strict rotation, so clients maintain ranks deterministically:
+1. On each `block`, for every tier payout whose payee is known: the payee moves to the back (rank = tier size − 1)
+   and every other node of that tier with a rank greater than the payee's old rank moves up by one. A payee's old
+   rank is normally 0.
+2. `nodes.added` carries each new node's rank (joins enter at the back by confirmed height). `nodes.removed` closes
+   the gap: ranks behind the removed node in its tier move up by one.
+3. A `nodes` delta with `cause: reconcile` carries authoritative ranks for every node whose rank differs from the
+   rotation model. After applying it, clients are exact again. The server sends one after every NodeRegistry
+   reconcile (≤ 10 min) and whenever its own model detects a divergence.
+Displayed ETAs are `rank × 30 s`, labelled as estimates.
+
 **Client choreographer (web).** Incoming events go into a scheduler with a visual budget (max concurrent
 pulses/arcs, per-type rate caps), not straight onto the screen. A block plays as a staged sequence: producer
 flare → payout beams → heartbeat ripple staggered over 2–4 s. Bursts collapse into aggregate effects plus
