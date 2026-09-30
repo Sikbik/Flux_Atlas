@@ -85,12 +85,15 @@ pub struct PrebuiltBody {
     pub etag: String,
 }
 
-/// Compression levels used for prebuilt bodies. Bodies are built once and served many times, so
-/// these lean towards ratio over speed.
-const BROTLI_QUALITY: u32 = 9;
+/// Compression levels used for prebuilt bodies. A full rebuild (every hot body in all three
+/// encodings) must stay under 150 ms on one core. Measured on a 590 KB `nodes.bin`
+/// (6,724 nodes, release build): brotli q4 4.7 ms / 121 KB, q5 8.0 ms / 79 KB,
+/// q6 9.4 ms / 74 KB, q9 20 ms / 73 KB, q11 563 ms / 52 KB. Dynamic q11 is far too slow for a
+/// body rebuilt every block, and q6 is within 2 % of q9 at half the cost.
+const BROTLI_QUALITY: u32 = 6;
 const BROTLI_WINDOW: u32 = 22;
-const GZIP_LEVEL: u32 = 9;
-const ZSTD_LEVEL: i32 = 15;
+const GZIP_LEVEL: u32 = 6;
+const ZSTD_LEVEL: i32 = 9;
 
 impl PrebuiltBody {
     /// Compresses `raw` in all encodings.
