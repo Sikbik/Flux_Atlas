@@ -3,7 +3,7 @@
 //! messages, upstream calls by host, reconcile diffs and process RSS.
 //!
 //! ```text
-//! cargo run --release -p atlas-engine --example soak -- [minutes=30] [--keep]
+//! cargo run --release -p atlas-engine --example soak -- [minutes=30] [--keep] [--block-days=N] [--cache-mb=32]
 //! ```
 //!
 //! `RUST_LOG` overrides the log filter (default `warn,atlas_engine=info`).
@@ -19,16 +19,19 @@ use atlas_store::{Store, StoreOptions};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn rss_mb() -> f64 {
+fn proc_status(key: &str) -> Option<f64> {
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|s| {
             s.lines()
-                .find(|l| l.starts_with("VmRSS:"))
+                .find(|l| l.starts_with(key))
                 .and_then(|l| l.split_whitespace().nth(1))
                 .and_then(|v| v.parse::<f64>().ok())
         })
-        .map_or(0.0, |kb| kb / 1024.0)
+}
+
+fn rss_mb() -> f64 {
+    proc_status("VmRSS:").map_or(0.0, |kb| kb / 1024.0)
 }
 
 fn lat(v: &[i64]) -> String {
@@ -76,9 +79,15 @@ fn upstream_totals(s: &EngineStats) -> BTreeMap<String, u64> {
 async fn main() {
     let mut minutes: u64 = 30;
     let mut keep = false;
+    let mut block_days: Option<u32> = None;
+    let mut cache_mb: usize = 32;
     for a in std::env::args().skip(1) {
         if a == "--keep" {
             keep = true;
+        } else if let Some(v) = a.strip_prefix("--block-days=") {
+            block_days = v.parse().ok();
+        } else if let Some(v) = a.strip_prefix("--cache-mb=") {
+            cache_mb = v.parse().unwrap_or(cache_mb);
         } else if let Ok(m) = a.parse() {
             minutes = m;
         }
@@ -98,17 +107,21 @@ async fn main() {
     let store = Store::open_with(
         &path,
         StoreOptions {
-            cache_size_bytes: Some(64 << 20),
+            cache_size_bytes: Some(cache_mb << 20),
             ..StoreOptions::default()
         },
     )
     .unwrap();
     let clients = Clients::new(ClientsConfig::default()).unwrap();
+    let mut ingest = IngestConfig {
+        enabled: true,
+        ..IngestConfig::default()
+    };
+    if let Some(d) = block_days {
+        ingest.backfill.block_days = d;
+    }
     let cfg = EngineConfig {
-        ingest: IngestConfig {
-            enabled: true,
-            ..IngestConfig::default()
-        },
+        ingest,
         ..EngineConfig::default()
     };
     let eng = Engine::start(cfg, store, clients);
@@ -151,7 +164,7 @@ async fn main() {
         let up_d = delta(&up_now, &up_prev);
         let rps: f64 = up_d.values().sum::<u64>() as f64 / 60.0;
         println!(
-            "\n[{minute:>3} min] tip {} | blocks {} (+{}) | nodes {} apps {} mesh {} | stale {} | RSS {rss:.1} MB",
+            "\n[{minute:>3} min] tip {} | blocks {} (+{}) | nodes {} apps {} mesh {} | stale {} | RSS {rss:.1} MB | threads {}",
             p.network.tip.as_ref().map_or(0, |t| t.height),
             s.blocks,
             s.blocks - prev.blocks,
@@ -159,13 +172,14 @@ async fn main() {
             p.network.app_count,
             p.mesh_edge_count,
             p.stale,
+            proc_status("Threads:").unwrap_or(0.0),
         );
         println!("  block latency (this minute): {}", lat(new_lat));
         println!("  events: {}", fmt_map(&delta(&s.events, &prev.events)));
         println!("  live:   {}", fmt_map(&delta(&s.live, &prev.live)));
         println!("  upstream ({rps:.2} req/s): {}", fmt_map(&up_d));
         println!(
-            "  reconciles {} diffs {} {} | winner checks {} mismatches {} stale {} | payouts exact {} fallback {} none {}",
+            "  reconciles {} diffs {} {} | winner checks {} mismatches {} stale {} | payouts exact {} fallback {} none {} | rank fixes {}",
             s.reconciles,
             s.reconcile_diffs,
             fmt_map(&s.reconcile_diff_fields),
@@ -174,7 +188,8 @@ async fn main() {
             s.winner_stale,
             s.payouts_exact,
             s.payouts_fallback,
-            s.payouts_unattributed
+            s.payouts_unattributed,
+            s.rank_corrections
         );
         println!(
             "  commits {} (errors {}) | publishes {} (last {} ms, max {} ms) | backfilled blocks {} | job errors {} | internal errors {}",
@@ -244,8 +259,12 @@ async fn main() {
         s.reorgs
     );
     println!(
-        "payout attribution: exact {} fallback {} unattributed {}",
-        s.payouts_exact, s.payouts_fallback, s.payouts_unattributed
+        "payout attribution: exact {} fallback {} unattributed {} | rank corrections {} nodes in {} messages",
+        s.payouts_exact,
+        s.payouts_fallback,
+        s.payouts_unattributed,
+        s.rank_corrections,
+        s.rank_correction_msgs
     );
     println!(
         "store commits {} ops {} errors {} | publishes {} max {} ms | internal errors {}",
