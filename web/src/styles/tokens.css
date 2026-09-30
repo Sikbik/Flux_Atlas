@@ -71,6 +71,8 @@
   --logo-min: 16px;            /* smallest symbol anywhere in the UI (favicons exempt) */
   --logo-hero: 88px;           /* boot, About, gallery */
   --logo-word: 600;            /* weight of the sub-brand word (Montserrat SemiBold, as in the Foundation lockup) */
+  --logo-word-size: 18px;      /* "Atlas" beside the round symbol in the chrome lockup (L1) */
+  --logo-gap-chrome: 9px;      /* symbol to word in L1: 1.6 x at 26 px, never below x (0.2174 of the symbol, 5.7 px) */
 
   /* ---- 2. Surfaces and lines ------------------------------------------------ */
   /* Flux Black lifted toward Flux Graphite in five steps, with a 4 to 6 percent
@@ -263,6 +265,8 @@
   --globe-mesh-flow-alpha: 0.05;/* network-wide web */
   --globe-shock:    #4f7ad4;    /* block shockwave, outer */
   --globe-shock-hot: #ffffff;   /* block shockwave, leading edge */
+  --globe-shock-reach: 62;            /* degrees of arc the shockwave travels from the producer */
+  --globe-shock-reach-emission: 88;   /* the wider second ring on an emission-change block */
   --globe-beam-head: #ffffff;   /* producer -> moon head spark; payout heads take their tier */
   --globe-label:     #d5d7db;
   --globe-label-dim: #a1a5ab;
@@ -505,17 +509,21 @@
   --dur-enter: 280ms;       /* list insertion */
   --dur-tick: 420ms;        /* odometer digit roll */
   --dur-fresh: 1600ms;      /* new-item highlight decay */
-  --dur-portal-open: 720ms;
-  --dur-portal-close: 420ms;
+  --dur-portal-open: 660ms;   /* aperture: a window opens out of what was clicked */
+  --dur-portal-close: 220ms;  /* closing is faster than opening */
+  --portal-scale-from: 0.86;  /* window scale at the start of the aperture */
+  --portal-scale-to: 0.94;    /* ... and at the end of a close */
   --dur-route: 480ms;
   --dur-ambient-out: 900ms; /* UI dissolves into ambient */
   --dur-ambient-in: 520ms;  /* UI re-materialises */
   --dur-boot-min: 2400ms;
   --dur-assemble: 520ms;    /* boot: one symbol piece arriving */
   --dur-lift: 1400ms;       /* boot: the assembled symbol becoming the moon */
-  --dur-shock: 1600ms;      /* block shockwave across the sphere */
+  --dur-shock: 1700ms;      /* block shockwave across the sphere (reach --globe-shock-reach) */
+  --dur-shock-emission: 2100ms; /* the second, wider ring on a block that changes the subsidy (reach --globe-shock-reach-emission) */
   --dur-uplink: 720ms;      /* producer -> moon */
   --dur-downlink: 900ms;    /* moon -> payee, per beam */
+  --dur-fire-gap: 130ms;    /* between the four outputs, in coinbase order: bar (dev fund), small hexagon (Cumulus), big hexagon (Nimbus), cap (Stratus) */
   --dur-moon-flash: 180ms;  /* a moon piece flashing white as its beam leaves */
   --dur-moon-hover: 220ms;
   --dur-beam: 1100ms;       /* generic beam travel */
