@@ -44,3 +44,6 @@ data/
 
 # Rust (v2)
 /target
+
+# Agent worktrees
+/.claude/worktrees/
