@@ -27,6 +27,7 @@ import { Pulse } from '../../features/chrome/Pulse';
 import { useRootPrefs } from '../../features/chrome/prefs';
 import { BlockRail } from '../../features/chrome/Rail';
 import { StatusBar } from '../../features/chrome/StatusBar';
+import { Toasts } from '../../features/chrome/Toasts';
 import { CommandLayer } from '../../features/command';
 import {
   type Anchor,
@@ -161,6 +162,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
           onRequestClose={requestClose}
           onFocusWindow={focusWindow}
         />
+        <Toasts />
         <CommandLayer />
         <BootVeil />
       </div>

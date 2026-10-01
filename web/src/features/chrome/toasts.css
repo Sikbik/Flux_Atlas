@@ -1,0 +1,244 @@
+/* Toasts (design 6.4 H, 8.17): glass-strong, 352 px, a 34 px icon tile tinted in the toast's colour, a
+   Montserrat title and a quiet body. A payment is white-tinted, a warning amber, an achievement chamfered
+   (the only chamfered toast). They enter from the right in 280 ms and leave in 180 ms; nothing moves
+   except opacity and transform. */
+
+.toasts {
+  --toast-shift: 0px;
+  --toast-in: toast-in;
+  position: fixed;
+  top: calc(var(--topbar-h) + 62px);
+  right: 16px;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 352px;
+  pointer-events: none;
+  /* A docked window owns the right edge: the stack steps in beside it (a transform, never `right`). */
+  translate: calc(var(--toast-shift) * -1) 0;
+  transition: translate var(--dur-slower) var(--ease-out);
+}
+
+.toast {
+  --tk: var(--accent-400);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px;
+  padding: 12px 8px 12px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--toast-r, 16px);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-pop), var(--shadow-inset-hi);
+  pointer-events: auto;
+  animation: var(--toast-in) var(--dur-enter) var(--ease-out) backwards;
+}
+
+.toast[data-leaving] {
+  pointer-events: none;
+  animation: toast-out 180ms var(--ease-in) forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
+.toast[data-kind="success"] {
+  --tk: var(--status-ok);
+}
+
+.toast[data-kind="warning"] {
+  --tk: var(--status-warn);
+}
+
+.toast[data-kind="error"] {
+  --tk: var(--status-crit);
+}
+
+/* A payment or a watched node: a white-tinted border and a soft glow. */
+.toast[data-kind="watch"] {
+  --tk: var(--hot);
+  border-color: rgb(255 255 255 / 0.4);
+  box-shadow:
+    var(--shadow-pop),
+    0 0 40px -14px var(--hot-glow);
+}
+
+/* An achievement: chamfered, an accent wash, no border (the cut would clip it). */
+.toast[data-kind="achievement"] {
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(135deg, rgb(79 122 212 / 0.22), rgb(8 10 15 / 0.92) 60%);
+  clip-path: var(--clip-chamfer-dual-sm);
+  box-shadow: none;
+}
+
+.toast-main {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+  border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.toast-main:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.toast-ti {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: color-mix(in oklab, var(--tk) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tk) 40%, transparent);
+  color: var(--tk);
+}
+
+.toast-text {
+  display: block;
+  min-width: 0;
+  padding-top: 1px;
+}
+
+.toast-text b {
+  display: block;
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+  line-height: 1.3;
+}
+
+.toast-body {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.toast-body .mono {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+a.toast-main:hover .toast-text b {
+  color: #fff;
+}
+
+.toast-x {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--text-4);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.toast-x:hover {
+  background: rgb(255 255 255 / 0.07);
+  color: var(--text-1);
+}
+
+.toast-x:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  color: var(--text-1);
+}
+
+/* ---- phone: one toast, over the sheet, above the tab bar (12 px side margins) ------------------------- */
+
+.shell[data-layout="phone"] .toasts {
+  --toast-in: toast-rise;
+  --toast-r: 18px;
+  top: auto;
+  right: 12px;
+  bottom: calc(var(--tabbar-h) + 10px);
+  left: 12px;
+  width: auto;
+  translate: none;
+}
+
+@keyframes toast-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* ---- motion preferences: a cross-fade only ---------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .toasts {
+    transition: none;
+  }
+  :root:not([data-motion="full"]) .toast {
+    animation: toast-fade-in var(--dur-base) var(--ease-standard) backwards;
+  }
+  :root:not([data-motion="full"]) .toast[data-leaving] {
+    animation: toast-fade-out var(--dur-base) var(--ease-standard) forwards;
+  }
+}
+
+:root[data-motion="reduced"] .toasts,
+:root[data-motion-off] .toasts {
+  transition: none;
+}
+
+:root[data-motion="reduced"] .toast {
+  animation: toast-fade-in var(--dur-base) var(--ease-standard) backwards;
+}
+
+:root[data-motion="reduced"] .toast[data-leaving] {
+  animation: toast-fade-out var(--dur-base) var(--ease-standard) forwards;
+}
+
+:root[data-motion-off] .toast {
+  animation: none;
+}
+
+:root[data-motion-off] .toast[data-leaving] {
+  opacity: 0;
+}
+
+@keyframes toast-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes toast-fade-out {
+  to {
+    opacity: 0;
+  }
+}
