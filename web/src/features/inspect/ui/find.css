@@ -1,0 +1,59 @@
+/* The node finder: a search field with a list of matching nodes under it. */
+
+.ix-find {
+  position: relative;
+  min-width: 0;
+}
+
+.ix-find-hits {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-3));
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 1px;
+  max-height: 320px;
+  padding: var(--space-2);
+  overflow: auto;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  background: color-mix(in oklab, var(--ink-1) 94%, transparent);
+  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.7);
+  backdrop-filter: blur(14px);
+}
+
+.ix-find-hit {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 36px;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--r-md);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.ix-find-hit[data-active] {
+  background: linear-gradient(90deg, var(--tier-soft, var(--accent-soft)), transparent 90%);
+}
+
+.ix-find-hit[data-empty] {
+  grid-template-columns: 1fr;
+  color: var(--text-3);
+  cursor: default;
+}
+
+.ix-find-ep {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ix-find-note {
+  color: var(--text-3);
+  white-space: nowrap;
+}
