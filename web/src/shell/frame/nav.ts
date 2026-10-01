@@ -17,6 +17,16 @@ import type { WindowRef } from '../wm/types';
 
 export type Search = Record<string, unknown>;
 
+/**
+ * True for a route that draws a panel of its own in the stage's page slot: search results, the dev galleries
+ * and not found. Not the bare globe, not ambient, and not a window or a strip or layer type, which have their
+ * own place. The Pulse and the aim strip stand where that panel opens, so the shell has them step aside.
+ */
+export function isPagePanel(pathname: string): boolean {
+  if (pathname === '/' || pathname === '/ambient') return false;
+  return windowForPath(pathname) === null;
+}
+
 export interface Here {
   path: string;
   search: Search;

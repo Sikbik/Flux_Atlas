@@ -54,6 +54,7 @@ import { Dock } from './Dock';
 import { useShellKeys } from './keys';
 import { useLauncher } from './launchers';
 import { liveSheet } from './livegate';
+import { isPagePanel } from './nav';
 import { PhoneHeader } from './PhoneHeader';
 import { PhoneTabs } from './PhoneTabs';
 import { useGlobeInsetSync, useWindowRouting } from './routing';
@@ -168,6 +169,9 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
 
   const primary = windowForPath(pathname);
   const pageRoute = !primary || WINDOW_SPECS[primary.type].chrome !== 'window';
+  // A page that draws a panel in the stage's left column, where the Pulse and the aim strip stand: they step
+  // aside for it (frame.css).
+  const pagePanel = isPagePanel(pathname);
 
   if (ambient) {
     // Ambient: no chrome; the globe and the moon (orbit mode) are the screen (design 6.4 K).
@@ -187,6 +191,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         data-layout={phone ? 'phone' : 'desktop'}
         data-boot={boot}
         data-boot-instant={boot === 'done' && bootInstant() ? '' : undefined}
+        data-page={pagePanel ? '' : undefined}
       >
         <a className="skip-link" href="#shell-stage">
           Skip to the globe

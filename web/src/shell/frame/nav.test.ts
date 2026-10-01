@@ -1,12 +1,55 @@
 import { describe, expect, it } from 'vitest';
 import type { WindowRef } from '../wm/types';
-import { carriesOver, extrasAfterOpen } from './nav';
+import { carriesOver, extrasAfterOpen, isPagePanel } from './nav';
 
 const node: WindowRef = { type: 'node', key: '1.2.3.4:16127' };
 const app: WindowRef = { type: 'app', key: 'Fluxtracker' };
 const queue: WindowRef = { type: 'queue', key: null };
 const analytics: WindowRef = { type: 'analytics', key: 'overview' };
 const block: WindowRef = { type: 'block', key: '100' };
+
+describe('isPagePanel', () => {
+  it('is true for the routes that draw a panel in the page slot', () => {
+    expect(isPagePanel('/q/hetzner%20gmbh')).toBe(true);
+    expect(isPagePanel('/dev/live')).toBe(true);
+    expect(isPagePanel('/dev/kit')).toBe(true);
+    expect(isPagePanel('/no/such/page')).toBe(true);
+  });
+
+  it('is false for the bare globe and ambient', () => {
+    expect(isPagePanel('/')).toBe(false);
+    expect(isPagePanel('/ambient')).toBe(false);
+  });
+
+  it('is false for every window, strip and layer route', () => {
+    for (const path of [
+      '/node/1.2.3.4:16127',
+      '/host/1.2.3.4',
+      '/app/Fluxtracker',
+      '/block/100',
+      '/tx/abc',
+      '/address/t1abc',
+      '/operator/t1abc',
+      '/queue',
+      '/queue/stratus',
+      '/analytics/fairness',
+      '/mempool',
+      '/supply',
+      '/richlist',
+      '/terminal',
+      '/settings',
+      '/about',
+      '/time',
+      '/weather',
+    ])
+      expect(isPagePanel(path), path).toBe(false);
+  });
+
+  it('is true for a malformed window path, which is the not found page', () => {
+    expect(isPagePanel('/node')).toBe(true);
+    expect(isPagePanel('/block/1/2')).toBe(true);
+  });
+});
 
 describe('carriesOver', () => {
   it('keeps a floating primary window when another opens', () => {

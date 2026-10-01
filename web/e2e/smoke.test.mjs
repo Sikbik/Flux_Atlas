@@ -335,6 +335,68 @@ test('the globe never remounts across routes; windows follow the URL', { timeout
   assert.deepEqual(pageErrors, []);
 });
 
+test('a page panel takes the left column: the Pulse and the aim strip step aside and come back', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  const visible = (sel) =>
+    page.evaluate((s) => {
+      const el = document.querySelector(s);
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      return cs.visibility !== 'hidden' && Number.parseFloat(cs.opacity) > 0.9;
+    }, sel);
+  // The Pulse is a lazy chunk: wait for it to be on screen before judging.
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector('.pulse');
+      return (
+        !!el &&
+        getComputedStyle(el).visibility !== 'hidden' &&
+        Number.parseFloat(getComputedStyle(el).opacity) > 0.9
+      );
+    },
+    null,
+    { timeout: 30_000 },
+  );
+  const go = (p) =>
+    page.evaluate((path) => {
+      history.pushState({}, '', path);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, p);
+  assert.equal(await page.locator('.shell[data-page]').count(), 0, 'no page panel on the bare globe');
+  const hadAim = (await visible('.aimstrip:not([data-inline])')) === true;
+
+  await go('/dev/live');
+  await page.waitForSelector('.shell[data-page] .shell-page:not(:empty)', { timeout: 20_000 });
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.pulse')).visibility === 'hidden',
+    null,
+    { timeout: 5_000 },
+  );
+  assert.equal(await visible('.pulse'), false, 'the Pulse is away while a page panel is up');
+  if (hadAim)
+    assert.notEqual(await visible('.aimstrip:not([data-inline])'), true, 'the aim strip is away too');
+
+  await go('/');
+  await page.waitForFunction(() => !document.querySelector('.shell[data-page]'), null, { timeout: 10_000 });
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector('.pulse');
+      return (
+        !!el &&
+        getComputedStyle(el).visibility !== 'hidden' &&
+        Number.parseFloat(getComputedStyle(el).opacity) > 0.9
+      );
+    },
+    null,
+    { timeout: 10_000 },
+  );
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
 test('a lost WebGL context comes back with a fresh engine', { timeout: 120_000 }, async () => {
   const page = await open('/');
   await page.waitForFunction(globeReady, null, { timeout: 60_000 });
