@@ -33,18 +33,97 @@ export interface UplinkCmd {
   durationMs: number;
 }
 
-/** The moon's pieces flash as it accepts the block (the coinbase's outputs). */
+/**
+ * Which part of the Flux moon a flare lights. The symbol's four pieces are the four coinbase outputs:
+ * the slanted bar is output 0 (the dev fund), the small hexagon Cumulus, the big hexagon Nimbus and the
+ * cap Stratus (design 7.10.1). `all` is the moon receiving the block.
+ */
+export type MoonPiece = 'all' | 'bar' | 'smallHex' | 'bigHex' | 'cap';
+
+/** The piece a payout beam leaves from. */
+export type PayoutPiece = 'smallHex' | 'bigHex' | 'cap';
+
+/** The coinbase outputs in the order every PoN coinbase lists them (output 0 to 3). */
+export type CoinbaseOutput = 'dev' | 'cumulus' | 'nimbus' | 'stratus';
+
+/**
+ * The one constant that orders the relay (design 6.4 I): the moon fires its four outputs in coinbase
+ * order, the dev fund first, then Cumulus, Nimbus and Stratus, `RELAY_MS.gap` apart. Flashes, beams,
+ * chips and payout landings all derive from it.
+ */
+export const DOWNLINK_ORDER = [
+  'dev',
+  'cumulus',
+  'nimbus',
+  'stratus',
+] as const satisfies readonly CoinbaseOutput[];
+
+/** The moon piece for each coinbase output. */
+export const PIECE_OF: {
+  readonly dev: 'bar';
+  readonly cumulus: 'smallHex';
+  readonly nimbus: 'bigHex';
+  readonly stratus: 'cap';
+} = {
+  dev: 'bar',
+  cumulus: 'smallHex',
+  nimbus: 'bigHex',
+  stratus: 'cap',
+};
+
+/**
+ * The relay's timeline in ms after the Beat (design 6.4 I), shared by the web choreographer and the
+ * globe engine. Full motion: uplink leaves at 60 and flies 720 (the moon receives at 780); the first
+ * output fires at 890 and the rest follow 130 ms apart (890, 1020, 1150, 1280); each piece flashes 60 ms
+ * before its output leaves; the dev-fund chip leaves 60 ms after the bar's turn; a beam flies 900 ms and
+ * lands 40 ms early (payouts at 1880, 2010, 2140); the next payees are aimed at 2600; everything has
+ * faded by 2780. Reduced motion: uplink 380 ms (receive at 440), every downlink at 480, landed at 860.
+ * A second block inside 3 s plays the compact version (uplink 300, downlinks 600, 60 ms apart).
+ */
+export const RELAY_MS = {
+  up: 60,
+  upDur: 720,
+  recv: 780,
+  fire: 890,
+  gap: 130,
+  downDur: 900,
+  flashLead: 60,
+  fundAfter: 60,
+  landEarly: 40,
+  aim: 2_600,
+  end: 2_780,
+  pieceFlashDur: 340,
+  recvFlashDur: 900,
+  reducedUpDur: 380,
+  reducedRecv: 440,
+  reducedFire: 480,
+  reducedLand: 860,
+  compactWindow: 3_000,
+  compactUpDur: 300,
+  compactDownDur: 600,
+  compactGap: 60,
+  compactRecvToFire: 40,
+} as const;
+
+/**
+ * The moon accepts the block. Without `piece` (or with `all`) all four pieces flash, two rings leave the
+ * moon and a bead is left on its chain; with a piece only that piece flashes (340 ms), just before its
+ * output leaves.
+ */
 export interface MoonFlareCmd {
   height: number;
   durationMs: number;
   compact: boolean;
+  piece?: MoonPiece;
 }
 
-/** Beam from the moon down to one payee, in tier order (Stratus, Nimbus, Cumulus). */
+/** Beam from the moon down to one payee, in coinbase order (Cumulus, Nimbus, Stratus). */
 export interface DownlinkCmd {
   height: number;
   to: number | null;
   tier: Tier;
+  /** The moon piece the beam leaves from (small hexagon Cumulus, big hexagon Nimbus, cap Stratus). */
+  piece: PayoutPiece;
   /** FLUX, 8-decimal string. */
   amount: string;
   durationMs: number;
@@ -69,6 +148,8 @@ export interface PayoutLandedCmd {
 export interface DevFundCmd {
   height: number;
   amount: string;
+  /** The chip leaves the slanted bar (output 0). */
+  piece: 'bar';
 }
 
 /** A batch of heartbeat (confirm transaction) sparkles, sampled to the ambient budget. */
@@ -105,7 +186,8 @@ export interface PulseCmd {
 /** Pre-aim reticles on the next block's payees. */
 export interface AimCmd {
   height: number;
-  payees: { tier: Tier; node: number | null }[];
+  /** `amount` (FLUX) is an optional extension for a label at the reticle. */
+  payees: { tier: Tier; node: number | null; amount?: number }[];
   /** Expected time to the block, for the breathing tempo (last 5 s speed up). */
   etaMs: number;
   /** Payee nodes that are selected, watched or owned. */

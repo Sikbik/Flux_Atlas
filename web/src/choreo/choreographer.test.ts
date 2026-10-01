@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveMsg } from '../api/generated/LiveMsg';
 import { blockMsg, live } from '../testing/fixtures';
 import { BEAT_TIMING, Choreographer, type ChoreographerOptions } from './choreographer';
-import { type RecordedEffect, recordingSink } from './effects';
+import { DOWNLINK_ORDER, PIECE_OF, RELAY_MS, type RecordedEffect, recordingSink } from './effects';
 
 const T0 = 5_000_000;
 
@@ -28,26 +28,60 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('the Beat', () => {
-  it('stages producer flare, uplink to the moon, moon flare, downlinks in tier order, landings', () => {
+  it('orders the outputs as the coinbase does: dev fund, Cumulus, Nimbus, Stratus', () => {
+    expect(DOWNLINK_ORDER).toEqual(['dev', 'cumulus', 'nimbus', 'stratus']);
+    expect(PIECE_OF).toEqual({ dev: 'bar', cumulus: 'smallHex', nimbus: 'bigHex', stratus: 'cap' });
+    expect(RELAY_MS.gap).toBe(130);
+  });
+
+  it('stages producer flare, uplink, the moon receiving, then the four outputs in coinbase order', () => {
     const { c, sink } = setup();
-    c.handle(block(100, { producer: 7, payees: [10, 20, 30] }));
+    // Payouts arrive in any order; the relay plays them in coinbase order.
+    const b = blockMsg(100, { producer: 7, payees: [10, 20, 30] });
+    b.payouts = [...b.payouts].reverse();
+    c.handle(fresh('block', 100, b));
     vi.advanceTimersByTime(10_000);
     const beams = sink.log.filter((e) =>
       ['beat', 'uplink', 'moonFlare', 'downlink', 'payoutLanded', 'devFund'].includes(e.name),
     );
-    const at = (e: RecordedEffect) => [e.at, e.name, (e.cmd as { tier?: string })?.tier ?? ''];
+    const at = (e: RecordedEffect) => {
+      const cmd = e.cmd as { tier?: string; piece?: string };
+      return [e.at, e.name, cmd?.tier ?? cmd?.piece ?? ''];
+    };
     expect(beams.map(at)).toEqual([
       [0, 'beat', ''],
-      [160, 'uplink', ''],
-      [880, 'moonFlare', ''],
-      [880, 'downlink', 'stratus'],
-      [1000, 'downlink', 'nimbus'],
-      [1120, 'downlink', 'cumulus'],
-      [1240, 'devFund', ''],
-      [1780, 'payoutLanded', 'stratus'],
-      [1900, 'payoutLanded', 'nimbus'],
-      [2020, 'payoutLanded', 'cumulus'],
+      [60, 'uplink', ''],
+      [780, 'moonFlare', ''],
+      [830, 'moonFlare', 'bar'],
+      [950, 'devFund', 'bar'],
+      [960, 'moonFlare', 'smallHex'],
+      [1020, 'downlink', 'cumulus'],
+      [1090, 'moonFlare', 'bigHex'],
+      [1150, 'downlink', 'nimbus'],
+      [1220, 'moonFlare', 'cap'],
+      [1280, 'downlink', 'stratus'],
+      [1880, 'payoutLanded', 'cumulus'],
+      [2010, 'payoutLanded', 'nimbus'],
+      [2140, 'payoutLanded', 'stratus'],
     ]);
+    // The moon receives with all four pieces (no `piece`), then each piece flashes for 340 ms.
+    const flares = sink.log.filter((e) => e.name === 'moonFlare').map((e) => e.cmd);
+    expect(flares[0]).toMatchObject({ durationMs: 900 });
+    expect(flares[0]).not.toHaveProperty('piece');
+    expect(flares.slice(1).every((f) => (f as { durationMs: number }).durationMs === 340)).toBe(true);
+    // Each beam leaves its own piece and lands 860 ms after it leaves.
+    const downs = sink.log
+      .filter((e) => e.name === 'downlink')
+      .map((e) => e.cmd as { tier: string; piece: string; order: number });
+    expect(downs.map((d) => [d.tier, d.piece, d.order])).toEqual([
+      ['cumulus', 'smallHex', 1],
+      ['nimbus', 'bigHex', 2],
+      ['stratus', 'cap', 3],
+    ]);
+    expect(sink.log.find((e) => e.name === 'devFund')!.cmd).toMatchObject({
+      amount: '0.50010000',
+      piece: 'bar',
+    });
     const beat = sink.log[0]!.cmd as { producer: number; compact: boolean; reduced: boolean };
     expect(beat).toMatchObject({ producer: 7, compact: false, reduced: false });
     expect(sink.log.find((e) => e.name === 'uplink')!.cmd).toMatchObject({
@@ -55,9 +89,9 @@ describe('the Beat', () => {
       durationMs: BEAT_TIMING.uplinkMs,
     });
     expect(sink.log.find((e) => e.name === 'downlink')!.cmd).toMatchObject({
-      to: 30,
-      amount: '9.00000000',
-      order: 0,
+      to: 10,
+      amount: '1.00000000',
+      durationMs: 900,
     });
   });
 
@@ -105,7 +139,8 @@ describe('the Beat', () => {
       expect.objectContaining({ height: 101, compact: true }),
     ]);
     const compactLand = timeline('payoutLanded').filter((e) => (e.cmd as { height: number }).height === 101);
-    expect(compactLand.map((e) => e.at - 500)).toEqual([900, 960, 1020]);
+    // Compact: uplink 300, outputs from 340, 60 ms apart, beams 600 ms landing 40 ms early.
+    expect(compactLand.map((e) => e.at - 500)).toEqual([960, 1020, 1080]);
     expect(timeline('heartbeats').length).toBe(0);
     expect(c.stats().compactBlocks).toBe(1);
   });
@@ -135,13 +170,16 @@ describe('pre-aim', () => {
     vi.advanceTimersByTime(10_000);
     const aim = timeline('aim');
     expect(aim.length).toBe(1);
-    expect(aim[0]!.at).toBe(2_020);
+    // The next payees resolve at 2600, after every beam has landed.
+    expect(aim[0]!.at).toBe(2_600);
     expect(aim[0]!.cmd).toMatchObject({ height: 101, payees: [{ tier: 'stratus', node: 33 }] });
+    const start101 = Date.now() - T0;
     c.handle(block(101));
     vi.advanceTimersByTime(10_000);
     const clear = timeline('clearAim');
     expect(clear.length).toBe(1);
-    expect(clear[0]!.at).toBe(timeline('payoutLanded').at(-1)!.at);
+    expect(clear[0]!.at).toBe(start101 + 2_600);
+    expect(clear[0]!.at).toBeGreaterThan(timeline('payoutLanded').at(-1)!.at);
   });
 
   it('never clears the next aim with the previous landing', () => {
@@ -342,16 +380,20 @@ describe('visibility, catch-up and motion', () => {
     expect(timeline('beat').length).toBe(1);
   });
 
-  it('reduced motion: static flash and a payee highlight instead of beams', () => {
+  it('reduced motion: static lines together at 480, payee highlights at 860', () => {
     const { c, sink } = setup({ motion: 'reduced' });
     c.handle(block(100, { heartbeats: [1, 2] }));
     vi.advanceTimersByTime(10_000);
-    const names = sink.log.map((e) => e.name);
-    expect(names).not.toContain('uplink');
-    expect(names).not.toContain('downlink');
-    expect(sink.log.filter((e) => e.name === 'payoutLanded').every((e) => e.at === 0)).toBe(true);
+    const when = (name: string) => sink.log.filter((e) => e.name === name).map((e) => e.at);
     expect(sink.log[0]!.cmd).toMatchObject({ reduced: true });
+    expect(when('uplink')).toEqual([60]);
+    expect(sink.log.find((e) => e.name === 'uplink')!.cmd).toMatchObject({ durationMs: 380 });
+    expect(when('moonFlare')).toEqual([440, 480, 480, 480, 480]);
+    expect(when('downlink')).toEqual([480, 480, 480]);
+    expect(when('payoutLanded')).toEqual([860, 860, 860]);
     expect(sink.log.find((e) => e.name === 'payoutLanded')!.cmd).toMatchObject({ highlightMs: 1_200 });
+    // The ripple is not spread out: one sampled batch at the Beat.
+    expect(when('heartbeats')).toEqual([0]);
   });
 
   it('motion off: no commands at all', () => {
