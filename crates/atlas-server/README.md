@@ -14,6 +14,7 @@ container port 3000.
 ```
 atlas serve                      # run the server (ingest from the real Flux network)
 atlas healthcheck                # probe /healthz (container HEALTHCHECK); exit 0 when healthy
+atlas metrics                    # print /metrics/prometheus (served to loopback only), inside the container
 atlas db-stats                   # per-table sizes of a stopped server's database, disk use of the data dir
 atlas export-types               # write the TypeScript bindings to web/src/api/generated
 ```
@@ -37,16 +38,26 @@ Every `serve` flag has an environment variable. Flags win over the environment.
 | `ATLAS_STATS_API` | `--stats-api` | `https://stats.runonflux.io` | Stats service (rounds, geo lookups, history). |
 | `ATLAS_UPSTREAM_RPS` | `--upstream-rps` | per host (gateway 4, stats 2) | Caps every upstream host policy at this rate. |
 | `ATLAS_GEOIP_AUTO` | `--geoip-auto` | `1` | Download DB-IP "IP to City Lite" (CC BY 4.0, about 60 MB compressed, 127 MB installed) into `<data-dir>/geoip/` in the background (checked about 30 s after start, then daily; the previous month while the current one is not published), verify it and swap it in atomically. Gives nodes their city names, and approximate coordinates when no source locates them. `0` turns the download off (an installed file is still used). |
-| `ATLAS_GEOIP_DB` | `--geoip-db` | none | Operator-managed City `.mmdb` used instead of the downloaded file (the download is then off). It is memory-mapped: replace it by rename, never rewrite it in place; a changed file is reloaded within a day. |
+| `ATLAS_GEOIP_DB` | `--geoip-db` | none | Operator-managed City `.mmdb` used instead of the downloaded file (the download is then off). It is copied to `<data-dir>/geoip/operator-copy.mmdb` and the copy is mapped, so rewriting it in place is safe; a changed file is reloaded within a day. |
 | `ATLAS_REPLAY_CAPACITY` | `--replay-capacity` | `4096` | Live messages kept for `since_seq` replay (min 16), and never more than 16 MiB of them (serialized). |
-| `ATLAS_TRUST_PROXY` | `--trust-proxy` | `false` | Use the right-most `X-Forwarded-For` as the client IP. |
-| `ATLAS_CLIENT_RPS` | `--client-rps` | `5` | Upstream-reaching requests per second per client IP (cache hits are free). |
+| `ATLAS_TRUSTED_PROXIES` | `--trusted-proxies` | `fdm` | Peers whose `X-Forwarded-For` names the client: `fdm` (the 16 built-in FDM app balancers), `none`, addresses and CIDR blocks, comma-separated (`fdm,10.0.0.0/8` extends the list). Any other peer is the client. ARCHITECTURE section 11.2. |
+| `ATLAS_TRUST_PROXY` | `--trust-proxy` | `0` | Legacy: `1` trusts `X-Forwarded-For` from every peer. Unsafe where the port is reachable without the proxy, as on Flux. |
+| `ATLAS_HTTP_MAX_CONNECTIONS` | `--http-max-connections` | `8192` | Open TCP connections, WebSockets included (lowered at startup to fit the file descriptor limit). |
+| `ATLAS_HTTP_MAX_PER_PEER` | `--http-max-per-peer` | `256` | Open connections per peer that is not a trusted proxy (IPv6 per /64). |
+| `ATLAS_METRICS_TOKEN` | `--metrics-token` | none | Bearer token that opens `/metrics/prometheus` to remote scrapers. Without it the exposition is served to loopback only (`atlas metrics`). |
+| `ATLAS_CLIENT_RPS` | `--client-rps` | `5` | Upstream-reaching requests per second per client (cache hits are free). A global budget of 20/s holds across clients. |
 | `ATLAS_CLIENT_BURST` | `--client-burst` | `20` | Burst of the per-client limiter. |
-| `ATLAS_WS_MAX_CONNECTIONS` | `--ws-max-connections` | `10000` | Concurrent WebSocket connections (about 10 KiB of memory each with the 8 KiB read / 16 KiB write buffers). |
-| `ATLAS_WS_MAX_PER_IP` | `--ws-max-per-ip` | `16` | Concurrent WebSocket connections per client IP. |
+| `ATLAS_WS_MAX_CONNECTIONS` | `--ws-max-connections` | `6000` | Concurrent WebSocket connections (about 47 KB of memory each, measured), never above the connection cap. |
+| `ATLAS_WS_MAX_PER_IP` | `--ws-max-per-ip` | `32` | Concurrent WebSocket connections per client (IPv6 per /64): room for an office or carrier NAT behind one address. |
 | `ATLAS_WS_PING` | `--ws-ping` | `20s` | Protocol ping cadence; the idle timeout is 3 pings + 15 s. |
 | `ATLAS_LOG` | | `info` | `tracing` filter (for example `info,atlas_engine=debug`). |
-| `ATLAS_HEALTHCHECK_ADDR` | `healthcheck --addr` | `127.0.0.1:3000` | Address `atlas healthcheck` probes. |
+| `ATLAS_HEALTHCHECK_ADDR` | `healthcheck --addr` | `127.0.0.1:3000` | Address `atlas healthcheck` and `atlas metrics` read. |
+
+Fixed limits (ARCHITECTURE section 11.2): a 10 s header read timeout that also bounds keep-alive idle time,
+a 30 s write stall timeout, a 30 s request timeout (not the WebSocket session), store reads 32 at once
+with a 10 s deadline, the compute routes (`/nodes`, `/operator`, `/metrics`, `/timeline/state`, `/search`,
+node history and payments) at 15 requests a second per client (burst 60) with 2 global compute slots, and a
+shutdown that drains for 4 s and flushes the store within 8 s of SIGTERM.
 
 ### `ATLAS_INTERVALS` keys
 
@@ -95,8 +106,15 @@ docker run --rm -v atlas-data:/app/backend/data flux-atlas:local db-stats   # wi
 
 The server runs as root inside the container: FluxOS bind-mounts a root-owned host directory at
 `containerData`, and a non-root user cannot create the database there (measured: `Permission denied`
-with uid 65532). The image has no shell or other binaries to escalate with. To run the same image as
-a non-root user elsewhere, give the volume to that user and pass `--user`.
+with uid 65532). At startup it drops every Linux capability and sets `no_new_privs` (it needs none:
+uid 0 owns the volume and port 3000 is unprivileged), and raises the soft file descriptor limit to the
+hard one; the `process hardened` log line reports both. The image has no shell or other binaries to
+escalate with. To run the same image as a non-root user elsewhere, give the volume to that user and
+pass `--user`.
+
+`/metrics/prometheus` is private: `docker exec <container> atlas metrics` (or FluxOS's "execute
+command" with `atlas metrics`) prints it; a remote scraper needs `ATLAS_METRICS_TOKEN` and sends
+`Authorization: Bearer <token>`. `/healthz` and `/readyz` stay public.
 
 ## Development and tests
 
