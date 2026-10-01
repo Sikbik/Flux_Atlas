@@ -411,8 +411,8 @@ export function Wheel({
       <div className="ix-wheel-mid">{children}</div>
       {hover !== null && hoverNode ? (
         <div className="ix-wheel-tip" data-align={tipAlign} style={{ left: tipX, top: tipY }}>
-          <b className="ix-mono">#{formatInt(hover + 1)}</b>
-          <span className="ix-mono">{hoverNode.endpoint}</span>
+          <b className="ui-mono">#{formatInt(hover + 1)}</b>
+          <span className="ui-mono">{hoverNode.endpoint}</span>
           <small>{etaFor(hover)}</small>
         </div>
       ) : null}

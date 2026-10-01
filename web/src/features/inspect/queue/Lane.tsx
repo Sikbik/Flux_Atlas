@@ -137,8 +137,8 @@ export function Lane({
             {tiles.map((t) => {
               const body = (
                 <>
-                  <b className="ix-mono ix-btile-ep">{t.label}</b>
-                  <span className="ix-btile-eta ix-mono">
+                  <b className="ui-mono ix-btile-ep">{t.label}</b>
+                  <span className="ix-btile-eta ui-mono">
                     {t.state === 'paid' ? <Check size={11} strokeWidth={2.2} aria-hidden="true" /> : null}
                     {t.state !== 'paid' && t.port ? <i>{t.port}</i> : null}
                     {tileLabel(t)}
@@ -187,7 +187,7 @@ export function Lane({
         ) : null}
         <div className="ix-lane-end" aria-hidden="true">
           <span>Back of the queue</span>
-          <b className="ix-mono">#{formatInt(size)}</b>
+          <b className="ui-mono">#{formatInt(size)}</b>
         </div>
       </div>
     </div>

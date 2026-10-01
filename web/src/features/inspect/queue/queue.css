@@ -396,13 +396,13 @@ div.ix-btile {
   align-items: center;
   gap: var(--space-3);
   overflow: hidden;
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: var(--fs-2xs);
   white-space: nowrap;
 }
 
 .ix-btile-eta > i {
-  color: var(--text-4);
+  color: var(--text-3);
   font-style: normal;
 }
 
@@ -427,8 +427,8 @@ div.ix-btile {
   gap: var(--space-1);
   width: 96px;
   padding-right: var(--space-5);
-  color: var(--text-4);
-  font-size: 9px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   pointer-events: none;
