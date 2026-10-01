@@ -30,11 +30,6 @@ import { useMempoolEntries, useNetwork, useNextPayees, useRuntime, useSummary, u
 import type { AnalyticsTab, QueueTier } from '../search';
 import { Panel, QueryState } from './Panel';
 
-export function GlobeHome() {
-  // The bare globe: no window. Pulse, rail and aim strip belong to the shell.
-  return null;
-}
-
 export function NodeView({ nodeKey }: { nodeKey: string }) {
   return (
     <Panel title={`Node ${nodeKey}`} kind="node">
