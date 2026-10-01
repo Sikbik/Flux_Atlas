@@ -84,7 +84,9 @@ const COLUMNS: readonly DataTableColumn<AddrTx>[] = [
     numeric: true,
     minWidth: 130,
     cell: ({ d }) =>
-      d.direction === 'none' ? null : (
+      d.direction === 'none' ? (
+        ''
+      ) : (
         <Amount
           value={d.deltaSats}
           decimals={d.deltaSats % 1_000_000n === 0n ? 2 : 8}

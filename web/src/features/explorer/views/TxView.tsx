@@ -44,6 +44,7 @@ import { payoutSchedule } from '../lib/emission';
 import { buildFlow } from '../lib/txflow';
 import { NODE_TX_KINDS, TX_KINDS } from '../lib/txkinds';
 import { AddressTag, NodeLink } from './shared';
+import './view.css';
 
 type TabId = 'overview' | 'io' | 'raw';
 

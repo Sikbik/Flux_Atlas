@@ -5,41 +5,40 @@
 import { Coins, Landmark, TrendingUp } from 'lucide-react';
 import { useAddress, useSupply } from '../../../api/queries';
 import { useTip } from '../../../app/context';
-import { formatInt, formatSats, parseFlux } from '../../../lib/format';
-import { ANNOUNCED_MAX_SUPPLY_FLUX, BLOCKS_PER_DAY, payoutSchedule } from '../lib/emission';
-import { DEV_FUND_ADDRESS } from '../lib/entities';
+import { formatCompact, formatInt, formatSats, parseFlux } from '../../../lib/format';
 import {
   Amount,
   Chip,
-  CompactAmount,
-  EntityHead,
   EntityLink,
   ErrorState,
   Freshness,
-  HeroAmount,
+  formatAmountText,
   Section,
+  ShareBar,
   Skeleton,
+  Stack,
   Stat,
   StatGrid,
-} from '../parts';
+  ViewHeader,
+} from '../../../ui';
+import { ANNOUNCED_MAX_SUPPLY_FLUX, BLOCKS_PER_DAY, payoutSchedule } from '../lib/emission';
+import { DEV_FUND_ADDRESS } from '../lib/entities';
 import { CutCard } from './supply/CutCard';
 import { CutSchedule, DevFundChart, EmissionSection } from './supply/EmissionCharts';
-import { SupplyGauge } from './supply/SupplyGauge';
-import './supply/supply.css';
+import './view.css';
 
 function SupplySkeleton() {
   return (
-    <div className="ex-root" role="status" aria-busy="true" aria-label="Loading supply">
-      <EntityHead kind="Supply" icon={Coins} title={<Skeleton w={300} h={46} radius={8} />} loading />
-      <Section>
-        <Skeleton h={90} radius={14} />
-      </Section>
-      <Section>
-        <StatGrid>
-          {[0, 1, 2, 3].map((i) => (
-            <Stat key={i} label={<Skeleton w="50%" h={11} />} loading />
-          ))}
+    <div role="status" aria-busy="true" aria-label="Loading supply">
+      <ViewHeader kind="Supply" icon={Coins} title="Supply" />
+      <div className="ex-hero">
+        <StatGrid min={150}>
+          <Stat hero label="Total supply" loading />
+          <Stat label="New FLUX a day" loading />
         </StatGrid>
+      </div>
+      <Section title="Against the announced cap">
+        <Skeleton h={48} radius={8} />
       </Section>
     </div>
   );
@@ -53,11 +52,9 @@ export function SupplyView() {
   if (q.isPending) return <SupplySkeleton />;
   if (!d) {
     return (
-      <div className="ex-root">
-        <ErrorState title="Could not load the supply" onRetry={() => void q.refetch()}>
-          The supply figures come from the chain explorer through this server; try again in a moment.
-        </ErrorState>
-      </div>
+      <ErrorState error={q.error} title="Could not load the supply" onRetry={() => void q.refetch()}>
+        The supply figures come from the chain explorer through this server; try again in a moment.
+      </ErrorState>
     );
   }
   const s = d.supply;
@@ -71,72 +68,65 @@ export function SupplyView() {
   const supplyFlux = total === null ? null : Number(total) / 1e8;
   const sched = s ? payoutSchedule(s.height) : null;
   const devPerDay = sched ? sched.devFundMin * BigInt(BLOCKS_PER_DAY) : null;
+  const flux = (sats: bigint | null) => (sats === null ? null : Number(sats) / 1e8);
   return (
-    <div className="ex-root">
-      <EntityHead
+    <div>
+      <ViewHeader
         kind="Supply"
         icon={Coins}
-        status="ok"
-        aside={<Freshness label="supply" at={s?.updated_ms ?? null} cadenceMs={600_000} />}
-        title={
-          total === null ? (
-            <span className="ex-head__word">Unknown</span>
-          ) : (
-            <HeroAmount sats={total} decimals={2} />
-          )
-        }
-        sub={
-          <span>
-            Total supply{s ? <> at block {formatInt(s.height)}</> : null}: transparent coins plus the shielded
-            pools.
-          </span>
-        }
+        title="Supply"
+        subtitle="How much FLUX exists, where it sits, and the schedule that makes more."
+        freshness={<Freshness label="supply" ts={s?.updated_ms ?? null} cadenceMs={600_000} />}
       >
         {circulating !== null ? (
           <Chip title="The explorer's own circulating figure; its exclusion rule is not documented upstream">
-            Circulating <CompactAmount value={circulating} unit={false} /> per explorer
+            Circulating {formatCompact(flux(circulating))} per explorer
           </Chip>
         ) : null}
-      </EntityHead>
+      </ViewHeader>
 
-      <Section title="Against the announced cap" icon={TrendingUp}>
-        {transparent !== null && shielded !== null ? (
-          <SupplyGauge
-            transparent={Number(transparent) / 1e8}
-            shielded={Number(shielded) / 1e8}
-            circulating={circulating === null ? null : Number(circulating) / 1e8}
-            cap={ANNOUNCED_MAX_SUPPLY_FLUX}
-          />
-        ) : (
-          <p className="ex-muted">The supply breakdown is not available yet.</p>
-        )}
-      </Section>
-
-      <Section>
-        <StatGrid columns={3} min={150}>
+      <div className="ex-hero">
+        <StatGrid min={170}>
           <Stat
-            label="Transparent"
-            value={<CompactAmount value={transparent} unit={false} />}
-            unit="FLUX"
-            caption="in spendable outputs"
-          />
-          <Stat
-            label="Shielded"
-            value={<CompactAmount value={shielded} unit={false} />}
+            hero
+            label="Total supply"
+            value={formatAmountText(total, { decimals: 0 })}
             unit="FLUX"
             caption={
-              total !== null && shielded !== null && total > 0n
-                ? `${((Number(shielded) / Number(total)) * 100).toFixed(2)}% of the supply`
-                : undefined
+              s ? `at block ${formatInt(s.height)}: transparent coins plus the shielded pools` : undefined
             }
           />
           <Stat
             label="New FLUX a day"
-            value={perDay === null ? null : <CompactAmount value={perDay} unit={false} />}
+            value={formatAmountText(perDay, { decimals: 0 })}
             unit="FLUX"
             caption={subsidy === null ? undefined : `${formatSats(subsidy, { decimals: 2 })} a block`}
           />
         </StatGrid>
+      </div>
+
+      <Section title="Against the announced cap" icon={TrendingUp}>
+        {transparent !== null && shielded !== null ? (
+          <Stack gap={5}>
+            <ShareBar
+              label="Supply against the announced cap"
+              size="lg"
+              legend="list"
+              total={ANNOUNCED_MAX_SUPPLY_FLUX}
+              format={(v) => `${formatCompact(v)} FLUX`}
+              segments={[
+                { id: 'transparent', label: 'Transparent', value: flux(transparent) },
+                { id: 'shielded', label: 'Shielded pools', value: flux(shielded) },
+              ]}
+            />
+            <p className="ex-note">
+              Shares are of the announced {formatCompact(ANNOUNCED_MAX_SUPPLY_FLUX)} FLUX. The cap is
+              announced, not enforced by consensus code.
+            </p>
+          </Stack>
+        ) : (
+          <p className="ex-muted">The supply breakdown is not available yet.</p>
+        )}
       </Section>
 
       <CutCard />
@@ -149,35 +139,36 @@ export function SupplyView() {
             icon={Landmark}
             collapsible
             defaultOpen={false}
-            aside={
-              <EntityLink kind="address" value={DEV_FUND_ADDRESS} className="ex-action">
+            actions={
+              <EntityLink kind="address" value={DEV_FUND_ADDRESS}>
                 Open the address
               </EntityLink>
             }
           >
-            <StatGrid min={170}>
-              <Stat
-                label="Fixed share per block"
-                value={sched ? <Amount value={sched.devFundMin} decimals={2} unit={false} /> : null}
-                unit="FLUX"
-                caption="plus the fees of the block"
-              />
-              <Stat
-                label="Inflow a day, at least"
-                value={devPerDay === null ? null : <CompactAmount value={devPerDay} unit={false} />}
-                unit="FLUX"
-                caption={`${formatInt(BLOCKS_PER_DAY)} blocks`}
-              />
-              <Stat
-                label="Received so far"
-                value={dev.data ? <CompactAmount value={dev.data.received} unit={false} /> : null}
-                unit="FLUX"
-                loading={dev.isPending}
-                caption="by the dev fund address"
-              />
-            </StatGrid>
-            <div className="ex-gap" />
-            <DevFundChart tip={t} supplyFlux={supplyFlux} />
+            <Stack gap={5}>
+              <StatGrid min={170}>
+                <Stat
+                  label="Fixed share per block"
+                  value={sched ? <Amount value={sched.devFundMin} decimals={2} unit={false} /> : null}
+                  unit="FLUX"
+                  caption="plus the fees of the block"
+                />
+                <Stat
+                  label="Inflow a day, at least"
+                  value={formatAmountText(devPerDay, { decimals: 0 })}
+                  unit="FLUX"
+                  caption={`${formatInt(BLOCKS_PER_DAY)} blocks`}
+                />
+                <Stat
+                  label="Received so far"
+                  value={dev.data ? formatAmountText(dev.data.received, { decimals: 0 }) : null}
+                  unit="FLUX"
+                  loading={dev.isPending}
+                  caption="by the dev fund address"
+                />
+              </StatGrid>
+              <DevFundChart tip={t} supplyFlux={supplyFlux} />
+            </Stack>
           </Section>
           <CutSchedule tip={t} />
         </>

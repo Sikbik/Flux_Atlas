@@ -1,4 +1,8 @@
-/* The mempool ring and its feed. */
+/* The mempool ring and its feed. The layout follows the width of the window, not the viewport. */
+
+.ex-mempool {
+  container-type: inline-size;
+}
 
 .ex-mempool-grid {
   display: grid;
@@ -7,16 +11,34 @@
   align-items: center;
 }
 
-@container ex (min-width: 700px) {
+@container (min-width: 700px) {
   .ex-mempool-grid {
     grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
   }
 }
 
 .ex-mempool-side {
-  display: grid;
-  gap: var(--space-5);
   min-width: 0;
+}
+
+.ex-feedwhat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-1);
+}
+
+.ex-feedwhat svg {
+  flex: none;
+  color: var(--accent-400);
+}
+
+.ex-feedwhat[data-check] {
+  color: var(--text-3);
+}
+
+.ex-feedwhat[data-check] svg {
+  color: var(--text-3);
 }
 
 .ex-ring {
@@ -226,91 +248,76 @@
   padding-bottom: 38px;
 }
 
-/* ---- the feed ---------------------------------------------------------------------------------- */
+/* ---- the dot under the pointer ----------------------------------------------------------------- */
 
-.ex-feed .ex-win__row {
-  transition: transform var(--dur-enter) var(--ease-out);
-}
-
-.ex-feedrow {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-5);
-  height: 100%;
-  padding: 0 var(--space-4);
-  margin-inline: calc(var(--space-4) * -1);
-  border-radius: var(--r-md);
-  transition: background var(--dur-fast) var(--ease-out);
-}
-
-.ex-feedrow:hover {
-  background: var(--ink-1);
-}
-
-.ex-feedrow[data-fresh] {
-  animation: ex-fresh var(--dur-fresh) var(--ease-out) both;
-}
-
-@keyframes ex-fresh {
-  from {
-    background: var(--accent-soft-2);
-  }
-  to {
-    background: transparent;
-  }
-}
-
-.ex-feedrow[data-check] {
-  color: var(--text-3);
-}
-
-.ex-feedrow__main {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.ex-feedrow__link::after {
-  content: "";
+.ex-ring__tip {
   position: absolute;
-  inset: 0;
+  z-index: 5;
+  min-width: 164px;
+  max-width: 260px;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass-bg-strong);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(14px) saturate(1.4);
+  pointer-events: none;
+  transform: translateX(14px);
 }
 
-.ex-feedrow__sub {
-  display: flex;
-  gap: var(--space-4);
+.ex-ring__tip[data-side="left"] {
+  transform: translateX(calc(-100% - 14px));
+}
+
+.ex-ring__tip-head {
+  margin-bottom: var(--space-3);
   color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.ex-ring__tip-row {
+  display: grid;
+  grid-template-columns: 14px auto 1fr;
+  align-items: center;
+  column-gap: var(--space-3);
   font-size: var(--fs-xs);
 }
 
-.ex-feedrow__side {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-  font-size: var(--fs-sm);
+.ex-ring__tip-row strong {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-ring__tip-row span:last-child {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.ex-ring__tip-key {
+  width: 14px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--c, var(--text-3));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--c, transparent) 55%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .ex-ring__dot,
-  :root:not([data-motion="full"]) .ex-ring__halo,
-  :root:not([data-motion="full"]) .ex-feedrow[data-fresh] {
+  :root:not([data-motion="full"]) .ex-ring__halo {
     animation: none;
   }
-  :root:not([data-motion="full"]) .ex-ring__arc,
-  :root:not([data-motion="full"]) .ex-feed .ex-win__row {
+  :root:not([data-motion="full"]) .ex-ring__arc {
     transition: none;
   }
 }
 
 :root:is([data-motion="reduced"], [data-motion="off"]) .ex-ring__dot,
-:root:is([data-motion="reduced"], [data-motion="off"]) .ex-ring__halo,
-:root:is([data-motion="reduced"], [data-motion="off"]) .ex-feedrow[data-fresh] {
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-ring__halo {
   animation: none;
 }
 
-:root:is([data-motion="reduced"], [data-motion="off"]) .ex-ring__arc,
-:root:is([data-motion="reduced"], [data-motion="off"]) .ex-feed .ex-win__row {
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-ring__arc {
   transition: none;
 }

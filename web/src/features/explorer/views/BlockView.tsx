@@ -45,6 +45,7 @@ import { BlockTxs } from './BlockTxs';
 import { buildSlices, RewardSplit } from './RewardSplit';
 import { NodeLink, useNodeInfo } from './shared';
 import './block.css';
+import './view.css';
 
 function BlockSkeleton() {
   return (

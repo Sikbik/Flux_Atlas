@@ -32,6 +32,7 @@ import { AddressTxList } from './address/AddressTxList';
 import { AddressUtxos } from './address/AddressUtxos';
 import { RouteLink } from './shared';
 import './address/address.css';
+import './view.css';
 
 type TabId = 'overview' | 'txs' | 'nodes' | 'utxos';
 

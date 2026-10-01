@@ -4,14 +4,22 @@
 
 import { TrendingUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { formatInt, formatSats, formatUtcDateTime } from '../../../../lib/format';
-import { TimeChart } from '../../../analytics/viz/TimeChart';
+import { formatCompact, formatInt, formatSats, formatUtcDateTime } from '../../../../lib/format';
+import {
+  DataTable,
+  type DataTableColumn,
+  Row,
+  Section,
+  SegmentedControl,
+  Stack,
+  TimeSeries,
+} from '../../../../ui';
 import {
   ANNOUNCED_MAX_SUPPLY_FLUX,
   allCuts,
   BLOCK_MS,
+  type Cut,
   estimateTimeMs,
-  FIRST_REDUCTION_HEIGHT,
   heightReachingSupply,
   MAX_REDUCTIONS,
   projectEmission,
@@ -20,8 +28,6 @@ import {
   satsToFlux,
   subsidyAt,
 } from '../../lib/emission';
-import { Section, Segmented, type SegmentedItem } from '../../parts';
-import './supply.css';
 
 interface Tip {
   height: number;
@@ -29,6 +35,9 @@ interface Tip {
 }
 
 const horizonHeight = () => reductionHeight(MAX_REDUCTIONS) + REDUCTION_INTERVAL;
+
+/** A staircase needs the old value held up to the step: the new value starts a second later. */
+const STEP_MS = 1_000;
 
 function xFormat(tip: Tip) {
   return (t: number) => {
@@ -39,30 +48,35 @@ function xFormat(tip: Tip) {
 
 export function SubsidyChart({ tip }: { tip: Tip }) {
   const data = useMemo(() => {
-    const cuts = allCuts();
-    const pts = [{ h: tip.height, v: satsToFlux(subsidyAt(tip.height) ?? 0n) }];
-    for (const c of cuts) if (c.height > tip.height) pts.push({ h: c.height, v: satsToFlux(c.subsidy) });
-    pts.push({ h: horizonHeight(), v: pts.at(-1)!.v });
-    return { t: pts.map((p) => estimateTimeMs(p.h, tip)), v: pts.map((p) => p.v) };
+    const t: number[] = [tip.timeMs];
+    const v: number[] = [satsToFlux(subsidyAt(tip.height) ?? 0n)];
+    for (const c of allCuts()) {
+      if (c.height <= tip.height) continue;
+      const at = estimateTimeMs(c.height, tip);
+      // Hold the old subsidy to the cut, then step to the new one.
+      t.push(at - STEP_MS, at);
+      v.push(v.at(-1) as number, satsToFlux(c.subsidy));
+    }
+    t.push(estimateTimeMs(horizonHeight(), tip));
+    v.push(v.at(-1) as number);
+    return { t, v };
   }, [tip]);
   return (
-    <TimeChart
-      title="Block subsidy"
-      summary="The reward per block in FLUX, which falls by 10 percent every 1,051,200 blocks, 20 times"
+    <TimeSeries
+      label="The reward per block in FLUX, which falls by 10 percent every 1,051,200 blocks, 20 times"
       t={data.t}
       series={[
-        { key: 'subsidy', label: 'Subsidy per block', color: 'var(--viz-1)', values: data.v, fill: true },
+        {
+          key: 'subsidy',
+          label: 'Subsidy per block',
+          values: data.v,
+          format: (v) => `${v.toFixed(2)} FLUX`,
+        },
       ]}
-      mode="step"
       height={230}
-      yMin={0}
-      yFormat={(v) => `${v.toFixed(2)} FLUX`}
-      yTickFormat={(v) => v.toFixed(0)}
+      yDomain={[0, null]}
+      yFormat={(v) => v.toFixed(0)}
       xFormat={xFormat(tip)}
-      marks={[
-        { kind: 'v', at: estimateTimeMs(FIRST_REDUCTION_HEIGHT, tip), label: 'first cut', tone: 'accent' },
-      ]}
-      unit="FLUX"
     />
   );
 }
@@ -78,24 +92,29 @@ export function SupplyChart({ tip, supplyFlux }: { tip: Tip; supplyFlux: number 
   }, [tip, supplyFlux]);
   return (
     <>
-      <TimeChart
-        title="Projected supply"
-        summary="The total supply if every block pays the scheduled subsidy and nothing else changes, against the announced 560 million"
+      <TimeSeries
+        label="The total supply if every block pays the scheduled subsidy and nothing else changes, against the announced 560 million"
         t={data.t}
         series={[
-          { key: 'supply', label: 'Projected supply', color: 'var(--viz-1)', values: data.v, fill: true },
+          {
+            key: 'supply',
+            label: 'Projected supply',
+            values: data.v,
+            format: (v) => `${formatInt(Math.round(v))} FLUX`,
+          },
+          {
+            key: 'cap',
+            label: '560M announced, not enforced',
+            values: data.t.map(() => ANNOUNCED_MAX_SUPPLY_FLUX),
+            format: (v) => `${formatInt(Math.round(v))} FLUX`,
+          },
         ]}
         height={240}
-        yMin="auto"
-        yFormat={(v) => `${formatInt(Math.round(v))} FLUX`}
+        yFormat={(v) => formatCompact(v)}
         xFormat={xFormat(tip)}
-        marks={[
-          { kind: 'h', at: ANNOUNCED_MAX_SUPPLY_FLUX, label: '560M announced, not enforced', tone: 'warn' },
-        ]}
-        unit="FLUX"
       />
       {reach !== null ? (
-        <p className="ex-note">
+        <p className="ex-caption">
           At the scheduled emission the supply passes 560 million around{' '}
           {formatUtcDateTime(reach).slice(0, 4)}. The consensus code has no cap: after the last cut the
           subsidy settles at {formatSats(subsidyAt(horizonHeight()) ?? 0n, { decimals: 2 })} per block and
@@ -112,87 +131,115 @@ export function DevFundChart({ tip, supplyFlux }: { tip: Tip; supplyFlux: number
     return { t: pts.map((p) => estimateTimeMs(p.height, tip)), v: pts.map((p) => p.devFund) };
   }, [tip, supplyFlux]);
   return (
-    <TimeChart
-      title="Dev fund inflow"
-      summary="FLUX the dev fund receives from today at its fixed share of each block, not counting transaction fees"
+    <TimeSeries
+      label="FLUX the dev fund receives from today at its fixed share of each block, not counting transaction fees"
       t={data.t}
-      series={[{ key: 'dev', label: 'Cumulative inflow', color: 'var(--viz-1)', values: data.v, fill: true }]}
+      series={[
+        {
+          key: 'dev',
+          label: 'Cumulative inflow',
+          values: data.v,
+          format: (v) => `${formatInt(Math.round(v))} FLUX`,
+        },
+      ]}
       height={200}
-      yMin={0}
-      yFormat={(v) => `${formatInt(Math.round(v))} FLUX`}
+      yDomain={[0, null]}
+      yFormat={(v) => formatCompact(v)}
       xFormat={xFormat(tip)}
-      unit="FLUX"
     />
   );
 }
 
 type EmissionView = 'subsidy' | 'supply';
 
-const EMISSION_VIEWS: readonly SegmentedItem<EmissionView>[] = [
-  { id: 'subsidy', label: 'Block subsidy', hint: 'The reward per block, with every cut' },
-  { id: 'supply', label: 'Projected supply', hint: 'Total supply against the announced 560M' },
-];
+const EMISSION_VIEWS = [
+  { value: 'subsidy', label: 'Block subsidy' },
+  { value: 'supply', label: 'Projected supply' },
+] as const;
 
 /** The one chart on the supply page: the schedule as a staircase, or what it adds up to. */
 export function EmissionSection({ tip, supplyFlux }: { tip: Tip; supplyFlux: number }) {
   const [view, setView] = useState<EmissionView>('subsidy');
   return (
-    <Section
-      title="Emission schedule"
-      icon={TrendingUp}
-      aside="dates are estimates"
-      actions={<Segmented items={EMISSION_VIEWS} value={view} onChange={setView} label="What to chart" />}
-    >
-      {view === 'subsidy' ? <SubsidyChart tip={tip} /> : <SupplyChart tip={tip} supplyFlux={supplyFlux} />}
+    <Section title="Emission schedule" icon={TrendingUp}>
+      <Stack gap={5}>
+        <Row>
+          <SegmentedControl
+            size="sm"
+            aria-label="What to chart"
+            options={EMISSION_VIEWS}
+            value={view}
+            onChange={setView}
+          />
+        </Row>
+        {view === 'subsidy' ? <SubsidyChart tip={tip} /> : <SupplyChart tip={tip} supplyFlux={supplyFlux} />}
+        <p className="ex-caption">Dates are estimates: 30 second blocks counted forward from the tip.</p>
+      </Stack>
     </Section>
   );
+}
+
+const money = (sats: bigint) => formatSats(sats, { decimals: 3, unit: false });
+
+function cutColumns(tip: Tip): readonly DataTableColumn<Cut>[] {
+  const next = allCuts().find((x) => x.height > tip.height)?.k;
+  return [
+    {
+      id: 'k',
+      header: 'Cut',
+      width: 64,
+      cell: (c) => (c.k === next ? `${c.k} (next)` : c.k),
+    },
+    { id: 'height', header: 'Block', numeric: true, minWidth: 110, cell: (c) => formatInt(c.height) },
+    {
+      id: 'when',
+      header: 'Around',
+      minWidth: 110,
+      cell: (c) => formatUtcDateTime(estimateTimeMs(c.height, tip)).slice(0, 10),
+    },
+    { id: 'subsidy', header: 'Subsidy', numeric: true, minWidth: 100, cell: (c) => money(c.subsidy) },
+    {
+      id: 'stratus',
+      header: 'Stratus',
+      numeric: true,
+      minWidth: 100,
+      cell: (c) => money(c.schedule.stratus),
+    },
+    { id: 'nimbus', header: 'Nimbus', numeric: true, minWidth: 100, cell: (c) => money(c.schedule.nimbus) },
+    {
+      id: 'cumulus',
+      header: 'Cumulus',
+      numeric: true,
+      minWidth: 100,
+      cell: (c) => money(c.schedule.cumulus),
+    },
+    {
+      id: 'dev',
+      header: 'Dev fund at least',
+      numeric: true,
+      minWidth: 140,
+      cell: (c) => money(c.schedule.devFundMin),
+    },
+  ];
 }
 
 /** Every cut as a table: block, estimated date, subsidy and what each tier and the dev fund are paid. */
 export function CutSchedule({ tip }: { tip: Tip }) {
   const cuts = useMemo(() => allCuts(), []);
+  const columns = useMemo(() => cutColumns(tip), [tip]);
   return (
-    <Section
-      title="Every cut"
-      collapsible
-      defaultOpen={false}
-      aside={`${MAX_REDUCTIONS} cuts, one every ${formatInt(REDUCTION_INTERVAL)} blocks`}
-    >
-      <div className="ex-tablewrap" tabIndex={-1}>
-        <table className="ex-table">
-          <caption className="ex-sr">Reward cut schedule</caption>
-          <thead>
-            <tr>
-              <th scope="col">Cut</th>
-              <th scope="col">Block</th>
-              <th scope="col">Around</th>
-              <th scope="col">Subsidy</th>
-              <th scope="col">Stratus</th>
-              <th scope="col">Nimbus</th>
-              <th scope="col">Cumulus</th>
-              <th scope="col">Dev fund at least</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cuts.map((c) => {
-              const past = c.height <= tip.height;
-              const next = !past && cuts.find((x) => x.height > tip.height)?.k === c.k;
-              return (
-                <tr key={c.k} data-past={past || undefined} data-next={next || undefined}>
-                  <th scope="row">{c.k}</th>
-                  <td>{formatInt(c.height)}</td>
-                  <td>{formatUtcDateTime(estimateTimeMs(c.height, tip)).slice(0, 10)}</td>
-                  <td>{formatSats(c.subsidy, { decimals: 3, unit: false })}</td>
-                  <td>{formatSats(c.schedule.stratus, { decimals: 3, unit: false })}</td>
-                  <td>{formatSats(c.schedule.nimbus, { decimals: 3, unit: false })}</td>
-                  <td>{formatSats(c.schedule.cumulus, { decimals: 3, unit: false })}</td>
-                  <td>{formatSats(c.schedule.devFundMin, { decimals: 3, unit: false })}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+    <Section title="Every cut" collapsible defaultOpen={false} flush>
+      <p className="ex-note ex-pad">
+        {MAX_REDUCTIONS} cuts, one every {formatInt(REDUCTION_INTERVAL)} blocks. Amounts are FLUX per block.
+      </p>
+      <DataTable
+        aria-label="Reward cut schedule"
+        rows={cuts}
+        columns={columns}
+        rowKey={(c) => c.k}
+        rowHeight="compact"
+        maxHeight={420}
+      />
     </Section>
   );
 }

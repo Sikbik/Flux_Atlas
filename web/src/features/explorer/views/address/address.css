@@ -1,13 +1,5 @@
 /* Address view: the payout lanes, the node map and the little that tables need. */
 
-.ex-after {
-  margin: var(--space-5) 0 0;
-}
-
-.ex-filters {
-  padding: var(--space-3) var(--space-6) var(--space-4);
-}
-
 /* What a row of the history says: a direction glyph and a word. Gains and losses are tinted, and the
    words and signs carry the meaning, never the colour alone. */
 .ex-what {

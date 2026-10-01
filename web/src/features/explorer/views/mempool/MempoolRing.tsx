@@ -7,11 +7,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRuntime } from '../../../../app/context';
 import { formatBytes, formatInt, formatPercent } from '../../../../lib/format';
 import { useBeat } from '../../../../lib/useClock';
+import { Amount } from '../../../../ui';
 import { useWidth } from '../../hooks/useDom';
 import type { MempoolRow } from '../../hooks/useMempoolLive';
 import { useFullMotion } from '../../hooks/useMotion';
 import { TX_KINDS } from '../../lib/txkinds';
-import { Amount } from '../../parts';
 import './mempool.css';
 
 const VB = 400;
@@ -204,25 +204,21 @@ export function MempoolRing({
       </div>
       {hotDot && width > 0 ? (
         <div
-          className="vz-tip ex-ring__tip"
+          className="ex-ring__tip"
           role="presentation"
           data-side={hotDot.x > VB * 0.55 ? 'left' : 'right'}
           style={{ left: hotDot.x * scale, top: Math.max(8, hotDot.y * scale - 20) }}
         >
-          <div className="vz-tip-head">{hotDot.row.tx.txid.slice(0, 10)}...</div>
-          <ul>
-            <li>
-              <span
-                className="vz-key"
-                style={{ ['--c' as string]: hotDot.check ? 'var(--accent-500)' : 'var(--accent-300)' }}
-                aria-hidden="true"
-              />
-              <strong className="vz-tip-val tabular">
-                {hotDot.check ? 'Check-in' : <Amount value={hotDot.row.tx.value} decimals={2} />}
-              </strong>
-              <span className="vz-tip-name">{TX_KINDS[hotDot.row.tx.kind].label}</span>
-            </li>
-          </ul>
+          <div className="ex-ring__tip-head">{hotDot.row.tx.txid.slice(0, 10)}...</div>
+          <div className="ex-ring__tip-row">
+            <span
+              className="ex-ring__tip-key"
+              style={{ ['--c' as string]: hotDot.check ? 'var(--accent-500)' : 'var(--accent-300)' }}
+              aria-hidden="true"
+            />
+            <strong>{hotDot.check ? 'Check-in' : <Amount value={hotDot.row.tx.value} decimals={2} />}</strong>
+            <span>{TX_KINDS[hotDot.row.tx.kind].label}</span>
+          </div>
         </div>
       ) : null}
       <p className="ex-ring__legend" aria-hidden="true">
