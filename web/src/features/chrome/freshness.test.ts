@@ -8,6 +8,7 @@ const job = (name: string, lastOk: number | null): JobFreshness => ({
   last_error: null,
   last_error_ms: null,
   stale: false,
+  next_run_ms: null,
 });
 
 const jobs = (...list: JobFreshness[]) => new Map(list.map((j) => [j.job, j]));

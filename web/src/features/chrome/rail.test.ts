@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   type BlockLike,
   freshKeys,
+  mempoolWeight,
   mixSegments,
   nextTombs,
   payeesByTier,
   TOMB_MS,
   txMix,
+  waitingText,
   withTombs,
 } from './rail';
 
@@ -132,5 +134,38 @@ describe('withTombs', () => {
     const out = withTombs([blk(10)], [{ block: blk(12), at: 0 }]);
     expect(out.map((c) => c.block.height)).toEqual([12, 10]);
     expect(out[0]?.orphan).toBe(true);
+  });
+});
+
+describe('mempoolWeight', () => {
+  const tx = (size: number | null) => ({ tx: { size } });
+
+  it('sums the sizes that are known and counts the ones that are not', () => {
+    expect(mempoolWeight([tx(200), tx(null), tx(300)])).toEqual({ count: 3, bytes: 500, unknown: 1 });
+  });
+
+  it('never turns an unknown size into zero bytes', () => {
+    expect(mempoolWeight([tx(null), tx(null)])).toEqual({ count: 2, bytes: 0, unknown: 2 });
+  });
+
+  it('is empty for an empty mempool', () => {
+    expect(mempoolWeight([])).toEqual({ count: 0, bytes: 0, unknown: 0 });
+  });
+});
+
+describe('waitingText', () => {
+  const kb = (n: number) => `${n / 1000} KB`;
+
+  it('claims a size only when every transaction reports one', () => {
+    expect(waitingText({ count: 3, bytes: 4200, unknown: 0 }, kb)).toBe('3 tx, 4.2 KB');
+  });
+
+  it('says "at least" when some sizes are unknown', () => {
+    expect(waitingText({ count: 3, bytes: 4200, unknown: 1 }, kb)).toBe('3 tx, at least 4.2 KB');
+  });
+
+  it('leaves the size out when none is known, and for an empty mempool', () => {
+    expect(waitingText({ count: 3, bytes: 0, unknown: 3 }, kb)).toBe('3 tx');
+    expect(waitingText({ count: 0, bytes: 0, unknown: 0 }, kb)).toBe('0 tx');
   });
 });

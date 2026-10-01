@@ -144,3 +144,32 @@ export function withTombs<T extends BlockLike>(
   }
   return out;
 }
+
+/** What waits in the mempool: how many, the bytes of those whose size is known, and how many have no known size. */
+export interface MempoolWeight {
+  count: number;
+  /** Sum over the transactions with a known size only: an unknown size is never counted as zero. */
+  bytes: number;
+  /** Transactions whose size the server does not report. */
+  unknown: number;
+}
+
+export function mempoolWeight(entries: readonly { tx: { size: number | null } }[]): MempoolWeight {
+  let bytes = 0;
+  let unknown = 0;
+  for (const e of entries) {
+    if (e.tx.size === null) unknown++;
+    else bytes += e.tx.size;
+  }
+  return { count: entries.length, bytes, unknown };
+}
+
+/**
+ * The ghost card's tail: "12 tx, 4.2 KB". A size is only claimed in full when every transaction's is known;
+ * when some are not it says "at least", and when none are it leaves the size out rather than print a zero.
+ */
+export function waitingText(w: MempoolWeight, formatBytes: (n: number) => string): string {
+  const tx = `${w.count} tx`;
+  if (w.count === 0 || w.unknown === w.count) return tx;
+  return w.unknown === 0 ? `${tx}, ${formatBytes(w.bytes)}` : `${tx}, at least ${formatBytes(w.bytes)}`;
+}

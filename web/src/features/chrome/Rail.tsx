@@ -29,12 +29,14 @@ import { cssValue, play } from './motion';
 import { amountLabel } from './payouts';
 import {
   freshKeys,
+  mempoolWeight,
   mixSegments,
   nextTombs,
   payeesByTier,
   STRIP_SHARES,
   type Tomb,
   txMix,
+  waitingText,
   withTombs,
 } from './rail';
 import './rail.css';
@@ -340,10 +342,8 @@ function GhostCard() {
   const { clock, store } = useRuntime();
   const beat = useBeat(clock);
   const lines = usePayoutLines();
-  const mempool = store.mempoolList();
+  const weight = mempoolWeight(store.mempoolList());
   const seen = store.lastMessageMs.has('mempool');
-  let bytes = 0;
-  for (const e of mempool) bytes += e.tx.size;
   const next = (beat.height ?? 0) + 1;
   const late = beat.phase === 'late' || beat.phase === 'quiet';
   const secs = Math.max(0, Math.ceil(beat.remainingMs / 1000));
@@ -358,9 +358,7 @@ function GhostCard() {
         </span>
         <span className="r2">
           Next block
-          {seen
-            ? `, ${formatInt(mempool.length)} tx${bytes > 0 ? `, ${formatBytes(bytes)}` : ''} waiting`
-            : ''}
+          {seen ? `, ${waitingText(weight, formatBytes)} waiting` : ''}
         </span>
         <span className="ghost-payees">
           {lines.map((l) => (
