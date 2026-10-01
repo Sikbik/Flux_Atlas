@@ -181,6 +181,17 @@
   margin-top: var(--space-2);
 }
 
+/* A ghost button among the callout's actions reads like the links beside it: accent text whose first letter lines
+   up with the callout's own text column (the button's padding is pulled back out), quiet until hovered. */
+.ix-callout-a > .ui-button[data-variant="ghost"] {
+  margin-inline-start: calc(-1 * (var(--space-5) + 1px));
+  color: var(--accent-400);
+}
+
+.ix-callout-a > .ui-button[data-variant="ghost"]:hover {
+  color: var(--accent-300);
+}
+
 /* ---- location map ------------------------------------------------------------------------------- */
 
 .ix-loc {
