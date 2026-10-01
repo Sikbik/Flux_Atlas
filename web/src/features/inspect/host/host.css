@@ -1,35 +1,109 @@
-/* Host inspector (F3). Tier colour arrives through `data-tier` on the article, as in the node view. */
+/* Host inspector (F3). Kit components carry almost everything; these are the few local pieces: the node and
+   queue cells of the list and the skeleton. The tier colour arrives through `data-tier` on the article. */
 
 .ix-host {
-  --tier: var(--accent-500);
-  padding-bottom: var(--space-8);
+  padding-bottom: var(--space-9);
 }
 
-.ix-host[data-tier] {
-  --accent: var(--tier);
+/* Three stat tiles: three across when the grid is wide enough for each to hold a figure with its unit, else
+   two, with the third taking the whole row so no cell is left empty. */
+@container (max-width: 483px) {
+  .ix-host-trio > :nth-child(3):last-child {
+    grid-column: 1 / -1;
+  }
 }
 
-.ix-hostblock {
-  margin-top: 18px;
+/* The header's top right: the two small tools stay there on every width. */
+.ix-host-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
-.ix-hostnote {
-  margin: 10px 0 0;
-}
-
-.ix-oplist {
+.ix-host-skel {
   display: grid;
-  gap: 2px;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+.ix-host-body {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ix-host-ladder {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ix-host-ladder > .ix-cap {
+  margin: 0;
+}
+
+/* The port ladder is a list: no browser indent. */
+.ix-host-ladder .ix-ladder {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.ix-oprow {
+/* ---- the list ----------------------------------------------------------------------------------- */
+
+.ix-host-node {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 32px;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ix-host-node > svg {
+  flex: none;
+}
+
+/* The port over the tier word (and how many apps run), so the tier never rests on a glyph alone. */
+.ix-host-id {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.ix-host-port {
+  overflow: hidden;
   font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ix-host-sub {
+  overflow: hidden;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1.2 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The state chip sits at the right of the node cell and gives way last: the port shortens first. */
+.ix-host-node > .ix-host-state {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* The queue place over the estimated time, both on the right edge. */
+.ix-host-queue {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.ix-host-queue > b {
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.ix-host-queue > small {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
 }
