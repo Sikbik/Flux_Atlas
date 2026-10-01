@@ -1,0 +1,596 @@
+/* The boot (design 6.4 J, 9.1). The overlay is opaque black until the globe is ready to draw the symbol, then it
+   turns transparent so the globe's own canvas shows through: the symbol, the reveal wave and the planet are the
+   renderer's. Only the text, the lattice and the progress line are DOM. Everything that updates every frame is
+   a text node, an opacity or a transform. */
+
+.boot {
+  --boot-cx: 50vw;
+  --boot-cy: 50vh;
+  --boot-size: 250px;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-boot);
+  overflow: hidden;
+  background: var(--void);
+  color: var(--text-1);
+  pointer-events: auto;
+  transition: background-color 500ms var(--ease-out);
+}
+
+.boot[data-engine="on"] {
+  background-color: transparent;
+}
+
+.boot[data-done] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 600ms var(--ease-out),
+    visibility 0s linear 600ms,
+    background-color 500ms var(--ease-out);
+}
+
+.boot[data-mode="instant"][data-done] {
+  transition-duration: 300ms, 0s, 300ms;
+  transition-delay: 0s, 300ms, 0s;
+}
+
+/* The lattice, faint at the bottom left under a radial mask. */
+.boot-pat {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 760px;
+  height: 560px;
+  pointer-events: none;
+  background-image: var(--pattern-hex);
+  background-size: var(--pattern-hex-size);
+  -webkit-mask: radial-gradient(90% 90% at 0% 100%, #000 0, transparent 72%);
+  mask: radial-gradient(90% 90% at 0% 100%, #000 0, transparent 72%);
+}
+
+.boot-scrim {
+  display: none;
+}
+
+/* ---- the lockup and the tip --------------------------------------------------------------------------------- */
+
+.boot-brand {
+  position: absolute;
+  top: 36px;
+  left: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  animation: boot-in 700ms var(--ease-out) 200ms forwards;
+}
+
+.boot-word {
+  font: 600 24px / 1 var(--font-display);
+  letter-spacing: -0.006em;
+}
+
+.boot-brand small {
+  margin-left: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+@keyframes boot-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.boot-tip {
+  position: absolute;
+  top: 36px;
+  right: 48px;
+  display: grid;
+  gap: 4px;
+  text-align: right;
+  opacity: 0;
+  transition: opacity 600ms var(--ease-out);
+}
+
+.boot-tip[data-known] {
+  opacity: 1;
+}
+
+.boot-tip small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.boot-tip b {
+  font: 600 24px / 1 var(--font-display);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.boot-tip i {
+  color: var(--text-1);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the symbol's surroundings ------------------------------------------------------------------------------ */
+
+.boot-fallback {
+  position: absolute;
+  top: var(--boot-cy);
+  left: var(--boot-cx);
+  width: auto;
+  height: var(--boot-size);
+  translate: -50% -50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The ring that leaves the symbol when it is whole. */
+.boot-ring {
+  position: absolute;
+  top: var(--boot-cy);
+  left: var(--boot-cx);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.boot-ring::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--boot-size) * -0.5);
+  left: calc(var(--boot-size) * -0.5);
+  width: var(--boot-size);
+  height: var(--boot-size);
+  border: 2px solid rgb(255 255 255 / 0.85);
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.boot-ring.go::before {
+  animation: boot-ring 900ms var(--ease-out) forwards;
+}
+
+@keyframes boot-ring {
+  from {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+.boot-tiers {
+  position: absolute;
+  top: calc(var(--boot-cy) + var(--boot-size) * 0.66);
+  left: var(--boot-cx);
+  display: flex;
+  gap: 10px;
+  translate: -50% 0;
+  transition: opacity 500ms var(--ease-out);
+}
+
+.boot[data-engine="off"] .boot-tiers {
+  opacity: 0;
+}
+
+.boot-tiers .tc {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 12px 0 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: rgb(8 10 15 / 0.7);
+  color: var(--text-2);
+  font: 500 12px / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.4;
+  transition:
+    opacity 300ms var(--ease-out),
+    border-color 300ms var(--ease-out);
+}
+
+.boot-tiers .tc-n {
+  min-width: 4ch;
+  font-weight: 500;
+  text-align: right;
+}
+
+.boot-tiers .tc[data-on] {
+  border-color: var(--tier-line);
+  background: var(--tier-soft);
+  color: var(--text-1);
+  opacity: 1;
+}
+
+.boot-tiers .glyph-tier {
+  color: var(--tier);
+}
+
+/* ---- the log ------------------------------------------------------------------------------------------------ */
+
+.boot-log {
+  position: absolute;
+  bottom: 64px;
+  left: 48px;
+  display: grid;
+  width: 460px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  transition: opacity 600ms var(--ease-out);
+}
+
+.boot-log li {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  height: 32px;
+  color: var(--text-4);
+  font-size: var(--fs-md);
+  transition: color var(--dur-base) var(--ease-out);
+}
+
+.boot-log .s {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+.boot-log .s::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-4);
+}
+
+.boot-log .v {
+  color: var(--text-4);
+  font: 500 12px / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.boot-log li[data-state="run"] {
+  color: var(--text-1);
+}
+
+.boot-log li[data-state="run"] .s::before {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgb(134 161 218 / 0.3);
+  border-top-color: #fff;
+  background: none;
+  animation: boot-spin 800ms linear infinite;
+}
+
+.boot-log li[data-state="run"] .v {
+  color: var(--text-1);
+}
+
+.boot-log li[data-state="done"] {
+  color: var(--text-2);
+}
+
+.boot-log li[data-state="done"] .s::before {
+  width: 9px;
+  height: 5px;
+  border-bottom: 2px solid var(--status-ok);
+  border-left: 2px solid var(--status-ok);
+  border-radius: 0;
+  background: none;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.boot-log li[data-state="done"] .v {
+  color: var(--text-3);
+}
+
+.boot-log li[data-state="fail"] {
+  color: var(--text-1);
+}
+
+.boot-log li[data-state="fail"] .s::before {
+  width: 14px;
+  height: 14px;
+  background: var(--status-crit-soft);
+  box-shadow: inset 0 0 0 2px var(--status-crit);
+}
+
+.boot-log li[data-state="fail"] .v {
+  color: var(--status-crit);
+}
+
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- the numeral, the caption, the line, the hint ------------------------------------------------------------------ */
+
+.boot-pct {
+  position: absolute;
+  right: 48px;
+  bottom: 56px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  transition: opacity 600ms var(--ease-out);
+}
+
+.boot-pct b {
+  font: 300 132px / 0.82 var(--font-display);
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 80px rgb(43 97 209 / 0.45);
+}
+
+.boot-pct span {
+  margin-top: 4px;
+  color: var(--text-3);
+  font: 300 30px / 1 var(--font-display);
+}
+
+.boot-cap {
+  position: absolute;
+  right: 52px;
+  bottom: 28px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  transition: opacity 600ms var(--ease-out);
+}
+
+.boot-line {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: rgb(255 255 255 / 0.05);
+}
+
+.boot-line i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-600), var(--accent-400) 70%, #fff);
+  box-shadow: 0 0 14px rgb(43 97 209 / 0.8);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+.boot-hint {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  translate: -50% 0;
+  color: var(--text-4);
+  font-size: var(--fs-xs);
+  transition: opacity 600ms var(--ease-out);
+}
+
+/* Once the symbol lifts off, the log and its numbers leave. */
+.boot.is-late .boot-log,
+.boot.is-late .boot-pct,
+.boot.is-late .boot-cap,
+.boot.is-late .boot-hint,
+.boot.is-late .boot-tip,
+.boot.is-late .boot-tiers {
+  opacity: 0;
+}
+
+/* ---- failure ------------------------------------------------------------------------------------------------------ */
+
+.boot-fail {
+  position: absolute;
+  right: 48px;
+  bottom: 230px;
+  display: grid;
+  gap: 8px;
+  width: min(380px, calc(100vw - 48px));
+  padding: 16px 18px;
+  border: 1px solid color-mix(in oklab, var(--status-crit) 40%, transparent);
+  border-radius: var(--r-lg);
+  background: var(--glass-bg-strong);
+  box-shadow: var(--shadow-pop);
+  animation: boot-in 280ms var(--ease-out) both;
+}
+
+.boot-fail b {
+  font: var(--fw-semibold) var(--fs-md) / 1.3 var(--font-display);
+}
+
+.boot-fail p {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.boot-fail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.boot-btn {
+  height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--accent-600);
+  color: #fff;
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.boot-btn:hover {
+  background: var(--accent-600-hover);
+}
+
+.boot-btn[data-quiet] {
+  background: var(--ink-3);
+  color: var(--text-1);
+}
+
+.boot-btn[data-quiet]:hover {
+  background: var(--ink-4);
+}
+
+.boot-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ---- the quick path: a quiet screen with the lockup, then a 300 ms fade --------------------------------------------- */
+
+.boot[data-mode="instant"] > :not(.boot-brand, .sr-only) {
+  display: none;
+}
+
+.boot[data-mode="instant"] .boot-brand small {
+  display: none;
+}
+
+/* ---- phone: the same sequence, the symbol at 150 px, five log lines over a scrim ------------------------------------ */
+
+@media (max-width: 719px) {
+  .boot-brand {
+    top: 26px;
+    left: 24px;
+  }
+  .boot-brand small {
+    display: none;
+  }
+  .boot-tip {
+    top: 28px;
+    right: 24px;
+  }
+  .boot-tip b {
+    font-size: 18px;
+  }
+  .boot-scrim {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    height: 52%;
+    pointer-events: none;
+    background: linear-gradient(to top, rgb(0 0 0 / 0.96) 0, rgb(0 0 0 / 0.92) 40%, transparent 100%);
+    transition: opacity 600ms var(--ease-out);
+  }
+  .boot.is-late .boot-scrim {
+    opacity: 0;
+  }
+  .boot-log {
+    right: 24px;
+    bottom: 120px;
+    left: 24px;
+    width: auto;
+  }
+  .boot-log li:nth-child(n + 6) {
+    display: none;
+  }
+  .boot-log li {
+    gap: 10px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .boot-log .v {
+    font-size: 11px;
+  }
+  .boot-pct {
+    right: 24px;
+    bottom: 32px;
+  }
+  .boot-pct b {
+    font-size: 84px;
+  }
+  .boot-cap {
+    right: 26px;
+    bottom: 16px;
+  }
+  .boot-hint {
+    display: none;
+  }
+  .boot-pat {
+    width: 100%;
+    height: 420px;
+  }
+  .boot-fail {
+    right: 24px;
+    bottom: 200px;
+  }
+}
+
+/* ---- motion preferences: nothing loops, nothing travels ---------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .boot-log li[data-state="run"] .s::before {
+    animation: none;
+    border-color: rgb(134 161 218 / 0.6);
+  }
+  :root:not([data-motion="full"]) .boot-brand,
+  :root:not([data-motion="full"]) .boot-fail {
+    animation-name: boot-fade;
+  }
+  :root:not([data-motion="full"]) .boot-ring.go::before {
+    animation: none;
+  }
+}
+
+:root[data-motion="reduced"] .boot-log li[data-state="run"] .s::before,
+:root[data-motion-off] .boot-log li[data-state="run"] .s::before {
+  animation: none;
+  border-color: rgb(134 161 218 / 0.6);
+}
+
+:root[data-motion="reduced"] .boot-brand,
+:root[data-motion="reduced"] .boot-fail {
+  animation-name: boot-fade;
+}
+
+:root[data-motion="reduced"] .boot-ring.go::before,
+:root[data-motion-off] .boot-ring.go::before {
+  animation: none;
+}
+
+:root[data-motion-off] .boot-brand,
+:root[data-motion-off] .boot-fail {
+  animation: none;
+  opacity: 1;
+}
+
+@keyframes boot-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

@@ -1,11 +1,9 @@
-// The shell's remaining placeholder regions: the block rail, the phone's tab bar and the boot veil.
-// They are replaced one by one by the live chrome (features/chrome).
+// The shell's remaining placeholder region: the phone's tab bar. It is replaced by the live chrome
+// (features/chrome).
 
 import { Link } from '@tanstack/react-router';
 import { Activity, AppWindow, Globe, Search, UserRound } from 'lucide-react';
 import type { Ref } from 'react';
-import { useNetwork } from '../../app/context';
-import { useGlobeStatus } from '../../globe';
 
 /** The phone's five tabs (design 3.6). */
 export function PhoneTabs({ ref }: { ref?: Ref<HTMLElement> }) {
@@ -32,17 +30,5 @@ export function PhoneTabs({ ref }: { ref?: Ref<HTMLElement> }) {
         You
       </Link>
     </nav>
-  );
-}
-
-/** The boot veil placeholder: lifted once the snapshot is in and the globe has drawn or cannot. */
-export function BootVeil() {
-  const loaded = useNetwork((s) => s.loaded);
-  const status = useGlobeStatus();
-  const done = loaded && status !== 'loading';
-  return (
-    <div className="shell-boot" data-testid="boot" data-done={done || undefined} aria-hidden={done}>
-      <p className="shell-boot-line">{loaded ? 'Placing the network on the globe' : 'Connecting to Atlas'}</p>
-    </div>
   );
 }

@@ -5,6 +5,7 @@
 
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { useCallback, useEffect } from 'react';
+import { isBooting, subscribeBoot } from '../../features/chrome/boot/state';
 import { useGlobeHandles } from '../../globe';
 import { globeInset } from '../wm/machine';
 import { parseExtraWindows, pathForWindow, serializeExtraWindows, windowForPath } from '../wm/route';
@@ -116,7 +117,8 @@ export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
     let last = '';
     const apply = () => {
       const engine = handles.engine.get();
-      if (!engine) return;
+      // While the boot runs it places the globe itself (centred, then easing into the free area).
+      if (!engine || isBooting()) return;
       const s = wm.getState();
       const inset = ambient ? { left: 0, right: 0, top: 0, bottom: 0 } : globeInset(s);
       const key = `${inset.left},${inset.right},${inset.top},${inset.bottom}`;
@@ -130,9 +132,14 @@ export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
       last = '';
       apply();
     });
+    const offBoot = subscribeBoot(() => {
+      last = '';
+      apply();
+    });
     return () => {
       offWm();
       offEngine();
+      offBoot();
     };
   }, [wm, handles, ambient]);
 }

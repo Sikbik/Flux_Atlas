@@ -22,6 +22,8 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNetwork } from '../../app/context';
 import { AimStrip } from '../../features/chrome/AimStrip';
+import { Boot } from '../../features/chrome/boot/Boot';
+import { bootInstant, finishBoot, useBootPhase } from '../../features/chrome/boot/state';
 import { useApplyLayers } from '../../features/chrome/layers';
 import { Pulse } from '../../features/chrome/Pulse';
 import { useRootPrefs } from '../../features/chrome/prefs';
@@ -49,7 +51,7 @@ import { ShellActionsContext } from './actions';
 import { Dock } from './Dock';
 import { useShellKeys } from './keys';
 import { useLauncher } from './launchers';
-import { BootVeil, PhoneTabs } from './regions';
+import { PhoneTabs } from './regions';
 import { useGlobeInsetSync, useWindowRouting } from './routing';
 import { TopBar } from './TopBar';
 import './frame.css';
@@ -83,11 +85,16 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const tabsRef = useRef<HTMLElement>(null);
   const { requestClose, focusWindow } = useWindowRouting(wm);
   const launch = useLauncher();
+  const boot = useBootPhase();
   const actions = useMemo(() => ({ requestClose, focusWindow, launch }), [requestClose, focusWindow, launch]);
   useGlobeInsetSync(wm, ambient);
   useRootPrefs();
   useApplyLayers();
   useShellKeys(launch, !ambient);
+  // The ambient screen is the moon and the planet alone: there is no boot to wait for.
+  useEffect(() => {
+    if (ambient) finishBoot({ instant: true });
+  }, [ambient]);
 
   // Measure the workspace and hand it to the window manager (on resize and layout changes).
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-measures when the layout (ambient, phone) swaps regions
@@ -141,7 +148,12 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
 
   return (
     <ShellActionsContext.Provider value={actions}>
-      <div className="shell" data-layout={phone ? 'phone' : 'desktop'}>
+      <div
+        className="shell"
+        data-layout={phone ? 'phone' : 'desktop'}
+        data-boot={boot}
+        data-boot-instant={boot === 'done' && bootInstant() ? '' : undefined}
+      >
         <a className="skip-link" href="#shell-stage">
           Skip to the globe
         </a>
@@ -175,7 +187,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         />
         <Toasts />
         <CommandLayer />
-        <BootVeil />
+        <Boot />
       </div>
     </ShellActionsContext.Provider>
   );
