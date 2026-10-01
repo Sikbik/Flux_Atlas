@@ -246,6 +246,8 @@ const injectBlock = async (watch = false) => {
 
 const pushToast = (spec) => import('/src/app/toasts.ts').then((m) => m.toast(spec));
 
+let closing = null; // the window the close scenario is about to close
+
 const scenarios = [
   {
     name: 'window-open',
@@ -272,12 +274,19 @@ const scenarios = [
       await page.waitForSelector('.wm-window');
       await page.waitForTimeout(1100);
     },
-    pre: (page) => hoverCenter(page, '.wm-window .wm-btn-close'),
+    pre: async (page) => {
+      closing = await windowBox(page); // where the window was, for a mode that leaves no ghost to measure
+      return hoverCenter(page, '.wm-window .wm-btn-close');
+    },
     act: (page, c) => clickAt(page, c),
     waitFor: '.wm-ghost',
     ghost: true,
     clip: async (page, view) =>
-      union([await rectOf(page, '.wm-ghost'), await rectOf(page, '[data-launcher="explorer"]')], 24, view),
+      union(
+        [(await rectOf(page, '.wm-ghost')) ?? closing, await rectOf(page, '[data-launcher="explorer"]')],
+        24,
+        view,
+      ),
   },
   {
     name: 'toast',
@@ -419,6 +428,11 @@ async function openApp(sc, mode, dpr) {
     hasTouch: !!sc.phone,
   });
   const page = await context.newPage();
+  // Errors the page raises on the window (a ResizeObserver loop is one) are reported with the scenario.
+  await page.addInitScript(() => {
+    window.__errors = [];
+    window.addEventListener('error', (e) => window.__errors.push(e.message));
+  });
   page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error') console.log(`[console.error] ${m.text()}`);
@@ -474,6 +488,8 @@ for (const mode of modes) {
         console.log(`    budget: ${JSON.stringify(ran.budget)}`);
       }
       await page.evaluate(release);
+      const raised = await page.evaluate(() => window.__errors);
+      if (raised.length > 0) console.log(`    window errors: ${[...new Set(raised)].join(' | ')}`);
       const sheet = join(out, `${sc.name}-${mode}.png`);
       execFileSync('montage', [
         ...files.flatMap((f, i) => ['-label', `${times[i]} ms`, f]),

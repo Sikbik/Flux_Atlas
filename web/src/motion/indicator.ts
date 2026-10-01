@@ -120,7 +120,20 @@ export function createIndicator(bar: HTMLElement, host: HTMLElement, selector = 
 
   const mo = new MutationObserver(() => sync(true));
   mo.observe(host, { subtree: true, attributes: true, attributeFilter: ATTRS });
-  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => sync(false)) : null;
+  // A resize is answered in the next frame, not inside the observer's delivery: the line writes styles and reads
+  // the host's scroll width, and a write made while resizes are being delivered can ask for another delivery in
+  // the same frame, which the browser reports as "ResizeObserver loop completed with undelivered notifications".
+  let frame = 0;
+  const ro =
+    typeof ResizeObserver === 'function'
+      ? new ResizeObserver(() => {
+          if (frame) return;
+          frame = requestAnimationFrame(() => {
+            frame = 0;
+            sync(false);
+          });
+        })
+      : null;
   ro?.observe(host);
   sync(false);
 
@@ -129,6 +142,8 @@ export function createIndicator(bar: HTMLElement, host: HTMLElement, selector = 
     dispose() {
       mo.disconnect();
       ro?.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
       stop();
     },
   };
