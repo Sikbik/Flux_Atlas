@@ -1,0 +1,20 @@
+/* The View panel (the layers popover): three quiet groups, each a small caps heading over its controls. The
+   switches and segmented controls are the UI kit's; this only lays them out. */
+
+.layers-panel {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.lp-group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.lp-head {
+  margin: 0 0 var(--space-1);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

@@ -2,14 +2,13 @@
 // the clock, the layers and ambient buttons and the operator chip. Glass, 52 px, with the block's light
 // travelling its lower edge. The omnibox is a button that opens the palette (`?q=`); F2b renders it.
 
-import { Orbit, Search, UserRoundCheck } from 'lucide-react';
+import { Layers2, Orbit, Search, UserRoundCheck } from 'lucide-react';
 import type { Ref } from 'react';
 import { BeatChip, LiveChip, TopLight, UtcClock } from '../../features/chrome/Beat';
 import { FluxRound } from '../../features/chrome/brand';
 import { useShellActions } from './actions';
-import { MenuBar } from './Menu';
-import { GoMenu, LayersButton, ViewMenu, WindowMenu } from './menus';
 import { useShellNav } from './nav';
+import { MenuBar, TopMenu } from './topmenus';
 import './topbar.css';
 
 const isApple = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -32,13 +31,7 @@ export function TopBar({ phone, ref }: { phone: boolean; ref?: Ref<HTMLElement> 
         <FluxRound size={26} />
         <b className="brand-word">Atlas</b>
       </a>
-      {phone ? null : (
-        <MenuBar label="Menus">
-          <ViewMenu />
-          <GoMenu />
-          <WindowMenu />
-        </MenuBar>
-      )}
+      {phone ? null : <MenuBar />}
       <button
         type="button"
         className="omni"
@@ -59,7 +52,11 @@ export function TopBar({ phone, ref }: { phone: boolean; ref?: Ref<HTMLElement> 
         <LiveChip compact={phone} />
         {phone ? null : <UtcClock />}
         {phone ? null : <span className="topbar-sep" aria-hidden="true" />}
-        {phone ? null : <LayersButton />}
+        {phone ? null : (
+          <TopMenu which="layers" label="Layers" className="iconbtn" title="Layers">
+            <Layers2 size={19} strokeWidth={1.5} aria-hidden="true" />
+          </TopMenu>
+        )}
         {phone ? null : (
           <button
             type="button"

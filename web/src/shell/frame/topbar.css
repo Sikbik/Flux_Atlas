@@ -133,7 +133,7 @@
 }
 
 .iconbtn:hover,
-.iconbtn[data-open] {
+.iconbtn[aria-expanded="true"] {
   background: var(--ink-2);
   color: var(--text-1);
 }
@@ -156,6 +156,38 @@
 
 .opchip:hover {
   background: var(--accent-soft-2);
+}
+
+/* ---- the menu bar (design 8.4): quiet text buttons; the menus themselves are the kit's ---------------- */
+
+.menubar {
+  display: flex;
+  gap: 2px;
+}
+
+.menu-trigger {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.menu-trigger:hover,
+.menu-trigger[aria-expanded="true"] {
+  background: var(--ink-2);
+  color: var(--text-1);
+}
+
+.menu-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* ---- compact desktop and tablet landscape (design 3.4) ---------------------------------------- */

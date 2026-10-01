@@ -1,11 +1,11 @@
-// The top bar's three menus (design 2.7, 8.4): View (layers and art style), Go (the launchers and
-// places to fly to) and Window (the open windows and the arrange actions). Every item that has a key
-// shows it.
+// The top bar's menus, built from the UI kit (design 2.7, 8.4): View (a small panel of layers, mesh and art
+// style: a form, so a Popover with switches and segmented controls that stay open while you set them), Go (the
+// launchers and places to fly to) and Window (the open windows and the arrange actions), both Menus with
+// their keys. This module is its own chunk: the three triggers in the bar (topmenus.tsx) load it on first use.
 
-import { Layers2, MapPin } from 'lucide-react';
-import { useMemo } from 'react';
+import { MapPin } from 'lucide-react';
+import { type ReactNode, useMemo } from 'react';
 import { useRuntime } from '../../app/context';
-import { FluxMarkWhite } from '../../features/chrome/brand';
 import {
   type LayerKey,
   layerOn,
@@ -17,121 +17,138 @@ import {
 } from '../../features/chrome/layers';
 import { computePlaces } from '../../features/chrome/placelabels';
 import { useGlobeEngine } from '../../globe';
-import { formatInt } from '../../lib/format';
 import { GLOBE_ARTS, type GlobeArtPref, useUi } from '../../store/ui';
+import { Menu, type MenuItem, Popover, SegmentedControl, Switch } from '../../ui';
 import { snapWindow } from '../wm/arrange';
-import { WINDOW_ICON, WindowGlyph } from '../wm/glyphs';
+import { WINDOW_ICON } from '../wm/glyphs';
 import { visibleWindows } from '../wm/machine';
 import { listEqual, useWindowManager, useWm } from '../wm/react';
 import { WINDOW_SPECS } from '../wm/specs';
 import type { WindowState } from '../wm/types';
 import { useShellActions } from './actions';
 import { keyCaps, LAUNCHERS, type LauncherId } from './launchers';
-import { MenuButton, type MenuItemDef } from './Menu';
 import { useShellNav } from './nav';
+import './menus.css';
+
+export type MenuKind = 'view' | 'go' | 'window' | 'layers';
+
+export interface MenuImplProps {
+  which: MenuKind;
+  /** The trigger's text, or its accessible name when it has an icon child. */
+  label: string;
+  className: string;
+  title?: string;
+  /** An icon in place of the text label. */
+  children?: ReactNode;
+}
+
+/** The trigger every menu shares: the bar's own text (or icon) button. */
+function trigger({ label, className, title, children }: MenuImplProps) {
+  return (
+    <button type="button" className={className} aria-label={children ? label : undefined} title={title}>
+      {children ?? label}
+    </button>
+  );
+}
+
+/** The menu a trigger asks for: it opens as it mounts, because the click that loaded this chunk was its click. */
+export function MenuImpl(props: MenuImplProps) {
+  switch (props.which) {
+    case 'view':
+    case 'layers':
+      return <LayersPopover {...props} />;
+    case 'go':
+      return <GoMenu {...props} />;
+    case 'window':
+      return <WindowMenu {...props} />;
+  }
+}
+
+// ---- layers --------------------------------------------------------------------------------------
+
+const LAYERS: readonly { key: LayerKey; label: string }[] = [
+  { key: 'terminator', label: 'Day and night' },
+  { key: 'lights', label: 'Night lights' },
+  { key: 'clouds', label: 'Clouds' },
+  { key: 'towers', label: 'Stack towers' },
+  { key: 'labels', label: 'Place labels' },
+];
+
+const MESH: readonly { value: MeshMode; label: string }[] = [
+  { value: 'selection', label: 'Selection' },
+  { value: 'flow', label: 'Flow' },
+  { value: 'off', label: 'Off' },
+];
 
 const ART_LABEL: Record<GlobeArtPref, string> = { marble: 'Marble', holo: 'Holo', neon: 'Neon' };
 
-const MESH: { mode: MeshMode; label: string }[] = [
-  { mode: 'selection', label: 'Selection peers' },
-  { mode: 'flow', label: 'Network flow' },
-  { mode: 'off', label: 'Off' },
-];
+function LayersPopover(props: MenuImplProps) {
+  return (
+    <Popover
+      aria-label="Layers"
+      placement={props.which === 'layers' ? 'bottom-end' : 'bottom-start'}
+      width={288}
+      defaultOpen
+      trigger={trigger(props)}
+      content={<LayersPanel />}
+    />
+  );
+}
 
-/** The layer, mesh and art items of the View menu (also the layers button in the top bar). */
-function useViewItems(withLaunchers: boolean): MenuItemDef[] {
+/** Layers, mesh and art style: each change applies at once and the panel stays open for the next. */
+function LayersPanel() {
   const nav = useShellNav();
   const art = useUi((s) => s.globeArt);
   const setArt = useUi((s) => s.setGlobeArt);
   const l = useLayerParam();
   const mesh = meshModeOf(l);
-  const { launch } = useShellActions();
-  const toggle = (key: LayerKey, label: string): MenuItemDef => {
-    const on = layerOn(l, key);
-    return {
-      kind: 'item',
-      id: key,
-      label,
-      checked: on,
-      keepOpen: true,
-      onSelect: () => nav.patchSearch({ l: withLayer(l, key, !on) }),
-    };
-  };
-  const items: MenuItemDef[] = [
-    { kind: 'heading', id: 'h-layers', label: 'Layers' },
-    toggle('terminator', 'Day and night'),
-    toggle('lights', 'Night lights'),
-    toggle('clouds', 'Clouds'),
-    toggle('towers', 'Stack towers'),
-    toggle('labels', 'Place labels'),
-    { kind: 'separator', id: 's1' },
-    { kind: 'heading', id: 'h-mesh', label: 'Mesh' },
-    ...MESH.map(
-      (m): MenuItemDef => ({
-        kind: 'item',
-        id: `mesh-${m.mode}`,
-        label: m.label,
-        checked: mesh === m.mode,
-        radio: true,
-        keepOpen: true,
-        onSelect: () => nav.patchSearch({ l: layersWithMesh(l, m.mode) }),
-      }),
-    ),
-    { kind: 'separator', id: 's2' },
-    { kind: 'heading', id: 'h-art', label: 'Art style' },
-    ...GLOBE_ARTS.map(
-      (a): MenuItemDef => ({
-        kind: 'item',
-        id: `art-${a}`,
-        label: ART_LABEL[a],
-        checked: art === a,
-        radio: true,
-        keepOpen: true,
-        onSelect: () => setArt(a),
-      }),
-    ),
-  ];
-  if (withLaunchers)
-    items.push(
-      { kind: 'separator', id: 's3' },
-      {
-        kind: 'item',
-        id: 'ambient',
-        label: LAUNCHERS.ambient.label,
-        icon: <LaunchIcon id="ambient" />,
-        keys: keyCaps(LAUNCHERS.ambient),
-        onSelect: () => launch('ambient'),
-      },
-      {
-        kind: 'item',
-        id: 'settings',
-        label: 'Settings',
-        icon: <LaunchIcon id="settings" />,
-        onSelect: () => launch('settings'),
-      },
-    );
-  return items;
-}
-
-export function ViewMenu() {
-  return <MenuButton label="View" items={useViewItems(true)} />;
-}
-
-/** The top bar's layers button: the same layer and art items without the launchers. */
-export function LayersButton() {
   return (
-    <MenuButton label="Layers" items={useViewItems(false)} align="end" className="iconbtn" title="Layers">
-      <Layers2 size={19} strokeWidth={1.5} aria-hidden="true" />
-    </MenuButton>
+    <div className="layers-panel">
+      <section className="lp-group" aria-labelledby="lp-layers">
+        <h3 className="lp-head" id="lp-layers">
+          Layers
+        </h3>
+        {LAYERS.map(({ key, label }) => (
+          <Switch
+            key={key}
+            layout="row"
+            label={label}
+            checked={layerOn(l, key)}
+            onChange={(on) => nav.patchSearch({ l: withLayer(l, key, on) })}
+          />
+        ))}
+      </section>
+      <section className="lp-group" aria-labelledby="lp-mesh">
+        <h3 className="lp-head" id="lp-mesh">
+          Peer links
+        </h3>
+        <SegmentedControl
+          aria-labelledby="lp-mesh"
+          size="sm"
+          fullWidth
+          options={MESH}
+          value={mesh}
+          onChange={(m) => nav.patchSearch({ l: layersWithMesh(l, m) })}
+        />
+      </section>
+      <section className="lp-group" aria-labelledby="lp-art">
+        <h3 className="lp-head" id="lp-art">
+          Art style
+        </h3>
+        <SegmentedControl
+          aria-labelledby="lp-art"
+          size="sm"
+          fullWidth
+          options={GLOBE_ARTS.map((a) => ({ value: a, label: ART_LABEL[a] }))}
+          value={art}
+          onChange={setArt}
+        />
+      </section>
+    </div>
   );
 }
 
-function LaunchIcon({ id }: { id: LauncherId }) {
-  const l = LAUNCHERS[id];
-  if (!l.icon) return <FluxMarkWhite size={14} />;
-  const Icon = l.icon;
-  return <Icon size={16} strokeWidth={1.5} aria-hidden="true" />;
-}
+// ---- Go ------------------------------------------------------------------------------------------
 
 const GO_ORDER: LauncherId[] = [
   'globe',
@@ -147,53 +164,52 @@ const GO_ORDER: LauncherId[] = [
   'about',
 ];
 
-export function GoMenu() {
+function GoMenu(props: MenuImplProps) {
   const { launch } = useShellActions();
   const engine = useGlobeEngine();
   const { store } = useRuntime();
-  const items = (): MenuItemDef[] => {
+  const items = useMemo((): MenuItem[] => {
     // City labels when the data has them, otherwise the biggest countries.
     const all = store.loaded ? computePlaces(store) : { cities: [], countries: [] };
     const places = (all.cities.length > 0 ? all.cities : all.countries).slice(0, 8);
     return [
-      { kind: 'heading', id: 'h-views', label: 'Views' },
+      { type: 'label', label: 'Views' },
       ...GO_ORDER.map(
-        (id): MenuItemDef => ({
-          kind: 'item',
+        (id): MenuItem => ({
           id,
           label: LAUNCHERS[id].label,
-          icon: <LaunchIcon id={id} />,
-          keys: keyCaps(LAUNCHERS[id]),
+          icon: LAUNCHERS[id].icon ?? undefined,
+          shortcut: keyCaps(LAUNCHERS[id]),
           onSelect: () => launch(id),
         }),
       ),
       ...(places.length
         ? ([
-            { kind: 'separator', id: 's1' },
-            { kind: 'heading', id: 'h-places', label: 'Places' },
+            { type: 'separator' },
+            { type: 'label', label: 'Places' },
             ...places.map(
-              (p): MenuItemDef => ({
-                kind: 'item',
+              (p): MenuItem => ({
                 id: p.id,
                 label: p.text,
-                hint: `${formatInt(p.count)} nodes`,
-                icon: <MapPin size={16} strokeWidth={1.5} aria-hidden="true" />,
+                icon: MapPin,
                 disabled: !engine,
                 onSelect: () => {
                   void engine?.flyTo(p.lat, p.lon, 0.7);
                 },
               }),
             ),
-          ] as MenuItemDef[])
+          ] as MenuItem[])
         : []),
     ];
-  };
-  return <MenuButton label="Go" items={items} />;
+  }, [store, engine, launch]);
+  return <Menu aria-label="Go" defaultOpen trigger={trigger(props)} items={items} />;
 }
+
+// ---- Window --------------------------------------------------------------------------------------
 
 const same = (a: readonly WindowState[], b: readonly WindowState[]) => listEqual(a, b);
 
-export function WindowMenu() {
+function WindowMenu(props: MenuImplProps) {
   const wm = useWindowManager();
   const { requestClose, focusWindow, launch } = useShellActions();
   const wins = useWm(
@@ -215,9 +231,8 @@ export function WindowMenu() {
     label: string,
     id: string,
     run: () => void,
-    extra: Partial<Extract<MenuItemDef, { kind: 'item' }>> = {},
-  ): MenuItemDef => ({
-    kind: 'item',
+    extra: Partial<Extract<MenuItem, { onSelect: () => void }>> = {},
+  ): MenuItem => ({
     id,
     label,
     disabled: !focused,
@@ -225,38 +240,24 @@ export function WindowMenu() {
     ...extra,
   });
 
-  const items: MenuItemDef[] = [
-    { kind: 'heading', id: 'h-open', label: 'Open windows' },
+  const items: MenuItem[] = [
+    { type: 'label', label: 'Open windows' },
     ...(wins.length
-      ? wins.map((w): MenuItemDef => {
-          const Icon = WINDOW_ICON[w.type];
-          return {
-            kind: 'item',
+      ? wins.map(
+          (w): MenuItem => ({
             id: `w-${w.id}`,
-            label: w.title,
-            icon: Icon ? (
-              <Icon size={16} strokeWidth={1.5} aria-hidden="true" />
-            ) : (
-              <WindowGlyph type={w.type} size={14} />
-            ),
-            hint: w.mode === 'minimized' ? 'minimized' : w.id === focusedId ? 'focused' : undefined,
+            label: w.mode === 'minimized' ? `${w.title} (minimized)` : w.title,
+            icon: WINDOW_ICON[w.type] ?? undefined,
+            checked: w.id === focusedId,
             onSelect: () => {
               if (w.binding === 'extra') focusWindow(w);
               else wm.dispatch({ t: 'focus', id: w.id });
             },
-          };
-        })
-      : [
-          {
-            kind: 'item',
-            id: 'none',
-            label: 'No windows open',
-            disabled: true,
-            onSelect: () => {},
-          } as MenuItemDef,
-        ]),
-    { kind: 'separator', id: 's1' },
-    { kind: 'heading', id: 'h-arrange', label: 'Arrange' },
+          }),
+        )
+      : [{ id: 'none', label: 'No windows open', disabled: true, onSelect: () => {} } as MenuItem]),
+    { type: 'separator' },
+    { type: 'label', label: 'Arrange' },
     act('Snap left', 'snap-left', () => focused && snapWindow(wm, focused.id, 'left'), {
       disabled: !focused || focused.placement === 'docked',
     }),
@@ -265,7 +266,7 @@ export function WindowMenu() {
       focused?.placement === 'docked' ? 'Float' : 'Dock right',
       'dock',
       () => focused && wm.dispatch({ t: 'toggleDock', id: focused.id }),
-      { keys: ['alt', 'D'], disabled: !focused || !WINDOW_SPECS[focused.type].dockable },
+      { shortcut: ['alt', 'D'], disabled: !focused || !WINDOW_SPECS[focused.type].dockable },
     ),
     act(
       focused?.mode === 'maximized' ? 'Restore' : 'Maximize',
@@ -275,16 +276,15 @@ export function WindowMenu() {
         wm.dispatch(
           focused.mode === 'maximized' ? { t: 'restore', id: focused.id } : { t: 'maximize', id: focused.id },
         ),
-      { keys: ['alt', 'enter'] },
+      { shortcut: ['alt', 'enter'] },
     ),
     act('Minimize', 'min', () => focused && wm.dispatch({ t: 'minimize', id: focused.id }), {
-      keys: ['alt', 'M'],
+      shortcut: ['alt', 'M'],
     }),
     act('Tile side by side', 'tile', () => tileFloating(wm, floating), { disabled: floating.length < 2 }),
-    { kind: 'separator', id: 's2' },
-    act('Close window', 'close', () => focused && requestClose(focused), { keys: ['esc'] }),
+    { type: 'separator' },
+    act('Close window', 'close', () => focused && requestClose(focused), { shortcut: ['esc'] }),
     {
-      kind: 'item',
       id: 'close-all',
       label: 'Close all windows',
       disabled: visibleCount === 0 && wins.length === 0,
@@ -294,7 +294,7 @@ export function WindowMenu() {
       },
     },
   ];
-  return <MenuButton label="Window" items={items} />;
+  return <Menu aria-label="Window" defaultOpen trigger={trigger(props)} items={items} />;
 }
 
 function tileFloating(wm: ReturnType<typeof useWindowManager>, list: readonly WindowState[]): void {
