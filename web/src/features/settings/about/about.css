@@ -36,14 +36,6 @@
   position: absolute;
   inset: -96px -56px;
   background: var(--pattern-hex-solid) 0 0 / var(--pattern-hex-size);
-  animation: ab-drift 56s linear infinite;
-  will-change: transform;
-}
-
-@keyframes ab-drift {
-  to {
-    transform: translate3d(55.43px, 96px, 0);
-  }
 }
 
 .ab-lockup {
@@ -183,23 +175,14 @@
   box-shadow: var(--shadow-inset-hi);
 }
 
-/* A Blue Wave glow that breathes behind the symbol. */
+/* A Blue Wave glow behind the symbol. It holds still: nothing in the frame loops at rest (motion language,
+   principle 3). */
 .ab-anat-card::before {
   content: "";
   position: absolute;
   inset: 0;
   background: radial-gradient(85% 62% at 50% 42%, rgb(43 97 209 / 0.5), transparent 72%);
-  animation: ab-breathe 7s ease-in-out infinite alternate;
-}
-
-@keyframes ab-breathe {
-  from {
-    opacity: 0.62;
-  }
-
-  to {
-    opacity: 1;
-  }
+  opacity: 0.85;
 }
 
 .ab-anat-sym {
