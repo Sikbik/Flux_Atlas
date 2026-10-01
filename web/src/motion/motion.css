@@ -145,16 +145,24 @@
 }
 
 /* Keyboard focus: a steady, even ring (no pointer). The kit's own focus ring stays: this lights the
-   control's edge inside it. The transition only fades it in; it is never animated away. */
+   control's edge inside it. The transition only fades it in; it is never animated away. A host that
+   wraps the control that takes the focus (a picture card around a radio) wears the ring while that
+   control has visible focus: the control is focused, the host is lit. */
 .ui-button:focus-visible::after,
-[data-fx~="charge"]:focus-visible::after {
+[data-fx~="charge"]:focus-visible::after,
+[data-fx~="charge"]:has(:focus-visible)::after {
   opacity: 1;
   background: linear-gradient(rgb(174 198 255 / 0.8), rgb(174 198 255 / 0.8));
 }
 
 /* Controls outside the kit that charge, or only want the energised focus ring, get the ring plus a
-   Blue Wave bloom. The kit's buttons keep the kit's ring (--focus-ring). */
-:where([data-fx~="charge"]:focus-visible, [data-fx~="focus"]:focus-visible) {
+   Blue Wave bloom. The kit's buttons keep the kit's ring (--focus-ring). Zero specificity, so a surface
+   that draws its own shadow for the same state (a checked card's glow) says so with a class. */
+:where(
+  [data-fx~="charge"]:focus-visible,
+  [data-fx~="charge"]:has(:focus-visible),
+  [data-fx~="focus"]:focus-visible
+) {
   outline: none;
   box-shadow: var(--fx-focus-shadow);
 }
@@ -260,7 +268,7 @@
 }
 
 [data-fx-mode="off"] .ui-button:not(:hover, :focus-visible)::after,
-[data-fx-mode="off"] [data-fx~="charge"]:not(:hover, :focus-visible)::after {
+[data-fx-mode="off"] [data-fx~="charge"]:not(:hover, :focus-visible, :has(:focus-visible))::after {
   opacity: 0;
 }
 
@@ -282,7 +290,11 @@
     display: none;
   }
 
-  :where([data-fx~="charge"]:focus-visible, [data-fx~="focus"]:focus-visible) {
+  :where(
+    [data-fx~="charge"]:focus-visible,
+    [data-fx~="charge"]:has(:focus-visible),
+    [data-fx~="focus"]:focus-visible
+  ) {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
