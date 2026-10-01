@@ -107,6 +107,32 @@ export interface BootFrame {
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
+/** The camera's drift while the planet lights: the planet's share of its shell size, at the start and the end. */
+export const DRIFT_FROM = 0.84;
+export const DRIFT_TO = 0.94;
+/** Progress at which the drift begins (the wave is well over the planet by then). */
+export const DRIFT_AT = 0.45;
+
+/** The drift's share of the shell size at a progress (an ease-in-out from `DRIFT_FROM` to `DRIFT_TO`). */
+export function driftShare(progress: number): number {
+  const u = clamp01((progress - DRIFT_AT) / (1 - DRIFT_AT));
+  const e = u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2;
+  return DRIFT_FROM + (DRIFT_TO - DRIFT_FROM) * e;
+}
+
+/**
+ * The engine's view scale for a share of the shell size. The boot frames the planet in its own, wider area
+ * (a desktop's is far wider than the shell's free area), so a share of that framing is not a share of the size the
+ * planet ends at: the scale would grow it on the way in and the lift would then take it back down, and the settle
+ * grow it again. Here the share is taken of the radius the shell's free area gives (`shellR`), whatever the framing
+ * is now (`nowR`, which eases from the boot's to the shell's during the lift), so the planet only ever grows on
+ * its way to its place: 0.84 to 0.94 of its size, then the settle to 1. Radii are the framing's home radius, CSS px.
+ */
+export function bootScale(share: number, shellR: number, nowR: number): number {
+  if (!(nowR > 0) || !(shellR > 0)) return share;
+  return Math.min(1, share * (shellR / nowR));
+}
+
 export class BootTimeline {
   private progress = 0;
   private arrivals: [number, number, number, number] = [0, 0, 0, 0];

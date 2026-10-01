@@ -28,6 +28,24 @@ export default defineConfig(({ mode }) => {
       target: 'es2022',
       sourcemap: true,
       chunkSizeWarningLimit: 900,
+      rolldownOptions: {
+        output: {
+          // One long-lived vendor chunk. Left alone, Rolldown cuts the libraries every page needs into a dozen
+          // small eager fragments named after whichever module imports them, and its hash then moves with the
+          // app's own code. Here the libraries the shell always loads are pinned to one chunk with a fixed name
+          // and nothing but node_modules in it, so it fetches once, compresses as one file, and keeps its hash
+          // until one of these packages (or the part of it the app uses) changes. Left out on purpose: lucide-react
+          // (the icons in use change with the UI), three (the globe's own lazy chunk) and the app's code.
+          codeSplitting: {
+            groups: [
+              {
+                name: 'vendor',
+                test: /node_modules[\\/](react|react-dom|scheduler|@tanstack|zustand|use-sync-external-store)[\\/]/,
+              },
+            ],
+          },
+        },
+      },
     },
   };
 });

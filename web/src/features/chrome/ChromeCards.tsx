@@ -9,6 +9,7 @@ import { useNow } from '../../lib/useClock';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import type { ChainBlock } from '../../store/network';
 import { TierGlyph } from '../../ui';
+import { notConfirmed } from './counts';
 import { type NodeFacts, useNodeFacts } from './data';
 import type { PathReading } from './freshness';
 import { TIER_LABEL, TIER_ORDER } from './glyphs';
@@ -111,6 +112,7 @@ export function TotalsCard() {
   if (!summary) return null;
   const rows: [string, number][] = [
     ['Nodes', summary.node_count],
+    ...notConfirmed(summary),
     ['Hosts', summary.host_count],
     ['Apps', summary.app_count],
     ['App instances', summary.instance_count],

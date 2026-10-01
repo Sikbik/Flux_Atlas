@@ -1,24 +1,34 @@
 // The phone's header (design 3.6): no bar, the globe runs under it. Three rows: the L1 lockup with the Beat mini
 // and the Live chip, the search pill (it opens the palette, `?q=`, which F2b renders full screen on a phone), and
 // the aim chips, which scroll sideways. It writes its own height to the shell (`--phone-top`) so the stage and the
-// windows' workspace start under it.
+// windows' workspace start under it. While a tall sheet covers the moon's orbit the moon parks in the Beat mini's
+// ring (moonpark.ts): the header opens a window in its scrim there and the ring's tap opens About Flux.
 
 import { Search } from 'lucide-react';
 import { type ComponentPropsWithRef, useLayoutEffect, useMemo, useRef } from 'react';
 import { AimStrip } from '../../features/chrome/AimStrip';
 import { BeatChip, LiveChip } from '../../features/chrome/Beat';
 import { FluxRound } from '../../features/chrome/brand';
+import { usePhone } from '../../features/chrome/phone';
+import { useGlobeEngine } from '../../globe';
 import { cx } from '../../ui';
 import { pressHandlers } from '../../ui/internal/press';
 import { mergeRefs } from '../../ui/internal/refs';
+import { useWm } from '../wm/react';
+import { moonParked, useMoonPark } from './moonpark';
 import { useShellNav } from './nav';
 import './phoneheader.css';
 
 /** The header. The root takes a ref, a class and a style; its controls carry `data-pressed` while held. */
 export function PhoneHeader({ ref, className, ...rest }: ComponentPropsWithRef<'header'>) {
   const nav = useShellNav();
+  const engine = useGlobeEngine();
   const own = useRef<HTMLElement | null>(null);
   const setRoot = useMemo(() => mergeRefs<HTMLElement>(own, ref), [ref]);
+  // The moon parks in the Beat ring while a tall sheet covers its orbit.
+  const liveOpen = usePhone((s) => s.live);
+  const parked = useWm((s) => moonParked(s, liveOpen), Object.is);
+  useMoonPark(own, parked);
 
   // The header's height is the stage's top edge; the shell's CSS reads it.
   useLayoutEffect(() => {
@@ -37,7 +47,13 @@ export function PhoneHeader({ ref, className, ...rest }: ComponentPropsWithRef<'
   }, []);
 
   return (
-    <header ref={setRoot} className={cx('phone-header', className)} data-region="topbar" {...rest}>
+    <header
+      ref={setRoot}
+      className={cx('phone-header', className)}
+      data-region="topbar"
+      data-parked={parked ? '' : undefined}
+      {...rest}
+    >
       <div className="ph-row">
         <a
           href="/"
@@ -54,7 +70,21 @@ export function PhoneHeader({ ref, className, ...rest }: ComponentPropsWithRef<'
           <b className="brand-word">Atlas</b>
         </a>
         <div className="ph-live">
-          <BeatChip />
+          <div className="ph-beat">
+            {parked ? (
+              // The moon's door while it sits in the ring: a tap on the moon opens About Flux (design 3.6). It is
+              // the one control for the moon then (the proxy steps aside, Shell.tsx), so it carries the same name.
+              <button
+                type="button"
+                className="ph-moon-door"
+                aria-label="About Flux, live network totals"
+                aria-haspopup="dialog"
+                {...pressHandlers<HTMLButtonElement>()}
+                onClick={() => engine?.moonClick()}
+              />
+            ) : null}
+            <BeatChip />
+          </div>
           <LiveChip compact />
         </div>
       </div>

@@ -1,8 +1,30 @@
-/* The dock (design 2.7, 8.5): a floating glass pill, 56 px wide, launchers 40 px on a 4 px gap. The icon
-   scales on hover with the snappy spring; the label sits to the right and fades in with a small
-   travel. Only transform and opacity animate. */
+/* The dock (design 2.7, 8.5): a floating glass pill, 56 px wide, launchers up to 40 px (28 px on a short screen,
+   see --dk-size) on a 4 px gap. The icon scales on hover with the snappy spring; the label sits to the right
+   and fades in with a small travel. Only transform and opacity animate. */
 
 .dock {
+  /* The launchers shrink to what the screen leaves: the room under the top bar down to the rail (and to the
+     time machine's strip, which grows the rail by up to 54 px), less a gap. 40 px when there is room, 28 px at
+     the least. The thirteen launchers, the rule and the frame add up to 13 * gap, 2 * padding and 11 px. */
+  --dock-gap: 4px;
+  --dock-pad: 8px;
+  --dock-room: calc(
+    100dvh -
+    var(--topbar-h) -
+    14px -
+    var(--statusbar-h) -
+    var(--rail-h) -
+    var(--timeline-h) -
+    12px
+  );
+  --dk-size: clamp(
+    28px,
+    calc(
+      (var(--dock-room) - var(--dock-extra, 0px) - 13 * var(--dock-gap) - 2 * var(--dock-pad) - 11px) /
+      13
+    ),
+    40px
+  );
   position: fixed;
   left: 12px;
   top: calc(var(--topbar-h) + 14px);
@@ -10,9 +32,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--dock-gap);
   width: 56px;
-  padding: 8px 0;
+  padding: var(--dock-pad) 0;
   border-radius: 20px;
   background: var(--glass-bg);
   -webkit-backdrop-filter: var(--glass-filter);
@@ -36,11 +58,11 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: var(--dk-size);
+  height: var(--dk-size);
   padding: 0;
   border: 0;
-  border-radius: 13px;
+  border-radius: calc(var(--dk-size) * 0.325);
   background: none;
   color: var(--text-3);
   cursor: pointer;
@@ -88,7 +110,7 @@
   content: "";
   position: absolute;
   left: -9px;
-  top: 15px;
+  top: calc((var(--dk-size) - 10px) / 2);
   width: 3px;
   height: 10px;
   border-radius: 0 3px 3px 0;
@@ -207,34 +229,20 @@
   transform: scale(1.35);
 }
 
+/* Minimized windows add a few dots under the launchers: room for three (the most there can be). */
+.dock:has(.dock-dots) {
+  --dock-extra: 64px;
+}
+
 @media (max-height: 820px) {
   .dock {
-    gap: 2px;
-    padding: 6px 0;
-  }
-  .dk {
-    width: 36px;
-    height: 36px;
-    border-radius: 11px;
-  }
-  .dk[data-state="open"]::before,
-  .dk[data-state="focus"]::before,
-  .dk[data-state="min"]::before {
-    top: 13px;
+    --dock-gap: 2px;
+    --dock-pad: 6px;
   }
 }
 
 @media (max-height: 700px) {
   .dock {
-    gap: 0;
-  }
-  .dk {
-    width: 32px;
-    height: 32px;
-  }
-  .dk[data-state="open"]::before,
-  .dk[data-state="focus"]::before,
-  .dk[data-state="min"]::before {
-    top: 11px;
+    --dock-gap: 0px;
   }
 }

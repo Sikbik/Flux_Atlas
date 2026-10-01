@@ -12,6 +12,18 @@ export function str(v: unknown): string | undefined {
   return t && t.length <= MAX ? t : undefined;
 }
 
+/**
+ * The palette's text (`q`): cleared of leading space, and kept as given at the end. The launchers open the
+ * palette on a kind's prefix (`app `, `operator `), and a prefix is only a prefix with its space, which `str`
+ * would trim away on the first navigation. An empty text is dropped here, like any other value (the palette is
+ * open with nothing typed while `q` is in the raw search string, see features/command/paletteUrl.ts).
+ */
+export function text(v: unknown): string | undefined {
+  if (typeof v !== 'string') return str(v);
+  const t = v.trimStart();
+  return t.trim() && t.length <= MAX ? t : undefined;
+}
+
 export function num(v: unknown): number | undefined {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : Number.NaN;
   return Number.isFinite(n) ? n : undefined;
@@ -65,7 +77,7 @@ export function validateGlobalSearch(s: Record<string, unknown>): GlobalSearch {
     watched: flag(s.watched),
     sel: str(s.sel),
     w: str(s.w),
-    q: str(s.q),
+    q: text(s.q),
     popout: flag(s.popout),
   });
 }

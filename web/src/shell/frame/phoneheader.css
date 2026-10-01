@@ -4,14 +4,48 @@
    chips. */
 
 .phone-header {
+  --park-ms: 450ms; /* the moon's glide into the ring and back: the engine's own 0.45 s (moon.ts) */
   position: fixed;
   inset: 0 0 auto 0;
   z-index: var(--z-topbar);
   display: grid;
   gap: var(--space-4);
   padding: max(var(--safe-top), var(--space-4)) 0 var(--space-5);
-  background: linear-gradient(to bottom, rgb(0 0 0 / 0.88), rgb(0 0 0 / 0.58) 62%, transparent);
   pointer-events: none;
+}
+
+/* The scrim is a layer of its own, so it can open a window for the moon: while the moon is parked in the Beat
+   ring (`data-parked`, moonpark.ts writes where as --moon-x and --moon-y) the scrim is cut away round the ring,
+   clear to 18 px and back to full by 30. The window grows and closes with the moon's glide (--park-k, 0 to 1). */
+@property --park-k {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+.phone-header::before {
+  --park-k: 0;
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.88), rgb(0 0 0 / 0.58) 62%, transparent);
+  -webkit-mask: radial-gradient(
+    circle at var(--moon-x, 50%) var(--moon-y, 0),
+    transparent calc(var(--park-k) * 18px),
+    #000 calc(var(--park-k) * 30px)
+  );
+  mask: radial-gradient(
+    circle at var(--moon-x, 50%) var(--moon-y, 0),
+    transparent calc(var(--park-k) * 18px),
+    #000 calc(var(--park-k) * 30px)
+  );
+  pointer-events: none;
+  transition: --park-k var(--park-ms) var(--ease-in-out);
+}
+
+.phone-header[data-parked]::before {
+  --park-k: 1;
 }
 
 .ph-row {
@@ -83,4 +117,85 @@
 /* The Beat mini beside the lockup: the ring, the tip's height over what the next block is doing. */
 .phone-header .beat-txt {
   display: grid;
+}
+
+/* ---- the moon parked in the Beat ring (design 3.6, moonpark.ts) -------------------------------------------------
+   The ring takes the moon into its window: the core dot, which marks the same heartbeat, shrinks away as the moon
+   arrives and comes back after it has left, and the ring itself grows a little so the symbol sits inside its
+   track. The door over it is the moon's tap target (About Flux). */
+
+.ph-beat {
+  position: relative;
+  display: flex;
+}
+
+.phone-header .beat-ring {
+  transition:
+    scale var(--park-ms) var(--ease-in-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.phone-header .beat-core {
+  transition: scale var(--dur-base) var(--ease-in-out) 240ms;
+}
+
+.phone-header[data-parked] .beat-ring {
+  scale: 1.14;
+}
+
+/* A full sheet covers the header, and a ring that has grown would show its top over the sheet's edge. */
+.phone-header[data-parked][inert] .beat-ring {
+  scale: 1;
+}
+
+.phone-header[data-parked] .beat-core {
+  scale: 0;
+  transition-delay: 0ms;
+}
+
+/* 44 px, centred on the ring: the chip's 6 px of left padding and the ring's 14 px radius put the centre 20 px in. */
+.ph-moon-door {
+  position: absolute;
+  z-index: 1; /* over the ring's own layers, which are positioned too */
+  top: 50%;
+  left: -2px;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  margin-top: calc(var(--touch-min) / -2);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The focus ring is drawn inside the door's edge (the focus ring token's two bands, turned inward), so it never
+   spills onto the tip's height beside it. */
+.ph-moon-door:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px var(--accent-400),
+    inset 0 0 0 4px var(--ink-0);
+}
+
+.ph-moon-door[data-pressed] + .beat .beat-ring {
+  transform: scale(0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .phone-header::before,
+  :root:not([data-motion="full"]) .phone-header .beat-ring,
+  :root:not([data-motion="full"]) .phone-header .beat-core {
+    transition: none;
+  }
+}
+
+:root[data-motion="reduced"] .phone-header::before,
+:root[data-motion="reduced"] .phone-header .beat-ring,
+:root[data-motion="reduced"] .phone-header .beat-core,
+:root[data-motion-off] .phone-header::before,
+:root[data-motion-off] .phone-header .beat-ring,
+:root[data-motion-off] .phone-header .beat-core {
+  transition: none;
 }

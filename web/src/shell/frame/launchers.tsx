@@ -143,6 +143,17 @@ export function keyCaps(l: Launcher): readonly string[] {
   return l.keyLabel ?? (l.key ? [l.key] : []);
 }
 
+/**
+ * What the palette opens with for a launcher that needs a subject: the kind's prefix, which scopes the palette to
+ * that kind (`app ` lists the biggest apps, `node ` the next payees) until something else is typed. A launcher
+ * that is not here opens it empty.
+ */
+export const PALETTE_SEED: Partial<Record<LauncherId, string>> = {
+  nodes: 'node ',
+  apps: 'app ',
+  operator: 'operator ',
+};
+
 /** Runs a launcher. `source` is the launcher's element (the aperture opens out of it). */
 export type RunLauncher = (id: LauncherId) => void;
 
@@ -206,7 +217,7 @@ export function runLauncher(id: LauncherId, env: LauncherEnv): void {
           return;
         }
       }
-      nav.palette(id === 'operator' ? 'operator ' : '');
+      nav.palette(PALETTE_SEED[id] ?? '');
       return;
     }
     case 'explorer': {

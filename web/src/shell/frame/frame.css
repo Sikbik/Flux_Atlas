@@ -157,6 +157,152 @@
   animation: none;
 }
 
+/* ---- a page panel takes the left column ----------------------------------------------------------------------
+   A page route (search results, the dev galleries, not found) draws its panel where the Pulse and the aim strip
+   stand, and a panel over them reads as a mistake. They step aside for it the way they do for a window there,
+   and come back when the page closes. The panel's height follows its content, so the rule follows the route
+   (`data-page`, set by the shell) and never the content: a card that fades in and out as results arrive would be
+   worse than one that is simply away. The recipes mirror pulse.css `[data-mode="hidden"]` and aimstrip.css
+   `[data-hidden]`. The phone has no Pulse, and its aim strip is a row of the header. */
+
+.shell[data-layout="desktop"][data-page] .pulse {
+  opacity: 0;
+  translate: -16px 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    translate var(--dur-slow) var(--ease-out),
+    visibility 0s linear var(--dur-slow);
+}
+
+.shell[data-layout="desktop"][data-page] .aimstrip:not([data-inline]) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    translate var(--dur-slower) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear var(--dur-base);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .shell[data-layout="desktop"][data-page] .pulse {
+    translate: none;
+  }
+}
+
+:root[data-motion="reduced"] .shell[data-layout="desktop"][data-page] .pulse,
+:root[data-motion-off] .shell[data-layout="desktop"][data-page] .pulse {
+  translate: none;
+}
+
+/* ---- the archive view: what is live steps back --------------------------------------------------------------
+   While the time machine shows a past moment (<html data-archive="on">, set by its view) a feed of what is
+   happening now, or the chain's newest blocks, beside the globe would read as current. The Pulse folds to its
+   head and says it is paused; the rail's blocks fade out under the same words, in the archive's own cool
+   colour. Once faded they are hidden (visibility), which takes them out of the key order and the reading order
+   too, so nothing is focusable or announced that nobody can see. The Pulse's status line is dropped for the same
+   reason. The words are drawn with empty alternative text: the time machine announces the archive view itself,
+   and a label that is there at rest (fully faded) must not be read. Both come back as they left when the view
+   returns to live. The feeds keep arriving underneath, so
+   "paused" is what the eye sees, and it is what the words say. The rail and the Pulse keep absorbing the
+   pointer, so a press on the veil is not a press on the globe. */
+
+.pulse .pulse-list {
+  transition:
+    height var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.pulse .pulse-head::after {
+  content: "Paused in the archive view" / "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--accent-time);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+
+.rail .rail-track {
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.rail::after {
+  content: "Live blocks paused in the archive view" / "";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--accent-time);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.01em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+
+:root[data-archive="on"] .pulse .pulse-list {
+  height: 0;
+  padding-block: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    height var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear var(--dur-slow);
+}
+
+:root[data-archive="on"] .pulse .pulse-head {
+  border-bottom-color: transparent;
+}
+
+:root[data-archive="on"] .pulse .pulse-head::after {
+  opacity: 1;
+}
+
+:root[data-archive="on"] .pulse .pulse-head .ui-livedot {
+  background: var(--accent-time);
+  box-shadow: none;
+}
+
+:root[data-archive="on"] .pulse :is(.filters, .filter-now, .pulse-stale, .newpill, [role="status"]) {
+  display: none;
+}
+
+:root[data-archive="on"] .rail .rail-track {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    visibility 0s linear var(--dur-slow);
+}
+
+:root[data-archive="on"] .rail::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .pulse .pulse-list {
+    transition: none;
+  }
+}
+
+:root[data-motion="reduced"] .pulse .pulse-list,
+:root[data-motion-off] .pulse .pulse-list {
+  transition: none;
+}
+
 /* ---- phone ----------------------------------------------------------------------------------- */
 
 .shell-tabs {
@@ -179,4 +325,18 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+/* ---- forced colours ---------------------------------------------------------------------------
+   The frame draws its focus rings as box shadows, which forced colours remove: the system's own outline stands in. */
+
+@media (forced-colors: active) {
+  .dk:focus-visible,
+  .menu-trigger:focus-visible,
+  .shell-tab:focus-visible,
+  .ph-search:focus-visible,
+  .ph-moon-door:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
 }

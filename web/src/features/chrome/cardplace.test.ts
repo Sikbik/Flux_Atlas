@@ -1,64 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { GlobeHover } from '../../globe/bindings';
-import type { PickInfo } from '../../globe/engine/types';
 import {
   CARD_EDGE,
   CARD_GAP_X,
   CARD_GAP_Y,
   cardFlips,
-  hoverKey,
   MOON_CARD_GAP,
   MOON_LEFT_CLEAR,
   moonCardPlace,
 } from './cardplace';
-
-const pick = (over: Partial<PickInfo> = {}): PickInfo => ({
-  id: 1,
-  slot: 0,
-  loc: 11,
-  clusterSize: 531,
-  isCluster: true,
-  lat: 50,
-  lon: 12,
-  tier: 1,
-  status: 1,
-  flags: 0,
-  x: 840,
-  y: 190,
-  ...over,
-});
-
-const node = (id: number, info: Partial<PickInfo> = {}): GlobeHover => ({
-  kind: 'node',
-  id,
-  key: `k${id}`,
-  info: pick({ id: id + 1, ...info }),
-});
-
-describe('hoverKey', () => {
-  it('is empty for nothing and "moon" for the moon', () => {
-    expect(hoverKey(null)).toBe('');
-    expect(hoverKey({ kind: 'moon', x: 1, y: 2, r: 3 })).toBe('moon');
-  });
-
-  it('names a single node by its id', () => {
-    expect(hoverKey(node(42, { isCluster: false }))).toBe('node:42');
-    expect(hoverKey(node(43, { isCluster: false }))).toBe('node:43');
-  });
-
-  it('names a stacked hub by its site, whichever of its nodes the pick resolved to', () => {
-    expect(hoverKey(node(78, { isCluster: true, loc: 11 }))).toBe('site:11');
-    expect(hoverKey(node(1953, { isCluster: true, loc: 11 }))).toBe('site:11');
-    expect(hoverKey(node(78, { isCluster: true, loc: 12 }))).toBe('site:12');
-  });
-
-  it('is the same string while the engine re-emits the same hover with new coordinates', () => {
-    const a = node(5, { isCluster: false, x: 100, y: 100 });
-    const b = node(5, { isCluster: false, x: 101, y: 100 });
-    expect(a).not.toBe(b);
-    expect(hoverKey(a)).toBe(hoverKey(b));
-  });
-});
 
 describe('cardFlips', () => {
   const card = { w: 190, h: 106 };

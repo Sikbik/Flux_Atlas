@@ -335,6 +335,203 @@ test('the globe never remounts across routes; windows follow the URL', { timeout
   assert.deepEqual(pageErrors, []);
 });
 
+test('a page panel takes the left column: the Pulse and the aim strip step aside and come back', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  const visible = (sel) =>
+    page.evaluate((s) => {
+      const el = document.querySelector(s);
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      return cs.visibility !== 'hidden' && Number.parseFloat(cs.opacity) > 0.9;
+    }, sel);
+  // The Pulse is a lazy chunk: wait for it to be on screen before judging.
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector('.pulse');
+      return (
+        !!el &&
+        getComputedStyle(el).visibility !== 'hidden' &&
+        Number.parseFloat(getComputedStyle(el).opacity) > 0.9
+      );
+    },
+    null,
+    { timeout: 30_000 },
+  );
+  const go = (p) =>
+    page.evaluate((path) => {
+      history.pushState({}, '', path);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, p);
+  assert.equal(await page.locator('.shell[data-page]').count(), 0, 'no page panel on the bare globe');
+  const hadAim = (await visible('.aimstrip:not([data-inline])')) === true;
+
+  await go('/dev/live');
+  await page.waitForSelector('.shell[data-page] .shell-page:not(:empty)', { timeout: 20_000 });
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.pulse')).visibility === 'hidden',
+    null,
+    { timeout: 5_000 },
+  );
+  assert.equal(await visible('.pulse'), false, 'the Pulse is away while a page panel is up');
+  if (hadAim)
+    assert.notEqual(await visible('.aimstrip:not([data-inline])'), true, 'the aim strip is away too');
+
+  await go('/');
+  await page.waitForFunction(() => !document.querySelector('.shell[data-page]'), null, { timeout: 10_000 });
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector('.pulse');
+      return (
+        !!el &&
+        getComputedStyle(el).visibility !== 'hidden' &&
+        Number.parseFloat(getComputedStyle(el).opacity) > 0.9
+      );
+    },
+    null,
+    { timeout: 10_000 },
+  );
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test('the Pulse and the rail step back while the time machine shows the archive', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForSelector('.pulse .pulse-list', { timeout: 30_000 });
+  const state = () =>
+    page.evaluate(() => {
+      const cs = (sel) => getComputedStyle(document.querySelector(sel));
+      return {
+        pulseHeight: Math.round(document.querySelector('.pulse').getBoundingClientRect().height),
+        list: cs('.pulse-list').visibility,
+        track: cs('.rail-track').visibility,
+      };
+    });
+  const live = await state();
+  assert.equal(live.list, 'visible');
+  assert.equal(live.track, 'visible');
+  assert.ok(live.pulseHeight > 150, `the Pulse is a full card (${live.pulseHeight} px)`);
+
+  // The time machine's view sets this on the document element while its handle is in the past.
+  await page.evaluate(() => {
+    document.documentElement.dataset.archive = 'on';
+  });
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.rail-track')).visibility === 'hidden',
+    null,
+    { timeout: 5_000 },
+  );
+  const away = await state();
+  assert.equal(away.list, 'hidden', 'the feed is out of the key and reading order');
+  assert.ok(away.pulseHeight < 60, `the Pulse folds to its head (${away.pulseHeight} px)`);
+
+  await page.evaluate(() => {
+    delete document.documentElement.dataset.archive;
+  });
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.rail-track')).visibility === 'visible',
+    null,
+    { timeout: 5_000 },
+  );
+  await page.waitForFunction(
+    () => document.querySelector('.pulse').getBoundingClientRect().height > 150,
+    null,
+    {
+      timeout: 5_000,
+    },
+  );
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test("the moon parks in the phone header's Beat ring while a tall sheet covers its orbit", {
+  timeout: 120_000,
+}, async () => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  page.on('pageerror', (e) => pageErrors.push(`phone: ${e.message}`));
+  await page.goto(`${base}/settings?boot=off`, { waitUntil: 'load' });
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForSelector('.wm-window[data-placement="sheet"]', { timeout: 20_000 });
+  const read = () =>
+    page.evaluate(() => {
+      const m = window.__atlasGlobe.engine.moonState();
+      const ring = document.querySelector('.phone-header .beat-ring').getBoundingClientRect();
+      return {
+        snap: document.querySelector('.wm-window[data-placement="sheet"]')?.dataset.snap,
+        parked: document.querySelector('.phone-header').hasAttribute('data-parked'),
+        door: document.querySelector('.ph-moon-door') !== null,
+        proxy: document.querySelector('.globe-moon-proxy') !== null,
+        away: Math.hypot(m.x - (ring.left + ring.width / 2), m.y - (ring.top + ring.height / 2)),
+        size: m.s,
+      };
+    });
+
+  // Half: the moon is on its orbit, the proxy is the moon's control, and there is no door.
+  const half = await read();
+  assert.equal(half.snap, 'half');
+  assert.deepEqual([half.parked, half.door, half.proxy], [false, false, true]);
+  assert.ok(half.away > 60, `the moon is out on its orbit (${half.away.toFixed(0)} px from the ring)`);
+
+  // Tall: it glides into the ring as the 22 px symbol, and the door takes over from the proxy.
+  await page.focus('.wm-grabber');
+  await page.keyboard.press('ArrowUp');
+  await page.waitForFunction(
+    () => {
+      const m = window.__atlasGlobe.engine.moonState();
+      const r = document.querySelector('.phone-header .beat-ring').getBoundingClientRect();
+      return Math.hypot(m.x - (r.left + r.width / 2), m.y - (r.top + r.height / 2)) < 1.5 && m.s < 23;
+    },
+    null,
+    { timeout: 10_000 },
+  );
+  const tall = await read();
+  assert.equal(tall.snap, 'tall');
+  assert.deepEqual([tall.parked, tall.door, tall.proxy], [true, true, false]);
+
+  // A tap on the moon opens About Flux in the sheet, and the sheet stays tall, so the moon stays put.
+  await page.tap('.ph-moon-door');
+  await page.waitForFunction(() => location.pathname === '/about', null, { timeout: 10_000 });
+  // The sheet swaps Settings for About: wait until only About's is left before the keyboard goes to its grabber.
+  await page.waitForFunction(
+    () => {
+      const sheets = document.querySelectorAll('.wm-window[data-placement="sheet"]');
+      return sheets.length === 1 && /About Flux/.test(sheets[0].textContent ?? '');
+    },
+    null,
+    { timeout: 10_000 },
+  );
+  assert.equal((await read()).parked, true);
+
+  // Back to half: the moon leaves the ring for its orbit, and the proxy returns.
+  await page.focus('.wm-grabber');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(
+    () => {
+      const m = window.__atlasGlobe.engine.moonState();
+      const r = document.querySelector('.phone-header .beat-ring').getBoundingClientRect();
+      return Math.hypot(m.x - (r.left + r.width / 2), m.y - (r.top + r.height / 2)) > 60 && m.s > 30;
+    },
+    null,
+    { timeout: 10_000 },
+  );
+  const back = await read();
+  assert.equal(back.snap, 'half');
+  assert.deepEqual([back.parked, back.door, back.proxy], [false, false, true]);
+  await context.close();
+  assert.deepEqual(pageErrors, []);
+});
+
 test('a lost WebGL context comes back with a fresh engine', { timeout: 120_000 }, async () => {
   const page = await open('/');
   await page.waitForFunction(globeReady, null, { timeout: 60_000 });

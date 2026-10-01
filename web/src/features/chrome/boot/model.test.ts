@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { homeView } from '../../../globe/engine/moon/orbit';
 import {
   type BootFrame,
   type BootMode,
   type BootSignals,
   BootTimeline,
+  bootScale,
+  DRIFT_FROM,
+  DRIFT_TO,
   detectFailure,
+  driftShare,
   LIFT_MS,
   MIN_MS,
   STAGES,
@@ -209,5 +214,48 @@ describe('detectFailure', () => {
     const i = { ...base, loadedAtMs: 1000, status: 'offline', nowMs: 20_000 };
     expect(detectFailure(i, {})).toBe('stream');
     expect(detectFailure({ ...i, retriedAtMs: 19_000 }, {})).toBeNull();
+  });
+});
+
+describe('the planet scale while the boot runs', () => {
+  it('drifts from 0.84 to 0.94 of the size it ends at, never backwards', () => {
+    expect(driftShare(0)).toBe(DRIFT_FROM);
+    expect(driftShare(0.45)).toBe(DRIFT_FROM);
+    expect(driftShare(1)).toBeCloseTo(DRIFT_TO, 10);
+    let prev = 0;
+    for (let p = 0; p <= 1.0001; p += 0.01) {
+      const v = driftShare(p);
+      expect(v).toBeGreaterThanOrEqual(prev);
+      prev = v;
+    }
+  });
+
+  it('is the share itself where the boot frames the planet as the shell does', () => {
+    expect(bootScale(0.9, 290, 290)).toBeCloseTo(0.9, 10);
+  });
+
+  it('takes the share of the shell size when the boot frames it larger, so the planet is never above it', () => {
+    // A 1600 by 900 desktop: the boot's area (log on the left) holds a planet of about 328 px, the shell's 290.
+    const boot = homeView(1600, 900, { left: 420, right: 0, top: 20, bottom: 60 }).planetR;
+    const shell = homeView(1600, 900, { left: 88, right: 12, top: 52, bottom: 154 }).planetR;
+    expect(boot).toBeGreaterThan(shell);
+    const radius = (share: number) => boot * bootScale(share, shell, boot);
+    expect(radius(DRIFT_FROM)).toBeCloseTo(DRIFT_FROM * shell, 6);
+    expect(radius(DRIFT_TO)).toBeCloseTo(DRIFT_TO * shell, 6);
+    // And through the lift, as the framing eases from the boot's to the shell's, the drawn radius holds.
+    for (let t = 0; t <= 1; t += 0.1) {
+      const now = boot + (shell - boot) * t;
+      expect(now * bootScale(DRIFT_TO, shell, now)).toBeCloseTo(DRIFT_TO * shell, 6);
+    }
+  });
+
+  it('never scales past the framing itself', () => {
+    expect(bootScale(0.94, 400, 300)).toBe(1);
+  });
+
+  it('falls back to the share where a radius is not known yet', () => {
+    expect(bootScale(0.9, 290, 0)).toBe(0.9);
+    expect(bootScale(0.9, 0, 300)).toBe(0.9);
+    expect(bootScale(0.9, 290, Number.NaN)).toBe(0.9);
   });
 });

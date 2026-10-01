@@ -5,6 +5,7 @@
 
 import { useRouter } from '@tanstack/react-router';
 import { useCallback, useMemo } from 'react';
+import { openPalette } from '../../features/command/paletteUrl';
 import {
   MAX_EXTRA,
   parseExtraWindows,
@@ -16,6 +17,16 @@ import { WINDOW_SPECS } from '../wm/specs';
 import type { WindowRef } from '../wm/types';
 
 export type Search = Record<string, unknown>;
+
+/**
+ * True for a route that draws a panel of its own in the stage's page slot: search results, the dev galleries
+ * and not found. Not the bare globe, not ambient, and not a window or a strip or layer type, which have their
+ * own place. The Pulse and the aim strip stand where that panel opens, so the shell has them step aside.
+ */
+export function isPagePanel(pathname: string): boolean {
+  if (pathname === '/' || pathname === '/ambient') return false;
+  return windowForPath(pathname) === null;
+}
 
 export interface Here {
   path: string;
@@ -90,15 +101,16 @@ export function useShellNav(): ShellNav {
         const h = here();
         go('/', { ...h.search, w: undefined, sel: undefined });
       },
+      // The palette's own helper keeps the text as given: a href round trip trims `app ` to `app`, and a
+      // prefix is only a prefix with its space.
       palette(text = '') {
-        const h = here();
-        go(h.path, { ...h.search, q: text });
+        openPalette(router, text);
       },
       patchSearch(patch, replace = true) {
         const h = here();
         go(h.path, { ...h.search, ...patch }, replace);
       },
     }),
-    [here, go],
+    [here, go, router],
   );
 }

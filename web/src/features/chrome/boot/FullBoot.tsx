@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNetwork, useRuntime } from '../../../app/context';
 import { toEngineId } from '../../../globe/bindings';
 import { useGlobeHandles } from '../../../globe/context';
+import { homeView } from '../../../globe/engine/moon/orbit';
 import { formatHeight, formatInt } from '../../../lib/format';
 import { globeInset } from '../../../shell/wm/machine';
 import { useWindowManager } from '../../../shell/wm/react';
@@ -25,6 +26,8 @@ import {
   type BootFrame,
   type BootMode,
   BootTimeline,
+  bootScale,
+  driftShare,
   LIFT_MS,
   STAGES,
   type StageId,
@@ -36,11 +39,10 @@ import './boot.css';
 
 /**
  * The globe while the symbol assembles (design 6.4 J): the planet is hidden behind the reveal's aperture
- * until the wave rolls over it, and drifts in from this scale; it settles from 0.94 to 1 as the chrome
- * assembles. The wave's front never jumps: it grows at most this fast (radians per second).
+ * until the wave rolls over it, and drifts in from 0.84 to 0.94 of the size it ends at (model.ts, `driftShare`);
+ * it settles from 0.94 to 1 over `SETTLE_MS` as the chrome assembles. The wave's front never jumps: it grows at
+ * most `WAVE_MAX_RATE` fast (radians per second).
  */
-const DRIFT_FROM = 0.84;
-const DRIFT_TO = 0.94;
 const SETTLE_MS = 1500;
 const WAVE_MAX_RATE = 1.6;
 
@@ -171,6 +173,16 @@ export function FullBoot({ choice }: { choice: BootMode }) {
     /** The wave's front as drawn (it follows the model's, never faster than WAVE_MAX_RATE). */
     let wave = 0;
     let waveAt = performance.now();
+    /** The planet's radius at the home zoom in the shell's free area (CSS px), kept while nothing it depends on moves. */
+    let shell: { state: unknown; w: number; h: number; r: number } | null = null;
+    const shellRadius = (): number => {
+      const state = wm.getState();
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (!shell || shell.state !== state || shell.w !== w || shell.h !== h)
+        shell = { state, w, h, r: homeView(w, h, globeInset(state)).planetR };
+      return shell.r;
+    };
 
     const paint = (f: BootFrame, fx: BootFacts) => {
       setText(v.pct, String(f.percent));
@@ -226,7 +238,7 @@ export function FullBoot({ choice }: { choice: BootMode }) {
         // From the first frame the engine has: the globe sits right of the log, hidden (the void), a little
         // smaller, and the symbol assembles in its canvas.
         e.setInset(start, 1);
-        e.setViewScale(reduced ? 1 : DRIFT_FROM, 0);
+        e.setViewScale(reduced ? 1 : driftShare(0), 0);
         engineOn = true;
         root.dataset.engine = 'on';
       }
@@ -257,11 +269,9 @@ export function FullBoot({ choice }: { choice: BootMode }) {
       if (reduced) e.setReveal(origin, f.theta);
       else {
         e.setReveal(origin ?? { lat: 0, lon: 0 }, wave, { aperture: true });
-        // The camera drifts in while the planet lights (design 6.4 J, 60 to 100%).
-        e.setViewScale(
-          DRIFT_FROM +
-            (DRIFT_TO - DRIFT_FROM) * easeInOut(Math.min(1, Math.max(0, (f.progress - 0.45) / 0.55))),
-        );
+        // The camera drifts in while the planet lights (design 6.4 J, 60 to 100%): a share of the size the planet
+        // ends at in the shell's free area, whatever area the engine frames it in now.
+        e.setViewScale(bootScale(driftShare(f.progress), shellRadius(), e.framing().homeRadius));
       }
       if (f.lift > 0 && !lifted) {
         lifted = true;
