@@ -14,7 +14,7 @@ container port 3000.
 ```
 atlas serve                      # run the server (ingest from the real Flux network)
 atlas healthcheck                # probe /healthz (container HEALTHCHECK); exit 0 when healthy
-atlas db-stats                   # file and per-table sizes of a stopped server's database
+atlas db-stats                   # per-table sizes of a stopped server's database, disk use of the data dir
 atlas export-types               # write the TypeScript bindings to web/src/api/generated
 ```
 
@@ -30,7 +30,7 @@ Every `serve` flag has an environment variable. Flags win over the environment.
 | `ATLAS_BACKFILL_DAYS` | `--backfill-days` | `7` | Days of blocks the bootstrap backfill fetches (resumable, walks downward; `0` disables). |
 | `ATLAS_BACKFILL_RPS` | `--backfill-rps` | `1.5` | Block backfill request rate (be polite to the shared gateway). |
 | `ATLAS_DB_CACHE_MB` | `--db-cache-mb` | `32` | redb page cache. redb's own default is 1 GiB, which would dominate RSS; the hot state lives in memory anyway. |
-| `ATLAS_DISK_BUDGET_MB` | `--disk-budget-mb` | `6144` | Disk budget of the database file. Hourly, the retention tiers prune by age; once the file reaches 90% of the budget the guard prunes the oldest history (never the newest 7 days) down to 75% and compacts. Sized for the 10 GiB Flux volume (ARCHITECTURE section 5). |
+| `ATLAS_DISK_BUDGET_MB` | `--disk-budget-mb` | `6144` | Disk budget of the database file. Hourly, the retention tiers prune by age; once the file reaches 90% of the budget the guard prunes the oldest history (never the newest 7 days) down to 75% and compacts. Covers `atlas.redb` only: the GeoIP files in `geoip/` (about 255 MB, 445 MB during the monthly update) sit beside it. Sized for the 10 GiB Flux volume (ARCHITECTURE section 5). |
 | `ATLAS_INTERVALS` | `--intervals` | none | Job interval overrides, `key=duration,...` (`500ms`, `10s`, `5m`, `1h`). Keys below. |
 | `ATLAS_FLUX_API` | `--flux-api` | `https://api.runonflux.io` | FluxOS gateway. |
 | `ATLAS_EXPLORER_API` | `--explorer-api` | `explorer.runonflux.io`, `explorer2.runonflux.io`, `explorer.flux.zelcore.io` | Insight bases, primary first (comma-separated). When set, the tip sockets follow them (`wss://<host>/socket.io/...`); by default they are the two runonflux explorers. |
@@ -82,7 +82,9 @@ Unknown keys are logged as unapplied at startup.
 holds only the binary, the CA bundle and `/app/backend/data` (about 33 MB uncompressed, 14 MB
 compressed). The Flux spec passes no environment variables and no commands, so the image defaults
 are the production configuration: `ATLAS_BIND=0.0.0.0:3000`, `ATLAS_DATA_DIR=/app/backend/data`,
-`ATLAS_LOG=info`, `EXPOSE 3000` only, and `HEALTHCHECK` running `atlas healthcheck`.
+`ATLAS_LOG=info`, `EXPOSE 3000` only, and `HEALTHCHECK` running `atlas healthcheck`. With the GeoIP
+defaults the server downloads DB-IP City Lite into `/app/backend/data/geoip/` about 30 s after start, so
+the container needs outbound HTTPS to `download.db-ip.com` (it runs without cities if that fails).
 
 ```
 docker build -f deploy/Dockerfile -t flux-atlas:local .
