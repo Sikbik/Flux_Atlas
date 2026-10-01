@@ -1,6 +1,7 @@
 // The phone's tab bar (design 3.6): Globe, Live, Search, Apps, You. It replaces the dock, so every tab does what
 // the matching dock launcher or top bar control does (launchers.tsx): Globe is the bare globe (G), Live the
-// sheet of everything happening, Search the palette, Apps the app launcher (A) and You the operator view (O),
+// sheet of everything happening, Search the palette, Apps the app launcher (A: the palette on the apps
+// prefix, which lists the biggest apps until something is typed) and You the operator view (O),
 // or settings while no operator window is open. The lit tab follows what is on screen (phonetabs.ts), and
 // pressing the lit Live tab again takes the sheet back to its top.
 
@@ -16,7 +17,7 @@ import { useWindowManager, useWm } from '../wm/react';
 import { useShellActions } from './actions';
 import { liveSheet } from './livegate';
 import { useShellNav } from './nav';
-import { activeTab, PHONE_TABS, type PhoneTab } from './phonetabs';
+import { activeTab, PHONE_TABS, type PhoneTab, paletteView } from './phonetabs';
 import './phonetabs.css';
 
 const ICON: Record<PhoneTab, LucideIcon> = {
@@ -37,10 +38,9 @@ export function PhoneTabs({ className, ...rest }: ComponentPropsWithRef<'nav'>) 
   const liveOpen = usePhone((s) => s.live);
   const setLive = usePhone((s) => s.setLive);
   const sheet = useWm((s) => visibleWindows(s)[0]?.type ?? null, Object.is);
-  const paletteOpen = useRouterState({
-    select: (s) => new URLSearchParams(s.location.searchStr).has('q'),
-  });
-  const active = activeTab({ paletteOpen, liveOpen, sheet });
+  const palette = useRouterState({ select: (s) => paletteView(s.location.searchStr) });
+  const results = useRouterState({ select: (s) => s.location.pathname.startsWith('/q/') });
+  const active = activeTab({ palette, liveOpen, sheet, results });
 
   // The sheet's chunk is fetched once the first paint is behind us, so the tab opens it without a wait.
   useEffect(() => {
@@ -64,7 +64,7 @@ export function PhoneTabs({ className, ...rest }: ComponentPropsWithRef<'nav'>) 
         if (sheet) nav.globe();
         return;
       case 'search':
-        if (!paletteOpen) nav.palette();
+        if (palette === 'closed') nav.palette();
         return;
       case 'apps':
         setLive(false);

@@ -5,6 +5,7 @@
 
 import { useRouter } from '@tanstack/react-router';
 import { useCallback, useMemo } from 'react';
+import { openPalette } from '../../features/command/paletteUrl';
 import {
   MAX_EXTRA,
   parseExtraWindows,
@@ -100,15 +101,16 @@ export function useShellNav(): ShellNav {
         const h = here();
         go('/', { ...h.search, w: undefined, sel: undefined });
       },
+      // The palette's own helper keeps the text as given: a href round trip trims `app ` to `app`, and a
+      // prefix is only a prefix with its space.
       palette(text = '') {
-        const h = here();
-        go(h.path, { ...h.search, q: text });
+        openPalette(router, text);
       },
       patchSearch(patch, replace = true) {
         const h = here();
         go(h.path, { ...h.search, ...patch }, replace);
       },
     }),
-    [here, go],
+    [here, go, router],
   );
 }
