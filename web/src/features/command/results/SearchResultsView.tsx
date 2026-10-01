@@ -69,7 +69,6 @@ export function SearchResultsView({ text }: { text: string }) {
   };
 
   const loading = server === 'loading';
-  let index = 0;
 
   const kinds = useMemo<TabItem<KindChip>[]>(
     () =>
@@ -102,6 +101,7 @@ export function SearchResultsView({ text }: { text: string }) {
         label="Close the results"
         size="sm"
         variant="secondary"
+        data-fx="off"
         onClick={close}
       />
 
@@ -117,7 +117,7 @@ export function SearchResultsView({ text }: { text: string }) {
         <Tabs size="sm" aria-label="Kind of result" items={kinds} value={chip} onChange={setChip} />
       </div>
 
-      <div className="res-body">
+      <div className="res-body" data-fx-density="dense">
         {model.groups.map((g) => (
           <div key={g.id} className="res-group">
             <h2 className="pal-gh">
@@ -127,15 +127,7 @@ export function SearchResultsView({ text }: { text: string }) {
               </span>
             </h2>
             {g.rows.map((r) => (
-              <RowView
-                key={r.id}
-                row={r}
-                q={model.input.text}
-                active={false}
-                index={index++}
-                as="button"
-                onPick={onPick}
-              />
+              <RowView key={r.id} row={r} q={model.input.text} active={false} as="button" onPick={onPick} />
             ))}
             {g.more > 0 ? (
               <p className="res-more">

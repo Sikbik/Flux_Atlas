@@ -5,7 +5,6 @@
 .res-panel {
   --pal-row-h: 46px;
   --pal-hl: linear-gradient(90deg, rgb(79 122 212 / 0.24), rgb(79 122 212 / 0.06));
-  --pal-stagger: 18ms;
 }
 
 .pal-group {
@@ -51,14 +50,13 @@
   border-radius: 12px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  animation: pal-row-in var(--dur-enter) var(--ease-out) both;
-  animation-delay: calc(var(--i, 0) * var(--pal-stagger));
+  animation: pal-fade var(--dur-base) var(--ease-out) both;
 }
 
-@keyframes pal-row-in {
+/* A dense list: results arrive as a quick fade, like the kit's table rows, and nothing travels. */
+@keyframes pal-fade {
   from {
     opacity: 0;
-    transform: translateY(calc(5px * var(--motion-scale)));
   }
 }
 
@@ -201,7 +199,7 @@
 
 /* The empty state is the kit's; this only lets it arrive like the rows do. */
 .pal-empty {
-  animation: pal-row-in var(--dur-enter) var(--ease-out) both;
+  animation: pal-fade var(--dur-base) var(--ease-out) both;
 }
 
 .pal-skels {
@@ -214,8 +212,7 @@
   gap: 12px;
   height: var(--pal-row-h);
   padding: 0 12px;
-  animation: pal-row-in var(--dur-enter) var(--ease-out) both;
-  animation-delay: calc(var(--i, 0) * var(--pal-stagger));
+  animation: pal-fade var(--dur-base) var(--ease-out) both;
 }
 
 .pal-skel-ic {
@@ -267,8 +264,8 @@ button.pal-row:focus-visible {
   }
 }
 
-:root[data-motion-off] .pal-row,
-:root[data-motion-off] .pal-empty,
-:root[data-motion-off] .pal-skel {
+:root[data-motion="off"] .pal-row,
+:root[data-motion="off"] .pal-empty,
+:root[data-motion="off"] .pal-skel {
   animation: none;
 }

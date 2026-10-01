@@ -412,7 +412,13 @@ export default function TerminalView({ cmd }: { cmd?: string | undefined }) {
       <div className="term-screen" ref={screen} onScroll={onScroll}>
         {lines.length === 0 ? <Intro tries={tries} onTry={tryCommand} /> : null}
 
-        <div className="term-log" role="log" aria-label="Terminal output" aria-relevant="additions">
+        <div
+          className="term-log"
+          role="log"
+          aria-label="Terminal output"
+          aria-relevant="additions"
+          data-fx-density="dense"
+        >
           {groups.map((g, gi) => (
             <div
               key={g[0]?.id}

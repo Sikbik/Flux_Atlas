@@ -94,7 +94,6 @@ export interface RowViewProps {
   row: PaletteRow;
   q: string;
   active: boolean;
-  index: number;
   onHover?(row: PaletteRow): void;
   onPick(row: PaletteRow, e: React.MouseEvent): void;
   /** `option` is a listbox option driven by the palette's input; `button` is a real button (results page). */
@@ -130,13 +129,11 @@ export const RowView = memo(function RowView({
   row,
   q,
   active,
-  index,
   onHover,
   onPick,
   as = 'option',
 }: RowViewProps) {
   const inert = row.action.type === 'none';
-  const style = { '--i': Math.min(index, 9) } as React.CSSProperties;
   if (as === 'button') {
     return (
       <button
@@ -146,7 +143,6 @@ export const RowView = memo(function RowView({
         data-kind={row.kind}
         data-inert={inert || undefined}
         aria-disabled={inert || undefined}
-        style={style}
         onClick={(e) => onPick(row, e)}
       >
         <RowBody row={row} q={q} active={false} />
@@ -166,7 +162,6 @@ export const RowView = memo(function RowView({
       data-kind={row.kind}
       data-active={active || undefined}
       data-inert={inert || undefined}
-      style={style}
       // The input keeps the keyboard: pressing a row must not take focus from it.
       onMouseDown={(e) => e.preventDefault()}
       onPointerMove={(e) => {
@@ -185,8 +180,8 @@ const SKELETON_SLOTS = ['a', 'b', 'c', 'd', 'e', 'f'] as const;
 export function RowSkeletons({ count = 3 }: { count?: number }) {
   return (
     <div className="pal-skels" aria-hidden="true">
-      {SKELETON_SLOTS.slice(0, count).map((slot, i) => (
-        <div key={slot} className="pal-skel" style={{ '--i': i } as React.CSSProperties}>
+      {SKELETON_SLOTS.slice(0, count).map((slot) => (
+        <div key={slot} className="pal-skel">
           <Skeleton className="pal-skel-ic" w={30} h={30} radius={9} />
           <span>
             <Skeleton w={190} h={11} radius={4} />

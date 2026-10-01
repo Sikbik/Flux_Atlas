@@ -410,7 +410,7 @@
 }
 
 .pal-hint[data-pop] {
-  animation: pal-row-in var(--dur-base) var(--ease-out) both;
+  animation: pal-fade var(--dur-base) var(--ease-out) both;
 }
 
 .pal-r {

@@ -62,8 +62,10 @@ function GlobeArt() {
         <legend className="set-sr">Globe art style</legend>
         {GLOBE_ARTS.map((a) => (
           <label key={a} className="set-art" data-art={a}>
-            <input type="radio" name="globe-art" value={a} checked={art === a} onChange={() => choose(a)} />
-            <span className="set-art-frame">
+            {/* The picture lights its edge under the pointer (the motion language's Charge); the radio sits
+                inside it, so a hover and the keyboard land on the same thing. */}
+            <span className="set-art-frame" data-fx="charge">
+              <input type="radio" name="globe-art" value={a} checked={art === a} onChange={() => choose(a)} />
               <img src={ARTS[a].src} alt="" width={176} height={110} loading="lazy" draggable={false} />
             </span>
             <span className="set-art-name">{ARTS[a].name}</span>
@@ -195,7 +197,8 @@ function AmbientSettings() {
         }}
       />
       <div className="set-actions">
-        <Button size="sm" icon={Play} onClick={() => enterAmbient(router, 'manual')}>
+        {/* The whole screen dissolving into the scene is the answer; a light on the button would be a second one. */}
+        <Button size="sm" icon={Play} data-fx="off" onClick={() => enterAmbient(router, 'manual')}>
           Try ambient mode
         </Button>
         <span className="set-note">Any key or movement brings you back.</span>

@@ -102,12 +102,16 @@
 .set-art input {
   position: absolute;
   inset: 0;
+  z-index: 3;
   margin: 0;
   opacity: 0;
   cursor: pointer;
 }
 
+/* The frame says data-fx="charge", so its ::after is the motion language's edge light; the vignette lives
+   on ::before with the ring. The frame clips, so the light sits inside its edge. */
 .set-art-frame {
+  --fx-inset: 0;
   position: relative;
   display: block;
   aspect-ratio: 16 / 10;
@@ -126,36 +130,24 @@
   height: 100%;
   object-fit: cover;
   opacity: 0.72;
-  transform: scale(1.001);
-  transition:
-    opacity var(--dur-base) var(--ease-out),
-    transform var(--dur-slower) var(--ease-out-expo);
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
-/* The ring sits above the picture; the vignette settles it into the panel. */
+/* The ring sits above the picture, and the vignette settles it into the panel. */
 .set-art-frame::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 2;
   border-radius: inherit;
+  background: linear-gradient(180deg, transparent 50%, rgb(0 0 0 / 0.5));
   box-shadow: inset 0 0 0 1px var(--line-2);
   pointer-events: none;
   transition: box-shadow var(--dur-base) var(--ease-out);
 }
 
-.set-art-frame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: linear-gradient(180deg, transparent 50%, rgb(0 0 0 / 0.5));
-  pointer-events: none;
-}
-
 .set-art:hover .set-art-frame img {
   opacity: 0.9;
-  transform: scale(1.045);
 }
 
 .set-art:has(input:checked) .set-art-frame {

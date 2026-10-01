@@ -323,7 +323,6 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
 
   // ---- render ---------------------------------------------------------------------------------
 
-  let index = 0;
   const showSkeleton = text !== '' && model.groups.length === 0 && server === 'loading';
   const showEmpty = model.empty && server !== 'loading';
   const chipLabel = KIND_CHIPS.find((k) => k.id === chip)?.label ?? 'All';
@@ -413,7 +412,14 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
         </div>
       ) : null}
 
-      <div id="pal-list" ref={listRef} className="pal-list" role="listbox" aria-label="Results">
+      <div
+        id="pal-list"
+        ref={listRef}
+        className="pal-list"
+        role="listbox"
+        aria-label="Results"
+        data-fx-density="dense"
+      >
         <div ref={sizerRef} className="pal-sizer">
           <div ref={hlRef} className="pal-hl" aria-hidden="true" />
           {model.groups.map((g) => (
@@ -431,7 +437,6 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
                   row={r}
                   q={text}
                   active={r.id === activeId}
-                  index={index++}
                   onHover={onHover}
                   onPick={onPick}
                 />
@@ -445,7 +450,6 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
                 row={model.seeAll}
                 q=""
                 active={model.seeAll.id === activeId}
-                index={index++}
                 onHover={onHover}
                 onPick={onPick}
               />

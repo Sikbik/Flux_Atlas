@@ -91,8 +91,7 @@
   transition:
     color var(--dur-fast) var(--ease-out),
     border-color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-instant) var(--ease-out);
+    background-color var(--dur-fast) var(--ease-out);
 }
 
 .term-try:hover {
@@ -101,8 +100,11 @@
   color: var(--text-1);
 }
 
+/* Pressed is a deeper fill, nothing moves: the click and hover light belongs to the motion language. */
 .term-try:active {
-  transform: scale(0.97);
+  border-color: var(--accent-400);
+  background: color-mix(in oklab, var(--accent-500) 24%, transparent);
+  color: var(--text-1);
 }
 
 .term-try:focus-visible,
@@ -163,15 +165,9 @@
   color: var(--status-crit);
 }
 
+/* Output is a dense feed: a new line fades in, nothing travels. */
 .term-line:not([data-old]) {
-  animation: term-in var(--dur-base) var(--ease-out) both;
-}
-
-@keyframes term-in {
-  from {
-    opacity: 0;
-    transform: translateY(calc(3px * var(--motion-scale)));
-  }
+  animation: term-fade var(--dur-base) var(--ease-out) both;
 }
 
 @keyframes term-fade {
@@ -543,7 +539,7 @@
   }
 }
 
-:root[data-motion="reduced"] .term-cursor,
-:root[data-motion="reduced"] .term-spin {
+:root:is([data-motion="reduced"], [data-motion="off"]) .term-cursor,
+:root:is([data-motion="reduced"], [data-motion="off"]) .term-spin {
   animation: none;
 }
