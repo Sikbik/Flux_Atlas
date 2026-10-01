@@ -1,0 +1,172 @@
+/* The explorer view head: a wash of light from the top left, a hero title, a closing hairline. */
+
+.ex-head {
+  --ex-wash: var(--accent-600);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-7) var(--ex-pad) var(--space-6);
+}
+
+.ex-head[data-status="pending"] {
+  --ex-wash: var(--accent-600);
+}
+
+.ex-head[data-status="warn"] {
+  --ex-wash: var(--status-warn);
+}
+
+/* The wash and the lattice sit behind the content. */
+.ex-head::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(60% 130% at 0% 0%, color-mix(in oklab, var(--ex-wash) 20%, transparent), transparent 66%),
+    radial-gradient(
+      40% 90% at 100% 0%,
+      color-mix(in oklab, var(--accent-400) 7%, transparent),
+      transparent 70%
+    );
+  pointer-events: none;
+}
+
+.ex-head::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent-400) 55%, transparent),
+    color-mix(in oklab, var(--accent-400) 14%, transparent) 42%,
+    transparent 72%
+  );
+}
+
+.ex-head__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  min-height: 20px;
+}
+
+.ex-head__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.ex-head__kind > svg {
+  color: var(--accent-400);
+}
+
+.ex-head__aside {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.ex-head__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.ex-head__title {
+  margin: 0;
+  min-width: 0;
+  font: var(--fw-semibold) var(--fs-4xl) / var(--lh-tight) var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ex-head__title[data-mono] {
+  font: var(--fw-medium) var(--fs-md) / var(--lh-snug) var(--font-mono);
+  letter-spacing: 0;
+}
+
+.ex-head__actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-3);
+}
+
+.ex-head__sub {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--text-3);
+  text-wrap: pretty;
+}
+
+.ex-head__sub .ex-hash {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.ex-head__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+  min-width: 0;
+}
+
+.ex-numeral__g {
+  color: var(--text-3);
+}
+
+.ex-numeral__g[data-last] {
+  color: var(--text-1);
+}
+
+.ex-numeral__sep {
+  margin-inline: 0.04em;
+  color: var(--text-4);
+  font-weight: var(--fw-regular);
+}
+
+@container ex (max-width: 560px) {
+  .ex-head__title {
+    font-size: var(--fs-3xl);
+  }
+}
+
+@container ex (max-width: 400px) {
+  .ex-head__title {
+    font-size: var(--fs-2xl);
+  }
+}
+
+.ex-hero {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  flex-wrap: wrap;
+}
+
+.ex-hero__whole {
+  color: var(--text-1);
+}
+
+.ex-hero__frac {
+  margin-left: -0.3em;
+  color: var(--text-3);
+  font-size: 0.62em;
+  letter-spacing: var(--tracking-heading);
+}
+
+.ex-hero__unit {
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-md) / 1 var(--font-sans);
+  letter-spacing: 0;
+}
