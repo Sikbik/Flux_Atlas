@@ -8,19 +8,16 @@ import { useRouter, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { useRuntime } from '../../app/context';
 import { useGlobeHandles } from '../../globe';
-import { useUi } from '../../store/ui';
 import { track } from '../achievements/events';
 import { asAmbientEngine } from '../ambient/engineAccess';
 import { enterAmbient } from '../ambient/enter';
 import { startIdleWatch } from '../ambient/idle';
-import { syncLayerAttribute, syncPerfAttribute } from './documentAttributes';
+import { syncLayerAttribute } from './documentAttributes';
 import { bare, hasMod, isTypingTarget } from './keys';
 import { PaletteHost, preloadPalette } from './PaletteHost';
 import { closePaletteViaHost, markOpenedByKey } from './paletteBridge';
 import { openPalette, paletteTextFromSearch } from './paletteUrl';
 import './layer.css';
-
-syncPerfAttribute();
 
 type IdleCallback = (cb: () => void, opts?: { timeout: number }) => number;
 const whenIdle = (cb: () => void, timeout = 3000): void => {
@@ -35,7 +32,6 @@ export function CommandLayer() {
   const handles = useGlobeHandles();
   const labels = useRouterState({ select: (s) => (s.location.search as Record<string, unknown>).l });
 
-  useEffect(() => useUi.subscribe(syncPerfAttribute), []);
   useEffect(() => syncLayerAttribute(labels), [labels]);
 
   // The idle watch (ambient entry) runs while the shell is mounted.

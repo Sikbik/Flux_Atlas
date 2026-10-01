@@ -1,20 +1,10 @@
-// The few attributes this feature mirrors onto <html> for the stylesheets to read.
+// The one attribute this feature mirrors onto <html> for the stylesheets to read.
 //
-// The motion preference is not one of them. The motion root (`motion/react/MotionRoot`) writes
+// The performance tier is not one of them: the chrome (`features/chrome/prefs.ts`) is the one writer of
+// `<html data-perf>`, with the governor's effective tier. Nor is the motion preference. The motion root (`motion/react/MotionRoot`) writes
 // `<html data-motion>` as `full`, `reduced` or `off` and treats any other writer's value there as a mode the
 // page forced; an earlier mirror in this file wrote `reduced` for Off, so the Off setting read as Reduced to
 // the kit and to every effect. Stylesheets here key on `data-motion` ("off" and "reduced") and never write it.
-
-import { useUi } from '../../store/ui';
-
-/** Mirrors the stored performance tier onto `<html data-perf>` (`high` and `lite` only; the rest is the default). */
-export function syncPerfAttribute(): void {
-  if (typeof document === 'undefined') return;
-  const { perf } = useUi.getState();
-  const el = document.documentElement;
-  if (perf === 'high' || perf === 'lite') el.setAttribute('data-perf', perf);
-  else el.removeAttribute('data-perf');
-}
 
 /** The place-labels layer is the one the engine does not bind: `l=-labels` is applied here. */
 export function syncLayerAttribute(l: unknown): void {
