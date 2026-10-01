@@ -15,6 +15,15 @@ import { NodeState } from '../types';
 export const NO_CLUSTER = 0xffffffff;
 const ALIVE_DEATH = 1e9;
 
+/**
+ * Clusters whose centres lie within this arc (about 5 km) of an earlier cluster fan out together.
+ * They are one site that the geocoder placed a few blocks apart; two sunflowers drawn on top of
+ * each other would put markers on markers. Stacks (spires) stay per cluster, so the global view
+ * is untouched.
+ */
+export const FAN_GROUP_ARC = 5 / 6371;
+const FAN_GROUP_COS = Math.cos(FAN_GROUP_ARC);
+
 export interface DirtyRange {
   lo: number;
   hi: number;
@@ -42,6 +51,8 @@ export class NodeStore {
   locId!: Uint32Array;
   cluster!: Uint32Array;
   rank!: Uint32Array;
+  /** Rank in the node's fan group (see `cFan`): the node's place in the shared sunflower. */
+  fanRank!: Uint32Array;
   host!: Uint32Array;
   /** 0 free, 1 alive, 2 dying. */
   alive!: Uint8Array;
@@ -70,6 +81,10 @@ export class NodeStore {
   /** Cluster state bits: 1 = holds the selection. */
   cFlags!: Uint8Array;
   cRep!: Uint32Array; // a representative live slot
+  /** Fan group of each cluster: the first cluster of its site, whose position and spiral it shares. */
+  cFan!: Uint32Array;
+  /** Per fan root: next fan rank to assign (the spiral's length). */
+  cFanNext!: Uint32Array;
   /** Displayed spire height in globe radii (eased toward its target). */
   cHeight!: Float32Array;
 
@@ -113,6 +128,7 @@ export class NodeStore {
     this.locId = grow(this.locId, cap, Uint32Array);
     this.cluster = grow(this.cluster, cap, Uint32Array);
     this.rank = grow(this.rank, cap, Uint32Array);
+    this.fanRank = grow(this.fanRank, cap, Uint32Array);
     this.host = grow(this.host, cap, Uint32Array);
     this.alive = grow(this.alive, cap, Uint8Array);
     this.birth = grow(this.birth, cap, Float32Array);
@@ -147,6 +163,8 @@ export class NodeStore {
     this.cTier = grow(this.cTier, cap * 3, Uint32Array);
     this.cFlags = grow(this.cFlags, cap, Uint8Array);
     this.cRep = grow(this.cRep, cap, Uint32Array);
+    this.cFan = grow(this.cFan, cap, Uint32Array);
+    this.cFanNext = grow(this.cFanNext, cap, Uint32Array);
     this.cHeight = grow(this.cHeight, cap, Float32Array);
     this.cCapacity = cap;
   }
@@ -186,6 +204,7 @@ export class NodeStore {
     this.clusterCount = 0;
     this.cLive.fill(0);
     this.cNext.fill(0);
+    this.cFanNext.fill(0);
     this.cPass.fill(0);
     this.cTier.fill(0);
     this.cFlags.fill(0);
@@ -209,9 +228,24 @@ export class NodeStore {
     const la = lat * DEG;
     const lo = lon * DEG;
     const cl = Math.cos(la);
-    this.cDir[c * 3] = cl * Math.sin(lo);
-    this.cDir[c * 3 + 1] = Math.sin(la);
-    this.cDir[c * 3 + 2] = cl * Math.cos(lo);
+    const dx = cl * Math.sin(lo);
+    const dy = Math.sin(la);
+    const dz = cl * Math.cos(lo);
+    this.cDir[c * 3] = dx;
+    this.cDir[c * 3 + 1] = dy;
+    this.cDir[c * 3 + 2] = dz;
+    // Join the fan of the first earlier cluster of the same site, if there is one.
+    let root = c;
+    for (let j = 0; j < c; j++) {
+      if (Math.abs(this.cLat[j]! - lat) > 0.1) continue;
+      const dot = this.cDir[j * 3]! * dx + this.cDir[j * 3 + 1]! * dy + this.cDir[j * 3 + 2]! * dz;
+      if (dot >= FAN_GROUP_COS) {
+        root = this.cFan[j]!;
+        break;
+      }
+    }
+    this.cFan[c] = root;
+    if (root === c) this.cFanNext[c] = 0;
     this.cLive[c] = 0;
     this.cNext[c] = 0;
     this.cPass[c] = 0;
@@ -263,6 +297,7 @@ export class NodeStore {
       const c = this.clusterFor(rec.loc, rec.lat, rec.lon);
       this.cluster[s] = c;
       this.rank[s] = this.cNext[c]!++;
+      this.fanRank[s] = this.cFanNext[this.cFan[c]!]!++;
       this.cLive[c]!++;
       this.cPass[c]!++;
       if (rec.tier >= 1 && rec.tier <= 3) this.cTier[c * 3 + rec.tier - 1]!++;
@@ -281,6 +316,7 @@ export class NodeStore {
       this.dir[s * 3 + 2] = bz * Math.cos(tilt);
       this.cluster[s] = NO_CLUSTER;
       this.rank[s] = 0;
+      this.fanRank[s] = 0;
     }
     this.posDirty = true;
     this.clustersDirty = true;
@@ -333,6 +369,25 @@ export class NodeStore {
       const base = this.cNext[c]! - list.length; // ranks were assigned sequentially from here
       const ordered = list.slice().sort((a, b) => this.host[a]! - this.host[b]! || a - b);
       for (let r = 0; r < ordered.length; r++) this.rank[ordered[r]!] = base + r;
+    }
+    // The same for the shared fan: a host's nodes are neighbours in the sunflower, whatever cluster they are in.
+    const byFan = new Map<number, number[]>();
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i]!;
+      if (s === 0xffffffff || this.cluster[s] === NO_CLUSTER) continue;
+      const g = this.cFan[this.cluster[s]!]!;
+      let list = byFan.get(g);
+      if (!list) {
+        list = [];
+        byFan.set(g, list);
+      }
+      list.push(s);
+    }
+    for (const [g, list] of byFan) {
+      if (list.length < 2) continue;
+      const base = this.cFanNext[g]! - list.length;
+      const ordered = list.slice().sort((a, b) => this.host[a]! - this.host[b]! || a - b);
+      for (let r = 0; r < ordered.length; r++) this.fanRank[ordered[r]!] = base + r;
     }
   }
 
