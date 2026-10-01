@@ -158,6 +158,32 @@
   translate: 64px calc(-50% + var(--card-nudge, 0px));
 }
 
+/* The first-visit hint beside the moon (design 9.1): two quiet lines, smaller than the moon's card, leaving
+   with a fade. */
+.globe-tip.globe-hint {
+  min-width: 0;
+  gap: 2px;
+  padding: 8px 12px 9px;
+  pointer-events: none;
+}
+
+.globe-tip.globe-hint[data-leaving] {
+  animation: gt-out 320ms var(--ease-in) forwards;
+}
+
+@keyframes gt-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes gt-out-fade {
+  to {
+    opacity: 0;
+  }
+}
+
 /* The moon's keyboard target: a focus ring with a Blue Wave glow. */
 .globe-moon-proxy:focus-visible {
   outline: 2px solid var(--accent-400);
@@ -169,13 +195,22 @@
   :root:not([data-motion="full"]) .globe-tip {
     animation-name: gt-fade;
   }
+
+  :root:not([data-motion="full"]) .globe-tip.globe-hint[data-leaving] {
+    animation-name: gt-out-fade;
+  }
 }
 
 :root[data-motion="reduced"] .globe-tip {
   animation-name: gt-fade;
 }
 
-:root[data-motion-off] .globe-tip {
+:root[data-motion="reduced"] .globe-tip.globe-hint[data-leaving] {
+  animation-name: gt-out-fade;
+}
+
+:root[data-motion-off] .globe-tip,
+:root[data-motion-off] .globe-tip.globe-hint[data-leaving] {
   animation: none;
 }
 

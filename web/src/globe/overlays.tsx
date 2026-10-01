@@ -9,8 +9,17 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNetwork, useRuntime } from '../app/context';
+import { useBootPhase } from '../features/chrome/boot/state';
 import { cardFlips, hoverKey, moonCardPlace, TIP_DELAY_MS } from '../features/chrome/cardplace';
 import { TIER_LABEL, TierGlyph, tierOf } from '../features/chrome/glyphs';
+import {
+  MOON_HINT_DELAY_MS,
+  MOON_HINT_LEAVE_MS,
+  MOON_HINT_SHOW_MS,
+  markMoonHintSeen,
+  moonHintSeen,
+  startsMoonHint,
+} from '../features/chrome/home';
 import { useLabelsOn } from '../features/chrome/layers';
 import {
   computePlaces,
@@ -329,6 +338,89 @@ function MoonCard() {
         <span className="gt-hint">
           Click for About Flux <kbd className="kbd">M</kbd>
         </span>
+      </div>
+    </GlobeLabel>
+  );
+}
+
+// ---- the first-visit hint (design 9.1, step 8) ---------------------------------------------------
+
+/**
+ * Once, after the first block that lands when the boot is over: a quiet note beside the moon, "That is the
+ * chain. Click it.", gone after six seconds and never again (a local flag). It waits for the relay of beams to
+ * finish, and it gives way to the moon's own card, to any window and to leaving the bare globe.
+ */
+export function MoonHint({ home }: { home: boolean }) {
+  const { hover } = useGlobeHandles();
+  const boot = useBootPhase();
+  const height = useNetwork((s) => s.tip?.height ?? null);
+  const hovering = useSyncExternalStore(
+    hover.subscribe,
+    () => hover.get()?.kind === 'moon',
+    () => false,
+  );
+  const [phase, setPhase] = useState<'idle' | 'wait' | 'show' | 'leave'>('idle');
+  const seen = useRef(moonHintSeen());
+  const baseline = useRef<number | null>(null);
+  const live = useRef({ home, height });
+  live.current = { home, height };
+
+  useEffect(() => {
+    if (phase === 'show' && (hovering || !home)) {
+      setPhase('leave');
+      return;
+    }
+    if (phase !== 'idle' || seen.current) return;
+    if (boot === 'done' && baseline.current === null && height !== null) {
+      // The tip the boot ended on: the hint belongs to the first block after it.
+      baseline.current = height;
+      return;
+    }
+    if (startsMoonHint({ seen: false, booted: boot === 'done', baseline: baseline.current, height, home }))
+      setPhase('wait');
+  }, [boot, height, home, hovering, phase]);
+
+  // One timer per phase: the wait for the relay, the six seconds shown, the fade out.
+  useEffect(() => {
+    if (phase === 'idle') return undefined;
+    const ms =
+      phase === 'wait' ? MOON_HINT_DELAY_MS : phase === 'show' ? MOON_HINT_SHOW_MS : MOON_HINT_LEAVE_MS;
+    const t = window.setTimeout(() => {
+      if (phase !== 'wait') {
+        setPhase(phase === 'show' ? 'leave' : 'idle');
+        return;
+      }
+      if (!live.current.home) {
+        // Not on the bare globe any more: wait for the next block instead.
+        baseline.current = live.current.height;
+        setPhase('idle');
+        return;
+      }
+      markMoonHintSeen();
+      seen.current = true;
+      setPhase('show');
+    }, ms);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+
+  if (phase === 'idle' || phase === 'wait') return null;
+  return <MoonHintCard leaving={phase === 'leave'} />;
+}
+
+function MoonHintCard({ leaving }: { leaving: boolean }) {
+  const anchor = useMemo<Anchor>(() => ({ kind: 'moon' }), []);
+  const { ref, options } = useCardPlacement('moon');
+  return (
+    <GlobeLabel anchor={anchor} className="globe-tipwrap" options={options}>
+      <div
+        className="globe-tip globe-hint"
+        data-kind="moon"
+        data-leaving={leaving || undefined}
+        role="status"
+        ref={ref}
+      >
+        <span className="gt-title">That is the chain.</span>
+        <span className="gt-dim">Click it.</span>
       </div>
     </GlobeLabel>
   );

@@ -40,6 +40,7 @@ import {
   Tether,
   useGlobeBinding,
 } from '../../globe';
+import { MoonHint } from '../../globe/overlays';
 import { windowContent } from '../windowContent';
 import { visibleWindows } from '../wm/machine';
 import { useWm, WindowLayer, WindowManagerProvider } from '../wm/react';
@@ -161,6 +162,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
           <PlaceLabels />
           <GlobeTooltip />
           <MoonProxy />
+          <MoonHint home={pathname === '/'} />
         </GlobeOverlay>
         <WindowTethers />
         <TopBar ref={topRef} phone={phone} />
