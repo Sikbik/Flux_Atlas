@@ -27,7 +27,8 @@ export function Transport({ tm, state, speeds, ready }: TransportProps) {
     if (n !== undefined) tm.setSpeed(n);
   };
   return (
-    <fieldset className="tm-transport">
+    // A toolbar of five small controls: a dense zone to the motion language (no Pulse, Charge or Current).
+    <fieldset className="tm-transport" data-fx-density="dense">
       <legend className="ui-sr-only">Playback</legend>
       <IconButton
         className="tm-transport__btn"
