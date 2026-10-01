@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { NodeRow } from '../../../api/generated/NodeRow';
 import { queries, useTimeline } from '../../../api/queries';
 import { useRuntime } from '../../../app/context';
@@ -79,26 +79,6 @@ export function useWatchMany(ids: readonly number[]): {
     if (added > 0) announceWatch(null);
   }, [all, ids, set, watched.length, watch, unwatch]);
   return { all, some, room, toggle };
-}
-
-/**
- * True for `ms` after `value` rises (never at mount): a one-shot cue that something just landed, for
- * a highlight that decays on its own.
- */
-export function useRiseFlash(value: number, ms = 1800): boolean {
-  const prev = useRef(value);
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    if (value > prev.current) {
-      setOn(true);
-      const t = window.setTimeout(() => setOn(false), ms);
-      prev.current = value;
-      return () => window.clearTimeout(t);
-    }
-    prev.current = value;
-    return undefined;
-  }, [value, ms]);
-  return on;
 }
 
 type MeshMode = 'off' | 'sel' | 'flow';

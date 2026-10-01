@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { useNodePayments } from '../../../api/queries';
 import { useRuntime } from '../../../app/context';
 import { fluxToNumber, formatInt } from '../../../lib/format';
+import { useFresh } from '../../../motion/fresh';
 import { useUi } from '../../../store/ui';
 import {
   AnimatedNumber,
@@ -19,7 +20,7 @@ import {
 import { etaShort } from '../derive/eta';
 import { paymentDays, windowTotals } from '../derive/payments';
 import { estimatePayment, queueProgress } from '../derive/queue';
-import { useFirstIngestMs, useRiseFlash } from '../sources/hooks';
+import { useFirstIngestMs } from '../sources/hooks';
 import { useChainClock } from '../sources/live';
 import { useNodeCtx } from './context';
 import { NOT_PAID, NOT_QUEUED, type PayInfo, usePayInfo } from './pay';
@@ -38,7 +39,10 @@ function NextPayment({ pay }: { pay: PayInfo }) {
   const { queued, position, size, tier, status, payout, lastPaid } = pay;
   // A payment that lands while you look says so for a moment; on a watched node it also earns the language's
   // Current (the attributes below are all the motion layer needs: no effect code lives here).
-  const paidNow = useRiseFlash(lastPaid);
+  // A new payment height is an arrival: the tile takes `data-fresh` after it is mounted, for the language's
+  // Current on a watched node (the first height seen is history, not news).
+  const paidKey = String(lastPaid);
+  const paidNow = useFresh([paidKey], { max: 1 }).has(paidKey);
   const watched = useUi((s) => id !== null && s.watched.includes(id));
   const est =
     queued && position !== null && tip !== null && anchorMs !== null
