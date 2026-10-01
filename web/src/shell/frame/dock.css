@@ -1,6 +1,6 @@
-/* The dock (design 2.7, 8.5): a floating glass pill, 56 px wide, launchers 40 px on a 4 px gap. The icon
-   scales on hover with the snappy spring; the label sits to the right and fades in with a small
-   travel. Only transform and opacity animate. */
+/* The dock (design 2.7, 8.5): a floating glass pill, 56 px wide, launchers up to 40 px (28 px on a short screen,
+   see --dk-size) on a 4 px gap. The icon scales on hover with the snappy spring; the label sits to the right
+   and fades in with a small travel. Only transform and opacity animate. */
 
 .dock {
   /* The launchers shrink to what the screen leaves: the room under the top bar down to the rail (and to the
