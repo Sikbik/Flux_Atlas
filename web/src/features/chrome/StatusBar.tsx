@@ -79,7 +79,7 @@ function StatusLeft() {
         onFocus={statusCard.preload}
       >
         <span className="sb-conn" data-tone={view.tone} data-testid="conn-chip">
-          <LiveDot status={view.tone} className="live-blink" />
+          <LiveDot status={view.tone} ping={false} />
           <b>{view.label}</b>
           {conn || view.detail ? (
             <span className="sb-dim">{[conn, view.detail].filter(Boolean).join(', ')}</span>

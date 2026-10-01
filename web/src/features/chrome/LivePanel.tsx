@@ -223,7 +223,7 @@ function Network() {
         <div>
           <dt>Data</dt>
           <dd className="lp-data">
-            <LiveDot status={tone} />
+            <LiveDot status={tone} ping={false} />
             {behind.length > 0 ? `${behind.join(', ')} behind` : worst === 'unknown' ? UNKNOWN : 'fresh'}
           </dd>
         </div>

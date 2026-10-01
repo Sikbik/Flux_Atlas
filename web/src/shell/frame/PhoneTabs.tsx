@@ -95,7 +95,7 @@ export function PhoneTabs({ className, ...rest }: ComponentPropsWithRef<'nav'>) 
           >
             <span className="tab-icon">
               <Icon size={22} strokeWidth={1.6} aria-hidden="true" />
-              {id === 'live' ? <LiveDot status={view.tone} className="tab-live" /> : null}
+              {id === 'live' ? <LiveDot status={view.tone} ping={false} className="tab-live" /> : null}
             </span>
             <span className="tab-label">{label}</span>
           </button>

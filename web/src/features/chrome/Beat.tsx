@@ -144,7 +144,7 @@ export function LiveChip({ compact = false }: { compact?: boolean }) {
   const view = useLiveView();
   return (
     <span className="livechip" data-testid="live-status" data-status={view.status} data-tone={view.tone}>
-      <LiveDot status={view.tone} className="live-blink" />
+      <LiveDot status={view.tone} ping={false} />
       <span className="live-label">{view.label}</span>
       {!compact && view.detail ? <span className="live-detail">{view.detail}</span> : null}
     </span>

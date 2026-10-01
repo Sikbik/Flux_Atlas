@@ -56,7 +56,7 @@ folder in the tree is listed under "Left for the integration pass".
 |---|---|---|---|
 | Shell | `.shell` | `data-boot` (`running`, `done`), `data-boot-instant`, `data-layout` (`desktop`, `phone`) | none |
 | Top bar | `header.topbar[data-region=topbar]` | controls carry `data-pressed` | dense zone (`data-fx-density="dense"`) |
-| Dock | `nav.dock[data-region=dock]` > `button.dk` | `data-launcher` (the launcher id, so a window can take its launcher as its source), `data-state` (`idle`, `open`, `focus`, `min`), `data-pressed` | `data-fx="charge"`, no Pulse: the window opening is the answer |
+| Dock | `nav.dock[data-region=dock]` > `button.dk` | `data-launcher` (the launcher id; `launcherOf(type)` in `shell/frame/dock.ts` names the one a window opens from, so a window can take its launcher as its source), `data-state` (`idle`, `open`, `focus`, `min`), `data-pressed` | `data-fx="charge"`, no Pulse: the window opening is the answer |
 | Block rail | `section.railwrap[data-region=rail]` > `div.rail[data-frozen]` > `ol.rail-track` > `li.blk-item` > `a.blk` | `li.blk-item[data-flip][data-fresh][data-orphan]` while a card is new or orphaned, `a.blk[data-tier][data-pressed]`; the ghost is `li.blk-item-ghost[data-late]` > `.blk.ghost[data-phase]` | the rail and each card are positioned hosts for a `<Current>`; `data-frozen` is the "disabled" signal (scrolled into history) |
 | Status bar | `section.statusbar[data-region=statusbar]` | `.sb-fresh[data-state]`, `.sb-led[data-state]`, `.sb-conn[data-tone]` | dense zone; the tip and counters settle through the kit's `AnimatedNumber` |
 | Pulse feed | `.pulse[data-mode][data-offline][data-frozen]` > `li.evt[data-flip][data-fresh][data-kind][data-tier]` | `data-fresh` while a row is new, `data-frozen` while the pointer holds the feed | rows settle; only a payment to a watched node (`data-kind="paid_mine"`) carries `data-fx="current"` |
@@ -68,8 +68,10 @@ folder in the tree is listed under "Left for the integration pass".
 | Globe cards | `.globe-tip[data-kind]` (`node`, `site`, `moon`) | `data-tier`, `data-leaving`, `data-flip-x`, `data-flip-y` | none: the renderer's own |
 | Place labels | `.globe-places[data-band]` | none | none |
 
-`.wm-layer` is a sibling of `.shell-stage`, not inside it, so windows paint over the globe's labels (`--z-globe-hud`)
-and the rail (`--z-rail`) by their own `z-index` (`--z-window`, 40 to 79) and under the top bar (`--z-topbar`).
+`.wm-layer` is a sibling of `.shell-stage`, not inside it, so windows paint over the globe's labels (`--z-globe-hud`,
+10) and the rail (`--z-rail`, 20) by their own `z-index` (`--z-window`, 40 to 79) and under the top bar
+(`--z-topbar`, 90). `.shell-stage`, which carries a page route (a 404, a gallery page), has `z-index: var(--z-window)`
+too, so a page is over the labels as well and `.wm-layer`, later in the document, is over the page.
 
 ### Left for the integration pass (needs `web/src/motion` merged)
 
@@ -79,8 +81,18 @@ and the rail (`--z-rail`) by their own `z-index` (`--z-window`, 40 to 79) and un
 - Toasts: wrap `.toast` in `<PowerOn variant="panel" open onExited>`; the stack's own exit timer and the FLIP
   (`[data-toast-id]`, transform only) can stay, or be dropped when `onExited` takes over.
 - Windows: `<PowerOn origin={...}>` around `.wm-window`, with the origin the dock button
-  `[data-launcher="<type>"]`; the exit ghost in `shell/wm/ghost.ts` is what it replaces.
+  `[data-launcher="<launcherOf(type)>"]`; the exit ghost in `shell/wm/ghost.ts` is what it replaces. The window is
+  ready for it (no filter, clip or mask on the wrapper; see "Ready for the motion language's Power-on" in
+  `shell/wm/README.md`).
 - Phone tabs: `<TabIndicator />` as the last child of `nav.shell-tabs` (a positioned host) in place of the lit pill.
+
+## No loops
+
+The motion language keeps idle loops out of the chrome, so there are none: the connection dot is the kit's
+`LiveDot` with `ping={false}` and no blink (a colour and the words), the Beat ring holds a steady glow in the
+last seconds before a block (`data-phase="soon"`), a focused window flares its rim once on arrival instead of
+sweeping every 9 s, and the rail's loading cards are still. The `animation-iteration-count: infinite` search
+over `features/chrome` and `shell` finds nothing but the boot's spinner.
 
 ## What the kit lacked
 

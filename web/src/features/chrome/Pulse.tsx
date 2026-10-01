@@ -433,7 +433,7 @@ export function PulseCard({ mode }: { mode: PulseMode }) {
       onBlur={() => release()}
     >
       <header className="pulse-head" data-tone={view.tone}>
-        <LiveDot status={view.tone} className="live-blink" />
+        <LiveDot status={view.tone} ping={false} />
         <b>Pulse</b>
         {offline ? <span className="pulse-stale">offline</span> : null}
         {compact ? null : (

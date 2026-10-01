@@ -21,7 +21,7 @@ export function LiveSheet() {
       accent="pulse"
       meta={
         <span className="lp-meta" data-tone={view.tone}>
-          <LiveDot status={view.tone} className="live-blink" />
+          <LiveDot status={view.tone} ping={false} />
           {view.detail ?? 'now'}
         </span>
       }

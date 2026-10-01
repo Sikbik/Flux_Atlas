@@ -203,7 +203,7 @@ a.beat:hover {
   }
 }
 
-/* The last 3 s: the ring breathes ahead of the block. */
+/* The last 3 s: the ring holds a steady glow ahead of the block (a state, not a loop). */
 .beat-ring::after {
   content: "";
   position: absolute;
@@ -215,16 +215,7 @@ a.beat:hover {
 }
 
 .beat-ring[data-phase="soon"]::after {
-  animation: beat-soon 640ms var(--ease-in-out) infinite alternate;
-}
-
-@keyframes beat-soon {
-  from {
-    opacity: 0.15;
-  }
-  to {
-    opacity: 0.85;
-  }
+  opacity: 0.6;
 }
 
 /* A block landed: one expanding ring. */
@@ -355,30 +346,8 @@ a.beat:hover {
   --t: var(--status-off);
 }
 
-/* The connection dot is the kit's LiveDot (the green one pings). Reconnecting and catching up blink at 1 Hz
-   on top of it (design 8.8); under reduced motion they hold still. */
-.live-blink[data-status="pending"],
-.live-blink[data-status="warn"] {
-  animation: live-blink 1100ms var(--ease-in-out) infinite alternate;
-}
-
-@keyframes live-blink {
-  from {
-    opacity: 0.4;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) .live-blink {
-    animation: none;
-  }
-}
-
-:root[data-motion="reduced"] .live-blink,
-:root[data-motion="off"] .live-blink,
-:root[data-motion-off] .live-blink {
-  animation: none;
-}
+/* The connection dot is the kit's LiveDot, still: a colour and the words beside it, with no ping and no blink (the
+   motion language keeps loops out of the chrome; a change of state is its own answer). */
 
 .live-detail {
   min-width: 4.2ch;
