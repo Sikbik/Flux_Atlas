@@ -175,7 +175,9 @@ function History({ hist }: { hist: { data: NodeHistoryDto | undefined; isPending
           title="Uptime, 90 days"
           note={
             q.data
-              ? `${formatPercent(q.data.uptime_pct / 100)} over ${observedDays > 0 ? `${observedDays} d observed` : 'no observed days'}`
+              ? q.data.uptime_pct === null
+                ? 'Not observed yet'
+                : `${formatPercent(q.data.uptime_pct / 100)} over ${observedDays > 0 ? `${observedDays} d observed` : 'no observed days'}`
               : undefined
           }
         />
@@ -183,7 +185,11 @@ function History({ hist }: { hist: { data: NodeHistoryDto | undefined; isPending
           <div
             className="ix-uptime"
             role="img"
-            aria-label={`Uptime per day for 90 days, ${formatPercent((q.data?.uptime_pct ?? 0) / 100)} of the observed time`}
+            aria-label={
+              q.data?.uptime_pct == null
+                ? 'Uptime per day for 90 days, not observed yet'
+                : `Uptime per day for 90 days, ${formatPercent(q.data.uptime_pct / 100)} of the observed time`
+            }
           >
             {cells.map((c) => (
               <i

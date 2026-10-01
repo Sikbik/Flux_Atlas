@@ -138,7 +138,10 @@ export function useFleetEarnings(data: FleetData): FleetEarnings {
   if (!dto) return { earnings: NO_EARNINGS, pending: data.pending, exactWeek: false };
   const h24 = fluxToNumber(dto.earned_24h);
   const d30 = fluxToNumber(dto.earned_30d);
-  const exact7 = week && !results.pending ? week.d7.flux : null;
+  // The server sums every stored payout to the operator's addresses (B7); a window the stored blocks do not cover
+  // is null. Fall back to the node-attributed payments only when the server cannot say.
+  const server7 = fluxToNumber(dto.earned_7d);
+  const exact7 = server7 ?? (week && !results.pending ? week.d7.flux : null);
   const e = earningsFromTotals({
     h24,
     d30,
