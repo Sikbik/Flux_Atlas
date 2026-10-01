@@ -182,17 +182,42 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 pub const CSP_RESOURCE: &str = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
 
 /// Security headers on every response: CSP, `X-Frame-Options`, `nosniff`, referrer policy.
+///
+/// A browser merges a 304's headers into the copy it revalidated, and a 304 has no content type
+/// to tell a page from a resource. Given the resource policy, a refreshed page kept its cached
+/// body under `default-src 'none'`, and every script and style on it was blocked: a blank page
+/// until a hard refresh. So a 304 that answers a navigation carries the page's policy, which also
+/// repairs a copy an earlier server spoiled, and any other 304 carries none, leaving the stored one.
 pub async fn security_headers(req: Request, next: Next) -> Response {
+    let navigation = req
+        .headers()
+        .get("sec-fetch-dest")
+        .is_some_and(|v| v == "document")
+        || req
+            .headers()
+            .get(header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|a| a.contains("text/html"));
     let mut resp = next.run(req).await;
+    let not_modified = resp.status() == axum::http::StatusCode::NOT_MODIFIED;
     let h = resp.headers_mut();
     let is_html = h
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.starts_with("text/html"));
-    h.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(if is_html { CSP_DOCUMENT } else { CSP_RESOURCE }),
-    );
+    let csp = if is_html || (not_modified && navigation) {
+        Some(CSP_DOCUMENT)
+    } else if not_modified {
+        None
+    } else {
+        Some(CSP_RESOURCE)
+    };
+    if let Some(csp) = csp {
+        h.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(csp),
+        );
+    }
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     h.insert(
         header::X_CONTENT_TYPE_OPTIONS,
@@ -249,6 +274,64 @@ pub fn describe(p: &TrustedProxies) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_304_never_spoils_a_cached_page() {
+        use axum::Router;
+        use axum::body::Body;
+        use axum::http::StatusCode;
+        use axum::middleware::from_fn;
+        use axum::routing::get;
+        use tower::ServiceExt;
+
+        let app = Router::new()
+            .route(
+                "/page",
+                get(|| async {
+                    (
+                        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                        "<!doctype html>",
+                    )
+                }),
+            )
+            .route("/same", get(|| async { StatusCode::NOT_MODIFIED }))
+            .route(
+                "/blob",
+                get(|| async { ([(header::CONTENT_TYPE, "application/octet-stream")], "x") }),
+            )
+            .layer(from_fn(security_headers));
+        let call = |path: &'static str| {
+            let app = app.clone();
+            async move {
+                app.oneshot(Request::get(path).body(Body::empty()).unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+        let csp = |r: &Response| {
+            r.headers()
+                .get(header::CONTENT_SECURITY_POLICY)
+                .map(|v| v.to_str().unwrap().to_owned())
+        };
+        assert_eq!(csp(&call("/page").await).as_deref(), Some(CSP_DOCUMENT));
+        assert_eq!(csp(&call("/blob").await).as_deref(), Some(CSP_RESOURCE));
+        let same = call("/same").await;
+        assert_eq!(same.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(csp(&same), None);
+        assert!(same.headers().contains_key(header::X_CONTENT_TYPE_OPTIONS));
+        // A refresh: the page's revalidation gets the page's policy back.
+        let refresh = app
+            .clone()
+            .oneshot(
+                Request::get("/same")
+                    .header("sec-fetch-dest", "document")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(csp(&refresh).as_deref(), Some(CSP_DOCUMENT));
+    }
 
     #[test]
     fn metrics_gate() {
