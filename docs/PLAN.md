@@ -30,7 +30,7 @@ commits at each milestone. Status values: done, running, queued.
 ## Phase 3 — Features (parallel)
 | WP | Owner | Boundary | Acceptance |
 |---|---|---|---|
-| B2 Engine & ingest (done; 90-min live soak clean, merging via I1) | Opus | `crates/atlas-engine` | runs against the live API for 30+ min with no errors; events derived correctly (unit tests from fixture pairs); metrics/snapshots/time machine persist and reload; peer crawl respects the SSRF guard and rate limits; memory stays flat |
+| B2 Engine & ingest (done; 90-min live soak clean; merged via I1, 9eb7f04) | Opus | `crates/atlas-engine` | runs against the live API for 30+ min with no errors; events derived correctly (unit tests from fixture pairs); metrics/snapshots/time machine persist and reload; peer crawl respects the SSRF guard and rate limits; memory stays flat |
 | B3 API server + live hub (done, merged 62bb028) | Opus | `crates/atlas-server` | every §6 endpoint is implemented and tested; pre-built bodies with ETag/compression; WS protocol incl. replay/resync; search resolution; explorer proxy cache; SPA embed; `oha` p99 < 5 ms on hot endpoints |
 | K1 UI kit (running, worktree) | Sonnet | `web/src/ui/**`, `web/src/styles/components.css` | the shared primitives every view composes (layout, key-value, stats, chips, tabs, tables, charts, entity links, amounts, hashes, states); a kit gallery at `/dev/kit`; merged first, then pulled into the other F branches |
 | F2a Frame & live chrome (running, worktree) | Sonnet | `web/src/shell/**`, `web/src/styles/{global,frame}.css`, `web/src/globe/overlays.tsx`, `web/src/features/chrome/**`, `web/src/views/frame.ts` | boot sequence on real load progress; top bar, dock, status bar and window chrome with motion; live block rail, Pulse feed with +N collapsing, next-payout ticker, reward-cut countdown; toasts; globe hover tooltip and labels; phone layout |
@@ -46,7 +46,9 @@ called out in the hand-back.
 ## Phase 4 — Integration & hardening
 | WP | Owner | Scope |
 |---|---|---|
-| I1 Integration (running, worktree) | Opus | merge B2, wire watch hooks/config/timeline, ingest-off tests, client rank rules, live E2E against the real network |
+| I1 Integration (done, merged 9eb7f04; block latency median 1.0 s live, 0 of 6,725 ranks off over 17 real blocks) | Opus | merge B2, wire watch hooks/config/timeline, ingest-off tests, client rank rules, live E2E against the real network |
+| D1 Deploy & capacity (running, worktree) | Opus | one-port container (`deploy/Dockerfile`, EXPOSE 3000 only, data at `/app/backend/data`), `deploy/flux_app_spec.json` matching the live app, a 2-hour soak inside 1 CPU / 2,500 MB / 10 GB with 200 clients, bounded caches, an enforced disk budget, `atlas db-stats` |
+| B4 Backend fixes (running, worktree) | Opus | API defects reported by the F teams (metrics nulls, step format, tx sizes, mempool kinds), engine counters in Prometheus, time-machine columns, an explicit unranked signal, GeoIP coverage |
 | Q1 Visual QA & polish | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
 | X1 Review | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
 
