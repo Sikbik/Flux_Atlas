@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="sea" cx="0.36" cy="0.28" r="0.9">
+      <stop offset="0" stop-color="#21499a"/>
+      <stop offset="0.5" stop-color="#0d1d44"/>
+      <stop offset="1" stop-color="#050913"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0.1" y1="0.05" x2="0.8" y2="0.95">
+      <stop offset="0" stop-color="#ffe0ad"/>
+      <stop offset="0.3" stop-color="#8fbaff"/>
+      <stop offset="0.7" stop-color="#2b61d1" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#2b61d1" stop-opacity="0.08"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#bfe3ff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#bfe3ff" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="gap"><rect width="64" height="64" fill="#fff"/><circle cx="48" cy="16" r="14.6" fill="#000"/></mask>
+  </defs>
+  <g mask="url(#gap)">
+    <circle cx="26.5" cy="37.5" r="23.5" fill="url(#sea)"/>
+    <ellipse cx="29" cy="29" rx="11" ry="8" fill="url(#glow)"/>
+    <g>
+      <circle cx="31.5" cy="26.5" r="1.5" fill="#ffffff"/>
+      <circle cx="36.5" cy="30" r="1.2" fill="#bfe3ff"/>
+      <circle cx="28" cy="31" r="1.05" fill="#d8b8ff"/>
+      <circle cx="22" cy="27.5" r="1" fill="#bfe3ff"/>
+      <circle cx="34" cy="35.5" r="0.95" fill="#ffe2b0"/>
+      <circle cx="16.5" cy="34" r="0.85" fill="#d8b8ff"/>
+      <circle cx="25" cy="22.5" r="0.85" fill="#ffffff"/>
+    </g>
+    <circle cx="26.5" cy="37.5" r="22.4" fill="none" stroke="url(#rim)" stroke-width="1.7"/>
+  </g>
+  <g transform="translate(36.000 4.085) scale(0.070992)">
+    <ellipse cx="169.032" cy="167.831" rx="169.032" ry="167.831" fill="#2b61d1"/>
+    <g transform="translate(77.041 61.731)" fill="#fff">
+      <path d="M144.555,190.421l-19.224,11.107-41.3-23.841,18.756-10.832.469-.276.717.413Z" transform="translate(-32.311 13.286)"/>
+      <path d="M232.54,89.764v22.352L191.887,88.647l-11.025-6.367-11.025,6.367L118.16,118.483l-11.025,6.367V138.01L87.25,126.531l-11.025-6.367L65.2,126.531l-18.7,10.79V89.764l93.02-53.7Z" transform="translate(-46.5 -36.06)"/>
+      <path d="M209.856,117.919V177.59l-51.678,29.835-.069-.041L106.5,177.59V117.919L158.178,88.07Z" transform="translate(-23.815 -16.396)"/>
+      <path d="M105.95,132.727v34.314L76.225,184.212,46.5,167.041V132.727L76.225,115.57Z" transform="translate(-46.5 -5.999)"/>
+    </g>
+  </g>
+</svg>

@@ -59,8 +59,9 @@ called out in the hand-back.
 | L1 Lead fixes (done) | lead | globe froze 0.5 to 1.2 s on every 12 s topology sweep (each streamed link re-resolved all 134k edges): fixed in f277752, max frame 33 ms live |
 | B7 API defects from the views (done, merged; earnings by address from a 30-day ledger, top operators to 5,000, tx app_ref, app economy, 1,000-block pages, mesh outlier rule 396 to 167 links per call, topology reply caps, mesh rows 8.6x smaller) | Opus | operator earned_24h bug, top_operators cap, /tx app_ref, app-economy aggregates, blocks limit, mesh outlier hosts, monotonic app records |
 | B8 Server and edge hardening (done, merged cb2f997; FDM trust list from FluxOS, slow-loris 0/400 to 400/400 closed, SIGTERM 30 s to 4.2 s, request CPU p50 85 ms to 0.12 ms under attack, CSP clean on 17 routes, capabilities dropped) | Opus | X1 H1 proxy trust and global caps, M1 timeouts and shutdown, M7 request CPU and compression, L1 sub replay, L2 store read timeouts, L3 capabilities, L4-L5 GeoIP, L8, L10 security headers, L15 private metrics |
-| B9 Engine robustness and consistency (running, worktree) | Opus | X1 M2-M3 and M5-M6 upstream budget, failover validation, liveness; M8 mesh resume; M9 instance id and stable node keys on the client; L6, L7, L9, L11-L14 |
-| Q1 Visual QA & polish (running, worktree; avoids B9's files) | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
+| B9 Engine robustness and consistency (done, merged 4f4252d, 7d9c775, 77d1c40; engine death answers 503 `dead` and exits 1, bounded writer and reorgs, payout undo, interactive upstream lane, instance ORIGIN, `txid:vout` node keys with old ids migrated, `no_history` time machine) | Opus | X1 M2-M3 and M5-M6 upstream budget, failover validation, liveness; M8 mesh resume; M9 instance id and stable node keys on the client; L6, L7, L9, L11-L14 |
+| Q1 Visual QA & polish (deferred by the user for budget; partial work unmerged on `worktree-agent-aeabe66d1798ee1ed`) | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
+| R1 Release assets (done; `og-image.jpg` 1200x630 from the live globe with the Flux moon, Open Graph and Twitter `summary_large_image` tags with absolute URLs on the domain, `favicon.svg`/`.ico` of the planet with the Flux round symbol as its moon, touch and manifest icons) | lead | link previews for Twitter, Discord and the rest; a project favicon; the release image built locally |
 | X1 Review (done, b9a68da: 0 critical, 1 high, 9 medium, 15 low; frontend XSS clean; cargo and npm audit clean) | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
 
 ## Phase 5 — Ship
@@ -73,6 +74,7 @@ called out in the hand-back.
 - Ports: public port 33889 maps to container port **3000**.
   - The server binds `0.0.0.0:3000`, which is already the default.
   - It serves the SPA, the API and the WebSocket on that one port.
+  - It is the only open port. When hosted, Flux rebinds it to the public port (33889, and the domain through the FDM balancers), so nothing may need a second port or assume its own public port: the client derives the WebSocket URL from `location.host`, and link-preview URLs use https://atlas.app.runonflux.io.
 - Persistent data lives at **`/app/backend/data`** (the spec's containerData).
   - The spec passes no environment variables and no commands, so every image default must work as is.
   - The image therefore sets `ATLAS_DATA_DIR=/app/backend/data`.
@@ -114,6 +116,8 @@ called out in the hand-back.
   - Benchmark failures are not exposed.
   - DoS and started nodes have a null endpoint.
   - `node_ids` and `node_ids_rev` are never pruned (about +80 MB a year), and `app_events` is kept forever (about +150 MB a year).
+- **Visual QA (Q1, deferred).** The moon dips under the block rail at high-latitude poses; the phone "You" tab IA and the aim strip during archive; About link placeholders; the palette's height jump on first open.
+- **Outpoints.** Search hits are still keyed by numeric id, and `PayoutDto.node` and app instances carry no outpoint. A fresh instance shows start-list diffs, and its mesh shrinks.
 - **e2e hygiene.** Close each test's page in a `finally`. A failed route check otherwise leaves a SwiftShader globe rendering, which slows every later test up to five times and can time out the context-loss test.
 - **Deploy (needs the user's go-ahead).** Re-read the live spec, build `deploy/Dockerfile`, push `littlestache/flux-atlas:latest`, and update the `atlas` app.
 
