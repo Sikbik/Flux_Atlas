@@ -75,6 +75,13 @@ export interface FairnessInput {
   nodes: number;
   /** Blocks in the sample produced by nodes of this category. */
   produced: number;
+  /**
+   * Blocks this category is expected to produce, when the chance differs from block to block (the set
+   * of eligible nodes changes over the sample). Overrides the constant-share expectation.
+   */
+  expectedBlocks?: number;
+  /** Variance of the produced count under that expectation: the sum of p(1 - p) over the blocks. */
+  variance?: number;
 }
 
 export interface FairnessRow extends FairnessInput {
@@ -106,13 +113,14 @@ export function fairness(
   const flagZ = opts.flagZ ?? Z[99];
   return rows.map((r) => {
     const p = totalNodes > 0 ? r.nodes / totalNodes : 0;
-    const expected = p * sampleBlocks;
-    const sd = Math.sqrt(sampleBlocks * p * (1 - p));
+    const expected = r.expectedBlocks ?? p * sampleBlocks;
+    const sd = Math.sqrt(r.variance ?? sampleBlocks * p * (1 - p));
     const z = sd > 0 ? (r.produced - expected) / sd : 0;
     const { lo, hi } = wilson(r.produced, sampleBlocks, ciZ);
     return {
       ...r,
-      nodeShare: p,
+      // The expected share: the share of nodes, or the average eligible share when it varies.
+      nodeShare: r.expectedBlocks !== undefined && sampleBlocks > 0 ? expected / sampleBlocks : p,
       producedShare: sampleBlocks > 0 ? r.produced / sampleBlocks : 0,
       expected,
       lo,
@@ -132,7 +140,7 @@ export function chiSquare(
   let chi2 = 0;
   let used = 0;
   for (const r of rows) {
-    const e = totalNodes > 0 ? (r.nodes / totalNodes) * sampleBlocks : 0;
+    const e = r.expectedBlocks ?? (totalNodes > 0 ? (r.nodes / totalNodes) * sampleBlocks : 0);
     if (e <= 0) continue;
     chi2 += (r.produced - e) ** 2 / e;
     used++;

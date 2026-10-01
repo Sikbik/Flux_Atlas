@@ -136,6 +136,19 @@ describe('fairness', () => {
     }
   });
 
+  it('takes expected counts and variances that differ from the node share', () => {
+    const [a] = fairness(
+      [{ key: 'a', label: 'A', nodes: 50, produced: 400, expectedBlocks: 500, variance: 250 }],
+      100,
+      1000,
+    );
+    // (400 - 500) / sqrt(250) is about -6.3: flagged, though 400 of 1000 is a fair share of 50 nodes of 100.
+    expect(a!.z).toBeCloseTo(-100 / Math.sqrt(250), 6);
+    expect(a!.verdict).toBe('below');
+    expect(a!.expected).toBe(500);
+    expect(a!.nodeShare).toBeCloseTo(0.5);
+  });
+
   it('uses z = 1.96 for 95% intervals', () => {
     expect(Z[95]).toBeCloseTo(1.96, 2);
   });
@@ -159,6 +172,18 @@ describe('chi-square', () => {
       1000,
     );
     expect(skew.chi2).toBeCloseTo(40, 6);
+  });
+
+  it('compares against supplied expected counts when there are any', () => {
+    const r = chiSquare(
+      [
+        { key: 'a', label: 'A', nodes: 50, produced: 450, expectedBlocks: 450 },
+        { key: 'b', label: 'B', nodes: 50, produced: 550, expectedBlocks: 550 },
+      ],
+      100,
+      1000,
+    );
+    expect(r.chi2).toBe(0);
   });
 
   it('turns a statistic into a plausible p-value', () => {
