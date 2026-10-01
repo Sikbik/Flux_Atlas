@@ -337,7 +337,13 @@ struct Inner {
     /// The newest blocks as the BlockDecoder fetched them (`getblock` verbosity 2), so the block
     /// detail of a recent block is served without a second upstream call.
     raw_blocks: std::sync::Mutex<VecDeque<Arc<DaemonBlock>>>,
+    /// Hosts whose last topology call was discarded as an outlier, until when TopologySweep
+    /// skips them.
+    outlier_hosts: std::sync::Mutex<HashMap<std::net::IpAddr, u64>>,
 }
+
+/// How long TopologySweep skips a host after one of its calls was discarded as an outlier.
+pub const OUTLIER_HOST_SKIP_MS: u64 = 6 * 3_600_000;
 
 /// Raw blocks kept for [`EngineHandle::recent_raw_block`] (about 16 minutes of chain).
 const RAW_BLOCKS: usize = 32;
@@ -402,6 +408,7 @@ impl Engine {
             shutdown_tx,
             obs_tx: std::sync::Mutex::new(Some(obs_tx.clone())),
             raw_blocks: std::sync::Mutex::new(VecDeque::with_capacity(RAW_BLOCKS)),
+            outlier_hosts: std::sync::Mutex::new(HashMap::new()),
             server,
             store: store.clone(),
             clients: clients.clone(),
@@ -601,6 +608,34 @@ impl EngineHandle {
             q.pop_front();
         }
         q.push_back(b);
+    }
+
+    /// Records the outlier verdict of a topology call to `ip`: a discarded call makes
+    /// TopologySweep skip the host for [`OUTLIER_HOST_SKIP_MS`]; an accepted one clears it.
+    pub(crate) fn note_topology_host(&self, ip: std::net::IpAddr, outlier: bool, now: u64) {
+        let mut m = self
+            .inner
+            .outlier_hosts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if outlier {
+            m.insert(ip, now + OUTLIER_HOST_SKIP_MS);
+        } else {
+            m.remove(&ip);
+        }
+        if m.len() > 4096 {
+            m.retain(|_, until| *until > now);
+        }
+    }
+
+    /// True while TopologySweep should skip `ip` (its last call was an outlier).
+    pub fn topology_host_skipped(&self, ip: &std::net::IpAddr, now: u64) -> bool {
+        self.inner
+            .outlier_hosts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(ip)
+            .is_some_and(|until| *until > now)
     }
 
     /// Subscribes to live messages published from now on.

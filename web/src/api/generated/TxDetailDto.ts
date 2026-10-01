@@ -2,6 +2,7 @@
 import type { Amount } from "./Amount";
 import type { Hash32 } from "./Hash32";
 import type { NodeTxDto } from "./NodeTxDto";
+import type { TxAppRef } from "./TxAppRef";
 import type { TxInputDto } from "./TxInputDto";
 import type { TxKind } from "./TxKind";
 import type { TxOutputDto } from "./TxOutputDto";
@@ -9,4 +10,9 @@ import type { TxOutputDto } from "./TxOutputDto";
 /**
  * `GET /tx/{txid}`.
  */
-export type TxDetailDto = { txid: Hash32, height: number | null, block_hash: Hash32 | null, time_ms: number | null, confirmations: number, size: number, version: number, kind: TxKind, inputs: Array<TxInputDto>, outputs: Array<TxOutputDto>, value_in: Amount | null, value_out: Amount, fee: Amount | null, node_tx: NodeTxDto | null, };
+export type TxDetailDto = { txid: Hash32, height: number | null, block_hash: Hash32 | null, time_ms: number | null, confirmations: number, size: number, version: number, kind: TxKind, inputs: Array<TxInputDto>, outputs: Array<TxOutputDto>, value_in: Amount | null, value_out: Amount, fee: Amount | null, node_tx: NodeTxDto | null, 
+/**
+ * The app an app payment (`kind: app_message`) registers or updates. Absent for other
+ * transactions and while the message is not known.
+ */
+app_ref?: TxAppRef, };

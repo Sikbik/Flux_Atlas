@@ -8,6 +8,7 @@ import type { StatusSegment } from "./StatusSegment";
  */
 export type NodeHistoryDto = { id: NodeId, from_ms: number, to_ms: number, 
 /**
- * Share of the window the node was confirmed, 0..100.
+ * Share of the window's known time the node was confirmed, 0..100; `null` when no part of
+ * the window is known.
  */
-uptime_pct: number, segments: Array<StatusSegment>, events: Array<FeedItem>, };
+uptime_pct: number | null, segments: Array<StatusSegment>, events: Array<FeedItem>, };

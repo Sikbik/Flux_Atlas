@@ -1,12 +1,12 @@
 //! Network analytics computed from the published node list (active nodes only): geography,
 //! providers grouped by ASN, versions, capacity, and decentralization (Nakamoto coefficients).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use atlas_core::NodeRecord;
 use atlas_core::api::{
-    CapacityDto, CapacityTotals, CountBucket, DecentralizationDto, GeoBreakdownDto, ProviderBucket,
-    ProvidersDto, TierCapacity, VersionsDto,
+    CapacityDto, CapacityTotals, CountBucket, DecentralizationDto, GeoBreakdownDto,
+    OperatorSizeBucket, ProviderBucket, ProvidersDto, TierCapacity, VersionsDto,
 };
 use atlas_core::app::Resources;
 use atlas_core::node::Tier;
@@ -311,8 +311,12 @@ fn operator_key(n: &NodeRecord) -> &str {
         .unwrap_or(&n.payment_address)
 }
 
-/// `GET /network/decentralization`.
-pub fn decentralization(nodes: &[NodeRecord]) -> DecentralizationDto {
+/// Default and largest `top` of `GET /network/decentralization`.
+pub const TOP_OPERATORS_DEFAULT: u32 = 25;
+pub const TOP_OPERATORS_MAX: u32 = 5_000;
+
+/// `GET /network/decentralization` with `top` operator rows.
+pub fn decentralization(nodes: &[NodeRecord], top_n: usize) -> DecentralizationDto {
     let mut countries: HashMap<&str, u32> = HashMap::new();
     let mut providers: HashMap<ProviderKey, u32> = HashMap::new();
     let mut operators: HashMap<&str, u32> = HashMap::new();
@@ -336,17 +340,22 @@ pub fn decentralization(nodes: &[NodeRecord]) -> DecentralizationDto {
     let country_counts: Vec<u32> = countries.values().copied().collect();
     let provider_counts: Vec<u32> = providers.values().copied().collect();
     let operator_counts: Vec<u32> = operators.values().copied().collect();
+    let mut sizes: BTreeMap<u32, u32> = BTreeMap::new();
+    for c in &operator_counts {
+        *sizes.entry(*c).or_default() += 1;
+    }
     let mut top: Vec<(&str, u32)> = operators.into_iter().collect();
     top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
     DecentralizationDto {
         nakamoto_country: nakamoto(country_counts.clone(), located),
         nakamoto_provider: nakamoto(provider_counts.clone(), with_provider),
+        operator_count: operator_counts.len() as u32,
         nakamoto_operator: nakamoto(operator_counts, total),
         hhi_country: hhi(&country_counts, located),
         hhi_provider: hhi(&provider_counts, with_provider),
         top_operators: top
             .into_iter()
-            .take(25)
+            .take(top_n)
             .map(|(k, c)| CountBucket {
                 key: k.to_owned(),
                 label: k.to_owned(),
@@ -355,6 +364,10 @@ pub fn decentralization(nodes: &[NodeRecord]) -> DecentralizationDto {
             })
             .collect(),
         multi_node_hosts: hosts.values().filter(|&&c| c > 1).count() as u32,
+        operator_sizes: sizes
+            .into_iter()
+            .map(|(nodes, operators)| OperatorSizeBucket { nodes, operators })
+            .collect(),
     }
 }
 
@@ -460,7 +473,7 @@ mod tests {
         assert_eq!(h.hosts, 2);
         assert_eq!(h.countries, 2);
         assert_eq!(h.org, "Hetzner Online GmbH");
-        let d = decentralization(&nodes);
+        let d = decentralization(&nodes, 25);
         assert_eq!(d.nakamoto_provider, 1);
         assert_eq!(d.nakamoto_country, 2, "DE holds exactly half, not more");
         assert_eq!(d.multi_node_hosts, 1);

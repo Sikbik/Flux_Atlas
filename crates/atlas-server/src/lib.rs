@@ -18,6 +18,7 @@ pub mod error;
 pub mod explorer;
 pub mod extract;
 pub mod fixtures;
+pub mod ledger;
 pub mod live;
 pub mod metrics;
 pub mod proxy;

@@ -525,6 +525,7 @@ pub fn map_insight_tx(t: &InsightTx) -> Option<TxDetailDto> {
         value_out,
         fee,
         node_tx: node.map(|n| node_tx_dto(&n)),
+        app_ref: None,
     })
 }
 

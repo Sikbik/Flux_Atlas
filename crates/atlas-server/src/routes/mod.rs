@@ -47,6 +47,7 @@ fn api() -> Router<AppState> {
         .route("/network/versions", get(network::versions))
         .route("/network/capacity", get(network::capacity))
         .route("/network/decentralization", get(network::decentralization))
+        .route("/network/app-economy", get(network::app_economy))
         .route("/metrics", get(network::series))
         // Explorer.
         .route("/blocks", get(explorer::blocks))

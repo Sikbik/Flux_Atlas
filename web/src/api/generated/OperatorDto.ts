@@ -7,4 +7,18 @@ import type { TierCounts } from "./TierCounts";
 /**
  * `GET /operator/{address}`.
  */
-export type OperatorDto = { address: string, nodes: Array<NodeRow>, tiers: TierCounts, collateral_locked: Amount, earned_24h: Amount, earned_30d: Amount, next_payments: Array<NextPayment>, };
+export type OperatorDto = { address: string, nodes: Array<NodeRow>, tiers: TierCounts, collateral_locked: Amount, 
+/**
+ * FLUX paid to the operator in the last 2,880 / 20,160 / 86,400 blocks up to the tip;
+ * `null` when this server's stored blocks do not cover the whole window.
+ */
+earned_24h: Amount | null, earned_7d: Amount | null, earned_30d: Amount | null, 
+/**
+ * First block of the contiguous stored history the windows are counted over (at most 30
+ * days back), and its time; `null` when no block is stored.
+ */
+earnings_from_height: number | null, earnings_from_ms: number | null, 
+/**
+ * FLUX paid from `earnings_from_height` to the tip.
+ */
+earned_covered: Amount | null, next_payments: Array<NextPayment>, };

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use atlas_core::api::{
     AddressDto, AddressKind, AddressNodesDto, AddressTxsPage, AddressUtxosDto, BlockDetailDto,
-    BlocksPage, MempoolDto, NodeRow, RichListDto, RichListEntry, SupplyDto, TierCounts,
+    BlocksPage, MempoolDto, NodeRow, RichListDto, RichListEntry, SupplyDto, TierCounts, TxAppRef,
     TxDetailDto, TxLite,
 };
 use atlas_core::chain::{BlockSummary, NodeTx, NodeTxKind, TxKind};
@@ -48,37 +48,78 @@ pub struct BlocksQuery {
     pub limit: Option<u32>,
 }
 
-/// `GET /blocks?before&limit`: newest first; published recent blocks, then the store.
+/// Largest `/blocks` page.
+pub const BLOCKS_PAGE_MAX: u32 = 1_000;
+
+/// `GET /blocks?before&limit`: newest first; published recent blocks, then the store. A full,
+/// gapless page wholly below the finality window never changes, so its body is cached by
+/// `(before, limit)`; any other page is cached for a few seconds per tip block.
 pub async fn blocks(
     State(s): State<AppState>,
     headers: HeaderMap,
     Q(q): Q<BlocksQuery>,
 ) -> ApiResult<Response> {
-    let limit = page_limit(q.limit, 20, 100)? as usize;
+    let limit = page_limit(q.limit, 20, BLOCKS_PAGE_MAX)?;
     let v = s.views();
     let before = q.before.unwrap_or(u32::MAX);
+    let deep = v
+        .tip_height()
+        .is_some_and(|tip| u64::from(before) + u64::from(FINALITY_DEPTH) <= u64::from(tip));
+    if deep && let Some(body) = s.blocks_cache.get(&(before, limit)).await {
+        return Ok(body.respond(&headers, cache::EXPLORER_DEEP));
+    }
+    // Pages that reach the tip change with every block (and a reorg changes the tip hash).
+    let tip_key = v.published.blocks.first().map(|b| {
+        let mut k = [0u8; 8];
+        k.copy_from_slice(&b.hash.0[..8]);
+        u64::from_le_bytes(k)
+    });
+    let recent_key = tip_key.map(|t| (before, limit, t));
+    if !deep
+        && let Some(k) = recent_key
+        && let Some(body) = s.recent_blocks_cache.get(&k).await
+    {
+        return Ok(body.respond(&headers, cache::EXPLORER_RECENT));
+    }
+    let want_n = limit as usize;
     let mut items: Vec<_> = v
         .published
         .blocks
         .iter()
         .filter(|b| b.height < before)
-        .take(limit)
+        .take(want_n)
         .cloned()
         .collect();
-    if items.len() < limit {
+    if items.len() < want_n {
         let below = items.last().map_or(before, |b| b.height);
-        let want = limit - items.len();
+        let want = want_n - items.len();
         let more = s
             .store_read(move |st| Ok(st.blocks_before(below, want)?))
             .await?;
         items.extend(more.iter().map(block_lite));
     }
-    let next_before = (items.len() == limit)
+    let next_before = (items.len() == want_n)
         .then(|| items.last().map(|b| b.height))
         .flatten()
         .filter(|h| *h > 0);
     let page = BlocksPage { items, next_before };
-    Ok(json_response(&headers, &page, cache::EXPLORER_RECENT))
+    // Only a full page without holes: a hole may still be filled by the block backfill.
+    let contiguous = match (page.items.first(), page.items.last()) {
+        (Some(top), Some(bottom)) => top.height - bottom.height + 1 == limit,
+        _ => false,
+    };
+    if deep && page.items.len() == want_n && contiguous {
+        let body = Arc::new(crate::body::CachedBody::json(&page));
+        s.blocks_cache
+            .insert((before, limit), Arc::clone(&body))
+            .await;
+        return Ok(body.respond(&headers, cache::EXPLORER_DEEP));
+    }
+    let body = Arc::new(crate::body::CachedBody::json(&page));
+    if !deep && let Some(k) = recent_key {
+        s.recent_blocks_cache.insert(k, Arc::clone(&body)).await;
+    }
+    Ok(body.respond(&headers, cache::EXPLORER_RECENT))
 }
 
 enum BlockId {
@@ -264,6 +305,70 @@ fn finish_tx(v: &Views, t: &TxDetailDto) -> TxDetailDto {
     t
 }
 
+/// The message hash an app payment's OP_RETURN carries.
+fn app_message_hash(t: &TxDetailDto) -> Option<Hash32> {
+    if t.kind != TxKind::AppMessage {
+        return None;
+    }
+    t.outputs.iter().find_map(|o| {
+        o.op_return
+            .as_deref()
+            .and_then(|h| Hash32::from_hex(h).ok())
+    })
+}
+
+/// The app message `hash` names: the permanent message, else the pending one.
+pub fn app_ref_of(st: &atlas_store::Store, hash: Hash32) -> Result<Option<TxAppRef>, ApiError> {
+    if let Some(m) = st.app_message(&hash)? {
+        return Ok(Some(TxAppRef {
+            name: m.spec.key(),
+            display_name: m.spec.name.clone(),
+            kind: m.kind,
+            spec_version: m.spec.spec_version,
+            message_hash: hash,
+            height: Some(m.height),
+            paid: Some(m.paid),
+        }));
+    }
+    Ok(st
+        .pending_app_messages()?
+        .into_iter()
+        .find(|p| p.hash == hash)
+        .map(|p| TxAppRef {
+            name: p.spec.key(),
+            display_name: p.spec.name.clone(),
+            kind: p.kind,
+            spec_version: p.spec.spec_version,
+            message_hash: hash,
+            height: None,
+            paid: None,
+        }))
+}
+
+/// Fills `app_ref` on the app payments among `txs` (one store read for all of them).
+async fn attach_app_refs(s: &AppState, txs: &mut [TxDetailDto]) -> Result<(), ApiError> {
+    let wanted: Vec<(usize, Hash32)> = txs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, t)| app_message_hash(t).map(|h| (i, h)))
+        .collect();
+    if wanted.is_empty() {
+        return Ok(());
+    }
+    let found = s
+        .store_read(move |st| {
+            wanted
+                .into_iter()
+                .map(|(i, h)| Ok((i, app_ref_of(st, h)?)))
+                .collect::<Result<Vec<_>, ApiError>>()
+        })
+        .await?;
+    for (i, r) in found {
+        txs[i].app_ref = r;
+    }
+    Ok(())
+}
+
 /// `GET /tx/{txid}`.
 pub async fn tx(
     State(s): State<AppState>,
@@ -274,7 +379,8 @@ pub async fn tx(
     let txid = parse_txid(check_param("txid", &txid)?)?;
     let t = s.explorer.tx(Some(ip), txid).await?;
     let v = s.views();
-    let dto = finish_tx(&v, &t);
+    let mut dto = finish_tx(&v, &t);
+    attach_app_refs(&s, std::slice::from_mut(&mut dto)).await?;
     let cc = if dto.height.is_none() {
         cache::EXPLORER_RECENT
     } else {
@@ -367,7 +473,8 @@ pub async fn address_txs(
         .explorer
         .address_txs(Some(ip), &addr, from, from + limit, tip)
         .await?;
-    let items: Vec<TxDetailDto> = page.items.iter().map(|t| finish_tx(&v, t)).collect();
+    let mut items: Vec<TxDetailDto> = page.items.iter().map(|t| finish_tx(&v, t)).collect();
+    attach_app_refs(&s, &mut items).await?;
     let end = from + items.len() as u32;
     let dto = AddressTxsPage {
         next_cursor: (end < page.total && !items.is_empty()).then(|| end.to_string()),

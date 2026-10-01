@@ -1148,6 +1148,171 @@ fn mesh_diff() {
 }
 
 #[test]
+fn stale_catalog_never_rolls_an_app_back() {
+    use atlas_core::app::AppSpec;
+    use atlas_engine::derive::apps::apply_catalog;
+    let spec = |name: &str, instances: u32| AppSpec {
+        spec_version: 8,
+        name: name.to_owned(),
+        owner: "1Owner".to_owned(),
+        instances,
+        ..AppSpec::default()
+    };
+    let h = |b: u8| Some(Hash32([b; 32]));
+    let mut st = NetworkState::default();
+    let mut tick = Tick::new(NOW);
+    let rep = apply_catalog(
+        &mut st,
+        &mut tick,
+        vec![(spec("Alpha", 3), h(1), 100), (spec("Beta", 3), h(2), 100)],
+    );
+    assert_eq!(rep.added, 2);
+    // A newer spec of Alpha arrives (an update at 200), and Gamma registers at 210.
+    let mut tick = Tick::new(NOW + 1);
+    let rep = apply_catalog(
+        &mut st,
+        &mut tick,
+        vec![
+            (spec("Alpha", 5), h(3), 200),
+            (spec("Beta", 3), h(2), 100),
+            (spec("Gamma", 1), h(4), 210),
+        ],
+    );
+    assert_eq!((rep.updated, rep.added), (1, 1));
+    assert_eq!(st.apps.records["alpha"].spec.instances, 5);
+    // A stale copy of the catalog (built before height 200): Alpha at its old spec, no Gamma.
+    let mut tick = Tick::new(NOW + 2);
+    let rep = apply_catalog(
+        &mut st,
+        &mut tick,
+        vec![(spec("Alpha", 3), h(1), 100), (spec("Beta", 3), h(2), 100)],
+    );
+    assert_eq!(rep.stale, 1, "{rep:?}");
+    assert_eq!(rep.kept_newer, 1, "{rep:?}");
+    assert_eq!((rep.updated, rep.removed), (0, 0), "{rep:?}");
+    let a = &st.apps.records["alpha"];
+    assert_eq!((a.height, a.spec.instances, a.spec_hash), (200, 5, h(3)));
+    assert!(st.apps.records.contains_key("gamma"));
+    assert_eq!(tick.events.len(), 0, "a stale catalog emits nothing");
+    // A fresh catalog without Beta (expired) removes it; one at the same height with another
+    // hash keeps the held record.
+    let mut tick = Tick::new(NOW + 3);
+    let rep = apply_catalog(
+        &mut st,
+        &mut tick,
+        vec![(spec("Alpha", 9), h(9), 200), (spec("Gamma", 1), h(4), 210)],
+    );
+    assert_eq!((rep.removed, rep.stale, rep.updated), (1, 1, 0), "{rep:?}");
+    assert_eq!(st.apps.records["alpha"].spec_hash, h(3));
+    assert!(!st.apps.records.contains_key("beta"));
+}
+
+#[test]
+fn mesh_outlier_calls_are_discarded() {
+    use atlas_engine::state::mesh::{
+        CallScreen, OUTLIER_MIN_ADDED, OUTLIER_RECENT, OUTLIER_WARMUP, Verdict, network_of,
+    };
+    let net = |s: &str| network_of(s.parse().unwrap());
+    let farm = net("5.230.173.205");
+    assert_eq!(farm, net("5.230.172.46"), "one /16");
+    assert_ne!(farm, net("5.231.0.1"));
+    // Whatever the window, a call adding more than the absolute cap is discarded.
+    let mut s = CallScreen::default();
+    assert!(matches!(
+        s.judge(25_600, 128, farm),
+        Verdict::Reject { added: 25_600, .. }
+    ));
+    // Judgement is relative to the median of recent accepted calls, per reporter.
+    let mut s = CallScreen::default();
+    // Cold: nothing is judged before the window is warm, however large.
+    for _ in 0..OUTLIER_WARMUP {
+        assert_eq!(s.judge(3_000, 60, farm), Verdict::Accept);
+    }
+    let mut s = CallScreen::default();
+    for i in 0..OUTLIER_WARMUP {
+        assert_eq!(s.judge(240 + i, 60, i as u64), Verdict::Accept);
+    }
+    // About 4 links per reporter: 3,000 from 60 reporters is far over 4x; rejected.
+    assert!(matches!(
+        s.judge(3_000, 60, farm),
+        Verdict::Reject { added: 3_000, .. }
+    ));
+    // A call that adds a lot from many reporters is not an outlier per reporter.
+    assert_eq!(s.judge(1_200, 300, 7), Verdict::Accept);
+    // Below the absolute floor nothing is rejected, even at a high rate.
+    assert_eq!(s.judge(OUTLIER_MIN_ADDED - 1, 10, 7), Verdict::Accept);
+    assert_eq!((s.rejected_calls, s.rejected_links), (1, 3_000));
+    // A long run of outlier calls from one network (the sweep walks the node list in id order)
+    // stays rejected: rejected calls never enter the median.
+    for _ in 0..200 {
+        assert!(matches!(s.judge(3_300, 61, farm), Verdict::Reject { .. }));
+    }
+    // A network-wide change (every host adds many links) is accepted once it is seen across
+    // several networks, and the median follows it.
+    let mut first_accept = None;
+    for i in 0..(4 * OUTLIER_RECENT) {
+        if s.judge(3_000, 60, 1_000 + i as u64) == Verdict::Accept && first_accept.is_none() {
+            first_accept = Some(i);
+        }
+    }
+    assert!(
+        first_accept.is_some_and(|i| i < OUTLIER_RECENT),
+        "{first_accept:?}"
+    );
+    assert_eq!(
+        s.judge(3_000, 60, farm),
+        Verdict::Accept,
+        "the new level is normal now"
+    );
+
+    // In the mesh: an outlier call changes nothing, a normal one merges.
+    let set = |v: std::ops::Range<u32>| v.map(NodeId).collect::<BTreeSet<_>>();
+    let cross = |_: NodeId, _: NodeId| false;
+    let mut m = Mesh::default();
+    for i in 0..OUTLIER_WARMUP as u32 {
+        // Each warm-up call: 10 reporters with 2 new links each.
+        let batch: Vec<(NodeId, Report)> = (0..10)
+            .map(|r| {
+                let id = NodeId(10_000 + i * 10 + r);
+                let base = 20_000 + (i * 10 + r) * 2;
+                (
+                    id,
+                    Report {
+                        outbound: set(base..base + 2),
+                        inbound: BTreeSet::new(),
+                        at_ms: u64::from(i),
+                    },
+                )
+            })
+            .collect();
+        let (v, d) = m.merge_screened(batch, u64::from(i), &cross);
+        assert_eq!(v, Verdict::Accept);
+        assert_eq!(d.added.len(), 20);
+    }
+    let before = m.edge_count();
+    let huge: Vec<(NodeId, Report)> = (0..10)
+        .map(|r| {
+            let base = 50_000 + r * 100;
+            (
+                NodeId(10_000 + r),
+                Report {
+                    outbound: set(base..base + 100),
+                    inbound: BTreeSet::new(),
+                    at_ms: 99,
+                },
+            )
+        })
+        .collect();
+    assert_eq!(m.preview_added(&huge), 1_000);
+    let (v, d) = m.merge_screened(huge, 99, &cross);
+    assert!(matches!(v, Verdict::Reject { added: 1_000, .. }), "{v:?}");
+    assert!(d.is_empty() && d.reporters.is_empty());
+    assert_eq!(m.edge_count(), before);
+    // The rejected copy did not replace the reporter's list: its links are all still there.
+    assert_eq!(m.reported_at(NodeId(10_000)), Some(0));
+}
+
+#[test]
 fn full_dump_queue_has_zero_inversions() {
     // Optional: the untrimmed 6,724-node dump from the research phase.
     let Some(raw) = common::raw_dump("daemon_viewdeterministicfluxnodelist.json") else {

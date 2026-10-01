@@ -692,6 +692,16 @@ fn render_engine(s: &AppState, out: &mut String) {
         ),
         ("atlas_engine_reorgs_total", "Reorgs handled.", stats.reorgs),
         (
+            "atlas_engine_mesh_calls_rejected_total",
+            "Topology calls discarded by the mesh outlier rule.",
+            stats.mesh_calls_rejected,
+        ),
+        (
+            "atlas_engine_mesh_links_rejected_total",
+            "Links the discarded topology calls would have added.",
+            stats.mesh_links_rejected,
+        ),
+        (
             "atlas_engine_reconciles_total",
             "Node registry reconciles run.",
             stats.reconciles,

@@ -13,6 +13,7 @@ use ts_rs::TS;
 use crate::amount::Amount;
 use crate::app::{AppSpec, Resources};
 use crate::chain::{BlockKind, NodeTxKind, TxKind};
+use crate::event::AppMessageKind;
 use crate::ids::{Hash32, NodeId, Outpoint};
 use crate::live::FeedItem;
 use crate::node::{Geo, Hardware, NodeStatus, Tier, Versions};
@@ -439,8 +440,9 @@ pub struct NodeHistoryDto {
     pub id: NodeId,
     pub from_ms: u64,
     pub to_ms: u64,
-    /// Share of the window the node was confirmed, 0..100.
-    pub uptime_pct: f64,
+    /// Share of the window's known time the node was confirmed, 0..100; `null` when no part of
+    /// the window is known.
+    pub uptime_pct: Option<f64>,
     pub segments: Vec<StatusSegment>,
     pub events: Vec<FeedItem>,
 }
@@ -650,9 +652,76 @@ pub struct DecentralizationDto {
     /// Herfindahl-Hirschman index, 0..1.
     pub hhi_country: f64,
     pub hhi_provider: f64,
+    /// The largest operators (ZelID, else payment address), `top` rows (default 25).
     pub top_operators: Vec<CountBucket>,
     /// Hosts running more than one node.
     pub multi_node_hosts: u32,
+    /// Distinct operators with at least one confirmed node.
+    pub operator_count: u32,
+    /// Every operator by size: how many operators run exactly `nodes` confirmed nodes,
+    /// ascending by `nodes` (the whole distribution, long tail included).
+    pub operator_sizes: Vec<OperatorSizeBucket>,
+}
+
+/// Operators that run exactly `nodes` confirmed nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct OperatorSizeBucket {
+    pub nodes: u32,
+    pub operators: u32,
+}
+
+/// `GET /network/app-economy?days&top`: FLUX paid for app register and update messages,
+/// messages per day and active apps over time, from the permanent app messages.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AppEconomyDto {
+    pub generated_ms: u64,
+    /// Height the windows end at.
+    pub tip_height: u32,
+    /// The full permanent-message history is stored. While false, every figure covers only the
+    /// messages this server has seen, and the windows are `null`.
+    pub history_complete: bool,
+    /// FLUX paid for messages mined in the last 2,880 / 20,160 / 86,400 blocks.
+    pub paid_24h: Option<Amount>,
+    pub paid_7d: Option<Amount>,
+    pub paid_30d: Option<Amount>,
+    /// Register and update messages mined in the last 86,400 blocks.
+    pub registrations_30d: Option<u32>,
+    pub updates_30d: Option<u32>,
+    /// Every stored message, and the FLUX they paid.
+    pub messages_total: u32,
+    pub paid_all_time: Amount,
+    /// Apps whose latest spec has not expired at the tip.
+    pub active_apps: u32,
+    /// One row per UTC day, oldest first; the last row is today (partial).
+    pub days: Vec<AppEconomyDay>,
+    /// Apps by FLUX paid in the last 86,400 blocks, highest first.
+    pub top_apps_30d: Vec<AppSpend>,
+    /// Apps by FLUX paid over the whole history, highest first.
+    pub top_apps_all_time: Vec<AppSpend>,
+}
+
+/// One UTC day of the app economy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct AppEconomyDay {
+    /// Start of the day, unix ms (UTC midnight).
+    pub day_ms: u64,
+    pub registrations: u32,
+    /// Updates, renewals included.
+    pub updates: u32,
+    pub paid: Amount,
+    /// Apps whose latest spec had not expired at the end of the day (at the tip for today).
+    pub active_apps: u32,
+}
+
+/// FLUX one app paid for its messages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct AppSpend {
+    pub name: String,
+    pub display_name: String,
+    pub paid: Amount,
+    pub messages: u32,
+    /// Height of its latest message counted.
+    pub last_height: u32,
 }
 
 /// `GET /metrics?series=a,b&from&to&step`. Columnar: `series[name][i]` belongs to `t[i]`.
@@ -760,6 +829,28 @@ pub struct TxDetailDto {
     pub value_out: Amount,
     pub fee: Option<Amount>,
     pub node_tx: Option<NodeTxDto>,
+    /// The app an app payment (`kind: app_message`) registers or updates. Absent for other
+    /// transactions and while the message is not known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub app_ref: Option<TxAppRef>,
+}
+
+/// The app message an app payment pays for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TxAppRef {
+    /// Lowercase app name (the `/apps/{name}` key).
+    pub name: String,
+    pub display_name: String,
+    pub kind: AppMessageKind,
+    /// Spec format version of the message (1..=8 today).
+    pub spec_version: u8,
+    /// Message hash carried in the OP_RETURN.
+    pub message_hash: Hash32,
+    /// Height the message was mined at; `null` while it is pending.
+    pub height: Option<u32>,
+    /// FLUX paid for the message, as the permanent message records it; `null` while pending.
+    pub paid: Option<Amount>,
 }
 
 /// Address kinds recognized locally.
@@ -937,8 +1028,17 @@ pub struct OperatorDto {
     pub nodes: Vec<NodeRow>,
     pub tiers: TierCounts,
     pub collateral_locked: Amount,
-    pub earned_24h: Amount,
-    pub earned_30d: Amount,
+    /// FLUX paid to the operator in the last 2,880 / 20,160 / 86,400 blocks up to the tip;
+    /// `null` when this server's stored blocks do not cover the whole window.
+    pub earned_24h: Option<Amount>,
+    pub earned_7d: Option<Amount>,
+    pub earned_30d: Option<Amount>,
+    /// First block of the contiguous stored history the windows are counted over (at most 30
+    /// days back), and its time; `null` when no block is stored.
+    pub earnings_from_height: Option<u32>,
+    pub earnings_from_ms: Option<u64>,
+    /// FLUX paid from `earnings_from_height` to the tip.
+    pub earned_covered: Option<Amount>,
     pub next_payments: Vec<NextPayment>,
 }
 

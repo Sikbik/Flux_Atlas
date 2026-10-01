@@ -711,6 +711,11 @@ impl Fixture {
 pub fn seed_store(store: &Store, f: &Fixture) -> anyhow::Result<()> {
     let mut b = WriteBatch::with_capacity(f.nodes.len() * 2 + 1000);
     b.set_meta_u64(meta_keys::FIRST_INGEST_MS, f.now_ms - 30 * 86_400_000);
+    // The permanent app-message history counts as fully backfilled.
+    b.set_meta_u64(
+        atlas_engine::meta::BACKFILL_APP_MESSAGES_DONE,
+        f.now_ms - 29 * 86_400_000,
+    );
     for n in &f.nodes {
         b.intern_node(n.outpoint, n.id);
         b.put_node(n.clone());

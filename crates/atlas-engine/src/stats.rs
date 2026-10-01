@@ -115,6 +115,9 @@ pub struct EngineStats {
     pub winner_checks: u64,
     /// Reorgs handled.
     pub reorgs: u64,
+    /// Topology calls discarded by the mesh outlier rule, and the links they would have added.
+    pub mesh_calls_rejected: u64,
+    pub mesh_links_rejected: u64,
     /// Store commits and failures.
     pub commits: u64,
     pub commit_errors: u64,

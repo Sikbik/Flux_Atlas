@@ -262,6 +262,49 @@ impl Store {
         })
     }
 
+    /// Payout rows of the blocks with `from <= height <= to` as `(height, payout)`, ascending by
+    /// height, then tier.
+    pub fn payouts_range(&self, from: u32, to: u32) -> Result<Vec<(u32, Payout)>> {
+        if from > to {
+            return Ok(Vec::new());
+        }
+        self.read(|txn| {
+            let t = txn.open_table(tables::BLOCK_PAYOUTS)?;
+            scan(
+                t.range((from, 0u8)..=(to, u8::MAX))?,
+                Order::Asc,
+                usize::MAX,
+                |k, v| Ok((k.value().0, codec::decode(v.value())?)),
+            )
+        })
+    }
+
+    /// The lowest height `h >= floor` such that every block of `h..=top` is stored, walking the
+    /// block keys down from `top` (values are not read). `None` when `top` itself is missing.
+    pub fn contiguous_from(&self, top: u32, floor: u32) -> Result<Option<u32>> {
+        if floor > top {
+            return Ok(None);
+        }
+        self.read(|txn| {
+            let t = txn.open_table(tables::BLOCKS)?;
+            let mut range = t.range(floor..=top)?;
+            let mut expect = top;
+            let mut low = None;
+            while let Some(item) = range.next_back() {
+                let (k, _) = item?;
+                if k.value() != expect {
+                    break;
+                }
+                low = Some(expect);
+                if expect == floor {
+                    break;
+                }
+                expect -= 1;
+            }
+            Ok(low)
+        })
+    }
+
     /// Payout rows of the block at `height`, in tier order.
     pub fn block_payouts(&self, height: u32) -> Result<Vec<Payout>> {
         self.read(|txn| {
@@ -385,6 +428,19 @@ impl Store {
         })
     }
 
+    /// Calls `f` with every permanent app message (in message-hash order), decoding one at a
+    /// time, so a full pass never holds the whole history in memory.
+    pub fn for_each_app_message(&self, mut f: impl FnMut(AppMessageRecord)) -> Result<()> {
+        self.read(|txn| {
+            let t = txn.open_table(tables::APP_MESSAGES)?;
+            for item in t.range::<&[u8; 32]>(..)? {
+                let (_, v) = item?;
+                f(codec::decode(v.value())?);
+            }
+            Ok(())
+        })
+    }
+
     /// Every pending app message.
     pub fn pending_app_messages(&self) -> Result<Vec<PendingAppMessage>> {
         self.read(|txn| all_values::<&[u8; 32], _>(&txn.open_table(tables::PENDING_APP_MESSAGES)?))
@@ -419,7 +475,8 @@ impl Store {
         self.read(|txn| {
             let t = txn.open_table(tables::MESH_EVENTS)?;
             scan(t.range(bounds)?, order, limit, |k, v| {
-                Ok((EventKey::from_tuple(k.value()), codec::decode(v.value())?))
+                let key = EventKey::from_tuple(k.value());
+                Ok((key, codec::decode_mesh_change(key.ts_ms, v.value())?))
             })
         })
     }
