@@ -105,7 +105,24 @@ impl NodeTable {
             {
                 t.by_endpoint.insert(ep, id);
             }
-            t.slots[id.0 as usize] = Some(NodeEntry::new(rec));
+            // A stored record reflects blocks up to its own heights: a node list older than
+            // those (the gateway's cached list right after a restart at a block boundary) must
+            // not roll them back. Before, `touched` restarted at 0, and such a list undid the
+            // last block's payouts and moved every rank behind them (measured on 3110: 6,727
+            // rank corrections and a queue head stuck until the next reconcile).
+            let touched = [
+                Some(rec.added_height),
+                rec.confirmed_height,
+                rec.last_confirmed_height,
+                rec.last_paid_height,
+            ]
+            .into_iter()
+            .flatten()
+            .max()
+            .unwrap_or(0);
+            let mut e = NodeEntry::new(rec);
+            e.touched = touched;
+            t.slots[id.0 as usize] = Some(e);
         }
         t.dirty = true;
         t

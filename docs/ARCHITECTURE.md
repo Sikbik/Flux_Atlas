@@ -212,6 +212,11 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   out and nothing is deleted); one walk-back per sync, and a fork deeper than the comparable window drops that
 >   window once and jumps to the new tip instead of walking back window after window. Orphaned rows deeper than
 >   the window stay stored (never valid history deleted on one backend's word).
+>   **Stale list after a restart (B9):** restored records count as touched at their own highest height
+>   (added, confirmed, last confirm, last payment), so a node list one block older than the restored tip (the
+>   gateway's cached list right after a restart at a block boundary) skips them instead of rolling the last
+>   block's payouts back. Seen on 3110: 3 payouts undone, 6,727 rank corrections and a queue head stuck until
+>   the next reconcile.
 >   **Payout undo (B9, X1 L11):** each applied block records, per paid node, the previous `last_paid_height`;
 >   a reorg restores it for every orphaned block and drops the orphaned blocks' payments rows, so the replacement
 >   block's payout is attributed against the restored queue, not by the fallback to the first node of the

@@ -987,6 +987,59 @@ async fn restart_after_downtime_replays_blocks_without_rank_corrections() {
     eng.shutdown().await;
 }
 
+/// A node list one block older than the restored tip (the gateway's cached list right after a
+/// restart at a block boundary) must not roll back the last block's payouts. Before, the
+/// restored records had no `touched` height and the list undid them: thousands of rank
+/// corrections and a queue head stuck until the next reconcile (seen live on 3110).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stale_list_after_a_restart_rolls_nothing_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("s.redb")).unwrap();
+    let base = fixture_block("flux/daemon_getblock_2996916_verbosity2.json");
+    let start_height = 3_000_000;
+    let mut up = UpstreamQueue::new(8, start_height - 1);
+    let eng = start(store.clone());
+    let mut prev = h(1);
+    let mut older = Vec::new();
+    for i in 0..4 {
+        if i == 3 {
+            older = up.nodes.clone();
+        }
+        let b = paying_block(&base, start_height + i, prev, up.advance());
+        prev = b.summary.hash;
+        inject(
+            &eng,
+            Obs::Block {
+                block: Box::new(b),
+                received_ms: now_ms(),
+                discontinuous: i == 0,
+            },
+        )
+        .await;
+        if i == 0 {
+            inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+        }
+    }
+    inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+    until("second reconcile", || eng.stats().reconciles == 2).await;
+    assert_eq!(eng.stats().reconcile_diffs, 0);
+    until("ranks", || published_ranks(&eng) == up.ranks()).await;
+    eng.shutdown().await;
+    drop(eng);
+
+    let eng = start(store);
+    inject(&eng, Obs::NodeList(older)).await;
+    until("reconcile after the restart", || {
+        eng.stats().reconciles == 1
+    })
+    .await;
+    let s = eng.stats();
+    assert_eq!(s.reconcile_diffs, 0, "the stale list is not a diff: {s:?}");
+    assert_eq!(s.rank_corrections, 0, "no correction burst");
+    until("ranks unchanged", || published_ranks(&eng) == up.ranks()).await;
+    eng.shutdown().await;
+}
+
 fn geoip_fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../atlas-geoip/tests/fixtures/GeoIP2-City-Test.mmdb")
