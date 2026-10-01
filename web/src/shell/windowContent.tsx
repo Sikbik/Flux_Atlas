@@ -1,9 +1,10 @@
 // What renders inside a window that is not the route's own (`?w=` extras and free windows). The
 // route-bound primary window renders the router's <Outlet />; extras render from this registry, so
-// the same view shows whether a window is primary or riding in `?w=`. Feature teams replace the
-// placeholder views here and in the route tree together.
+// the same view shows whether a window is primary or riding in `?w=`. Views come from the registry
+// in src/views, where each feature team swaps its placeholders for real views.
 
 import type { ReactNode } from 'react';
+import { ANALYTICS_TABS, type AnalyticsTab, QUEUE_TIERS, type QueueTier } from '../app/search';
 import {
   AboutView,
   AddressView,
@@ -22,8 +23,7 @@ import {
   TimeMachineView,
   TxView,
   WeatherView,
-} from '../app/placeholders/views';
-import { ANALYTICS_TABS, type AnalyticsTab, QUEUE_TIERS, type QueueTier } from '../app/search';
+} from '../views';
 import type { WindowState } from './wm/types';
 
 export function windowContent(win: WindowState): ReactNode {

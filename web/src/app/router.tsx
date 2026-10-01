@@ -16,8 +16,6 @@ import { useEffect } from 'react';
 import { queries } from '../api/queries';
 import { GlobeCanvas, GlobeProvider } from '../globe';
 import { Shell } from '../shell';
-import { useNetwork, useRuntime } from './context';
-import { NotFound, RouteError } from './errors';
 import {
   AboutView,
   AddressView,
@@ -40,7 +38,9 @@ import {
   TimeMachineView,
   TxView,
   WeatherView,
-} from './placeholders/views';
+} from '../views';
+import { useNetwork, useRuntime } from './context';
+import { NotFound, RouteError } from './errors';
 import type { AtlasRuntime } from './runtime';
 import {
   ANALYTICS_TABS,

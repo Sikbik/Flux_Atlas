@@ -19,8 +19,9 @@
 // machine, weather) render in the stage's page slot.
 
 import { Outlet, useRouterState } from '@tanstack/react-router';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNetwork } from '../../app/context';
+import { CommandLayer } from '../../features/command';
 import {
   type Anchor,
   GlobeOverlay,
@@ -103,7 +104,9 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
     // Ambient: no chrome; the globe and the moon (orbit mode) are the screen (design 6.4 K).
     return (
       <div className="shell" data-layout={phone ? 'phone' : 'desktop'} data-ambient="">
-        <Outlet />
+        <Suspense fallback={null}>
+          <Outlet />
+        </Suspense>
       </div>
     );
   }
@@ -121,7 +124,9 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
       <main className="shell-stage" data-region="stage" aria-label="Globe">
         {pageRoute ? (
           <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
-            <Outlet />
+            <Suspense fallback={null}>
+              <Outlet />
+            </Suspense>
           </div>
         ) : null}
       </main>
@@ -134,6 +139,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         onRequestClose={requestClose}
         onFocusWindow={focusWindow}
       />
+      <CommandLayer />
       <BootVeil />
     </div>
   );

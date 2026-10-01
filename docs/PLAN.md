@@ -25,16 +25,23 @@ commits at each milestone. Status values: done, running, queued.
 | WP | Owner | Boundary | Acceptance |
 |---|---|---|---|
 | B1 Backend foundation (done, 01ef4fd) | Opus | `Cargo.toml`, `crates/atlas-core`, `crates/atlas-flux`, `crates/atlas-store`, skeletons of `atlas-engine` + `atlas-server` | fmt/clippy/test green; every parser passes on every fixture; the nodes.bin codec round-trips and a golden file is written; redb tables round-trip; SSRF guard unit-tested; ts-rs exports into `web/src/api/generated/` |
-| F1a Frontend foundation: logic core (done, merged). F1b: globe port + bindings + window-manager core (running, worktree) | Opus | `web/**` (initial) | Vite app boots; tokens + fonts load; router; the nodes.bin decoder passes the golden test; WS client handles resync; NetworkStore; mock mode with a fake live feed; globe engine ported and mounted as the persistent wallpaper; window-manager + dock primitives; Playwright smoke + screenshot script; `tsc`/biome/vitest green |
+| F1a Frontend foundation: logic core (done, merged). F1b: globe port + bindings + window-manager core (done, merged 2929567; 60 fps at 1440p, 1.5 ms GPU per frame, flat heap over a 10-minute route-churn soak) | Opus | `web/**` (initial) | Vite app boots; tokens + fonts load; router; the nodes.bin decoder passes the golden test; WS client handles resync; NetworkStore; mock mode with a fake live feed; globe engine ported and mounted as the persistent wallpaper; window-manager + dock primitives; Playwright smoke + screenshot script; `tsc`/biome/vitest green |
 
 ## Phase 3 — Features (parallel)
 | WP | Owner | Boundary | Acceptance |
 |---|---|---|---|
 | B2 Engine & ingest (done; 90-min live soak clean, merging via I1) | Opus | `crates/atlas-engine` | runs against the live API for 30+ min with no errors; events derived correctly (unit tests from fixture pairs); metrics/snapshots/time machine persist and reload; peer crawl respects the SSRF guard and rate limits; memory stays flat |
 | B3 API server + live hub (done, merged 62bb028) | Opus | `crates/atlas-server` | every §6 endpoint is implemented and tested; pre-built bodies with ETag/compression; WS protocol incl. replay/resync; search resolution; explorer proxy cache; SPA embed; `oha` p99 < 5 ms on hot endpoints |
-| F2 Shell & signature moments | Sonnet | `web/src/shell/**`, `web/src/ui/**` | boot sequence on real load progress; windows (drag/snap/stack/minimize); dock; ⌘K palette; terminal; toasts; achievements; ambient mode; phone layout |
-| F3 Inspectors | Sonnet | `web/src/features/{node,app,operator}/**` | node + app inspectors, app constellation, operator view, watchlist |
-| F4 Explorer & analytics | Sonnet | `web/src/features/{explorer,analytics,timemachine,search}/**` | live block rail, block/tx/address/mempool, analytics dashboards, time-machine scrubber |
+| K1 UI kit (running, worktree) | Sonnet | `web/src/ui/**`, `web/src/styles/components.css` | the shared primitives every view composes (layout, key-value, stats, chips, tabs, tables, charts, entity links, amounts, hashes, states); a kit gallery at `/dev/kit`; merged first, then pulled into the other F branches |
+| F2a Frame & live chrome (running, worktree) | Sonnet | `web/src/shell/**`, `web/src/styles/{global,frame}.css`, `web/src/globe/overlays.tsx`, `web/src/features/chrome/**`, `web/src/views/frame.ts` | boot sequence on real load progress; top bar, dock, status bar and window chrome with motion; live block rail, Pulse feed with +N collapsing, next-payout ticker, reward-cut countdown; toasts; globe hover tooltip and labels; phone layout |
+| F2b Command & delight (running, worktree) | Sonnet | `web/src/features/{command,achievements,ambient,settings}/**`, `web/src/views/command.ts` | ⌘K palette and omnibox search; `/q` results; terminal with every command, autocomplete, history and live tails; achievements; ambient mode UX (idle entry, kiosk, smooth exit); settings and about |
+| F3 Inspectors (running, worktree) | Sonnet | `web/src/features/inspect/**`, `web/src/views/inspect.ts` | node, host and app inspectors (app constellation, spec history), operator view, watchlist, payment-queue visualizer, network weather |
+| F4 Explorer & analytics (running, worktree) | Sonnet | `web/src/features/{explorer,analytics,timemachine}/**`, `web/src/views/explorer.ts` | block/tx/address/mempool/supply/rich-list views, analytics dashboards, time-machine scrubber |
+
+View ownership is enforced by the registry in `web/src/views/`: each F team swaps placeholders for real views only in its
+own barrel, so the route tree and `shell/windowContent.tsx` never change in parallel. Feature queries live in the feature
+directory; shared files (`api/**`, `store/**`, `app/**`, `choreo/**`, `globe/engine/**`) change only for bug fixes,
+called out in the hand-back.
 
 ## Phase 4 — Integration & hardening
 | WP | Owner | Scope |
@@ -54,7 +61,7 @@ commits at each milestone. Status values: done, running, queued.
 - Visual verification tool: `node $SCRATCH/team/tools/shot.mjs <url|file> <out.png> [--gpu --fps --frames N --mobile --eval js]`,
   where `$SCRATCH` is the session scratchpad the lead gives in each brief.
 - Agents in the main tree don't commit. The lead reviews and commits per milestone.
-- Parallel work packages that touch dependent code (B2/B3, F2/F3/F4) run in **isolated git worktrees** and commit to
+- Parallel work packages that touch dependent code (B2/B3, K1/F2a/F2b/F3/F4) run in **isolated git worktrees** and commit to
   their worktree branch only. The lead merges into `development`. Each Rust agent uses its own `CARGO_TARGET_DIR`
   to avoid build-lock contention.
 - Contract changes (DTOs, binary formats, WS messages) go through `docs/ARCHITECTURE.md` first.

@@ -5,6 +5,7 @@ import {
   createContext,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  Suspense,
   useCallback,
   useContext,
   useRef,
@@ -225,7 +226,9 @@ export function WindowFrame({ win, z, phone, children, onRequestClose, onFocusWi
           </button>
         </div>
       </header>
-      <div className="wm-body">{children}</div>
+      <div className="wm-body">
+        <Suspense fallback={null}>{children}</Suspense>
+      </div>
       {phone || maximized ? null : docked ? (
         <div className="wm-resize" data-edge="w" aria-hidden="true" {...dragHandlers('resize', 'w')} />
       ) : (
