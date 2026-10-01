@@ -64,6 +64,10 @@ export function concentration(entries: readonly Holder[]): {
   return { buckets, listed, listedShare, top };
 }
 
+/** A share of the supply as a percentage with the digits that matter: `37.2%`, `0.12%`, `0.004%`. */
+export const formatShare = (pct: number): string =>
+  `${pct >= 10 ? pct.toFixed(1) : pct >= 0.1 ? pct.toFixed(2) : pct.toFixed(3)}%`;
+
 /** Collateral locked by an address's nodes, never more than its balance. */
 export function lockedSats(
   counts: { cumulus: number; nimbus: number; stratus: number },

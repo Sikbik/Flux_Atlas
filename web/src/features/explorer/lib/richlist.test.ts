@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { bucketLabel, concentration, lockedSats } from './richlist';
+import { bucketLabel, concentration, formatShare, lockedSats } from './richlist';
+
+describe('formatShare', () => {
+  it('keeps the digits that matter at each magnitude', () => {
+    expect(formatShare(37.16)).toBe('37.2%');
+    expect(formatShare(3.5427)).toBe('3.54%');
+    expect(formatShare(0.1234)).toBe('0.12%');
+    expect(formatShare(0.00412)).toBe('0.004%');
+  });
+});
 
 const holders = (shares: number[]) => shares.map((share_pct, i) => ({ rank: i + 1, share_pct }));
 
