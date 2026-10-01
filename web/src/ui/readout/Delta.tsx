@@ -23,12 +23,14 @@ export function Delta({ value, kind, decimals, period, className }: DeltaProps) 
   const { text, direction } = formatDelta(value, { kind, decimals });
   const Icon = direction === 'up' ? ArrowUpRight : direction === 'down' ? ArrowDownRight : Minus;
   return (
-    <span className={cx('ui-delta ui-mono', className)} data-dir={direction}>
-      <Icon className="ui-delta__icon" size={12} strokeWidth={1.75} aria-hidden="true" />
-      <span className="ui-sr-only">
-        {direction === 'up' ? 'Up' : direction === 'down' ? 'Down' : 'No change'}
+    <span className={cx('ui-delta', className)} data-dir={direction}>
+      <span className="ui-delta__chip ui-mono">
+        <Icon className="ui-delta__icon" size={12} strokeWidth={1.75} aria-hidden="true" />
+        <span className="ui-sr-only">
+          {direction === 'up' ? 'Up' : direction === 'down' ? 'Down' : 'No change'}
+        </span>
+        <span className="ui-delta__value">{text}</span>
       </span>
-      <span className="ui-delta__value">{text}</span>
       {period ? <span className="ui-delta__period">{period}</span> : null}
     </span>
   );

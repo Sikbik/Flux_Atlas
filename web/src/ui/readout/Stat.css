@@ -1,45 +1,50 @@
-/* Stat tile (design 8.11): label, a big tabular figure, delta, caption, sparkline slot. Raised one ink
-   step with a lit top edge and a soft corner light; the hero tile takes the hexagon chamfer. */
+/* Stat tile (design 8.11): label, a large tabular figure, delta, caption, sparkline slot. Same material
+   as a Card (a fill one step up, a rim lit at the top left); the figure scales with the tile's own
+   width through container units, so one tile reads well from a 140 px grid cell to a 400 px hero.
+   The hero takes the hexagon chamfer, light numerals and a lit corner. */
 
 .ui-stat {
-  --ui-stat-surface: var(--ink-1);
+  --ui-stat-glow: 8%;
   position: relative;
+  container-type: inline-size;
   display: grid;
   align-content: start;
-  gap: var(--space-2);
-  min-width: 0;
+  gap: 6px;
+  inline-size: 100%;
+  min-inline-size: 0;
   margin: 0;
-  padding: 11px 13px 12px;
-  border: 0;
+  padding: 13px 14px 12px;
+  border: 1px solid transparent;
   border-radius: var(--r-lg);
   background:
     radial-gradient(
       130% 120% at 0% 0%,
-      color-mix(in oklab, var(--accent, var(--accent-500)) 8%, transparent),
+      color-mix(in oklab, var(--accent, var(--accent-500)) var(--ui-stat-glow), transparent),
       transparent 58%
-    ),
-    var(--ui-stat-surface);
-  box-shadow:
-    0 0 0 1px var(--line-1),
-    var(--shadow-inset-hi);
+    )
+    padding-box,
+    linear-gradient(180deg, color-mix(in oklab, var(--hot) 2.4%, var(--ink-1)), var(--ink-1) 52%) padding-box,
+    var(--ui-rim) border-box;
+  box-shadow: var(--ui-lit), var(--ui-contact);
   color: var(--text-1);
   font: inherit;
   text-align: left;
   isolation: isolate;
+  animation: ui-rise var(--dur-enter) var(--ease-out-expo) both;
+  animation-delay: calc(var(--ui-i, 0) * 45ms);
 }
 
 button.ui-stat {
   cursor: pointer;
   transition:
-    box-shadow var(--dur-fast) var(--ease-out),
-    transform var(--dur-base) var(--ease-out);
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 
-button.ui-stat:hover {
-  box-shadow:
-    0 0 0 1px var(--line-3),
-    var(--shadow-inset-hi);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  button.ui-stat:hover {
+    transform: translateY(-1px);
+  }
 }
 
 button.ui-stat:active {
@@ -55,31 +60,33 @@ button.ui-stat:focus-visible {
   overflow: hidden;
   color: var(--text-3);
   font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  letter-spacing: 0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ui-stat[data-spark] .ui-stat__label {
-  padding-right: 72px;
+  padding-right: 74px;
 }
 
 .ui-stat__value {
   display: flex;
   align-items: baseline;
-  gap: 3px;
-  min-height: 1.1em;
+  gap: 4px;
+  min-height: 1.12em;
   color: var(--text-1);
-  font: var(--fw-semibold) 22px / 1.1 var(--font-display);
-  letter-spacing: var(--tracking-heading);
+  font: var(--fw-medium) clamp(20px, 15cqi, 28px) / 1.12 var(--font-display);
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  animation: ui-fade-in var(--dur-slow) var(--ease-out) both;
 }
 
 .ui-stat__unit {
-  margin-left: 3px;
+  margin-left: 2px;
   color: var(--text-3);
-  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-sans);
-  letter-spacing: 0;
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-display);
+  letter-spacing: 0.02em;
 }
 
 .ui-stat__unknown {
@@ -90,7 +97,16 @@ button.ui-stat:focus-visible {
 
 .ui-stat__nodata {
   color: var(--text-4);
-  font-weight: var(--fw-medium);
+  font-weight: var(--fw-light);
+}
+
+/* The delta and caption row is always reserved, so loading, loaded and empty tiles are one height. */
+.ui-stat__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-height: 18px;
 }
 
 .ui-stat__stale {
@@ -100,8 +116,7 @@ button.ui-stat:focus-visible {
 }
 
 .ui-stat__delta {
-  display: flex;
-  min-height: 14px;
+  display: inline-flex;
 }
 
 .ui-stat__caption {
@@ -112,27 +127,39 @@ button.ui-stat:focus-visible {
 
 .ui-stat__spark {
   position: absolute;
-  top: 12px;
-  right: 10px;
+  top: 10px;
+  right: 12px;
   display: block;
   line-height: 0;
+  animation: ui-fade-in var(--dur-slower) var(--ease-out) both;
 }
 
 .ui-stat__skel-value {
-  margin-block: 1px;
+  margin-block: 2px;
+  font-size: clamp(20px, 15cqi, 28px);
 }
 
-/* Hero: the view's one big figure, chamfered at the hexagon angle with a lit rim. */
+/* Hero: the view's one big figure. Chamfered at the hexagon angle; the lit rim runs along three
+   sides and a short diagonal closes the cut. Numerals go light and large, with a soft bloom. */
 .ui-stat[data-hero] {
-  padding: 14px 18px 16px;
+  --ui-stat-rim: color-mix(in oklab, var(--accent-300) 60%, transparent);
+  gap: 8px;
+  padding: 16px 20px 16px;
+  border: 0;
   border-radius: 0;
   box-shadow: none;
   clip-path: var(--clip-chamfer-sm);
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--accent, var(--accent-500)) 16%, var(--ui-stat-surface)),
-    var(--ui-stat-surface) 62%
-  );
+  background:
+    radial-gradient(
+      90% 120% at 100% 0%,
+      color-mix(in oklab, var(--accent, var(--accent-500)) 26%, transparent),
+      transparent 64%
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--accent, var(--accent-500)) 13%, var(--ink-1)),
+      var(--ink-1) 72%
+    );
 }
 
 .ui-stat[data-hero]::before {
@@ -143,11 +170,11 @@ button.ui-stat:focus-visible {
   padding: 1px;
   clip-path: inherit;
   background: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--accent-300) 70%, transparent),
-    transparent 38%,
-    transparent 68%,
-    color-mix(in oklab, var(--accent-400) 32%, transparent)
+    150deg,
+    color-mix(in oklab, var(--hot) 55%, transparent),
+    color-mix(in oklab, var(--accent-300) 14%, transparent) 38%,
+    transparent 66%,
+    color-mix(in oklab, var(--accent-400) 28%, transparent)
   );
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
@@ -160,18 +187,78 @@ button.ui-stat:focus-visible {
   pointer-events: none;
 }
 
-.ui-stat[data-hero] .ui-stat__value {
-  font-size: var(--fs-3xl);
-  line-height: var(--lh-tight);
-  letter-spacing: var(--tracking-display);
+/* The diagonal of the chamfer (14 x 8 px), drawn as a 1 px line across the cut corner. */
+.ui-stat[data-hero]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  inline-size: 14px;
+  block-size: 8px;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.7px),
+    color-mix(in oklab, var(--hot) 45%, transparent) calc(50% - 0.7px) calc(50% + 0.7px),
+    transparent calc(50% + 0.7px)
+  );
+  pointer-events: none;
 }
 
 .ui-stat[data-hero] .ui-stat__label {
   font-size: var(--fs-sm);
 }
 
+.ui-stat[data-hero] .ui-stat__value {
+  font: var(--fw-light) clamp(32px, 17cqi, 58px) / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  text-shadow: 0 0 36px color-mix(in oklab, var(--accent-500) 55%, transparent);
+}
+
+.ui-stat[data-hero] .ui-stat__unit {
+  font-size: var(--fs-sm);
+}
+
+.ui-stat[data-hero] .ui-stat__meta {
+  min-height: 20px;
+}
+
+.ui-stat[data-hero] .ui-stat__spark {
+  top: auto;
+  right: 18px;
+  bottom: 18px;
+}
+
 .ui-stat[data-hero]:focus-visible {
   outline: 2px solid var(--accent-400);
   outline-offset: 3px;
   box-shadow: none;
+}
+
+/* Tier-tinted tiles (node views) light their corner in the tier colour. */
+.ui-stat[data-tier] {
+  --ui-stat-glow: 13%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-stat,
+  :root:not([data-motion="full"]) .ui-stat__value,
+  :root:not([data-motion="full"]) .ui-stat__spark {
+    animation-duration: var(--dur-fast);
+    animation-delay: 0ms;
+  }
+
+  :root:not([data-motion="full"]) button.ui-stat:hover {
+    transform: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-stat,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-stat__value,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-stat__spark {
+  animation-duration: var(--dur-fast);
+  animation-delay: 0ms;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) button.ui-stat:hover {
+  transform: none;
 }

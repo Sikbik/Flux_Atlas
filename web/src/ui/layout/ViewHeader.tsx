@@ -48,19 +48,25 @@ export function ViewHeader({
   const Heading = `h${level}` as 'h1' | 'h2';
   return (
     <header className={cx('ui-vh', className)} data-tier={tier}>
-      {kind || Icon ? (
-        <div className="ui-vh__kind">
-          {Icon ? <Icon size={14} strokeWidth={1.5} aria-hidden="true" /> : null}
-          {kind}
-        </div>
-      ) : null}
-      {freshness ? <div className="ui-vh__aside">{freshness}</div> : null}
-      <Heading className="ui-vh__title" data-mono={mono || undefined}>
-        {title}
-      </Heading>
-      {subtitle ? <p className="ui-vh__sub">{subtitle}</p> : null}
-      {actions ? <div className="ui-vh__actions">{actions}</div> : null}
-      {children ? <div className="ui-vh__meta">{children}</div> : null}
+      <div className="ui-vh__grid">
+        {kind || Icon ? (
+          <div className="ui-vh__kind">
+            {Icon ? (
+              <span className="ui-vh__glyph">
+                <Icon size={14} strokeWidth={1.5} aria-hidden="true" />
+              </span>
+            ) : null}
+            {kind}
+          </div>
+        ) : null}
+        {freshness ? <div className="ui-vh__aside">{freshness}</div> : null}
+        <Heading className="ui-vh__title" data-mono={mono || undefined}>
+          {title}
+        </Heading>
+        {subtitle ? <p className="ui-vh__sub">{subtitle}</p> : null}
+        {actions ? <div className="ui-vh__actions">{actions}</div> : null}
+        {children ? <div className="ui-vh__meta">{children}</div> : null}
+      </div>
     </header>
   );
 }

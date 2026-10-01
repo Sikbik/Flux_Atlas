@@ -1,20 +1,36 @@
-/* Card: one ink step above the slab. Depth is lightness plus a lit top edge (one light source, top
-   left), not a heavy outline (design 5.2, 5.5). */
+/* Card: one ink step above the slab. Depth is lightness plus a rim that is brightest where the one
+   light lands (top left) and fades out on the far side; there is no heavy outline (design 5.2, 5.5).
+   Fill and rim are two background layers on a transparent 1 px border, so the edge needs no extra
+   element and nothing is clipped. */
 
 .ui-card {
+  --ui-card-glow: 9%;
   position: relative;
   min-width: 0;
+  border: 1px solid transparent;
   border-radius: var(--r-lg);
-  background: var(--ink-1);
-  box-shadow:
-    0 0 0 1px var(--line-1),
-    var(--shadow-inset-hi);
+  background:
+    radial-gradient(
+      130% 110% at 0% 0%,
+      color-mix(in oklab, var(--accent, var(--accent-500)) var(--ui-card-glow), transparent),
+      transparent 60%
+    )
+    padding-box,
+    linear-gradient(180deg, color-mix(in oklab, var(--hot) 2.4%, var(--ink-1)), var(--ink-1) 52%) padding-box,
+    var(--ui-rim) border-box;
+  box-shadow: var(--ui-lit), var(--ui-contact);
   isolation: isolate;
 }
 
+.ui-card[data-glow] {
+  --ui-card-glow: 17%;
+}
+
+/* Flat: no fill and no light, a quiet hairline only. */
 .ui-card[data-tone="flat"] {
-  background: transparent;
-  box-shadow: 0 0 0 1px var(--line-1);
+  border-color: var(--line-2);
+  background: none;
+  box-shadow: none;
 }
 
 .ui-card[data-padding="sm"] {
@@ -29,35 +45,18 @@
   padding: var(--space-7) var(--space-8);
 }
 
-/* The corner light: a soft spill of the surface's accent, fading before it can touch any edge. */
-.ui-card[data-glow]::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background: radial-gradient(
-    120% 100% at 0% 0%,
-    color-mix(in oklab, var(--accent, var(--accent-500)) 11%, transparent),
-    transparent 62%
-  );
-  pointer-events: none;
-}
-
+/* Interactive: the card rises a pixel (the rim and pointer light come from `ui-spot`). */
 .ui-card[data-interactive] {
   cursor: pointer;
   transition:
-    box-shadow var(--dur-fast) var(--ease-out),
     transform var(--dur-base) var(--ease-out),
-    background var(--dur-fast) var(--ease-out);
+    box-shadow var(--dur-base) var(--ease-out);
 }
 
-.ui-card[data-interactive]:hover {
-  background: color-mix(in oklab, var(--ink-1) 82%, var(--ink-2));
-  box-shadow:
-    0 0 0 1px var(--line-2),
-    var(--shadow-inset-hi);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  .ui-card[data-interactive]:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .ui-card[data-interactive]:active {
@@ -67,4 +66,22 @@
 .ui-card[data-interactive]:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-card[data-interactive] {
+    transition: none;
+  }
+
+  :root:not([data-motion="full"]) .ui-card[data-interactive]:hover {
+    transform: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-card[data-interactive] {
+  transition: none;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-card[data-interactive]:hover {
+  transform: none;
 }

@@ -3,13 +3,23 @@
 
 .ui-section {
   --ui-section-px: var(--space-6);
-  padding: var(--space-5) var(--ui-section-px) var(--space-6);
-  border-top: 1px solid var(--line-1);
+  position: relative;
+  padding: var(--space-6) var(--ui-section-px) var(--space-6);
   min-width: 0;
 }
 
-.ui-section:first-child {
-  border-top: 0;
+/* The divider is a hairline of light that fades out to the right, not a box edge. */
+.ui-section::before {
+  content: "";
+  position: absolute;
+  inset: 0 var(--ui-section-px) auto;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line-2), var(--line-1) 50%, transparent);
+  pointer-events: none;
+}
+
+.ui-section:first-child::before {
+  display: none;
 }
 
 .ui-section__head {
@@ -50,7 +60,7 @@
 }
 
 .ui-section__toggle:hover {
-  background: var(--ink-1);
+  background: color-mix(in oklab, var(--hot) 4%, transparent);
 }
 
 .ui-section__toggle:focus-visible {
@@ -77,6 +87,10 @@
   flex: none;
   color: var(--text-3);
   transition: transform var(--dur-base) var(--ease-out);
+}
+
+.ui-section__toggle:hover .ui-section__chevron {
+  color: var(--text-1);
 }
 
 .ui-section[data-collapsible][data-open="false"] .ui-section__chevron {

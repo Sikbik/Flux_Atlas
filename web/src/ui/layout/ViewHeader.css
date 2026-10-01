@@ -1,21 +1,33 @@
-/* View header: kind label, title, subtitle, actions, freshness; a hairline of accent light beneath
-   (the window title bar's fading underline, design 8.3). Folds by its own width (container query),
-   because windows are 360 to 820 px wide, not viewport-sized. */
+/* View header: kind label, title, subtitle, actions, freshness; light from the top left spills into
+   the header and a hairline of the same light runs under it (the window title bar's fading
+   underline, design 8.3). It folds by its own width (container query on the wrapper), because
+   windows are 360 to 820 px wide, not viewport-sized. The query styles the inner grid: an element
+   cannot query itself. */
 
 .ui-vh {
   position: relative;
   container-type: inline-size;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "kind aside"
-    "title actions"
-    "sub actions"
-    "meta meta";
-  align-items: start;
-  column-gap: var(--space-6);
-  row-gap: var(--space-2);
-  padding: var(--space-6) var(--space-6) var(--space-5);
+  isolation: isolate;
+}
+
+/* The light: a soft wash from the top left corner in the view's accent (the tier colour on node views). */
+.ui-vh::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(
+      72% 150% at 0% 0%,
+      color-mix(in oklab, var(--accent, var(--accent-500)) 15%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      40% 90% at 100% 0%,
+      color-mix(in oklab, var(--accent, var(--accent-500)) 5%, transparent),
+      transparent 80%
+    );
+  pointer-events: none;
 }
 
 .ui-vh::after {
@@ -25,24 +37,50 @@
   height: 1px;
   background: linear-gradient(
     90deg,
-    color-mix(in oklab, var(--accent, var(--accent-500)) 60%, transparent),
-    color-mix(in oklab, var(--accent, var(--accent-500)) 14%, transparent) 40%,
-    transparent 70%
+    color-mix(in oklab, var(--accent, var(--accent-500)) 70%, transparent),
+    color-mix(in oklab, var(--accent, var(--accent-500)) 18%, transparent) 38%,
+    transparent 72%
   );
+}
+
+.ui-vh__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "kind aside"
+    "title actions"
+    "sub actions"
+    "meta meta";
+  align-items: start;
+  column-gap: var(--space-6);
+  row-gap: var(--space-3);
+  padding: var(--space-6) var(--space-6) var(--space-6);
 }
 
 .ui-vh__kind {
   grid-area: kind;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-4);
   min-width: 0;
+  min-height: 24px;
   color: var(--text-3);
   font: var(--fw-medium) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  letter-spacing: 0.01em;
 }
 
-.ui-vh__kind > svg {
+/* The kind glyph sits in a small tinted tile, lit at its top edge like everything else. */
+.ui-vh__glyph {
+  display: grid;
   flex: none;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--accent, var(--accent-500)) 16%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent, var(--accent-500)) 32%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--hot) 14%, transparent);
   color: var(--accent, var(--accent-400));
 }
 
@@ -55,7 +93,7 @@
 .ui-vh__title {
   grid-area: title;
   min-width: 0;
-  margin: 0;
+  margin: var(--space-3) 0 0;
   font: var(--fw-semibold) var(--fs-xl) / var(--lh-snug) var(--font-display);
   letter-spacing: var(--tracking-heading);
   overflow-wrap: anywhere;
@@ -63,9 +101,9 @@
 }
 
 .ui-vh__title[data-mono] {
-  font: var(--fw-semibold) var(--fs-md) / var(--lh-snug) var(--font-mono);
-  letter-spacing: 0;
-  text-wrap: pretty;
+  font: var(--fw-semibold) var(--fs-lg) / var(--lh-snug) var(--font-mono);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 
 .ui-vh__sub {
@@ -79,7 +117,7 @@
 
 .ui-vh__actions {
   grid-area: actions;
-  align-self: center;
+  align-self: end;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -92,12 +130,25 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
-  margin-top: var(--space-4);
+  margin-top: var(--space-3);
 }
 
-@container (max-width: 460px) {
-  .ui-vh {
-    grid-template-columns: minmax(0, 1fr) auto;
+@container (min-width: 600px) {
+  .ui-vh__title:not([data-mono]) {
+    font-size: var(--fs-2xl);
+  }
+
+  .ui-vh__title[data-mono] {
+    font-size: var(--fs-xl);
+  }
+
+  .ui-vh__grid {
+    padding-inline: var(--space-8);
+  }
+}
+
+@container (max-width: 399px) {
+  .ui-vh__grid {
     grid-template-areas:
       "kind aside"
       "title title"
@@ -109,6 +160,6 @@
 
   .ui-vh__actions {
     justify-content: flex-start;
-    margin-top: var(--space-4);
+    margin-top: var(--space-3);
   }
 }

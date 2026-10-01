@@ -13,6 +13,7 @@
   border: 1px solid var(--line-2);
   border-radius: var(--r-pill);
   background: var(--ink-2);
+  box-shadow: var(--ui-lit);
   color: var(--text-2);
   font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
   white-space: nowrap;
@@ -88,9 +89,12 @@ button.ui-chip:focus-visible {
   box-shadow: var(--focus-ring);
 }
 
-/* Tier chip: --tier-soft fill, --tier-line border, the capsule glyph in the tier colour, the word in white. */
+/* Tier chip: --tier-soft fill, --tier-line border, the capsule glyph in the tier colour, the word in
+   white. A soft light rises from behind the glyph, so the chip reads as lit rather than filled. */
 .ui-chip[data-tier] {
-  background: var(--tier-soft);
+  background:
+    radial-gradient(70% 150% at 10% 50%, color-mix(in oklab, var(--tier) 26%, transparent), transparent 72%),
+    var(--tier-soft);
   border-color: var(--tier-line);
   color: var(--text-1);
 }
@@ -111,7 +115,9 @@ button.ui-chip:focus-visible {
 
 /* Status chip: --status-soft fill, a 40% status border, status-coloured icon, the word in white. */
 .ui-chip[data-status] {
-  background: var(--status-soft);
+  background:
+    radial-gradient(70% 150% at 10% 50%, color-mix(in oklab, var(--status) 22%, transparent), transparent 72%),
+    var(--status-soft);
   border-color: color-mix(in oklab, var(--status) 40%, transparent);
   color: var(--text-1);
 }

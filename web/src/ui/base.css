@@ -53,3 +53,125 @@
    }
    :root:is([data-motion="reduced"], [data-motion="off"]) .ui-x { animation: none; }
 */
+
+/* ---- Materials: the recipes every kit surface is cut from ------------------------------------
+   Light comes from one source, top left. A surface is a lightness step plus a rim that is brightest
+   where the light lands and fades to nothing on the far side, so edges are implied rather than
+   drawn. Built from tokens.css only. */
+:root {
+  /* The rim: paint it on a `border: 1px solid transparent` box as the `border-box` background layer
+     under an opaque `padding-box` fill. */
+  --ui-rim: linear-gradient(
+    152deg,
+    color-mix(in oklab, var(--hot) 22%, transparent),
+    color-mix(in oklab, var(--accent-300) 8%, transparent) 32%,
+    color-mix(in oklab, var(--hot) 3.5%, transparent) 68%,
+    color-mix(in oklab, var(--accent-400) 9%, transparent)
+  );
+  /* A stronger rim for hover and the hero surfaces. */
+  --ui-rim-hot: linear-gradient(
+    152deg,
+    color-mix(in oklab, var(--hot) 46%, transparent),
+    color-mix(in oklab, var(--accent-300) 18%, transparent) 36%,
+    color-mix(in oklab, var(--hot) 6%, transparent) 70%,
+    color-mix(in oklab, var(--accent-400) 16%, transparent)
+  );
+  /* The lit top edge, inside the box. */
+  --ui-lit: inset 0 1px 0 color-mix(in oklab, var(--hot) 8%, transparent);
+  /* Contact shadow under a raised surface (no outer spread, so neighbours stay clean). */
+  --ui-contact: 0 12px 24px -20px color-mix(in oklab, var(--void) 92%, transparent);
+  /* Entrance travel; zero under reduced motion (opacity-only cross-fade). */
+  --ui-rise-y: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) {
+    --ui-rise-y: 0px;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) {
+  --ui-rise-y: 0px;
+}
+
+/* One entrance for everything that arrives: a short rise and fade on transform and opacity only. */
+@keyframes ui-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--ui-rise-y));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Interactive light for a raised surface (Card, Stat tile): a soft light that follows the pointer
+   (`--ui-mx` / `--ui-my`, written by `useSpotlight`) and a hotter rim, both fading in on hover.
+   The surface needs `position: relative`, `isolation: isolate` and a 1 px transparent border. */
+.ui-spot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(
+    220px circle at var(--ui-mx, 50%) var(--ui-my, 0%),
+    color-mix(in oklab, var(--accent-300) 15%, transparent),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+
+.ui-spot::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background: var(--ui-rim-hot) border-box;
+  -webkit-mask:
+    linear-gradient(#000 0 0) padding-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) padding-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .ui-spot:hover::before,
+  .ui-spot:hover::after {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-spot::before,
+  :root:not([data-motion="full"]) .ui-spot::after {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-spot::before,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-spot::after {
+  transition: none;
+}

@@ -19,7 +19,7 @@
   grid-template-columns: subgrid;
   grid-column: 1 / -1;
   align-items: baseline;
-  padding: 4px var(--space-4);
+  padding: 5px var(--space-4);
   margin-inline: calc(var(--space-4) * -1);
   border-radius: var(--r-sm);
   transition: background var(--dur-fast) var(--ease-out);
@@ -27,11 +27,15 @@
 
 .ui-kv__row:hover,
 .ui-kv__row:focus-within {
-  background: var(--ink-1);
+  background: color-mix(in oklab, var(--hot) 3.5%, transparent);
 }
 
+/* Ruled rows are separated by a hairline that fades out toward the value side. */
 .ui-kv[data-ruled] .ui-kv__row + .ui-kv__row {
-  box-shadow: 0 -1px 0 var(--line-1);
+  background-image: linear-gradient(90deg, var(--line-1), transparent 85%);
+  background-position: top left;
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
 }
 
 .ui-kv__label {

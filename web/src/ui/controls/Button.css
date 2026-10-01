@@ -25,6 +25,11 @@
     transform var(--dur-instant) var(--ease-out);
 }
 
+/* The lit top edge on filled buttons; zero specificity so the focus ring below always wins. */
+.ui-button:where(:not([data-variant="ghost"], [data-variant="primary"])) {
+  box-shadow: var(--ui-lit);
+}
+
 .ui-button:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
