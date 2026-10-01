@@ -26,7 +26,9 @@
 //! [`OUTLIER_RECENT`] calls were over the limit and they came from at least
 //! [`OUTLIER_SPREAD`] different networks (IPv4 /16), calls are accepted again, so the median
 //! follows the new level instead of rejecting forever. A run of outliers from one network never
-//! reaches that spread.
+//! reaches that spread. Whatever the median, a call adding more than [`OUTLIER_MAX_ADDED`] links
+//! is discarded (and TopologySweep drops implausible replies before they get here: see
+//! `jobs::topology::plausible_reports`).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -43,6 +45,9 @@ pub const MISSES_TO_REMOVE: u8 = 2;
 pub const OUTLIER_FACTOR: f64 = 4.0;
 /// A call adding fewer links than this is never an outlier, whatever the median.
 pub const OUTLIER_MIN_ADDED: usize = 500;
+/// A call that would add more links than this is always discarded (the reply caps of
+/// TopologySweep bound a reply to 25,600 links; a cold start adds at most about 6,000).
+pub const OUTLIER_MAX_ADDED: usize = 10_000;
 /// Accepted calls in the rolling window.
 pub const OUTLIER_WINDOW: usize = 64;
 /// Accepted calls needed in the window before any call is judged.
@@ -97,6 +102,15 @@ impl CallScreen {
     pub fn judge(&mut self, added: usize, reporters: usize, network: u64) -> Verdict {
         let rate = added as f64 / reporters.max(1) as f64;
         let limit = self.median().map(|m| OUTLIER_FACTOR * m.max(0.5));
+        if added > OUTLIER_MAX_ADDED {
+            self.rejected_calls += 1;
+            self.rejected_links += added as u64;
+            return Verdict::Reject {
+                added,
+                rate,
+                limit: OUTLIER_MAX_ADDED as f64 / reporters.max(1) as f64,
+            };
+        }
         let over = limit.is_some_and(|l| added >= OUTLIER_MIN_ADDED && rate > l);
         self.recent.push_back((over, network));
         while self.recent.len() > OUTLIER_RECENT {

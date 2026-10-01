@@ -1154,6 +1154,12 @@ fn mesh_outlier_calls_are_discarded() {
     let farm = net("5.230.173.205");
     assert_eq!(farm, net("5.230.172.46"), "one /16");
     assert_ne!(farm, net("5.231.0.1"));
+    // Whatever the window, a call adding more than the absolute cap is discarded.
+    let mut s = CallScreen::default();
+    assert!(matches!(
+        s.judge(25_600, 128, farm),
+        Verdict::Reject { added: 25_600, .. }
+    ));
     // Judgement is relative to the median of recent accepted calls, per reporter.
     let mut s = CallScreen::default();
     // Cold: nothing is judged before the window is warm, however large.
