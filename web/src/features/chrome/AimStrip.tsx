@@ -27,20 +27,28 @@ function useAimVisible(): boolean {
   return useWm((s) => !Object.values(s.windows).some((w) => HIDDEN_FOR.includes(w.type)), Object.is);
 }
 
-/** The centre of the free area (the viewport less the dock, the docked window and the rail). */
-function useFreeCentre(): number {
-  return useWm((s) => {
+/** The free area (the viewport less the dock, the windows and the rail): its centre and its width. */
+function useFreeArea(): { centre: number; width: number } {
+  const key = useWm((s) => {
     const i = globeInset(s);
-    return Math.round(i.left + (s.viewport.w - i.left - i.right) / 2);
+    const width = s.viewport.w - i.left - i.right;
+    return `${Math.round(i.left + width / 2)}:${Math.round(width)}`;
   }, Object.is);
+  const [centre, width] = key.split(':').map(Number);
+  return { centre: centre ?? 0, width: width ?? 0 };
 }
+
+/** Room the strip needs (its lead, three chips and its padding) plus a little air; under it, it steps aside. */
+const STRIP_ROOM = { wide: 610, narrow: 560 };
 
 const key = (l: PayoutLine) => `${l.tier}:${l.node ?? l.address}`;
 
 export function AimStrip() {
   const { clock } = useRuntime();
-  const visible = useAimVisible();
-  const centre = useFreeCentre();
+  const allowed = useAimVisible();
+  const { centre, width } = useFreeArea();
+  const compact = useWm((s) => s.viewport.w < 1280, Object.is);
+  const visible = allowed && width >= (compact ? STRIP_ROOM.narrow : STRIP_ROOM.wide);
   const beat = useBeat(clock);
   const lines = usePayoutLines();
   const keyOf = useNodeKey();
@@ -49,13 +57,15 @@ export function AimStrip() {
   const sentence = useChangeAnnouncement(lines, secs);
   const soon = beat.remainingMs <= 5_000 && beat.phase !== 'late' && beat.phase !== 'quiet';
   const late = beat.phase === 'late' || beat.phase === 'quiet';
-  if (!visible) return null;
+  if (!allowed) return null;
   return (
     <fieldset
       className="aimstrip"
       style={{ '--aim-x': `${centre}px` } as React.CSSProperties}
       data-soon={soon || undefined}
       data-late={late || undefined}
+      data-hidden={visible ? undefined : ''}
+      inert={visible ? undefined : true}
     >
       <legend className="sr-only">Next payout</legend>
       <span className="aim-lead">
@@ -107,7 +117,7 @@ export function AimStrip() {
             <span
               key={tier}
               className="aimchip"
-              data-ghost=""
+              data-pending=""
               data-tier={tier}
               aria-hidden="true"
               style={{ '--i': i } as React.CSSProperties}

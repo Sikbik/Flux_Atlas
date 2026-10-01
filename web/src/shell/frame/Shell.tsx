@@ -54,6 +54,9 @@ import { useGlobeInsetSync, useWindowRouting } from './routing';
 import { TopBar } from './TopBar';
 import './frame.css';
 
+/** The workspace stops this far from the right edge: a docked inspector floats clear of the screen (design 3.1). */
+const WORKSPACE_MARGIN = 12;
+
 const viewportNow = () => ({
   w: typeof window === 'undefined' ? 1600 : window.innerWidth,
   h: typeof window === 'undefined' ? 900 : window.innerHeight,
@@ -76,6 +79,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const topRef = useRef<HTMLElement>(null);
   const dockRef = useRef<HTMLElement>(null);
   const bottomRef = useRef<HTMLElement>(null);
+  const statusRef = useRef<HTMLElement>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const { requestClose, focusWindow } = useWindowRouting(wm);
   const launch = useLauncher();
@@ -100,13 +104,20 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
       wm.dispatch({
         t: 'setViewport',
         viewport: v,
-        workspace: { x: left, y: top, w: Math.max(1, v.w - left), h: Math.max(1, bottomEdge - top) },
+        workspace: {
+          x: left,
+          y: top,
+          w: Math.max(1, v.w - left - (isPhone ? 0 : WORKSPACE_MARGIN)),
+          h: Math.max(1, bottomEdge - top),
+        },
       });
     };
     measure();
     window.addEventListener('resize', measure);
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    for (const el of [topRef.current, bottomRef.current, tabsRef.current, dockRef.current])
+    // Every region whose size moves an edge of the free area: the top bar, the dock, the rail, the status bar
+    // (a taller status bar lifts the rail without resizing it) and the phone's tab bar.
+    for (const el of [topRef.current, bottomRef.current, statusRef.current, tabsRef.current, dockRef.current])
       if (el) ro?.observe(el);
     return () => {
       window.removeEventListener('resize', measure);
@@ -154,7 +165,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
           ) : null}
         </main>
         {phone ? <PhoneTabs ref={tabsRef} /> : <BlockRail ref={bottomRef} />}
-        {phone ? null : <StatusBar />}
+        {phone ? null : <StatusBar ref={statusRef} />}
         <WindowLayer
           renderContent={(win: WindowState) =>
             win.binding === 'primary' && !pageRoute ? <Outlet /> : windowContent(win)

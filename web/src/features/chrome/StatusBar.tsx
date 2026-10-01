@@ -3,7 +3,7 @@
 // reward-cut chip, network totals with the tier split, the price, the clock when the top bar has hidden
 // its own, and the build label. Hovering or focusing the left or right group opens the detail behind it.
 
-import { useMemo } from 'react';
+import { type Ref, useMemo } from 'react';
 import { useNetwork, usePrice, useRuntime, useSummary, useTip } from '../../app/context';
 import { formatAge, formatDuration, formatHeight, formatInt, formatUtcTime, UNKNOWN } from '../../lib/format';
 import { useNow } from '../../lib/useClock';
@@ -24,9 +24,9 @@ function ageText(r: PathReading): string {
 
 const STATE_WORD: Partial<Record<PathReading['state'], string>> = { stale: 'stale', dead: 'dead' };
 
-export function StatusBar() {
+export function StatusBar({ ref }: { ref?: Ref<HTMLElement> }) {
   return (
-    <section className="statusbar" data-region="statusbar" aria-label="Network status">
+    <section ref={ref} className="statusbar" data-region="statusbar" aria-label="Network status">
       <StatusLeft />
       <StatusRight />
     </section>

@@ -24,8 +24,22 @@
   font-size: var(--fs-xs);
   white-space: nowrap;
   translate: calc(var(--aim-x, 50vw) - 50%) 0;
-  transition: translate var(--dur-slower) var(--ease-out);
+  transition:
+    translate var(--dur-slower) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear 0s;
   pointer-events: auto;
+}
+
+/* Windows leave less room than the strip needs: it steps aside rather than hide behind them. */
+.aimstrip[data-hidden] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    translate var(--dur-slower) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear var(--dur-base);
 }
 
 .aim-lead {
@@ -101,24 +115,24 @@ a.aimchip:focus-visible {
 
 /* Before the first block after a load the payees are not known yet: three quiet placeholders hold the
    layout, and the real chips fade in over them. */
-.aimchip[data-ghost] {
+.aimchip[data-pending] {
   border-color: var(--line-1);
   background: none;
   animation: none;
 }
 
-.aimchip[data-ghost] .glyph-tier {
+.aimchip[data-pending] .glyph-tier {
   opacity: 0.45;
 }
 
-.aimchip[data-ghost] .aim-place,
-.aimchip[data-ghost] i {
+.aimchip[data-pending] .aim-place,
+.aimchip[data-pending] i {
   height: 6px;
   border-radius: 3px;
   background: var(--ink-3);
 }
 
-.aimchip[data-ghost] i {
+.aimchip[data-pending] i {
   width: 18px;
 }
 
