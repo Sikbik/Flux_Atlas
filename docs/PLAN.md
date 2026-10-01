@@ -60,7 +60,7 @@ called out in the hand-back.
 | B7 API defects from the views (done, merged; earnings by address from a 30-day ledger, top operators to 5,000, tx app_ref, app economy, 1,000-block pages, mesh outlier rule 396 to 167 links per call, topology reply caps, mesh rows 8.6x smaller) | Opus | operator earned_24h bug, top_operators cap, /tx app_ref, app-economy aggregates, blocks limit, mesh outlier hosts, monotonic app records |
 | B8 Server and edge hardening (done, merged cb2f997; FDM trust list from FluxOS, slow-loris 0/400 to 400/400 closed, SIGTERM 30 s to 4.2 s, request CPU p50 85 ms to 0.12 ms under attack, CSP clean on 17 routes, capabilities dropped) | Opus | X1 H1 proxy trust and global caps, M1 timeouts and shutdown, M7 request CPU and compression, L1 sub replay, L2 store read timeouts, L3 capabilities, L4-L5 GeoIP, L8, L10 security headers, L15 private metrics |
 | B9 Engine robustness and consistency (running, worktree) | Opus | X1 M2-M3 and M5-M6 upstream budget, failover validation, liveness; M8 mesh resume; M9 instance id and stable node keys on the client; L6, L7, L9, L11-L14 |
-| Q1 Visual QA & polish (next) | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
+| Q1 Visual QA & polish (running, worktree; avoids B9's files) | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
 | X1 Review (done, b9a68da: 0 critical, 1 high, 9 medium, 15 low; frontend XSS clean; cargo and npm audit clean) | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
 
 ## Phase 5 — Ship
