@@ -32,6 +32,14 @@ export const NOT_QUEUED: Record<string, string> = {
   departed: 'This node has left the network',
 };
 
+/** Why a node earns nothing right now, said under a zero for its per-day figure. */
+export const NOT_PAID: Record<string, string> = {
+  started: 'until it is confirmed',
+  dos: 'while DoS listed',
+  expired: 'no longer paid',
+  departed: 'left the network',
+};
+
 /** The node's queue standing and payout, from the live queue (with the server's own estimate as a fallback). */
 export function usePayInfo(): PayInfo {
   const { id, tier, live, node, detail } = useNodeCtx();

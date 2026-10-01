@@ -22,7 +22,7 @@ import { estimatePayment, queueProgress } from '../derive/queue';
 import { useFirstIngestMs, useRiseFlash } from '../sources/hooks';
 import { useChainClock } from '../sources/live';
 import { useNodeCtx } from './context';
-import { NOT_QUEUED, type PayInfo, usePayInfo } from './pay';
+import { NOT_PAID, NOT_QUEUED, type PayInfo, usePayInfo } from './pay';
 
 const DAY_MS = 86_400_000;
 const fmt2 = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -148,6 +148,8 @@ function QueueMeter({ pay }: { pay: PayInfo }) {
 
 export function PayLead() {
   const pay = usePayInfo();
+  // A node that is not being paid earns nothing a day; the steady-state estimate is for paid nodes only.
+  const idle = NOT_PAID[pay.status];
   return (
     <Section>
       <div className="ix-stack">
@@ -155,9 +157,15 @@ export function PayLead() {
           <NextPayment pay={pay} />
           <Stat
             label="Per day"
-            value={pay.perDay === null ? null : <AnimatedNumber value={pay.perDay} format={fmt2} />}
+            value={
+              idle ? (
+                <AnimatedNumber value={0} format={fmt2} />
+              ) : pay.perDay === null ? null : (
+                <AnimatedNumber value={pay.perDay} format={fmt2} />
+              )
+            }
             unit="FLUX"
-            caption="estimate"
+            caption={idle ?? 'estimate'}
           />
           <ThirtyDays />
         </StatGrid>
