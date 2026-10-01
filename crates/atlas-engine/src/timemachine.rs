@@ -11,11 +11,18 @@
 //! and is not replayable from the persisted events exactly), so the `rank` column is left out of
 //! [`TimeMachineState::to_nodes_bin`]; so are the columns a format-1 keyframe did not record.
 //! A missing column means "not recorded" (ARCHITECTURE section 7), never 0.
+//!
+//! **Honest bounds (L14).** A `t` before the first keyframe has no whole network state (the
+//! events alone would build a partial globe): [`state_at`] answers
+//! [`TimeMachineError::BeforeHistory`] with the first keyframe's time. A reconstruction
+//! replays at most [`MAX_REPLAY_EVENTS`] events after its keyframe; a `t` needing more (keyframes
+//! missing for many hours) answers [`TimeMachineError::TooManyEvents`].
 
 use std::collections::BTreeMap;
 
+use atlas_core::codec::Origin;
 use atlas_core::codec::nodes_bin::{
-    NodeBinInput, RECENT_PAID_BLOCKS, encode_nodes_bin_without, flags, kind,
+    NodeBinInput, RECENT_PAID_BLOCKS, encode_nodes_bin_from, flags, kind,
 };
 use atlas_core::event::Event;
 use atlas_core::node::{Geo, Hardware};
@@ -210,8 +217,14 @@ impl TimeMachineState {
     /// [`NOT_RECORDED`], and [`NEEDS_DETAIL`] without a format-2 keyframe. Per row, the
     /// usual "unknown" encodings apply (0 cores, version index 0, empty city).
     pub fn to_nodes_bin(&self, seq: u64) -> Vec<u8> {
+        self.to_nodes_bin_from(seq, None)
+    }
+
+    /// [`Self::to_nodes_bin`] stamped with the server that reconstructed it: its node ids are
+    /// that instance's (ARCHITECTURE 8.1).
+    pub fn to_nodes_bin_from(&self, seq: u64, origin: Option<Origin>) -> Vec<u8> {
         let rows: Vec<NodeBinInput> = self.nodes.iter().map(|n| self.row(n)).collect();
-        encode_nodes_bin_without(seq, self.t_ms, &rows, &self.omitted_columns())
+        encode_nodes_bin_from(seq, self.t_ms, &rows, &self.omitted_columns(), origin)
     }
 
     /// Column kinds left out of [`Self::to_nodes_bin`].
@@ -270,12 +283,50 @@ impl TimeMachineState {
             ssd_gb: hw.ssd_gb,
             version: n.flux_os.clone().unwrap_or_default(),
             endpoint: n.endpoint.map(|e| e.to_string()).unwrap_or_default(),
+            outpoint: Some(n.outpoint),
         }
     }
 }
 
-/// Upper bound on replayed events when no keyframe exists before `t`.
-const MAX_REPLAY_WITHOUT_KEYFRAME: usize = 2_000_000;
+/// Most events one reconstruction replays after its keyframe (about 17 hours at the measured
+/// 70,000 events a day; keyframes are hourly).
+pub const MAX_REPLAY_EVENTS: usize = 50_000;
+
+/// Why there is no state at a time.
+#[derive(Debug, thiserror::Error)]
+pub enum TimeMachineError {
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    /// `t` is before the first keyframe (`first_ms`; `None` while there is none at all).
+    #[error("no data before {}", first_ms.map_or_else(|| "the first keyframe".to_owned(), iso_utc))]
+    BeforeHistory { first_ms: Option<u64> },
+    /// More than [`MAX_REPLAY_EVENTS`] events lie between the keyframe and `t`.
+    #[error("no reconstructable state: more than {limit} events after the nearest keyframe ({})", iso_utc(*keyframe_ms))]
+    TooManyEvents { keyframe_ms: u64, limit: usize },
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ` for unix ms.
+pub fn iso_utc(ms: u64) -> String {
+    let secs = ms / 1000;
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        (rem / 60) % 60,
+        rem % 60
+    )
+}
 
 /// A decoded keyframe of any format.
 #[derive(Debug, Default)]
@@ -325,21 +376,27 @@ fn keyframe(store: &Store, t_ms: u64) -> Result<Option<Keyframe>, StoreError> {
     }))
 }
 
-/// Reconstructs the node set at `t_ms`.
-pub fn state_at(store: &Store, t_ms: u64) -> Result<TimeMachineState, StoreError> {
-    let k = keyframe(store, t_ms)?.unwrap_or_default();
+/// Reconstructs the node set at `t_ms`: the keyframe at or before it plus the events after.
+pub fn state_at(store: &Store, t_ms: u64) -> Result<TimeMachineState, TimeMachineError> {
+    let Some(k) = keyframe(store, t_ms)? else {
+        return Err(TimeMachineError::BeforeHistory {
+            first_ms: store.snapshot_times()?.first().copied(),
+        });
+    };
     let snapshot_ms = k.ts_ms;
     let mut nodes: BTreeMap<NodeId, SnapNode> = k.nodes.into_iter().map(|n| (n.id, n)).collect();
-    let from = if snapshot_ms == 0 {
-        EventKey::first_at(0)
-    } else {
-        EventKey::first_at(snapshot_ms + 1)
-    };
+    let from = EventKey::first_at(snapshot_ms.saturating_add(1));
     let events = store.events(
         from..=EventKey::last_at(t_ms),
         Order::Asc,
-        MAX_REPLAY_WITHOUT_KEYFRAME,
+        MAX_REPLAY_EVENTS + 1,
     )?;
+    if events.len() > MAX_REPLAY_EVENTS {
+        return Err(TimeMachineError::TooManyEvents {
+            keyframe_ms: snapshot_ms,
+            limit: MAX_REPLAY_EVENTS,
+        });
+    }
     let mut tip = k.tip_height;
     let replayed = events.len();
     for (key, env) in events {

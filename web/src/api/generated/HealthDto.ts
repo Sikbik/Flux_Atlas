@@ -5,6 +5,12 @@
  */
 export type HealthDto = { 
 /**
- * `ok`, `starting` or `degraded`.
+ * `ok`, `starting`, `degraded` (nothing published for a while; still healthy),
+ * `store_failing` (store commits fail; not ready) or `dead` (a supervised engine part
+ * panicked, stopped or stalled; unhealthy, the process exits and is restarted).
  */
-status: string, seq: number, uptime_s: number, tip_height: number | null, };
+status: string, seq: number, uptime_s: number, tip_height: number | null, 
+/**
+ * Why the status is `dead` or `store_failing`.
+ */
+reason?: string, };

@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use atlas_core::api::TimelineDto;
 use atlas_core::now_ms;
-use atlas_store::meta_keys;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::Response;
@@ -20,15 +19,16 @@ pub async fn index(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<R
     let dto = s
         .store_read(|st| {
             let keyframes_ms = st.snapshot_times()?;
-            let first = st.meta_u64(meta_keys::FIRST_INGEST_MS)?;
             let last_event = st.latest_events(1)?.first().map(|(k, _)| k.ts_ms);
             let event_count = st
                 .table_counts()?
                 .into_iter()
                 .find(|(name, _)| *name == "events")
                 .map_or(0, |(_, n)| n);
+            // The earliest time with a whole network state is the first keyframe (L14);
+            // before it `/timeline/state` answers `no_history`.
             Ok(TimelineDto {
-                first_ms: first.or_else(|| keyframes_ms.first().copied()),
+                first_ms: keyframes_ms.first().copied(),
                 last_ms: last_event.max(keyframes_ms.last().copied()),
                 keyframes_ms,
                 event_count,
@@ -65,8 +65,9 @@ pub fn quantize(t: u64, now: u64) -> u64 {
 /// to [`STATE_QUANTUM_RECENT_MS`] within a day of now and to [`STATE_QUANTUM_MS`] before
 /// ([`quantize`]). The header's `generated_ms` is that instant and its `seq` is 0 (a historical
 /// state has no live position), so the ETag is stable for it. Concurrent requests for one
-/// instant share a single reconstruction. Columns the keyframes do not record (rank, hardware,
-/// apps, versions) are zero.
+/// instant share a single reconstruction. Columns the keyframes do not record are left out. A
+/// `t` before the first keyframe, or one more than 50,000 events after the nearest keyframe,
+/// answers 404 `no_history` (L14). The file carries this server's ORIGIN.
 pub async fn state(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -80,6 +81,7 @@ pub async fn state(
     }
     let t = quantize(t, now);
     let st = s.clone();
+    let origin = s.engine.origin();
     let body = s
         .timeline_cache
         .try_get_with(t, async move {
@@ -94,7 +96,7 @@ pub async fn state(
                 );
                 Ok(Arc::new(CachedBody::new(
                     "application/octet-stream",
-                    state.to_nodes_bin(0),
+                    state.to_nodes_bin_from(0, Some(origin)),
                 )))
             })
             .await

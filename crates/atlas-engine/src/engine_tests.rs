@@ -266,6 +266,49 @@ fn env(ts: u64, e: Event) -> EventEnvelope {
     }
 }
 
+/// L14: one reconstruction replays at most `MAX_REPLAY_EVENTS` events after its keyframe.
+#[test]
+fn time_machine_bounds_the_replay() {
+    use crate::timemachine::{MAX_REPLAY_EVENTS, TimeMachineError};
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("r.redb")).unwrap();
+    let mut b = WriteBatch::new();
+    b.put_snapshot(
+        1_000,
+        &NetworkSnapshot {
+            ts_ms: 1_000,
+            tip_height: 1,
+            nodes: vec![snap_node(1)],
+        },
+    )
+    .unwrap();
+    for i in 0..=MAX_REPLAY_EVENTS as u64 {
+        b.push_event(env(
+            2_000 + i,
+            Event::NodeHeartbeat {
+                node: NodeId(1),
+                height: 2,
+                txid: h(2),
+                endpoint: None,
+                benchmark_tier: None,
+            },
+        ));
+    }
+    store.commit(b).unwrap();
+    // Exactly the limit replays.
+    let at_limit = 2_000 + MAX_REPLAY_EVENTS as u64 - 1;
+    assert_eq!(
+        state_at(&store, at_limit).unwrap().replayed,
+        MAX_REPLAY_EVENTS
+    );
+    // One more is refused, honestly, instead of replaying without bound.
+    let e = state_at(&store, at_limit + 1).unwrap_err();
+    assert!(
+        matches!(e, TimeMachineError::TooManyEvents { keyframe_ms: 1_000, limit } if limit == MAX_REPLAY_EVENTS),
+        "{e}"
+    );
+}
+
 #[test]
 fn time_machine_reconstruction() {
     let dir = tempfile::tempdir().unwrap();
@@ -339,9 +382,18 @@ fn time_machine_reconstruction() {
     assert_eq!(s.nodes[2].lat, Some(48.1));
     let s = state_at(&store, 6_000).unwrap();
     assert_eq!((s.snapshot_ms, s.tip_height, s.nodes.len()), (5_000, 60, 1));
-    // Before any keyframe: replay from the start.
-    let s = state_at(&store, 500).unwrap();
-    assert!(s.nodes.is_empty());
+    // Before the first keyframe: no partial state, an explicit "no data before" (L14).
+    let e = state_at(&store, 500).unwrap_err();
+    assert!(
+        matches!(
+            e,
+            crate::timemachine::TimeMachineError::BeforeHistory {
+                first_ms: Some(1_000)
+            }
+        ),
+        "{e}"
+    );
+    assert_eq!(e.to_string(), "no data before 1970-01-01T00:00:01Z");
     // Binary form decodes; ranks are not recorded, so the column is absent (not zeros).
     use atlas_core::codec::nodes_bin::{decode_nodes_bin, kind};
     let bin = state_at(&store, 3_500).unwrap().to_nodes_bin(9);
@@ -935,6 +987,59 @@ async fn restart_after_downtime_replays_blocks_without_rank_corrections() {
     eng.shutdown().await;
 }
 
+/// A node list one block older than the restored tip (the gateway's cached list right after a
+/// restart at a block boundary) must not roll back the last block's payouts. Before, the
+/// restored records had no `touched` height and the list undid them: thousands of rank
+/// corrections and a queue head stuck until the next reconcile (seen live on 3110).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stale_list_after_a_restart_rolls_nothing_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("s.redb")).unwrap();
+    let base = fixture_block("flux/daemon_getblock_2996916_verbosity2.json");
+    let start_height = 3_000_000;
+    let mut up = UpstreamQueue::new(8, start_height - 1);
+    let eng = start(store.clone());
+    let mut prev = h(1);
+    let mut older = Vec::new();
+    for i in 0..4 {
+        if i == 3 {
+            older = up.nodes.clone();
+        }
+        let b = paying_block(&base, start_height + i, prev, up.advance());
+        prev = b.summary.hash;
+        inject(
+            &eng,
+            Obs::Block {
+                block: Box::new(b),
+                received_ms: now_ms(),
+                discontinuous: i == 0,
+            },
+        )
+        .await;
+        if i == 0 {
+            inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+        }
+    }
+    inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+    until("second reconcile", || eng.stats().reconciles == 2).await;
+    assert_eq!(eng.stats().reconcile_diffs, 0);
+    until("ranks", || published_ranks(&eng) == up.ranks()).await;
+    eng.shutdown().await;
+    drop(eng);
+
+    let eng = start(store);
+    inject(&eng, Obs::NodeList(older)).await;
+    until("reconcile after the restart", || {
+        eng.stats().reconciles == 1
+    })
+    .await;
+    let s = eng.stats();
+    assert_eq!(s.reconcile_diffs, 0, "the stale list is not a diff: {s:?}");
+    assert_eq!(s.rank_corrections, 0, "no correction burst");
+    until("ranks unchanged", || published_ranks(&eng) == up.ranks()).await;
+    eng.shutdown().await;
+}
+
 fn geoip_fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../atlas-geoip/tests/fixtures/GeoIP2-City-Test.mmdb")
@@ -1066,5 +1171,99 @@ async fn geoip_database_loaded_later_streams_a_geo_delta() {
     assert_eq!(p.attributions.len(), 1);
     assert_eq!(p.attributions[0].version, None);
     assert!(cities(&eng).iter().all(|(c, _)| !c.is_empty()));
+    eng.shutdown().await;
+}
+
+/// M8: a restarted engine serves its restored mesh from the first request on. Before, the
+/// initial published state had no `mesh.bin` body, the server answered an empty mesh until the
+/// first publish, and a client that booted in that window never received the restored edges.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_restarted_engine_serves_its_restored_mesh_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("m.redb")).unwrap();
+    let eng = start(store.clone());
+    let up = UpstreamQueue::new(3, 3_000_000);
+    inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+    until("nodes", || eng.published().nodes.len() == 9).await;
+    let ep = |i: usize| up.nodes[i].endpoint.unwrap();
+    inject(
+        &eng,
+        Obs::Topology {
+            queried: ep(0),
+            reports: vec![crate::obs::TopologyReport {
+                reporter: ep(0),
+                outbound: vec![ep(1), ep(2)],
+                inbound: vec![],
+            }],
+        },
+    )
+    .await;
+    until("edges", || eng.published().mesh_edge_count == 2).await;
+    eng.shutdown().await;
+    drop(eng);
+
+    let eng = start(store);
+    let p = eng.published();
+    let body = p
+        .bodies
+        .mesh_bin
+        .as_ref()
+        .expect("a mesh.bin body before any publish");
+    let mesh = atlas_core::codec::mesh_bin::decode_mesh_bin(&body.raw).unwrap();
+    assert_eq!(mesh.edge_count(), 2);
+    assert_eq!(mesh.origin, Some(eng.origin()));
+    eng.shutdown().await;
+}
+
+/// M8: when a node leaves, its mesh edges leave in a live `mesh` delta too (before, only the
+/// next mesh.bin dropped them, so a client resuming from live deltas kept them as ghost links),
+/// and bootstrap `mesh_seq` names that delta.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_departed_node_s_edges_leave_in_a_live_delta() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("m.redb")).unwrap();
+    let eng = start(store);
+    let up = UpstreamQueue::new(3, 3_000_000);
+    inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+    until("nodes", || eng.published().nodes.len() == 9).await;
+    let ep = |i: usize| up.nodes[i].endpoint.unwrap();
+    inject(
+        &eng,
+        Obs::Topology {
+            queried: ep(0),
+            reports: vec![crate::obs::TopologyReport {
+                reporter: ep(0),
+                outbound: vec![ep(1), ep(2)],
+                inbound: vec![],
+            }],
+        },
+    )
+    .await;
+    until("edges", || eng.published().mesh_edge_count == 2).await;
+    let mut rx = eng.subscribe();
+    let mut rest = up.nodes.clone();
+    rest.remove(0);
+    inject(&eng, Obs::NodeList(rest)).await;
+    until("edges dropped", || eng.published().mesh_edge_count == 0).await;
+    let mut removed = Vec::new();
+    let mut delta_seq = 0;
+    while let Ok(m) = rx.try_recv() {
+        if let LiveBody::Mesh(d) = &m.body
+            && !d.removed.is_empty()
+        {
+            removed.extend(d.removed.iter().copied());
+            delta_seq = m.seq;
+        }
+    }
+    assert_eq!(removed.len(), 2, "both edges leave live: {removed:?}");
+    until("bootstrap mesh_seq", || {
+        let p = eng.published();
+        let Some(b) = p.bodies.bootstrap.as_ref() else {
+            return false;
+        };
+        let v: serde_json::Value = serde_json::from_slice(&b.raw).unwrap();
+        v["mesh_seq"].as_u64() == Some(delta_seq)
+    })
+    .await;
     eng.shutdown().await;
 }

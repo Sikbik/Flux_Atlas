@@ -12,7 +12,8 @@
 
 use std::path::PathBuf;
 
-use atlas_core::codec::nodes_bin::{NodeBinInput, decode_nodes_bin, encode_nodes_bin};
+use atlas_core::codec::Origin;
+use atlas_core::codec::nodes_bin::{NodeBinInput, decode_nodes_bin, encode_nodes_bin_from};
 use atlas_core::node::{Geo, GeoSource, Hardware, Versions};
 use atlas_core::{Hash32, NodeEndpoint, NodeId, NodeRecord, NodeStatus, Outpoint, Tier};
 use serde_json::{Value, json};
@@ -182,7 +183,11 @@ fn golden_nodes_bin() {
         .iter()
         .map(|r| NodeBinInput::from_record(r, TIP, GENERATED_MS, false))
         .collect();
-    let buf = encode_nodes_bin(SEQ, GENERATED_MS, &rows);
+    let origin = Origin {
+        started_ms: GENERATED_MS - 600_000,
+        instance: 0x00c0_ffee_1234_abcd,
+    };
+    let buf = encode_nodes_bin_from(SEQ, GENERATED_MS, &rows, &[], Some(origin));
     let d = decode_nodes_bin(&buf).unwrap();
 
     // Decoded values agree with the inputs.
@@ -192,6 +197,7 @@ fn golden_nodes_bin() {
         assert_eq!(d.tier[i], r.tier.as_u8());
         assert_eq!(d.node_flags[i], r.flags);
         assert_eq!(d.ips[i], r.endpoint);
+        assert_eq!(d.outpoints.as_ref().unwrap()[i], r.outpoint.unwrap());
         assert_eq!(d.rank[i], r.rank.map_or(0, |x| x + 1));
         assert_eq!(d.versions[d.version_idx[i] as usize], r.version);
         assert_eq!(d.orgs[d.org[i] as usize], r.org);
@@ -233,6 +239,7 @@ fn golden_nodes_bin() {
                 "ssd_gb": d.ssd_gb[i],
                 "version": d.version_idx[i],
                 "ip": d.ips[i],
+                "outpoint": d.outpoints.as_ref().unwrap()[i].to_string(),
             })
         })
         .collect();
@@ -261,6 +268,10 @@ fn golden_nodes_bin() {
         "flags": d.flags,
         "seq": d.seq,
         "generated_ms": d.generated_ms,
+        "origin": {
+            "started_ms": d.origin.unwrap().started_ms,
+            "instance": d.origin.unwrap().instance_hex(),
+        },
         "count": d.len(),
         "byte_len": buf.len(),
         "sections": section_table(&buf),

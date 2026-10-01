@@ -304,7 +304,7 @@ pub fn decode_block_with(block: &DaemonBlock, app_address: &str) -> Result<Decod
         height,
         hash,
         prev_hash,
-        time_ms: block.time * 1000,
+        time_ms: block.time.saturating_mul(1000),
         size: block.size,
         tx_count: u32::try_from(block.tx_count()).unwrap_or(u32::MAX),
         kind,

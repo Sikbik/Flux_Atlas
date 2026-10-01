@@ -58,6 +58,19 @@ multiple of 8.
 
 A fixed-width column has exactly `count` elements (`byte_len = count * size`).
 
+### ORIGIN (kind 48, dtype 17, every format)
+
+Which server built the file. Node ids and seqs are local to one instance and one process
+(ARCHITECTURE sections 3.3 and 8.1), so a client must not combine files or live messages of
+different origins.
+
+| Offset | Size | Type | Field |
+|---:|---:|---|---|
+| 0 | 8 | u64 | `started_ms`: the server process start epoch (`ServerInfo.started_ms`) |
+| 8 | 8 | u64 | `instance`: the data directory's random id (`ServerInfo.instance` is its 16-digit lowercase hex form) |
+
+`byte_len` is 16. Files from older servers and test fixtures have no ORIGIN section.
+
 ### String table (dtype 16)
 
 ```
@@ -97,6 +110,8 @@ node id.
 | 34 | ORGS | string table | provider name as reported; entry 0 is `""` |
 | 35 | VERSIONS | string table | FluxOS versions; entry 0 is `""` |
 | 36 | LOCATIONS | struct (17) | co-located clusters, see below |
+| 17 | OUTPOINTS | struct (17) | collateral outpoint per node, the stable key: `count` x {`u8 txid[32]`, `u32 vout`}, 36 bytes each. The txid bytes are in display order (their hex is the txid as explorers show it). Written only when every row has one |
+| 48 | ORIGIN | struct (17) | see Container above |
 
 ### flags (kind 6)
 
@@ -153,6 +168,7 @@ The per-node `lat`/`lon` columns keep exact coordinates.
 | 1 | a | u32 | NodeId of the lower endpoint |
 | 2 | b | u32 | NodeId of the higher endpoint |
 | 3 | flags | u8 | bit 0 (0x01) bidirectional: both ends report the link; bit 1 (0x02) cross-continent |
+| 48 | ORIGIN | struct (17) | see Container above |
 
 `a` and `b` are required; `flags` defaults to zeros.
 

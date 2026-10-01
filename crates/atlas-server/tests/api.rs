@@ -879,14 +879,32 @@ async fn timeline_and_state_at() {
     assert!(!bin.ids.contains(&last));
     assert!(bin.len() + 1 >= listed.len());
 
-    // Before any keyframe: nothing was known.
+    // The state carries this server's origin: its node ids are this instance's.
+    assert_eq!(
+        bin.origin.map(|o| o.instance_hex()),
+        Some(e.engine.server_info().instance.clone())
+    );
+
+    // Before the first keyframe: an explicit "no data before", not a partial globe (L14).
     let s = get(
         &e.app,
         &format!("/api/v1/timeline/state?t={}", now - 3 * 3_600_000),
     )
     .await;
-    assert_eq!(s.status, StatusCode::OK);
-    assert_eq!(decode_nodes_bin(&s.body).unwrap().len(), 0);
+    assert_eq!(s.status, StatusCode::NOT_FOUND);
+    let err = s.json();
+    assert_eq!(err["error"]["code"], "no_history");
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("no data before "),
+        "{err}"
+    );
+    assert_eq!(
+        t["first_ms"], t["keyframes_ms"][0],
+        "first_ms is the first keyframe"
+    );
 
     assert_eq!(
         get(&e.app, "/api/v1/timeline/state").await.status,

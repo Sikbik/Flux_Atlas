@@ -149,8 +149,12 @@ impl DaemonTx {
             return None;
         }
         n += 4 + 4 + 8;
-        n += compact_size(spends) + 384 * spends;
-        n += compact_size(outputs) + 948 * outputs;
+        // Upstream counts: checked, so a forged count cannot wrap into a plausible size.
+        n = n
+            .checked_add(compact_size(spends))?
+            .checked_add(spends.checked_mul(384)?)?
+            .checked_add(compact_size(outputs))?
+            .checked_add(outputs.checked_mul(948)?)?;
         n += compact_size(0);
         if spends + outputs > 0 {
             n += 64;

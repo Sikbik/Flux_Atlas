@@ -88,7 +88,14 @@ pub struct ServerInfo {
     pub version: String,
     /// Wire protocol version of `/api/v1` and `/ws`.
     pub api_version: u32,
+    /// Start epoch of the server process (unix ms). Live `seq`s restart with every process.
     pub started_ms: u64,
+    /// Random id of this server's data directory, 16 lowercase hex digits. Node ids are
+    /// assigned per data directory, so ids from two instances never mean the same node; a
+    /// client that sees a different `instance` (or `started_ms`) does a full resync and never
+    /// mixes snapshots, live messages or ids of two origins. Empty from older servers.
+    #[serde(default)]
+    pub instance: String,
 }
 
 /// Freshness of one ingest job.
@@ -285,6 +292,15 @@ pub struct BootstrapDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub next_payees: Option<crate::live::NextPayeesMsg>,
+    /// Seq of the latest live `mesh` message that added or removed edges, at or before `seq`;
+    /// absent when there was none since the server started. `mesh.bin` is rebuilt at most every
+    /// 10 s, so its header seq can lag: a `mesh.bin` whose seq is below `mesh_seq` misses
+    /// edge changes, and the client resumes the live stream from the `mesh.bin` seq (or
+    /// lower) so they are replayed. A `mesh.bin` at or above `mesh_seq` holds every edge change
+    /// up to `seq`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mesh_seq: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1054,6 +1070,9 @@ pub enum ApiErrorCode {
     Internal,
     /// The endpoint exists but is not implemented yet (HTTP 501).
     NotImplemented,
+    /// The time machine has no state for the requested time: before the first keyframe, or too
+    /// far after the nearest one (HTTP 404).
+    NoHistory,
 }
 
 /// Error body inside [`ApiErrorDto`].
@@ -1083,11 +1102,17 @@ impl ApiErrorDto {
 /// `GET /healthz` and `/readyz`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct HealthDto {
-    /// `ok`, `starting` or `degraded`.
+    /// `ok`, `starting`, `degraded` (nothing published for a while; still healthy),
+    /// `store_failing` (store commits fail; not ready) or `dead` (a supervised engine part
+    /// panicked, stopped or stalled; unhealthy, the process exits and is restarted).
     pub status: String,
     pub seq: u64,
     pub uptime_s: u64,
     pub tip_height: Option<u32>,
+    /// Why the status is `dead` or `store_failing`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reason: Option<String>,
 }
 
 #[cfg(test)]

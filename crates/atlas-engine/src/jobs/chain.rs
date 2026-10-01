@@ -63,8 +63,16 @@ impl Cursor {
         }
     }
 
+    /// Lowest height the cursor holds (after a jump, only the jump block).
+    pub fn first(&self) -> Option<u32> {
+        self.recent.first_key_value().map(|(h, _)| *h)
+    }
+
     pub fn truncate_above(&mut self, h: u32) -> Vec<BlockHash> {
-        let doomed: Vec<u32> = self.recent.range(h + 1..).map(|(k, _)| *k).collect();
+        let Some(from) = h.checked_add(1) else {
+            return Vec::new();
+        };
+        let doomed: Vec<u32> = self.recent.range(from..).map(|(k, _)| *k).collect();
         doomed
             .into_iter()
             .filter_map(|k| self.recent.remove(&k))
@@ -352,21 +360,55 @@ pub async fn run(ctx: JobCtx, recent: Vec<(u32, BlockHash)>) {
     sync.abort();
 }
 
+/// A known chain point: height 2,998,000 was mined around 2026-10-01T00:00Z (30 s spacing).
+const CHAIN_ANCHOR: (u32, u64) = (2_998_000, 1_790_812_800_000);
+
+/// The highest block height an upstream answer may claim at `now_ms`: the applied tip plus
+/// the blocks that can have been mined since its time (at 1.5x the 30 s target spacing) plus
+/// slack, or, without a tip, the same estimate from a fixed chain anchor. A forged height (near
+/// `u32::MAX`, say) would otherwise move the tip there and wedge the sync.
+pub fn max_plausible_height(tip: Option<(u32, u64)>, now_ms: u64) -> u32 {
+    const MIN_SPACING_MS: u64 = 20_000;
+    let (h, at, slack) = tip.map_or((CHAIN_ANCHOR.0, CHAIN_ANCHOR.1, 2_000), |(h, t)| (h, t, 60));
+    let mined = now_ms.saturating_sub(at) / MIN_SPACING_MS;
+    h.saturating_add(u32::try_from(mined).unwrap_or(u32::MAX))
+        .saturating_add(slack)
+}
+
+fn plausible_ceiling(ctx: &JobCtx) -> u32 {
+    let tip = ctx
+        .handle
+        .published()
+        .network
+        .tip
+        .as_ref()
+        .map(|t| (t.height, t.time_ms));
+    max_plausible_height(tip, now_ms())
+}
+
 async fn fetch(ctx: &JobCtx, hash: &BlockHash) -> Option<DecodedBlock> {
-    let raw = match ctx
+    // The answer is validated in the client (same hash, plausible height) from any upstream.
+    let (raw, from_node) = match ctx
         .call(
             Upstream::FluxOs,
             "getblock",
-            ctx.clients.fluxos.get_block(&hash.to_hex()),
+            ctx.clients
+                .fluxos
+                .get_block_checked(hash, plausible_ceiling(ctx)),
         )
         .await
     {
-        Ok(b) => std::sync::Arc::new(b),
+        Ok((b, from)) => (std::sync::Arc::new(b), from),
         Err(e) => {
             ctx.fail("block_decoder", &e);
             return None;
         }
     };
+    if let Some(node) = from_node
+        && !corroborated(ctx, &raw, &node).await
+    {
+        return None;
+    }
     ctx.handle.keep_raw_block(std::sync::Arc::clone(&raw));
     match decode_block(&raw) {
         Ok(d) => Some(d),
@@ -374,6 +416,65 @@ async fn fetch(ctx: &JobCtx, hash: &BlockHash) -> Option<DecodedBlock> {
             ctx.fail("block_decoder", &e);
             None
         }
+    }
+}
+
+/// A block served by a community node (the gateway was down) is checked against Insight, an
+/// independent backend: same hash at the same height. Insight answering "not found", or with
+/// another height, rejects the block and drops the node from the pool. When Insight is down
+/// too the block is accepted: the node passed the height check when it entered the pool.
+async fn corroborated(
+    ctx: &JobCtx,
+    b: &atlas_flux::models::daemon::DaemonBlock,
+    node: &str,
+) -> bool {
+    let Ok(hash) = Hash32::from_hex(b.hash.trim()) else {
+        return false;
+    };
+    match ctx
+        .call(
+            Upstream::Insight,
+            "insight block",
+            ctx.clients.insight.block(&hash),
+        )
+        .await
+    {
+        Ok(ib) if ib.height == b.height => {
+            ctx.handle.inner.stats.event("failover_block_corroborated");
+            true
+        }
+        Ok(ib) => {
+            reject_node(
+                ctx,
+                node,
+                &format!("height {} but Insight has {}", b.height, ib.height),
+            );
+            false
+        }
+        Err(e) if e.is_not_found() => {
+            reject_node(ctx, node, "a block Insight does not know");
+            false
+        }
+        Err(_) => {
+            ctx.handle
+                .inner
+                .stats
+                .event("failover_block_uncorroborated");
+            true
+        }
+    }
+}
+
+fn reject_node(ctx: &JobCtx, node: &str, reason: &str) {
+    ctx.handle.inner.stats.event("failover_block_rejected");
+    tracing::warn!(
+        node,
+        reason,
+        "failover block rejected; node dropped from the pool"
+    );
+    let set = ctx.clients.fluxos.failover();
+    if let Some(u) = set.nodes().into_iter().find(|u| u.label == node) {
+        let _ = set.reject(&u, "getblock", reason);
     }
 }
 
@@ -497,6 +598,7 @@ pub async fn sync_to(
     // The target block is fetched once and kept while the gap below it fills.
     let mut kept: Option<DecodedBlock> = None;
     let mut announced = false;
+    let mut reorged = false;
     for _ in 0..(max_gap + 2 * FINALITY + 8) {
         if cursor.contains(&target) {
             return;
@@ -513,12 +615,13 @@ pub async fn sync_to(
             apply(ctx, cursor, d, received_ms, true).await;
             return;
         };
-        if h == th + 1 && d.summary.prev_hash == thash {
+        let next = th.saturating_add(1);
+        if h == next && d.summary.prev_hash == thash {
             apply(ctx, cursor, d, received_ms, false).await;
             return;
         }
-        if h > th + 1 {
-            if h - th > max_gap {
+        if h > next {
+            if h.saturating_sub(th) > max_gap {
                 tracing::warn!(
                     from = th,
                     to = h,
@@ -532,38 +635,83 @@ pub async fn sync_to(
                 tracing::info!(from = th, to = h, "replaying the blocks missed while down");
             }
             // Gap: fetch the next height and link it.
-            let Some(nh) = hash_at(ctx, th + 1).await else {
+            let Some(nh) = hash_at(ctx, next).await else {
                 return;
             };
             let Some(n) = fetch(ctx, &nh).await else {
                 return;
             };
+            if n.summary.height != next {
+                tracing::warn!(
+                    want = next,
+                    got = n.summary.height,
+                    "gap block at the wrong height"
+                );
+                return;
+            }
             kept = Some(d);
             if n.summary.prev_hash == thash {
                 apply(ctx, cursor, n, now_ms(), false).await;
                 continue;
             }
-            if !reorg(ctx, cursor).await {
+        } else if cursor.get(h) == Some(d.summary.hash) {
+            return;
+        } else {
+            kept = Some(d);
+        }
+        // Our tip is not an ancestor of the target: a reorg. One walk-back per sync, and never
+        // past one finality window (L13): a second mismatch, or a fork deeper than the window,
+        // jumps to the target instead of deleting more history.
+        if reorged {
+            if let Some(d) = kept.take() {
+                tracing::warn!(
+                    height = d.summary.height,
+                    "chain still disagrees after a reorg; jumping"
+                );
+                apply(ctx, cursor, d, received_ms, true).await;
+            }
+            return;
+        }
+        reorged = true;
+        match reorg(ctx, cursor).await {
+            Reorg::Done => {}
+            Reorg::Deep => {
+                if let Some(d) = kept.take() {
+                    apply(ctx, cursor, d, received_ms, true).await;
+                }
                 return;
             }
-            continue;
-        }
-        if cursor.get(h) == Some(d.summary.hash) {
-            return;
-        }
-        kept = Some(d);
-        if !reorg(ctx, cursor).await {
-            return;
+            Reorg::Unconfirmed => return,
         }
     }
 }
 
+/// What a reorg walk-back did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reorg {
+    /// Orphaned blocks above the fork were dropped (or there was nothing to drop).
+    Done,
+    /// The fork is deeper than the comparable window: only that window was dropped, and the
+    /// caller jumps to its target instead of walking back further.
+    Deep,
+    /// Nothing changed: the upstream could not answer, or Insight still holds our chain (the
+    /// gateway backend is the odd one out).
+    Unconfirmed,
+}
+
 /// Finds the fork point by walking back through the finality window and tells the reducer.
-async fn reorg(ctx: &JobCtx, cursor: &mut Cursor) -> bool {
+///
+/// Deleting stored blocks is never decided on one backend's word (L13): the walk compares
+/// only heights the cursor holds (after a jump it holds the jump block alone, so stored
+/// backfilled blocks below it are never judged), and Insight, an independent backend, must
+/// confirm that our block above the fork is no longer canonical. A fork deeper than the window
+/// drops that window only, once.
+async fn reorg(ctx: &JobCtx, cursor: &mut Cursor) -> Reorg {
     let Some((th, _)) = cursor.tip() else {
-        return false;
+        return Reorg::Unconfirmed;
     };
-    let floor = th.saturating_sub(FINALITY);
+    let window_floor = th.saturating_sub(FINALITY);
+    let floor = cursor.first().map_or(window_floor, |f| f.max(window_floor));
     let mut fork = None;
     for h in (floor..=th).rev() {
         let Some(up) = hash_at(ctx, h).await else {
@@ -571,28 +719,65 @@ async fn reorg(ctx: &JobCtx, cursor: &mut Cursor) -> bool {
             if h == th {
                 continue;
             }
-            return false;
+            return Reorg::Unconfirmed;
         };
         if cursor.get(h) == Some(up) {
             fork = Some(h);
             break;
         }
     }
-    let fork = fork.unwrap_or_else(|| {
-        tracing::error!(tip = th, "reorg deeper than the finality window");
-        floor.saturating_sub(1)
-    });
+    let deep = fork.is_none();
+    let fork = fork.unwrap_or_else(|| floor.saturating_sub(1));
+    let first_orphan = fork.saturating_add(1);
+    // Insight must agree that our block above the fork is gone.
+    if let Some(ours) = cursor.get(first_orphan) {
+        match ctx
+            .call(
+                Upstream::Insight,
+                "insight block-index",
+                ctx.clients.insight.block_hash(first_orphan),
+            )
+            .await
+        {
+            Ok(ins) if ins == ours => {
+                ctx.handle.inner.stats.event("reorg_unconfirmed");
+                tracing::warn!(
+                    height = first_orphan,
+                    "the gateway disagrees with Insight about a block we hold; not reorganizing"
+                );
+                return Reorg::Unconfirmed;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                // Insight down: act within the window only (the replacement blocks re-fill it).
+                tracing::debug!(error = %e, "reorg: Insight unavailable for confirmation");
+            }
+        }
+    }
+    if deep {
+        tracing::error!(
+            tip = th,
+            floor,
+            "reorg deeper than the comparable window; dropping that window only and jumping"
+        );
+    }
     let orphaned = cursor.truncate_above(fork);
     if orphaned.is_empty() {
-        return true;
+        return if deep { Reorg::Deep } else { Reorg::Done };
     }
     tracing::warn!(fork, old_tip = th, depth = orphaned.len(), "reorg detected");
-    ctx.send(Obs::Reorg {
-        fork_height: fork,
-        old_tip: th,
-        orphaned,
-    })
-    .await
+    let sent = ctx
+        .send(Obs::Reorg {
+            fork_height: fork,
+            old_tip: th,
+            orphaned,
+        })
+        .await;
+    match (sent, deep) {
+        (false, _) => Reorg::Unconfirmed,
+        (true, true) => Reorg::Deep,
+        (true, false) => Reorg::Done,
+    }
 }
 
 /// NextPayees: `fluxnodecurrentwinner` (cache-busted) after each tip.
@@ -657,37 +842,97 @@ pub async fn payees(ctx: JobCtx, mut rx: mpsc::Receiver<u32>) {
     }
 }
 
-/// Feeds healthy direct nodes into the FluxOS failover pool every 10 minutes.
+/// Direct nodes kept in the FluxOS failover pool.
+const POOL_SIZE: usize = 5;
+/// Height probes per pool refresh (to find [`POOL_SIZE`] nodes at the tip).
+const POOL_PROBES: usize = 15;
+/// Pool refresh interval: a node that falls behind leaves within this.
+const POOL_REFRESH: Duration = Duration::from_secs(300);
+/// Our applied tip counts as the best known tip while its block is at most this old.
+const TIP_FRESH_MS: u64 = 5 * 60_000;
+
+/// Feeds direct nodes at the chain tip into the FluxOS failover pool (ARCHITECTURE 3.1): a node
+/// is admitted only when its daemon height is within `MAX_HEIGHT_LAG` (2) of the best known tip,
+/// re-checked every refresh. The best known tip is our applied tip while it is fresh, else
+/// Insight's; with neither the pool is emptied, so chain reads stay on the gateway.
 pub async fn failover_pool(ctx: JobCtx) {
     if !ctx.sleep(Duration::from_secs(120)).await {
         return;
     }
     loop {
-        let p = ctx.handle.published();
-        let mut picked: Vec<GuardedEndpoint> = Vec::new();
-        let offset = super::jitter_ms(p.nodes.len().max(1) as u64) as usize;
-        let n = p.nodes.len();
-        for i in 0..n {
-            let r = &p.nodes[(i + offset) % n];
-            if r.status != atlas_core::NodeStatus::Confirmed || r.reachable != Some(true) {
-                continue;
-            }
-            if let Some(ep) = r.endpoint
-                && let Ok(g) = GuardedEndpoint::new(ep)
-            {
-                picked.push(g);
-            }
-            if picked.len() >= 5 {
-                break;
-            }
-        }
-        if !picked.is_empty() {
-            ctx.clients.fluxos.set_failover_nodes(&picked);
-        }
-        if !ctx.sleep(Duration::from_secs(600)).await {
+        let admitted = if let Some(best) = best_known_tip(&ctx).await {
+            admit_pool(&ctx, best).await
+        } else {
+            tracing::debug!("failover pool: no best known tip; keeping chain reads on the gateway");
+            Vec::new()
+        };
+        ctx.clients.fluxos.set_failover_nodes(&admitted);
+        if !ctx.sleep(POOL_REFRESH).await {
             return;
         }
     }
+}
+
+async fn best_known_tip(ctx: &JobCtx) -> Option<u32> {
+    let p = ctx.handle.published();
+    if let Some(t) = p.network.tip.as_ref()
+        && now_ms().saturating_sub(t.time_ms) <= TIP_FRESH_MS
+    {
+        return Some(t.height);
+    }
+    ctx.call(
+        Upstream::Insight,
+        "insight status",
+        ctx.clients.insight.status_info(),
+    )
+    .await
+    .ok()
+    .map(|s| s.info.blocks)
+    .filter(|h| *h > 0)
+}
+
+/// Probes up to [`POOL_PROBES`] reachable confirmed nodes (random start) and keeps the first
+/// [`POOL_SIZE`] whose height is acceptable.
+async fn admit_pool(ctx: &JobCtx, best: u32) -> Vec<GuardedEndpoint> {
+    let published = ctx.handle.published();
+    let total = published.nodes.len();
+    let offset = super::jitter_ms(total.max(1) as u64) as usize;
+    let mut admitted = Vec::new();
+    let mut probes = 0;
+    for i in 0..total {
+        if admitted.len() >= POOL_SIZE || probes >= POOL_PROBES {
+            break;
+        }
+        let rec = &published.nodes[(i + offset) % total];
+        if rec.status != atlas_core::NodeStatus::Confirmed || rec.reachable != Some(true) {
+            continue;
+        }
+        let Some(node) = rec.endpoint.and_then(|ep| GuardedEndpoint::new(ep).ok()) else {
+            continue;
+        };
+        probes += 1;
+        match ctx
+            .call(
+                Upstream::Node,
+                "getblockcount",
+                ctx.clients.node_api.block_count(&node),
+            )
+            .await
+        {
+            Ok(height) if atlas_flux::upstream::height_acceptable(height, best) => {
+                admitted.push(node);
+            }
+            Ok(height) => {
+                ctx.handle
+                    .inner
+                    .stats
+                    .event("failover_node_height_rejected");
+                tracing::debug!(%node, height, best, "failover pool: node not at the tip");
+            }
+            Err(e) => tracing::debug!(%node, error = %e, "failover pool: height probe failed"),
+        }
+    }
+    admitted
 }
 
 #[cfg(test)]
@@ -743,12 +988,22 @@ mod tests {
     );
 
     fn ctx(base: &str) -> (tempfile::TempDir, JobCtx, mpsc::Receiver<Obs>, Keep) {
+        ctx_with(base, None)
+    }
+
+    fn ctx_with(
+        base: &str,
+        insight: Option<&str>,
+    ) -> (tempfile::TempDir, JobCtx, mpsc::Receiver<Obs>, Keep) {
         let dir = tempfile::tempdir().unwrap();
         let store = atlas_store::Store::open(dir.path().join("atlas.redb")).unwrap();
         let mut cc = ClientsConfig {
             fluxos_gateway: base.to_owned(),
             ..ClientsConfig::default()
         };
+        if let Some(i) = insight {
+            cc.insight_bases = vec![i.to_owned()];
+        }
         cc.http.attempts = 1;
         let clients = Clients::new(cc).unwrap();
         let cfg = EngineConfig {
@@ -766,6 +1021,237 @@ mod tests {
     fn fixture_hash() -> BlockHash {
         Hash32::from_hex("fedbc9240264f9cb2cb9b90508cbb4184ff1d4f23ffe639c957e9b91967065f8")
             .unwrap()
+    }
+
+    /// An upstream that answers by path suffix (query strings ignored); unknown paths get a
+    /// FluxOS "not found" envelope and a 404.
+    async fn fake(routes: HashMap<String, String>) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let routes = Arc::new(routes);
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = listener.accept().await else {
+                    break;
+                };
+                let routes = Arc::clone(&routes);
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let n = s.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let path = req.split_whitespace().nth(1).unwrap_or("/");
+                    let path = path.split('?').next().unwrap_or(path);
+                    let hit = routes.iter().find(|(k, _)| path.ends_with(k.as_str()));
+                    let (status, body) = match hit {
+                        Some((_, b)) => ("200 OK", b.clone()),
+                        None => (
+                            "404 Not Found",
+                            r#"{"status":"error","data":{"code":-5,"name":"Error","message":"not found"}}"#
+                                .to_owned(),
+                        ),
+                    };
+                    let head = format!(
+                        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = s.write_all(head.as_bytes()).await;
+                    let _ = s.write_all(body.as_bytes()).await;
+                });
+            }
+        });
+        base
+    }
+
+    fn hash_of(fork: u8, h: u32) -> BlockHash {
+        Hash32::from_hex(&format!("{fork:02x}{h:062x}")).unwrap()
+    }
+
+    /// A block envelope from the fixture with another hash, height and parent.
+    fn block_json(hash: BlockHash, height: u32, prev: BlockHash) -> String {
+        let raw = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/research/fixtures/flux/daemon_getblock_2996916_verbosity2.json"
+        ))
+        .unwrap();
+        let mut v: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        v["data"]["hash"] = hash.to_hex().into();
+        v["data"]["height"] = height.into();
+        v["data"]["previousblockhash"] = prev.to_hex().into();
+        v.to_string()
+    }
+
+    /// Gateway routes for a chain: `getblockhash/<h>` and `getblock/<hash>/2` per block.
+    fn chain_routes(chain: &[(u32, BlockHash, BlockHash)]) -> HashMap<String, String> {
+        let mut r = HashMap::new();
+        for (h, hash, prev) in chain {
+            r.insert(
+                format!("/daemon/getblockhash/{h}"),
+                format!(r#"{{"status":"success","data":"{}"}}"#, hash.to_hex()),
+            );
+            r.insert(
+                format!("/daemon/getblock/{}/2", hash.to_hex()),
+                block_json(*hash, *h, *prev),
+            );
+        }
+        r
+    }
+
+    /// Insight `block-index/<h>` routes.
+    fn insight_routes(chain: &[(u32, BlockHash)]) -> HashMap<String, String> {
+        chain
+            .iter()
+            .map(|(h, hash)| {
+                (
+                    format!("/api/block-index/{h}"),
+                    format!(r#"{{"blockHash":"{}"}}"#, hash.to_hex()),
+                )
+            })
+            .collect()
+    }
+
+    fn drain(obs: &mut mpsc::Receiver<Obs>) -> Vec<Obs> {
+        let mut v = Vec::new();
+        while let Ok(o) = obs.try_recv() {
+            v.push(o);
+        }
+        v
+    }
+
+    /// L13: a one-deep reorg right after a gap jump drops only the jump block. The cursor
+    /// holds nothing below it, so the backfilled blocks under it are never judged (before the
+    /// fix the walk-back found no common block and deleted the ten heights below the jump).
+    #[tokio::test]
+    async fn a_reorg_after_a_jump_never_deletes_below_the_cursor() {
+        let h = 3_000_000;
+        // Chain B replaced our jump block a(h) with b(h); both descend from a(h - 1).
+        let mut chain: Vec<(u32, BlockHash, BlockHash)> = (h - 12..h)
+            .map(|x| (x, hash_of(0xa, x), hash_of(0xa, x - 1)))
+            .collect();
+        chain.push((h, hash_of(0xb, h), hash_of(0xa, h - 1)));
+        chain.push((h + 1, hash_of(0xb, h + 1), hash_of(0xb, h)));
+        let gw = fake(chain_routes(&chain)).await;
+        let ins = fake(insight_routes(&[(h, hash_of(0xb, h))])).await;
+        let (_dir, ctx, mut obs, _keep) = ctx_with(&gw, Some(&ins));
+        let mut cursor = Cursor::default();
+        cursor.reset(h, hash_of(0xa, h));
+        sync_to(&ctx, &mut cursor, hash_of(0xb, h + 1), 1, false).await;
+        let got = drain(&mut obs);
+        let forks: Vec<u32> = got
+            .iter()
+            .filter_map(|o| match o {
+                Obs::Reorg { fork_height, .. } => Some(*fork_height),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(forks, vec![h - 1], "only the jump block is orphaned");
+        assert!(cursor.contains(&hash_of(0xb, h + 1)));
+    }
+
+    /// L13: when Insight still holds our chain, a gateway backend on another (stale or bogus)
+    /// fork deletes nothing (before the fix the walk-back cascaded window after window).
+    #[tokio::test]
+    async fn a_gateway_fork_insight_disagrees_with_deletes_nothing() {
+        let h = 3_000_000;
+        let mut cursor = Cursor::default();
+        for x in h - 20..=h {
+            cursor.push(x, hash_of(0xa, x));
+        }
+        // The gateway's chain diverges 15 blocks deep.
+        let chain: Vec<(u32, BlockHash, BlockHash)> = (h - 30..=h + 1)
+            .map(|x| {
+                let tag = |y: u32| if y >= h - 15 { 0xb } else { 0xa };
+                (x, hash_of(tag(x), x), hash_of(tag(x - 1), x - 1))
+            })
+            .collect();
+        let gw = fake(chain_routes(&chain)).await;
+        let ours: Vec<(u32, BlockHash)> = (h - 30..=h).map(|x| (x, hash_of(0xa, x))).collect();
+        let ins = fake(insight_routes(&ours)).await;
+        let (_dir, ctx, mut obs, _keep) = ctx_with(&gw, Some(&ins));
+        sync_to(&ctx, &mut cursor, hash_of(0xb, h + 1), 1, false).await;
+        let got = drain(&mut obs);
+        assert!(
+            !got.iter().any(|o| matches!(o, Obs::Reorg { .. })),
+            "no reorg without Insight's confirmation"
+        );
+        assert_eq!(cursor.tip(), Some((h, hash_of(0xa, h))));
+    }
+
+    /// L13: a real reorg deeper than the window (Insight agrees) drops one window, once, and
+    /// jumps to the new tip instead of walking back window after window.
+    #[tokio::test]
+    async fn a_deep_reorg_drops_one_window_and_jumps() {
+        let h = 3_000_000;
+        let mut cursor = Cursor::default();
+        for x in h - 40..=h {
+            cursor.push(x, hash_of(0xa, x));
+        }
+        let tag = |y: u32| if y >= h - 25 { 0xb } else { 0xa };
+        let chain: Vec<(u32, BlockHash, BlockHash)> = (h - 40..=h + 1)
+            .map(|x| (x, hash_of(tag(x), x), hash_of(tag(x - 1), x - 1)))
+            .collect();
+        let gw = fake(chain_routes(&chain)).await;
+        let theirs: Vec<(u32, BlockHash)> =
+            (h - 40..=h + 1).map(|x| (x, hash_of(tag(x), x))).collect();
+        let ins = fake(insight_routes(&theirs)).await;
+        let (_dir, ctx, mut obs, _keep) = ctx_with(&gw, Some(&ins));
+        sync_to(&ctx, &mut cursor, hash_of(0xb, h + 1), 1, false).await;
+        let got = drain(&mut obs);
+        let forks: Vec<u32> = got
+            .iter()
+            .filter_map(|o| match o {
+                Obs::Reorg { fork_height, .. } => Some(*fork_height),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(forks, vec![h - FINALITY - 1], "one window, once");
+        let jumped = got.iter().any(|o| {
+            matches!(o, Obs::Block { block, discontinuous: true, .. } if block.summary.height == h + 1)
+        });
+        assert!(jumped, "the new tip is applied as a jump");
+    }
+
+    /// M3: a block answer is accepted only when it is the requested block at a plausible
+    /// height; a wrong one is rejected (and counted) and the sync applies nothing.
+    #[tokio::test]
+    async fn forged_block_answers_are_rejected() {
+        let h = 3_000_000;
+        let want = hash_of(0xa, h);
+        // The upstream answers the request for `want` with another block.
+        let mut routes = HashMap::new();
+        routes.insert(
+            format!("/daemon/getblock/{}/2", want.to_hex()),
+            block_json(hash_of(0xc, h), h, hash_of(0xa, h - 1)),
+        );
+        // And a block claiming a height near u32::MAX.
+        let huge = hash_of(0xd, 7);
+        routes.insert(
+            format!("/daemon/getblock/{}/2", huge.to_hex()),
+            block_json(huge, u32::MAX - 1, hash_of(0xa, h - 1)),
+        );
+        let gw = fake(routes).await;
+        let (_dir, ctx, mut obs, _keep) = ctx(&gw);
+        let mut cursor = Cursor::default();
+        cursor.reset(h - 1, hash_of(0xa, h - 1));
+        sync_to(&ctx, &mut cursor, want, 1, false).await;
+        sync_to(&ctx, &mut cursor, huge, 1, false).await;
+        assert!(drain(&mut obs).is_empty(), "nothing applied");
+        assert_eq!(cursor.tip(), Some((h - 1, hash_of(0xa, h - 1))));
+        assert_eq!(ctx.clients.fluxos.failover().rejected(), 2);
+    }
+
+    #[test]
+    fn plausible_heights() {
+        let now = CHAIN_ANCHOR.1 + 3_600_000;
+        // From a fresh tip: about one block per 20 s plus slack.
+        assert_eq!(max_plausible_height(Some((100, now - 60_000)), now), 163);
+        // Without a tip: the chain anchor.
+        let b = max_plausible_height(None, now);
+        assert!(
+            b > CHAIN_ANCHOR.0 + 120 && b < CHAIN_ANCHOR.0 + 2_400,
+            "{b}"
+        );
+        // Saturates instead of wrapping.
+        assert_eq!(max_plausible_height(Some((u32::MAX - 1, 0)), now), u32::MAX);
     }
 
     #[tokio::test]

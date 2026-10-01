@@ -89,6 +89,55 @@ pub enum CodecError {
     MissingSection(u16),
 }
 
+/// Section kind of the ORIGIN struct, shared by every container format (`nodes.bin`,
+/// `mesh.bin`): the server instance and start epoch the snapshot was built by. Node ids and seqs
+/// are local to one instance and one process, so a client must never combine snapshots or live
+/// messages of different origins.
+pub const ORIGIN_KIND: u16 = 48;
+/// Byte length of the ORIGIN struct.
+pub const ORIGIN_LEN: usize = 16;
+
+/// Which server built a snapshot (section [`ORIGIN_KIND`], dtype struct, 16 bytes):
+/// `u64 started_ms` (the server process start epoch, `ServerInfo.started_ms`), then
+/// `u64 instance` (the data directory's random instance id; `ServerInfo.instance` is its
+/// 16-digit lowercase hex form).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Origin {
+    pub started_ms: u64,
+    pub instance: u64,
+}
+
+impl Origin {
+    /// The hex form used in JSON (`ServerInfo.instance`).
+    pub fn instance_hex(&self) -> String {
+        format!("{:016x}", self.instance)
+    }
+
+    /// Parses the hex form of an instance id.
+    pub fn parse_instance(hex: &str) -> Option<u64> {
+        if hex.len() == 16 {
+            u64::from_str_radix(hex, 16).ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut v = Vec::with_capacity(ORIGIN_LEN);
+        v.extend_from_slice(&self.started_ms.to_le_bytes());
+        v.extend_from_slice(&self.instance.to_le_bytes());
+        v
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        let err = CodecError::BadStruct { kind: ORIGIN_KIND };
+        Ok(Self {
+            started_ms: read_u64(bytes, 0).ok_or(err.clone())?,
+            instance: read_u64(bytes, 8).ok_or(err)?,
+        })
+    }
+}
+
 /// Header fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Header {
@@ -158,6 +207,14 @@ impl ContainerWriter {
     pub fn strings<S: AsRef<str>>(&mut self, kind: u16, v: &[S]) -> &mut Self {
         let bytes = encode_string_table(v);
         self.section(kind, DType::StringTable, bytes)
+    }
+
+    /// Adds the ORIGIN section when given.
+    pub fn origin(&mut self, origin: Option<Origin>) -> &mut Self {
+        if let Some(o) = origin {
+            self.section(ORIGIN_KIND, DType::Struct, o.encode());
+        }
+        self
     }
 
     /// Serializes the container.
@@ -317,6 +374,13 @@ impl<'a> ContainerReader<'a> {
 
     pub fn has(&self, kind: u16) -> bool {
         self.sections.contains_key(&kind)
+    }
+
+    /// The ORIGIN section, when present.
+    pub fn origin(&self) -> Result<Option<Origin>, CodecError> {
+        self.raw(ORIGIN_KIND, DType::Struct)?
+            .map(Origin::decode)
+            .transpose()
     }
 
     /// Raw section bytes, checking the dtype.

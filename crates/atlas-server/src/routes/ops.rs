@@ -16,24 +16,42 @@ use crate::net::trust::Source;
 use crate::net::{PeerAddr, metrics_allowed};
 use crate::state::AppState;
 
-fn health(s: &AppState) -> (bool, HealthDto) {
+/// Health of the server: `(alive, ready, dto)`. Alive is false once the engine is dead (a
+/// supervised part panicked, stopped or stalled; the process is exiting to be restarted).
+/// Ready also needs fresh published state and a store writer that commits.
+fn health(s: &AppState) -> (bool, bool, HealthDto) {
     let p = s.engine.published();
+    let live = s.engine.liveness();
     let age_ms = now_ms().saturating_sub(p.generated_ms);
     let degraded = age_ms > s.cfg.degraded_after.as_millis() as u64;
-    let status = if p.stale {
-        "starting"
+    let (status, reason) = if let Some(r) = &live.dead {
+        ("dead", Some(r.clone()))
+    } else if live.store_failing {
+        (
+            "store_failing",
+            Some(format!(
+                "{} consecutive store commits failed: {}",
+                live.commit_fail_streak,
+                live.last_commit_error.as_deref().unwrap_or("unknown error")
+            )),
+        )
+    } else if p.stale {
+        ("starting", None)
     } else if degraded {
-        "degraded"
+        ("degraded", None)
     } else {
-        "ok"
+        ("ok", None)
     };
+    let alive = live.dead.is_none();
     (
-        !p.stale,
+        alive,
+        alive && !live.store_failing && !p.stale,
         HealthDto {
             status: status.to_owned(),
             seq: s.engine.seq(),
             uptime_s: s.started.elapsed().as_secs(),
             tip_height: p.network.tip.as_ref().map(|t| t.height),
+            reason,
         },
     )
 }
@@ -44,14 +62,22 @@ fn no_store(mut r: Response) -> Response {
     r
 }
 
-/// Liveness: 200 while the process serves requests.
+/// Liveness: 200 while the engine is alive (a `degraded` status is still alive), 503 once it is
+/// dead, so the container healthcheck fails while the process exits to be restarted.
 pub async fn healthz(State(s): State<AppState>) -> Response {
-    no_store(Json(health(&s).1).into_response())
+    let (alive, _, dto) = health(&s);
+    let status = if alive {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    no_store((status, Json(dto)).into_response())
 }
 
-/// Readiness: 200 once the engine published fresh (non-stale) state, 503 before.
+/// Readiness: 200 once the engine published fresh (non-stale) state, while it is alive and its
+/// store writer commits; 503 otherwise.
 pub async fn readyz(State(s): State<AppState>) -> Response {
-    let (ready, dto) = health(&s);
+    let (_, ready, dto) = health(&s);
     let status = if ready {
         StatusCode::OK
     } else {
@@ -909,6 +935,63 @@ fn render_engine(s: &AppState, out: &mut String) {
         "atlas_store_commit_duration_seconds",
         "",
         &stats.commit_seconds,
+    );
+    let live = s.engine.liveness();
+    family(
+        out,
+        "atlas_engine_alive",
+        "gauge",
+        "1 while every supervised engine part runs; 0 once one died or stalled (the process exits).",
+        u8::from(live.dead.is_none()),
+    );
+    family(
+        out,
+        "atlas_engine_reducer_heartbeat_age_seconds",
+        "gauge",
+        "Time since the reducer last turned its loop.",
+        live.reducer_age_ms as f64 / 1000.0,
+    );
+    family(
+        out,
+        "atlas_store_writer_queue",
+        "gauge",
+        "Batches queued for the store writer (bounded; the reducer waits when full).",
+        live.writer_queue,
+    );
+    family(
+        out,
+        "atlas_store_writer_backpressure_total",
+        "counter",
+        "Times the reducer waited for a full store writer queue.",
+        live.writer_backpressure,
+    );
+    family(
+        out,
+        "atlas_store_writer_backpressure_seconds_total",
+        "counter",
+        "Time the reducer spent waiting for the store writer.",
+        live.writer_backpressure_ms as f64 / 1000.0,
+    );
+    family(
+        out,
+        "atlas_upstream_answers_rejected_total",
+        "counter",
+        "FluxOS answers rejected by validation (wrong block, implausible height).",
+        s.engine.clients().fluxos.failover().rejected(),
+    );
+    family(
+        out,
+        "atlas_failover_pool_nodes",
+        "gauge",
+        "Direct nodes in the FluxOS failover pool (admitted within 2 blocks of the tip).",
+        s.engine.clients().fluxos.failover().nodes().len(),
+    );
+    family(
+        out,
+        "atlas_store_commit_fail_streak",
+        "gauge",
+        "Consecutive failed store commits (0 after a success; /readyz fails at 3).",
+        live.commit_fail_streak,
     );
 
     header(

@@ -25,13 +25,17 @@ pub type QKey = (u32, u8, [u8; 32], u32);
 pub const CLASS_CONFIRMED: u8 = 0;
 pub const CLASS_PAID: u8 = 1;
 
-/// Queue key of a record, exactly as fluxd sorts its payment list.
+/// Queue key of a record, exactly as fluxd sorts its payment list. A node whose first confirm
+/// is not known yet (only heartbeats seen, before the list fills it) queues by its latest
+/// heartbeat, at the back, rather than at the head.
 pub fn key_of(rec: &NodeRecord) -> QKey {
     let (txid, vout) = rec.outpoint.consensus_order();
     match rec.last_paid_height.filter(|p| *p > 0) {
         Some(paid) => (paid, CLASS_PAID, txid, vout),
         None => (
-            rec.confirmed_height.unwrap_or(0),
+            rec.confirmed_height
+                .or(rec.last_confirmed_height)
+                .unwrap_or(0),
             CLASS_CONFIRMED,
             txid,
             vout,

@@ -35,4 +35,13 @@ attributions?: Array<DataAttribution>,
  * them before the next block. Absent before the first block is known (and from older
  * servers). A live `next_payees` for the same or a newer height replaces it.
  */
-next_payees?: NextPayeesMsg, };
+next_payees?: NextPayeesMsg, 
+/**
+ * Seq of the latest live `mesh` message that added or removed edges, at or before `seq`;
+ * absent when there was none since the server started. `mesh.bin` is rebuilt at most every
+ * 10 s, so its header seq can lag: a `mesh.bin` whose seq is below `mesh_seq` misses
+ * edge changes, and the client resumes the live stream from the `mesh.bin` seq (or
+ * lower) so they are replayed. A `mesh.bin` at or above `mesh_seq` holds every edge change
+ * up to `seq`.
+ */
+mesh_seq?: number, };

@@ -17,6 +17,7 @@ pub mod derive;
 pub mod freshness;
 pub mod geoip;
 mod jobs;
+pub mod liveness;
 pub mod obs;
 pub mod publish;
 pub mod reducer;
@@ -44,9 +45,10 @@ use atlas_flux::insight_socket::SocketConfig;
 use atlas_flux::models::daemon::DaemonBlock;
 use atlas_store::{DiskBudget, HistoryRetention, RetentionPolicy, Store};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-use tokio::task::JoinHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 
 pub use body::{Encoding, PrebuiltBodies, PrebuiltBody};
+pub use liveness::LivenessReport;
 pub use replay::Resync;
 pub use stats::{CallCount, EngineStats, StorageStatus, Upstream};
 
@@ -67,6 +69,30 @@ pub mod meta {
     pub const BACKFILL_APP_MESSAGES_DONE: &str = "engine.backfill.app_messages_done_ms";
     /// Unix ms of the last store compaction.
     pub const LAST_COMPACT_MS: &str = "engine.last_compact_ms";
+    /// Random id of this data directory (u64; `ServerInfo.instance` is its hex form). Node ids
+    /// are assigned per data directory, so this names the id space.
+    pub const INSTANCE_ID: &str = "engine.instance_id";
+}
+
+/// The data directory's instance id: read from the store, or created (random) and stored on
+/// first start. A store that cannot be written still gets a random id for this process.
+fn instance_id(store: &Store) -> u64 {
+    if let Ok(Some(id)) = store.meta_u64(meta::INSTANCE_ID)
+        && id != 0
+    {
+        return id;
+    }
+    use std::hash::BuildHasher;
+    // `RandomState` is seeded from the OS random source; mix in the time and the pid.
+    let id = std::collections::hash_map::RandomState::new()
+        .hash_one((now_ms(), std::process::id(), std::thread::current().id()))
+        .max(1);
+    let mut b = atlas_store::WriteBatch::new();
+    b.set_meta_u64(meta::INSTANCE_ID, id);
+    if let Err(e) = store.commit_durable(b) {
+        tracing::warn!(error = %e, "could not store the instance id");
+    }
+    id
 }
 
 /// Bootstrap backfills (background, resumable, polite).
@@ -272,11 +298,23 @@ pub struct Published {
 impl Published {
     fn from_state(server: ServerInfo, st: &NetworkState) -> Self {
         let nodes: Vec<NodeRecord> = st.nodes.listed().map(|e| e.rec.clone()).collect();
+        // The restored mesh is served from the first request on (M8): without this body,
+        // `mesh.bin` answered an empty mesh until the first publish, and a client that booted
+        // in that window never received the restored edges (they are not live deltas).
+        let generated_ms = now_ms();
+        let mut bodies = PrebuiltBodies::default();
+        if st.mesh.edge_count() > 0 {
+            let edges = st.mesh.edge_list();
+            match publish::mesh_body(0, generated_ms, Some(origin_of(&server)), &edges).0 {
+                Ok(b) => bodies.mesh_bin = Some(b),
+                Err(e) => tracing::error!(error = %e, "initial mesh.bin build failed"),
+            }
+        }
         let network = reducer::summarize(st);
         let tiers = reducer::tier_stats(st, &network);
         Self {
             seq: 0,
-            generated_ms: now_ms(),
+            generated_ms,
             stale: true,
             server,
             network,
@@ -289,7 +327,7 @@ impl Published {
                 .map(publish::block_lite)
                 .collect::<Vec<_>>()
                 .into(),
-            bodies: PrebuiltBodies::default(),
+            bodies,
             tiers: tiers.into(),
             freshness: Arc::from(Vec::new()),
             next_payees: st
@@ -327,7 +365,10 @@ struct Inner {
     /// Publishing is serialized: seq assignment, ring push and broadcast happen under this lock so
     /// the ring and the channel see the same order.
     ring: std::sync::Mutex<replay::ReplayRing>,
-    tasks: std::sync::Mutex<Vec<JoinHandle<()>>>,
+    /// Supervised tasks (aborted on shutdown).
+    tasks: std::sync::Mutex<Vec<AbortHandle>>,
+    /// Liveness of the supervised parts (section 3.4).
+    live: Arc<liveness::Liveness>,
     stats: stats::StatsCell,
     freshness: freshness::Freshness,
     watches: std::sync::Mutex<Watches>,
@@ -357,12 +398,15 @@ impl Engine {
     /// Restores the last known state from the store and publishes it immediately as `stale`,
     /// then starts the reducer, the store writer and (unless disabled) the ingest jobs.
     pub fn start(config: EngineConfig, store: Store, clients: Clients) -> EngineHandle {
+        let instance = instance_id(&store);
         let server = ServerInfo {
             name: config.server_name.clone(),
             version: config.version.clone(),
             api_version: atlas_core::API_VERSION,
             started_ms: now_ms(),
+            instance: format!("{instance:016x}"),
         };
+        tracing::info!(instance = %server.instance, started_ms = server.started_ms, "server identity");
         let mut st = restore(&store);
         st.large_transfer = config.ingest.large_transfer;
         // Local GeoIP: an installed database is mapped right away (microseconds), so the first
@@ -401,6 +445,7 @@ impl Engine {
             seq: AtomicU64::new(0),
             ring: std::sync::Mutex::new(replay::ReplayRing::new(config.replay_capacity)),
             tasks: std::sync::Mutex::new(Vec::new()),
+            live: Arc::new(liveness::Liveness::default()),
             stats: stats::StatsCell::default(),
             freshness: freshness::Freshness::default(),
             watches: std::sync::Mutex::new(HashMap::new()),
@@ -416,7 +461,7 @@ impl Engine {
             tx,
         });
         let handle = EngineHandle { inner };
-        let writer = reducer::spawn_writer(store, handle.clone());
+        let writer = reducer::spawn_writer(store, &handle);
         let ingest = handle.inner.config.ingest.clone();
         let (cmds, cmd_rx) = if ingest.enabled {
             let (c, r) = jobs::commands();
@@ -438,22 +483,32 @@ impl Engine {
         );
         // The reducer runs on its own thread (a current-thread runtime): it owns the state and
         // its allocations then stay in one allocator heap instead of migrating across the
-        // worker pool, which keeps RSS flat. It stops after the shutdown flush.
+        // worker pool, which keeps RSS flat. It stops after the shutdown flush. It is
+        // supervised: a panic or an unexpected stop marks the engine dead (section 3.4).
+        let live = Arc::clone(&handle.inner.live);
         let spawned = std::thread::Builder::new()
             .name("atlas-reducer".to_owned())
             .spawn(move || {
-                match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(rt) => rt.block_on(red.run(obs_rx)),
-                    Err(e) => tracing::error!(error = %e, "reducer runtime failed to start"),
-                }
+                liveness::supervise_thread(&live, "reducer", || {
+                    match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => rt.block_on(red.run(obs_rx)),
+                        Err(e) => tracing::error!(error = %e, "reducer runtime failed to start"),
+                    }
+                });
             });
         if let Err(e) = spawned {
-            tracing::error!(error = %e, "could not spawn the reducer thread");
+            handle
+                .inner
+                .live
+                .fatal(format!("could not spawn the reducer thread: {e}"));
         }
-        let mut tasks = vec![tokio::spawn(ping_loop(handle.clone()))];
+        let mut tasks = vec![
+            handle.supervise("ping", ping_loop(handle.clone())),
+            handle.supervise("watchdog", watchdog(handle.clone())),
+        ];
         if let Some(rx) = cmd_rx {
             let ctx = jobs::JobCtx::new(
                 clients,
@@ -463,9 +518,12 @@ impl Engine {
                 shutdown_rx,
                 watch_rx,
             );
-            tasks.extend(jobs::spawn_all(&ctx, rx, recent));
+            for (name, job) in jobs::spawn_all(&ctx, rx, recent) {
+                tasks.push(handle.watch_task(name, job));
+            }
             let geo = handle.inner.config.geoip.clone();
-            tasks.push(tokio::spawn(jobs::geoip::run(ctx.for_job("geoip_db"), geo)));
+            tasks
+                .push(handle.supervise("geoip_db", jobs::geoip::run(ctx.for_job("geoip_db"), geo)));
         }
         handle
             .inner
@@ -474,6 +532,44 @@ impl Engine {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .extend(tasks);
         handle
+    }
+}
+
+/// How often the watchdog checks the supervised parts.
+const WATCHDOG_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Marks the engine dead when the reducer, the store writer or the publisher stalls.
+async fn watchdog(h: EngineHandle) {
+    let mut iv = tokio::time::interval(WATCHDOG_INTERVAL);
+    iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        iv.tick().await;
+        if h.inner.live.stopping() {
+            return;
+        }
+        h.inner.live.check(now_ms());
+    }
+}
+
+/// A fault to inject (tests of the supervision, section 3.4).
+#[cfg(any(test, feature = "fault-injection"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fault {
+    /// The reducer panics while applying an observation.
+    ReducerPanic,
+    /// The store writer panics on its next command.
+    WriterPanic,
+    /// A supervised job task panics.
+    JobPanic,
+    /// The reducer thread blocks for this long (a stall).
+    ReducerStall(Duration),
+}
+
+/// The binary-snapshot origin of a server.
+pub fn origin_of(s: &ServerInfo) -> atlas_core::codec::Origin {
+    atlas_core::codec::Origin {
+        started_ms: s.started_ms,
+        instance: atlas_core::codec::Origin::parse_instance(&s.instance).unwrap_or(0),
     }
 }
 
@@ -669,9 +765,14 @@ impl EngineHandle {
         self.inner.seq.load(Ordering::Acquire)
     }
 
-    /// Server information (name, version, API version, start time).
+    /// Server information (name, version, API version, start time, instance).
     pub fn server_info(&self) -> &ServerInfo {
         &self.inner.server
+    }
+
+    /// The origin stamped into this server's binary snapshots (section ORIGIN).
+    pub fn origin(&self) -> atlas_core::codec::Origin {
+        origin_of(&self.inner.server)
     }
 
     /// The `hello` message for a new connection, stamped with the current seq.
@@ -813,9 +914,81 @@ impl EngineHandle {
             .len_cap()
     }
 
+    /// Spawns a supervised task: a panic marks the engine dead (section 3.4).
+    fn supervise(
+        &self,
+        name: &'static str,
+        fut: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> AbortHandle {
+        self.watch_task(name, tokio::spawn(fut))
+    }
+
+    /// Supervises a spawned task: a panic marks the engine dead; a normal end is logged (some
+    /// jobs finish on purpose, for example a completed backfill or a disabled download).
+    fn watch_task(&self, name: &'static str, task: JoinHandle<()>) -> AbortHandle {
+        let abort = task.abort_handle();
+        let live = Arc::clone(&self.inner.live);
+        tokio::spawn(async move {
+            match task.await {
+                Ok(()) => {
+                    if !live.stopping() {
+                        tracing::info!(task = name, "engine task finished");
+                    }
+                }
+                Err(e) if e.is_panic() => {
+                    let msg = liveness::panic_message(e.into_panic().as_ref());
+                    live.fatal(format!("task {name} panicked: {msg}"));
+                }
+                Err(_) => {}
+            }
+        });
+        abort
+    }
+
+    /// Liveness of the engine's supervised parts (health endpoints, metrics).
+    pub fn liveness(&self) -> LivenessReport {
+        self.inner.live.report()
+    }
+
+    /// Resolves with the reason once the engine is dead (a supervised part panicked, stopped
+    /// or stalled). The server then shuts down and exits non-zero, so it is restarted.
+    pub async fn died(&self) -> String {
+        self.inner.live.died().await
+    }
+
+    pub(crate) fn live(&self) -> &liveness::Liveness {
+        &self.inner.live
+    }
+
+    /// Injects a fault (tests of the supervision).
+    #[cfg(any(test, feature = "fault-injection"))]
+    pub async fn inject_fault(&self, fault: Fault) {
+        if fault == Fault::JobPanic {
+            let a = self.supervise("fault_injection", async {
+                panic!("injected job panic");
+            });
+            self.inner
+                .tasks
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(a);
+            return;
+        }
+        let tx = self
+            .inner
+            .obs_tx
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(tx) = tx {
+            let _ = tx.send(Obs::Fault(fault)).await;
+        }
+    }
+
     /// Stops the ingest jobs, flushes the store durably, then stops the reducer. The handle
     /// stays readable.
     pub async fn shutdown(&self) {
+        self.inner.live.begin_stop();
         let _ = self.inner.shutdown_tx.send(true);
         let obs = self
             .inner
@@ -829,7 +1002,7 @@ impl EngineHandle {
                 let _ = tokio::time::timeout(Duration::from_secs(10), done).await;
             }
         }
-        let tasks: Vec<JoinHandle<()>> = self
+        let tasks: Vec<AbortHandle> = self
             .inner
             .tasks
             .lock()

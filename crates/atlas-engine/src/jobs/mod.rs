@@ -200,8 +200,12 @@ impl JobCtx {
     }
 }
 
-/// Spawns every job.
-pub fn spawn_all(ctx: &JobCtx, rx: JobRx, recent: Vec<(u32, BlockHash)>) -> Vec<JoinHandle<()>> {
+/// Spawns every job, named for supervision.
+pub fn spawn_all(
+    ctx: &JobCtx,
+    rx: JobRx,
+    recent: Vec<(u32, BlockHash)>,
+) -> Vec<(&'static str, JoinHandle<()>)> {
     let JobRx {
         payees,
         chain_feed,
@@ -211,27 +215,84 @@ pub fn spawn_all(ctx: &JobCtx, rx: JobRx, recent: Vec<(u32, BlockHash)>) -> Vec<
         lists,
     } = rx;
     vec![
-        tokio::spawn(chain::run(ctx.for_job("chain"), recent)),
-        tokio::spawn(chain::payees(ctx.for_job("next_payees"), payees)),
-        tokio::spawn(chain::failover_pool(ctx.for_job("failover_pool"))),
-        tokio::spawn(apps::pending(ctx.for_job("app_pending"))),
-        tokio::spawn(apps::installing(ctx.for_job("app_installing"))),
-        tokio::spawn(apps::placement(ctx.for_job("app_placement"))),
-        tokio::spawn(apps::hot(ctx.for_job("hot_apps"))),
-        tokio::spawn(apps::catalog(ctx.for_job("app_catalog"), catalog)),
-        tokio::spawn(apps::install_errors(ctx.for_job("install_errors"))),
-        tokio::spawn(apps::chain_feed(ctx.for_job("app_chain_feed"), chain_feed)),
-        tokio::spawn(registry::reconcile(ctx.for_job("node_registry"), reconcile)),
-        tokio::spawn(registry::counts(ctx.for_job("node_count"))),
-        tokio::spawn(registry::lists(ctx.for_job("start_dos_lists"), lists)),
-        tokio::spawn(market::price(ctx.for_job("price"))),
-        tokio::spawn(market::supply(ctx.for_job("supply"))),
-        tokio::spawn(stats_round::run(ctx.for_job("stats_round"))),
-        tokio::spawn(stats_round::geo(ctx.for_job("geo_resolve"), geo)),
-        tokio::spawn(topology::run(ctx.for_job("topology_sweep"))),
-        tokio::spawn(watch_probe::run(ctx.for_job("watch_probe"))),
-        tokio::spawn(backfill::run(ctx.for_job("backfill"))),
-        tokio::spawn(maintenance::run(ctx.for_job("maintenance"))),
+        (
+            "chain",
+            tokio::spawn(chain::run(ctx.for_job("chain"), recent)),
+        ),
+        (
+            "next_payees",
+            tokio::spawn(chain::payees(ctx.for_job("next_payees"), payees)),
+        ),
+        (
+            "failover_pool",
+            tokio::spawn(chain::failover_pool(ctx.for_job("failover_pool"))),
+        ),
+        (
+            "app_pending",
+            tokio::spawn(apps::pending(ctx.for_job("app_pending"))),
+        ),
+        (
+            "app_installing",
+            tokio::spawn(apps::installing(ctx.for_job("app_installing"))),
+        ),
+        (
+            "app_placement",
+            tokio::spawn(apps::placement(ctx.for_job("app_placement"))),
+        ),
+        ("hot_apps", tokio::spawn(apps::hot(ctx.for_job("hot_apps")))),
+        (
+            "app_catalog",
+            tokio::spawn(apps::catalog(ctx.for_job("app_catalog"), catalog)),
+        ),
+        (
+            "install_errors",
+            tokio::spawn(apps::install_errors(ctx.for_job("install_errors"))),
+        ),
+        (
+            "app_chain_feed",
+            tokio::spawn(apps::chain_feed(ctx.for_job("app_chain_feed"), chain_feed)),
+        ),
+        (
+            "node_registry",
+            tokio::spawn(registry::reconcile(ctx.for_job("node_registry"), reconcile)),
+        ),
+        (
+            "node_count",
+            tokio::spawn(registry::counts(ctx.for_job("node_count"))),
+        ),
+        (
+            "start_dos_lists",
+            tokio::spawn(registry::lists(ctx.for_job("start_dos_lists"), lists)),
+        ),
+        ("price", tokio::spawn(market::price(ctx.for_job("price")))),
+        (
+            "supply",
+            tokio::spawn(market::supply(ctx.for_job("supply"))),
+        ),
+        (
+            "stats_round",
+            tokio::spawn(stats_round::run(ctx.for_job("stats_round"))),
+        ),
+        (
+            "geo_resolve",
+            tokio::spawn(stats_round::geo(ctx.for_job("geo_resolve"), geo)),
+        ),
+        (
+            "topology_sweep",
+            tokio::spawn(topology::run(ctx.for_job("topology_sweep"))),
+        ),
+        (
+            "watch_probe",
+            tokio::spawn(watch_probe::run(ctx.for_job("watch_probe"))),
+        ),
+        (
+            "backfill",
+            tokio::spawn(backfill::run(ctx.for_job("backfill"))),
+        ),
+        (
+            "maintenance",
+            tokio::spawn(maintenance::run(ctx.for_job("maintenance"))),
+        ),
     ]
 }
 

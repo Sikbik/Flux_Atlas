@@ -208,36 +208,40 @@ impl<'de> Deserialize<'de> for Amount {
     }
 }
 
+// Arithmetic saturates (L6): amounts are sums of upstream values, and a forged or corrupt
+// value must not wrap around into a plausible (or negative) total in release builds. Real
+// totals (the whole supply is under 1e18 base units) never come near the bounds.
+
 impl Add for Amount {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
+        Self(self.0.saturating_add(rhs.0))
     }
 }
 
 impl AddAssign for Amount {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
+        self.0 = self.0.saturating_add(rhs.0);
     }
 }
 
 impl Sub for Amount {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        Self(self.0 - rhs.0)
+        Self(self.0.saturating_sub(rhs.0))
     }
 }
 
 impl SubAssign for Amount {
     fn sub_assign(&mut self, rhs: Self) {
-        self.0 -= rhs.0;
+        self.0 = self.0.saturating_sub(rhs.0);
     }
 }
 
 impl Neg for Amount {
     type Output = Self;
     fn neg(self) -> Self {
-        Self(-self.0)
+        Self(self.0.saturating_neg())
     }
 }
 
@@ -256,6 +260,18 @@ impl<'a> Sum<&'a Amount> for Amount {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arithmetic_saturates() {
+        let max = Amount(i64::MAX);
+        assert_eq!(max + Amount(1), max);
+        assert_eq!([max, max, Amount(5)].iter().sum::<Amount>(), max);
+        assert_eq!(Amount(i64::MIN) - Amount(1), Amount(i64::MIN));
+        assert_eq!(-Amount(i64::MIN), Amount(i64::MAX));
+        let mut a = max;
+        a += Amount(7);
+        assert_eq!(a, max);
+    }
 
     #[test]
     fn display() {

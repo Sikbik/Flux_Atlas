@@ -4,10 +4,10 @@
 use std::collections::HashMap;
 
 use super::container::{
-    CodecError, ContainerReader, ContainerWriter, DType, Header, decode_string_table,
-    encode_string_table, read_f32, read_u16, read_u32,
+    CodecError, ContainerReader, ContainerWriter, DType, Header, ORIGIN_KIND, Origin,
+    decode_string_table, encode_string_table, read_f32, read_u16, read_u32,
 };
-use crate::ids::NodeId;
+use crate::ids::{Hash32, NodeId, Outpoint};
 use crate::net::NodeEndpoint;
 use crate::node::{NodeRecord, NodeStatus, Tier};
 
@@ -34,6 +34,8 @@ pub mod kind {
     pub const RAM_GB: u16 = 14;
     pub const SSD_GB: u16 = 15;
     pub const VERSION: u16 = 16;
+    /// Collateral outpoints (struct): `count` x {`u8 txid[32]` in display order, `u32 vout`}.
+    pub const OUTPOINTS: u16 = 17;
     pub const IPS: u16 = 32;
     pub const COUNTRIES: u16 = 33;
     pub const ORGS: u16 = 34;
@@ -86,7 +88,13 @@ pub struct NodeBinInput {
     pub version: String,
     /// `ip:port`, empty when unknown.
     pub endpoint: String,
+    /// The collateral outpoint (the node's stable identity). The OUTPOINTS column is written
+    /// only when every row has one.
+    pub outpoint: Option<Outpoint>,
 }
+
+/// Bytes per row of the OUTPOINTS column.
+pub const OUTPOINT_ROW_LEN: usize = 36;
 
 impl NodeBinInput {
     /// Builds a row from a node record. `tip` and `now_ms` drive the time-relative flags;
@@ -164,6 +172,7 @@ impl NodeBinInput {
                 .unwrap_or_default()
                 .to_owned(),
             endpoint: rec.endpoint.map(|e| e.to_string()).unwrap_or_default(),
+            outpoint: Some(rec.outpoint),
         }
     }
 }
@@ -210,7 +219,7 @@ impl Interner {
 
 /// Encodes a node snapshot. Rows are written in the given order (callers sort by id).
 pub fn encode_nodes_bin(seq: u64, generated_ms: u64, rows: &[NodeBinInput]) -> Vec<u8> {
-    encode_nodes_bin_without(seq, generated_ms, rows, &[])
+    encode_nodes_bin_from(seq, generated_ms, rows, &[], None)
 }
 
 /// [`encode_nodes_bin`] without the column kinds in `omit`. A producer that did not record a
@@ -222,6 +231,18 @@ pub fn encode_nodes_bin_without(
     generated_ms: u64,
     rows: &[NodeBinInput],
     omit: &[u16],
+) -> Vec<u8> {
+    encode_nodes_bin_from(seq, generated_ms, rows, omit, None)
+}
+
+/// The full encoder: [`encode_nodes_bin_without`] stamped with the server that built it
+/// (section ORIGIN) when `origin` is given.
+pub fn encode_nodes_bin_from(
+    seq: u64,
+    generated_ms: u64,
+    rows: &[NodeBinInput],
+    omit: &[u16],
+    origin: Option<Origin>,
 ) -> Vec<u8> {
     let n = rows.len();
     let mut ids = Vec::with_capacity(n);
@@ -342,6 +363,15 @@ pub fn encode_nodes_bin_without(
         .strings(kind::ORGS, &orgs.list)
         .strings(kind::VERSIONS, &versions.list)
         .section(kind::LOCATIONS, DType::Struct, encode_locations(&locations));
+    if rows.iter().all(|r| r.outpoint.is_some()) {
+        let mut ops = Vec::with_capacity(n * OUTPOINT_ROW_LEN);
+        for o in rows.iter().filter_map(|r| r.outpoint) {
+            ops.extend_from_slice(&o.txid.0);
+            ops.extend_from_slice(&o.vout.to_le_bytes());
+        }
+        w.section(kind::OUTPOINTS, DType::Struct, ops);
+    }
+    w.origin(origin);
     let omit: Vec<u16> = omit.iter().copied().filter(|k| *k != kind::IDS).collect();
     w.drop_sections(&omit);
     w.finish()
@@ -419,6 +449,11 @@ pub struct NodesBin {
     pub orgs: Vec<String>,
     pub versions: Vec<String>,
     pub locations: Vec<LocationEntry>,
+    /// Collateral outpoints per row, when the producer recorded them.
+    pub outpoints: Option<Vec<Outpoint>>,
+    /// The server that built the snapshot (absent from older servers, fixtures and the time
+    /// machine of older servers).
+    pub origin: Option<Origin>,
     /// Section kinds present in the file that this decoder does not know.
     pub unknown_sections: Vec<u16>,
     /// Every section kind present in the file, in file order. A known column that is absent
@@ -450,7 +485,7 @@ impl NodesBin {
     }
 }
 
-const KNOWN: [u16; 21] = [
+const KNOWN: [u16; 23] = [
     kind::IDS,
     kind::LAT,
     kind::LON,
@@ -472,7 +507,30 @@ const KNOWN: [u16; 21] = [
     kind::ORGS,
     kind::VERSIONS,
     kind::LOCATIONS,
+    kind::OUTPOINTS,
+    ORIGIN_KIND,
 ];
+
+fn decode_outpoints(bytes: &[u8], n: usize) -> Result<Vec<Outpoint>, CodecError> {
+    if bytes.len() != n * OUTPOINT_ROW_LEN {
+        return Err(CodecError::WrongLength {
+            kind: kind::OUTPOINTS,
+            found: bytes.len() / OUTPOINT_ROW_LEN,
+            expected: n,
+        });
+    }
+    Ok(bytes
+        .chunks_exact(OUTPOINT_ROW_LEN)
+        .map(|c| {
+            let mut txid = [0u8; 32];
+            txid.copy_from_slice(&c[..32]);
+            Outpoint::new(
+                Hash32(txid),
+                u32::from_le_bytes([c[32], c[33], c[34], c[35]]),
+            )
+        })
+        .collect())
+}
 
 /// Decodes `nodes.bin`, tolerating unknown and missing optional sections. `ids` is required.
 pub fn decode_nodes_bin(buf: &[u8]) -> Result<NodesBin, CodecError> {
@@ -494,6 +552,10 @@ pub fn decode_nodes_bin(buf: &[u8]) -> Result<NodesBin, CodecError> {
     let locations = match r.raw(kind::LOCATIONS, DType::Struct)? {
         Some(b) => decode_locations(b)?,
         None => Vec::new(),
+    };
+    let outpoints = match r.raw(kind::OUTPOINTS, DType::Struct)? {
+        Some(b) => Some(decode_outpoints(b, n)?),
+        None => None,
     };
     Ok(NodesBin {
         version: r.header.version,
@@ -527,6 +589,8 @@ pub fn decode_nodes_bin(buf: &[u8]) -> Result<NodesBin, CodecError> {
             .strings(kind::VERSIONS)?
             .unwrap_or_else(|| vec![String::new()]),
         locations,
+        outpoints,
+        origin: r.origin()?,
         unknown_sections: r
             .kinds
             .iter()
@@ -561,6 +625,7 @@ mod tests {
             ssd_gb: 500,
             version: "8.20.0".into(),
             endpoint: format!("1.2.3.{id}:16127"),
+            outpoint: Some(Outpoint::new(Hash32([id as u8; 32]), id)),
         }
     }
 
@@ -643,6 +708,27 @@ mod tests {
         assert_eq!(d.ids, vec![1, 2]);
         assert_eq!(d.cores, full.cores);
         assert!(d.unknown_sections.is_empty());
+    }
+
+    #[test]
+    fn outpoints_and_origin() {
+        let rows = [row(1, Some(1.0), "FR", "x"), row(2, None, "", "")];
+        let o = Origin {
+            started_ms: 7,
+            instance: 0xfeed,
+        };
+        let d = decode_nodes_bin(&encode_nodes_bin_from(1, 2, &rows, &[], Some(o))).unwrap();
+        assert_eq!(d.origin, Some(o));
+        let ops = d.outpoints.unwrap();
+        assert_eq!(ops.len(), 2);
+        assert_eq!(ops[1], Outpoint::new(Hash32([2; 32]), 2));
+        assert!(d.unknown_sections.is_empty());
+        // A row without an outpoint drops the column (never zero-filled).
+        let mut partial = rows.to_vec();
+        partial[0].outpoint = None;
+        let d = decode_nodes_bin(&encode_nodes_bin(1, 2, &partial)).unwrap();
+        assert!(d.outpoints.is_none() && !d.has(kind::OUTPOINTS));
+        assert!(d.origin.is_none());
     }
 
     #[test]

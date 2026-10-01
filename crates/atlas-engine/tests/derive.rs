@@ -296,6 +296,69 @@ fn shared_payment_address_pays_the_queue_head_not_a_lagging_winner() {
     assert_eq!(st.queue.head(Tier::Cumulus), Some(second));
 }
 
+/// L11: after a reorg the replacement block's payout goes to the node the real queue pays. An
+/// operator's two nodes share one address; the orphaned block paid the head. Without undoing
+/// that payout the head sat at the back and the replacement block (paying the same address)
+/// was attributed to the second node.
+#[test]
+fn a_reorg_undoes_orphaned_payouts_before_the_replacement_block() {
+    let mut st = common::seeded();
+    st.client_ranks.reset(&st.queue);
+    let q: Vec<NodeId> = st
+        .queue
+        .tier(Tier::Cumulus)
+        .unwrap()
+        .iter()
+        .take(2)
+        .collect();
+    let (head, second) = (q[0], q[1]);
+    let addr = st.nodes.rec(head).unwrap().payment_address.clone();
+    st.nodes.get_mut(second).unwrap().rec.payment_address = addr;
+    let before = st.nodes.rec(head).unwrap().last_paid_height;
+    let d = common::block("flux/daemon_getblock_2996916_verbosity2.json");
+    let mut tick = Tick::new(NOW);
+    apply_block(&mut st, &mut tick, &d, false);
+    assert_eq!(
+        st.nodes.rec(head).unwrap().last_paid_height,
+        Some(2_996_916)
+    );
+    assert_eq!(st.queue.head(Tier::Cumulus), Some(second));
+
+    // The block is orphaned; the replacement at the same height pays the same address.
+    let mut tick = Tick::new(NOW);
+    let undone = atlas_engine::derive::block::undo_payouts_above(&mut st, &mut tick, 2_996_915);
+    let head_back = st.queue.head(Tier::Cumulus);
+    let restored = st.nodes.rec(head).unwrap().last_paid_height;
+    let mut replacement = d.clone();
+    replacement.summary.hash = Hash32([0xee; 32]);
+    let mut tick = Tick::new(NOW);
+    let rep = apply_block(&mut st, &mut tick, &replacement, false);
+    assert_eq!(rep.attributions[0], Attribution::QueueHead);
+    assert_eq!(block_msg(&tick).payouts[0].node, Some(head));
+    assert_eq!(
+        st.nodes.rec(head).unwrap().last_paid_height,
+        Some(2_996_916)
+    );
+    assert_ne!(
+        st.nodes.rec(second).unwrap().last_paid_height,
+        Some(2_996_916),
+        "the operator's other node was not paid"
+    );
+    assert_eq!(undone, 3, "the three payouts of the orphaned block");
+    assert_eq!(restored, before);
+    assert_eq!(
+        head_back,
+        Some(head),
+        "the head was back before the replacement"
+    );
+    // A reorg below the undo window, or a second undo of the same heights, changes nothing.
+    let mut tick = Tick::new(NOW);
+    assert_eq!(
+        atlas_engine::derive::block::undo_payouts_above(&mut st, &mut tick, 2_996_916),
+        0
+    );
+}
+
 #[test]
 fn producer_prefix_resolution() {
     let mut st = common::seeded();
@@ -813,6 +876,64 @@ fn first_boot_block_before_the_list_is_attributed_by_the_reconcile() {
     let rep = reconcile(&mut st, &mut tick, &common::node_list());
     assert_eq!(rep.reattributed, 0);
     assert_eq!(rep.total_diffs(), 0, "{rep:?}");
+}
+
+/// First boot, a block before the list heartbeats a node the engine does not know yet. A
+/// heartbeat (an update confirm) does not say when the node first confirmed, so the list's
+/// `confirmed_height` must stand. Before, the block's height was recorded as the first confirm,
+/// the initial reconcile kept it (the node is newer than the list), and the node queued by that
+/// height: seen live on a fresh instance as 15 `confirmed_height` diffs and 2,586 rank diffs.
+#[test]
+fn a_heartbeat_before_the_first_list_does_not_invent_a_first_confirm() {
+    let list = list_from_model(&common::seeded());
+    let l = list
+        .iter()
+        .filter_map(|n| n.last_confirmed_height.max(n.last_paid_height))
+        .max()
+        .unwrap();
+    // A node queued by its first confirm (never paid), so the height decides its rank.
+    let target = list
+        .iter()
+        .find(|n| n.last_paid_height.is_none_or(|p| p == 0) && n.confirmed_height.is_some())
+        .or_else(|| list.first())
+        .unwrap()
+        .clone();
+    let mut heartbeat =
+        common::block("flux/daemon_getblock_2996886_verbosity2_fluxnode_initial_confirm.json")
+            .node_txs
+            .into_iter()
+            .find(|t| t.kind == atlas_core::chain::NodeTxKind::UpdateConfirm)
+            .unwrap();
+    heartbeat.collateral = target.outpoint;
+    heartbeat.endpoint = target.endpoint;
+    heartbeat.benchmark_tier = Some(target.tier);
+
+    let mut st = NetworkState::default();
+    let mut d = empty_block(l + 1);
+    d.node_txs = vec![heartbeat];
+    apply_block(&mut st, &mut Tick::new(NOW), &d, false);
+    let rep = reconcile(&mut st, &mut Tick::new(NOW), &list);
+    assert_eq!(rep.skipped_newer, 1, "{rep:?}");
+
+    // The next list holds the heartbeat: nothing differs, ranks included.
+    let next: Vec<_> = list
+        .iter()
+        .cloned()
+        .map(|mut n| {
+            if n.outpoint == target.outpoint {
+                n.last_confirmed_height = Some(l + 1);
+            }
+            n
+        })
+        .collect();
+    let rep = reconcile(&mut st, &mut Tick::new(NOW), &next);
+    assert_eq!(rep.total_diffs(), 0, "{rep:?}");
+    assert_eq!(rep.rank_diffs, 0, "{rep:?}");
+    let (id, _) = st.nodes.intern(target.outpoint, NOW);
+    assert_eq!(
+        st.nodes.rec(id).unwrap().confirmed_height,
+        target.confirmed_height
+    );
 }
 
 #[test]

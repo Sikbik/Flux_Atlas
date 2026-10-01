@@ -26,6 +26,9 @@ pub struct TopologyReport {
 /// One observation.
 #[derive(Debug)]
 pub enum Obs {
+    /// An injected fault (tests of the supervision).
+    #[cfg(any(test, feature = "fault-injection"))]
+    Fault(crate::Fault),
     // ----- T1 chain -----
     /// A tip hash was announced (socket push or fallback poll).
     Tip {

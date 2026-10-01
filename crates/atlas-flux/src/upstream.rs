@@ -145,6 +145,8 @@ pub struct FailoverSet {
     dynamic: RwLock<Vec<Arc<Upstream>>>,
     /// Maximum dynamic entries tried per request.
     pub max_dynamic_tries: usize,
+    /// Answers rejected by validation (wrong block, implausible height), cumulative.
+    rejected: AtomicU64,
 }
 
 impl FailoverSet {
@@ -158,7 +160,38 @@ impl FailoverSet {
             primary,
             dynamic: RwLock::new(Vec::new()),
             max_dynamic_tries: 3,
+            rejected: AtomicU64::new(0),
         })
+    }
+
+    /// Rejects an answer that failed validation: counts it, records a fault on its upstream,
+    /// and drops a direct node from the pool (a node that serves a wrong block is broken or
+    /// lying; the engine re-admits nodes only after a fresh height check). Returns the error
+    /// to hand back from the request closure, so the request fails over to the next candidate.
+    pub fn reject(&self, u: &Upstream, what: &'static str, reason: &str) -> FluxError {
+        self.rejected.fetch_add(1, Ordering::Relaxed);
+        u.health.record_fault();
+        tracing::warn!(set = self.name, upstream = %u.label, what, reason, "upstream answer rejected");
+        if let Some(ep) = u.node {
+            self.evict(&ep);
+        }
+        FluxError::Parse {
+            what,
+            message: format!("answer rejected: {reason}"),
+        }
+    }
+
+    /// Removes a direct node from the pool.
+    pub fn evict(&self, ep: &GuardedEndpoint) {
+        self.dynamic
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|u| u.node.as_ref() != Some(ep));
+    }
+
+    /// Answers rejected by validation so far.
+    pub fn rejected(&self) -> u64 {
+        self.rejected.load(Ordering::Relaxed)
     }
 
     /// Replaces the dynamic pool, keeping health state of entries that remain.
@@ -319,6 +352,26 @@ mod tests {
             })
             .await;
         assert!(r.unwrap_err().is_not_found());
+    }
+
+    #[test]
+    fn rejected_answers_penalise_and_evict_nodes() {
+        let set = FailoverSet::new("fluxos", &[FLUXOS_GATEWAY]).unwrap();
+        let a = GuardedEndpoint::new("94.130.137.2:16127".parse().unwrap()).unwrap();
+        let b = GuardedEndpoint::new("65.109.63.147:16147".parse().unwrap()).unwrap();
+        set.set_nodes(&[a, b]);
+        let node = set.nodes()[0].clone();
+        let e = set.reject(&node, "getblock", "wrong hash");
+        assert!(e.is_upstream_fault(), "the request fails over");
+        assert_eq!(set.rejected(), 1);
+        assert_eq!(set.nodes().len(), 1, "the node left the pool");
+        assert_eq!(set.nodes()[0].node, Some(b));
+        // A primary is penalised but stays.
+        let gw = set.primaries()[0].clone();
+        let _ = set.reject(&gw, "getblock", "wrong hash");
+        assert_eq!(gw.health.snapshot(0).consecutive_failures, 1);
+        assert_eq!(set.primaries().len(), 1);
+        assert_eq!(set.rejected(), 2);
     }
 
     #[test]

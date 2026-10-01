@@ -500,7 +500,10 @@ mod tests {
         let large = tx(2_000).weigh();
         // Each extra output adds at least its own record: the weight follows the content, whatever the fixed size of
         // the detail record itself (which grows as fields such as `app_ref` are added).
-        assert!(large - small >= 1_998 * size_of::<TxOutputDto>(), "{small} {large}");
+        assert!(
+            large - small >= 1_998 * size_of::<TxOutputDto>(),
+            "{small} {large}"
+        );
         assert!(large > 2_000 * size_of::<TxOutputDto>());
     }
 

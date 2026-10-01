@@ -78,14 +78,18 @@ pub fn run(mut cfg: ServeConfig) -> anyhow::Result<()> {
         "process hardened"
     );
     fit_to_fd_limit(&mut cfg.server, h.nofile_after);
-    tokio::runtime::Builder::new_multi_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .context("building the runtime")?
-        .block_on(async move {
-            let listener = tokio::net::TcpListener::from_std(std_listener).context("listener")?;
-            serve_on(cfg, listener, shutdown_signal()).await
-        })
+        .context("building the runtime")?;
+    let result = rt.block_on(async move {
+        let listener = tokio::net::TcpListener::from_std(std_listener).context("listener")?;
+        serve_on(cfg, listener, shutdown_signal()).await
+    });
+    // Do not wait forever for blocking tasks (a wedged store read after the engine died): the
+    // process must exit to be restarted.
+    rt.shutdown_timeout(Duration::from_secs(5));
+    result
 }
 
 /// Lowers the connection caps so open sockets can never exhaust file descriptors.
@@ -177,6 +181,12 @@ pub async fn serve_on(
         "listening"
     );
     let st = state.clone();
+    // A dead engine (a supervised part panicked, stopped or stalled; ARCHITECTURE 3.4) shuts
+    // the server down like a signal, and the process then exits non-zero so the container
+    // restart policy restarts it on the persisted state instead of serving frozen data.
+    let died = std::sync::Arc::new(std::sync::OnceLock::<String>::new());
+    let died_set = std::sync::Arc::clone(&died);
+    let watched = engine.clone();
     let signalled = std::sync::Arc::new(std::sync::OnceLock::<Instant>::new());
     let sig = std::sync::Arc::clone(&signalled);
     let conns = std::sync::Arc::clone(&state.listener);
@@ -185,7 +195,13 @@ pub async fn serve_on(
         listener,
         app,
         async move {
-            shutdown.await;
+            tokio::select! {
+                () = shutdown => {}
+                reason = watched.died() => {
+                    tracing::error!(reason, "engine died; shutting down to be restarted");
+                    let _ = died_set.set(reason);
+                }
+            }
             let _ = sig.set(Instant::now());
         },
         move || st.begin_shutdown(),
@@ -205,6 +221,19 @@ pub async fn serve_on(
             budget_ms = left.as_millis() as u64,
             "engine shutdown did not finish in time; flushing the store anyway"
         );
+    }
+    if let Some(reason) = died.get() {
+        // A wedged store writer may hold the database: bound the final flush, then exit.
+        let s = store.clone();
+        let flushed = tokio::time::timeout(
+            Duration::from_secs(10),
+            tokio::task::spawn_blocking(move || s.flush()),
+        )
+        .await;
+        if !matches!(flushed, Ok(Ok(Ok(_)))) {
+            tracing::error!("final store flush did not complete after the engine died");
+        }
+        anyhow::bail!("engine died: {reason}");
     }
     store.flush().context("final store flush")?;
     tracing::info!(ms = started.elapsed().as_millis() as u64, "stopped");
@@ -296,6 +325,66 @@ mod tests {
     use atlas_core::api::HealthDto;
 
     use super::*;
+
+    async fn get_health(addr: SocketAddr, path: &str) -> (String, HealthDto) {
+        let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+        s.write_all(
+            format!("GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").as_bytes(),
+        )
+        .await
+        .unwrap();
+        let mut buf = String::new();
+        s.read_to_string(&mut buf).await.unwrap();
+        let status = buf.split_whitespace().nth(1).unwrap().to_owned();
+        let body = buf.split("\r\n\r\n").nth(1).unwrap();
+        (status, serde_json::from_str(body).unwrap())
+    }
+
+    /// M5: a panic in a supervised engine part turns /healthz and /readyz to 503 `dead`, and the
+    /// container healthcheck fails, instead of serving frozen data as healthy.
+    #[tokio::test]
+    async fn dead_engine_fails_health() {
+        for fault in [
+            atlas_engine::Fault::ReducerPanic,
+            atlas_engine::Fault::WriterPanic,
+            atlas_engine::Fault::JobPanic,
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let engine = fixtures::offline_engine(&dir.path().join("atlas.redb")).unwrap();
+            let app = router(AppState::new(engine.clone(), ServerConfig::default()));
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move { axum::serve(listener, app).await });
+            healthcheck(addr, Duration::from_secs(5)).await.unwrap();
+
+            engine.inject_fault(fault).await;
+            let reason = tokio::time::timeout(Duration::from_secs(10), engine.died())
+                .await
+                .expect("the engine reports its death");
+            assert!(reason.contains("panicked"), "{fault:?}: {reason}");
+
+            let (status, h) = get_health(addr, "/healthz").await;
+            assert_eq!((status.as_str(), h.status.as_str()), ("503", "dead"));
+            assert_eq!(h.reason.as_deref(), Some(reason.as_str()));
+            let (status, _) = get_health(addr, "/readyz").await;
+            assert_eq!(status, "503");
+            assert!(healthcheck(addr, Duration::from_secs(5)).await.is_err());
+            let metrics = {
+                let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+                s.write_all(
+                    b"GET /metrics/prometheus HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+                let mut b = String::new();
+                s.read_to_string(&mut b).await.unwrap();
+                b
+            };
+            assert!(metrics.contains("\natlas_engine_alive 0\n"), "{fault:?}");
+            server.abort();
+            engine.shutdown().await;
+        }
+    }
 
     #[tokio::test]
     async fn healthz_and_healthcheck() {
