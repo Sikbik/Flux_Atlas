@@ -5,12 +5,15 @@ use std::sync::atomic::Ordering;
 
 use atlas_core::api::HealthDto;
 use atlas_core::now_ms;
-use axum::Json;
 use axum::extract::State;
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
 
+use crate::error::ApiError;
 use crate::metrics::{escape, family};
+use crate::net::trust::Source;
+use crate::net::{PeerAddr, metrics_allowed};
 use crate::state::AppState;
 
 fn health(s: &AppState) -> (bool, HealthDto) {
@@ -57,8 +60,17 @@ pub async fn readyz(State(s): State<AppState>) -> Response {
     no_store((status, Json(dto)).into_response())
 }
 
-/// Prometheus text exposition.
-pub async fn prometheus(State(s): State<AppState>) -> Response {
+/// Prometheus text exposition. Private: served to loopback peers (`atlas metrics` inside the
+/// container) or with `Authorization: Bearer <ATLAS_METRICS_TOKEN>`; anyone else gets a 404,
+/// as if the route did not exist.
+pub async fn prometheus(
+    State(s): State<AppState>,
+    Extension(peer): Extension<PeerAddr>,
+    headers: HeaderMap,
+) -> Response {
+    if !metrics_allowed(peer, &headers, s.cfg.metrics_token.as_deref()) {
+        return no_store(ApiError::not_found("no such endpoint").into_response());
+    }
     let mut out = String::with_capacity(8 * 1024);
     s.metrics.render_http(&mut out);
     let p = s.engine.published();
@@ -226,6 +238,7 @@ pub async fn prometheus(State(s): State<AppState>) -> Response {
             escape(name)
         );
     }
+    render_edge(&s, &mut out);
     render_engine(&s, &mut out);
     let rows = s
         .store_read(|st| Ok(st.table_rows()?))
@@ -243,6 +256,116 @@ pub async fn prometheus(State(s): State<AppState>) -> Response {
     );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     r
+}
+
+/// The edge: connections, client address derivation, request and store timeouts, and the
+/// derived-route and explorer limits (ARCHITECTURE section 11.2). No address is exported
+/// except the built-in FDM balancers' (public infrastructure).
+fn render_edge(s: &AppState, out: &mut String) {
+    let c = &s.listener.stats;
+    let load = |a: &std::sync::atomic::AtomicU64| a.load(Ordering::Relaxed) as f64;
+    family(
+        out,
+        "atlas_http_connections",
+        "gauge",
+        "Open TCP connections (upgraded WebSockets included).",
+        s.listener.open(),
+    );
+    family(
+        out,
+        "atlas_http_connections_max",
+        "gauge",
+        "Global cap on open TCP connections.",
+        s.listener.limits().max_connections,
+    );
+    family(
+        out,
+        "atlas_http_connection_peers",
+        "gauge",
+        "Distinct untrusted peers (IPv6 by /64) holding connections.",
+        c.peers.load(Ordering::Relaxed),
+    );
+    labeled(
+        out,
+        "atlas_http_connection_events_total",
+        "counter",
+        "Connection events: accepted, from_proxy (accepted from a trusted proxy), \
+rejected_global, rejected_per_peer, write_stall, error (includes header read timeouts), \
+accept_error, drain_dropped.",
+        "event",
+        [
+            ("accepted", load(&c.accepted)),
+            ("from_proxy", load(&c.accepted_from_proxy)),
+            ("rejected_global", load(&c.rejected_global)),
+            ("rejected_per_peer", load(&c.rejected_per_peer)),
+            ("write_stall", load(&c.write_stalls)),
+            ("error", load(&c.errors)),
+            ("accept_error", load(&c.accept_errors)),
+            ("drain_dropped", load(&c.drain_dropped)),
+        ],
+    );
+    labeled(
+        out,
+        "atlas_client_ip_source_total",
+        "counter",
+        "How each request's client address was derived: direct (untrusted peer), \
+direct_header_ignored (untrusted peer sent X-Forwarded-For), forwarded (trusted proxy, header \
+used), proxy_no_header, proxy_bad_header.",
+        "source",
+        Source::ALL.map(|src| (src.label(), s.forward.source_count(src) as f64)),
+    );
+    labeled(
+        out,
+        "atlas_fdm_peer_requests_total",
+        "counter",
+        "Requests received from each built-in FDM app balancer.",
+        "peer",
+        s.forward
+            .fdm_peers()
+            .into_iter()
+            .map(|(a, n)| (a, n as f64)),
+    );
+    family(
+        out,
+        "atlas_untrusted_forwarders",
+        "gauge",
+        "Distinct /24 (IPv6 /48) networks of untrusted peers that sent X-Forwarded-For.",
+        s.forward.untrusted_forwarders(),
+    );
+    family(
+        out,
+        "atlas_request_timeouts_total",
+        "counter",
+        "Requests answered 503 by the request timeout.",
+        s.metrics.request_timeouts.load(Ordering::Relaxed),
+    );
+    family(
+        out,
+        "atlas_store_read_timeouts_total",
+        "counter",
+        "Store reads answered 503 after their deadline.",
+        s.metrics.store_timeouts.load(Ordering::Relaxed),
+    );
+    family(
+        out,
+        "atlas_store_reads_in_flight",
+        "gauge",
+        "Store reads holding or waiting for a slot.",
+        s.store_reads_in_use(),
+    );
+    labeled(
+        out,
+        "atlas_limited_total",
+        "counter",
+        "Requests refused by a limit: derived_rate (per client), derived_busy (global compute \
+slots), explorer_global (global explorer budget).",
+        "limit",
+        [
+            ("derived_rate", load(&s.derived.rate_limited)),
+            ("derived_busy", load(&s.derived.busy)),
+            ("explorer_global", load(&s.explorer.guard.global_limited)),
+        ],
+    );
 }
 
 /// `name{label="value"} v` lines under one HELP/TYPE header.

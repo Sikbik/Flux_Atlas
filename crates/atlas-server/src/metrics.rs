@@ -51,6 +51,10 @@ pub struct Metrics {
     pub rate_limited: AtomicU64,
     /// Requests refused because every upstream slot was busy.
     pub upstream_busy: AtomicU64,
+    /// Requests answered 503 by the request timeout.
+    pub request_timeouts: AtomicU64,
+    /// Store reads that did not finish within their deadline.
+    pub store_timeouts: AtomicU64,
 }
 
 impl Metrics {

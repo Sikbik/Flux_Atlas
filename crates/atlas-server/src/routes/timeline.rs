@@ -43,12 +43,30 @@ pub struct StateQuery {
     pub t: Option<u64>,
 }
 
+/// Resolution of `/timeline/state` within a day of now: requests are floored to it.
+pub const STATE_QUANTUM_RECENT_MS: u64 = 10_000;
+/// Resolution further back.
+pub const STATE_QUANTUM_MS: u64 = 60_000;
+
+/// The instant a request for `t` is answered for: floored to 10 s within a day of `now`, to a
+/// minute before that. Distinct `t` values then share a reconstruction and a cache entry.
+pub fn quantize(t: u64, now: u64) -> u64 {
+    let q = if now.saturating_sub(t) <= 86_400_000 {
+        STATE_QUANTUM_RECENT_MS
+    } else {
+        STATE_QUANTUM_MS
+    };
+    t - t % q
+}
+
 /// `GET /timeline/state?t=` (binary, `nodes.bin` format v1, section 7).
 ///
-/// The node set at `t` reconstructed by `atlas_engine::timemachine::state_at`. The header's
-/// `generated_ms` is `t` and its `seq` is 0 (a historical state has no live position), so the
-/// ETag is stable for a given `t`. Columns the keyframes do not record (rank, hardware, apps,
-/// versions) are zero.
+/// The node set at `t` reconstructed by `atlas_engine::timemachine::state_at`, with `t` floored
+/// to [`STATE_QUANTUM_RECENT_MS`] within a day of now and to [`STATE_QUANTUM_MS`] before
+/// ([`quantize`]). The header's `generated_ms` is that instant and its `seq` is 0 (a historical
+/// state has no live position), so the ETag is stable for it. Concurrent requests for one
+/// instant share a single reconstruction. Columns the keyframes do not record (rank, hardware,
+/// apps, versions) are zero.
 pub async fn state(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -56,15 +74,17 @@ pub async fn state(
 ) -> ApiResult<Response> {
     let t =
         q.t.ok_or_else(|| ApiError::bad_request("t is required (unix ms)"))?;
-    if t > now_ms() + 60_000 {
+    let now = now_ms();
+    if t > now + 60_000 {
         return Err(ApiError::bad_request("t is in the future"));
     }
-    let body = if let Some(b) = s.timeline_cache.get(&t).await {
-        b
-    } else {
-        let b = s
-            .store_read(move |st| {
-                let state = atlas_engine::timemachine::state_at(st, t)?;
+    let t = quantize(t, now);
+    let st = s.clone();
+    let body = s
+        .timeline_cache
+        .try_get_with(t, async move {
+            st.store_read(move |store| {
+                let state = atlas_engine::timemachine::state_at(store, t)?;
                 tracing::debug!(
                     t,
                     snapshot_ms = state.snapshot_ms,
@@ -77,9 +97,24 @@ pub async fn state(
                     state.to_nodes_bin(0),
                 )))
             })
-            .await?;
-        s.timeline_cache.insert(t, Arc::clone(&b)).await;
-        b
-    };
+            .await
+        })
+        .await
+        .map_err(|e| (*e).clone())?;
     Ok(body.respond(&headers, cache::HISTORY))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quantization() {
+        let now = 1_000 * 86_400_000;
+        assert_eq!(quantize(now - 12_345, now), now - 20_000);
+        assert_eq!(quantize(now - 10_000, now), now - 10_000);
+        let old = now - 3 * 86_400_000 - 59_999;
+        assert_eq!(quantize(old, now), now - 3 * 86_400_000 - 60_000);
+        assert_eq!(quantize(old + 1, now) % STATE_QUANTUM_MS, 0);
+    }
 }

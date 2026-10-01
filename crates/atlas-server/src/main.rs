@@ -6,8 +6,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use atlas_server::config::{
-    DEFAULT_BIND, DEFAULT_DB_CACHE_MB, DEFAULT_HEALTHCHECK_ADDR, EngineOverrides, ServeConfig,
-    apply_upstream_rps, parse_duration, parse_intervals, parse_switch, socket_url_for,
+    DEFAULT_BIND, DEFAULT_DB_CACHE_MB, DEFAULT_HEALTHCHECK_ADDR, EngineOverrides, HttpLimits,
+    ServeConfig, TrustedProxies, WsConfig, apply_upstream_rps, parse_duration, parse_intervals,
+    parse_switch, socket_url_for,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -34,6 +35,14 @@ enum Cmd {
         #[arg(long, env = "ATLAS_HEALTHCHECK_ADDR", default_value = DEFAULT_HEALTHCHECK_ADDR)]
         addr: SocketAddr,
         #[arg(long, default_value_t = 3)]
+        timeout_s: u64,
+    },
+    /// Print the server's Prometheus metrics (`/metrics/prometheus`, served to loopback only).
+    /// Run it inside the container, for example with FluxOS's "execute command".
+    Metrics {
+        #[arg(long, env = "ATLAS_HEALTHCHECK_ADDR", default_value = DEFAULT_HEALTHCHECK_ADDR)]
+        addr: SocketAddr,
+        #[arg(long, default_value_t = 10)]
         timeout_s: u64,
     },
     /// Print the database file size and per-table sizes (rows, bytes) from redb's table
@@ -101,9 +110,24 @@ struct ServeArgs {
     /// Live messages kept for reconnect replay.
     #[arg(long, env = "ATLAS_REPLAY_CAPACITY")]
     replay_capacity: Option<usize>,
-    /// Trust `X-Forwarded-For` from the reverse proxy in front of the server.
-    #[arg(long, env = "ATLAS_TRUST_PROXY", default_value_t = false)]
+    /// Peers whose `X-Forwarded-For` names the client: `fdm` (the built-in FDM app balancers),
+    /// `none`, addresses and CIDR blocks, comma-separated (`fdm,10.0.0.0/8` extends the list).
+    #[arg(long, env = "ATLAS_TRUSTED_PROXIES", default_value = "fdm", value_parser = parse_proxies_arg)]
+    trusted_proxies: TrustedProxies,
+    /// Legacy: trust `X-Forwarded-For` from every peer. Unsafe when the port is reachable
+    /// without the proxy (it is on Flux); prefer `ATLAS_TRUSTED_PROXIES`.
+    #[arg(long, env = "ATLAS_TRUST_PROXY", default_value = "0", value_parser = parse_switch_arg)]
     trust_proxy: bool,
+    /// Maximum open TCP connections (WebSockets included); lowered to fit the descriptor limit.
+    #[arg(long, env = "ATLAS_HTTP_MAX_CONNECTIONS", default_value_t = HttpLimits::default().max_connections)]
+    http_max_connections: usize,
+    /// Maximum open connections per peer that is not a trusted proxy (IPv6 per /64).
+    #[arg(long, env = "ATLAS_HTTP_MAX_PER_PEER", default_value_t = HttpLimits::default().max_per_peer)]
+    http_max_per_peer: u32,
+    /// Bearer token that also opens `/metrics/prometheus` to remote scrapers (loopback only
+    /// without it).
+    #[arg(long, env = "ATLAS_METRICS_TOKEN", hide_env_values = true)]
+    metrics_token: Option<String>,
     /// Upstream-reaching requests per second per client IP (cache hits are free).
     #[arg(long, env = "ATLAS_CLIENT_RPS", default_value_t = 5)]
     client_rps: u32,
@@ -111,10 +135,10 @@ struct ServeArgs {
     #[arg(long, env = "ATLAS_CLIENT_BURST", default_value_t = 20)]
     client_burst: u32,
     /// Maximum concurrent WebSocket connections.
-    #[arg(long, env = "ATLAS_WS_MAX_CONNECTIONS", default_value_t = 10_000)]
+    #[arg(long, env = "ATLAS_WS_MAX_CONNECTIONS", default_value_t = WsConfig::default().max_connections)]
     ws_max_connections: usize,
-    /// Maximum concurrent WebSocket connections per client IP.
-    #[arg(long, env = "ATLAS_WS_MAX_PER_IP", default_value_t = 16)]
+    /// Maximum concurrent WebSocket connections per client (IPv6 per /64).
+    #[arg(long, env = "ATLAS_WS_MAX_PER_IP", default_value_t = WsConfig::default().max_per_ip)]
     ws_max_per_ip: u32,
     /// Disk budget of the database file in MiB: retention prunes the oldest history and
     /// compacts once the file nears it. Default sized for the 10 GiB Flux volume.
@@ -137,6 +161,10 @@ fn parse_switch_arg(s: &str) -> Result<bool, String> {
 
 fn parse_duration_arg(s: &str) -> Result<Duration, String> {
     parse_duration(s)
+}
+
+fn parse_proxies_arg(s: &str) -> Result<TrustedProxies, String> {
+    TrustedProxies::parse(s)
 }
 
 fn serve_config(a: ServeArgs) -> ServeConfig {
@@ -171,7 +199,14 @@ fn serve_config(a: ServeArgs) -> ServeConfig {
         disk_budget_mb: Some(a.disk_budget_mb.max(64)),
     };
     cfg.db_cache_mb = a.db_cache_mb.max(1);
-    cfg.server.trust_proxy = a.trust_proxy;
+    cfg.server.proxies = if a.trust_proxy {
+        TrustedProxies::all()
+    } else {
+        a.trusted_proxies
+    };
+    cfg.server.http.max_connections = a.http_max_connections.max(16);
+    cfg.server.http.max_per_peer = a.http_max_per_peer.max(1);
+    cfg.server.metrics_token = a.metrics_token.filter(|t| !t.trim().is_empty());
     cfg.server.limits.rps = a.client_rps.max(1);
     cfg.server.limits.burst = a.client_burst.max(1);
     cfg.server.ws.max_connections = a.ws_max_connections.max(1);
@@ -198,13 +233,19 @@ fn main() -> ExitCode {
     let result = match cli.cmd {
         Cmd::Serve(args) => {
             init_tracing();
-            let cfg = serve_config(*args);
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(anyhow::Error::from)
-                .and_then(|rt| rt.block_on(atlas_server::serve(cfg)))
+            atlas_server::run(serve_config(*args))
         }
+        Cmd::Metrics { addr, timeout_s } => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(anyhow::Error::from)
+            .and_then(|rt| {
+                rt.block_on(atlas_server::scrape_metrics(
+                    addr,
+                    Duration::from_secs(timeout_s),
+                ))
+            })
+            .map(|text| print!("{text}")),
         Cmd::Healthcheck { addr, timeout_s } => tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

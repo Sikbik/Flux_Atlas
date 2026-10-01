@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use governor::clock::{Clock as _, DefaultClock};
-use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
+use governor::{DefaultDirectRateLimiter, DefaultKeyedRateLimiter, Quota, RateLimiter};
 use moka::Expiry;
 use moka::future::Cache;
 use tokio::sync::{Semaphore, SemaphorePermit};
@@ -280,13 +280,18 @@ where
     }
 }
 
-/// Per-IP limiter and global concurrency cap for upstream-reaching requests.
+/// Per-client limiter, global budget and global concurrency cap for upstream-reaching
+/// requests. Clients are keyed by [`crate::net::trust::client_key`] (IPv6 by /64); the global
+/// budget holds whatever the forwarding headers claim.
 pub struct UpstreamGuard {
     limiter: DefaultKeyedRateLimiter<IpAddr>,
+    global: DefaultDirectRateLimiter,
     clock: DefaultClock,
     permits: Semaphore,
     queue_timeout: Duration,
     pub rate_limited: AtomicU64,
+    /// Refused because the global budget was spent.
+    pub global_limited: AtomicU64,
     pub busy: AtomicU64,
 }
 
@@ -303,26 +308,38 @@ impl UpstreamGuard {
     pub fn new(limits: ClientLimits) -> Self {
         let rps = NonZeroU32::new(limits.rps.max(1)).unwrap_or(NonZeroU32::MIN);
         let burst = NonZeroU32::new(limits.burst.max(1)).unwrap_or(NonZeroU32::MIN);
+        let grps = NonZeroU32::new(limits.global_rps.max(1)).unwrap_or(NonZeroU32::MIN);
+        let gburst = NonZeroU32::new(limits.global_burst.max(1)).unwrap_or(NonZeroU32::MIN);
         Self {
             limiter: RateLimiter::keyed(Quota::per_second(rps).allow_burst(burst)),
+            global: RateLimiter::direct(Quota::per_second(grps).allow_burst(gburst)),
             clock: DefaultClock::default(),
             permits: Semaphore::new(limits.upstream_concurrency.max(1)),
             queue_timeout: limits.queue_timeout,
             rate_limited: AtomicU64::new(0),
+            global_limited: AtomicU64::new(0),
             busy: AtomicU64::new(0),
         }
     }
 
-    /// Charges one upstream-reaching request to `ip`; 429 with `Retry-After` when exhausted.
+    /// Charges one upstream-reaching request to the client `ip` and to the global budget; 429
+    /// with `Retry-After` when the client's budget is spent, 503 when the global one is.
     pub fn admit(&self, ip: IpAddr) -> Result<(), ApiError> {
-        match self.limiter.check_key(&ip) {
-            Ok(()) => Ok(()),
-            Err(not_until) => {
-                self.rate_limited.fetch_add(1, Ordering::Relaxed);
-                let wait = not_until.wait_time_from(self.clock.now());
-                Err(ApiError::rate_limited(wait.as_secs_f64().ceil() as u64))
-            }
+        let key = crate::net::trust::client_key(ip);
+        if let Err(not_until) = self.limiter.check_key(&key) {
+            self.rate_limited.fetch_add(1, Ordering::Relaxed);
+            let wait = not_until.wait_time_from(self.clock.now());
+            return Err(ApiError::rate_limited(wait.as_secs_f64().ceil() as u64));
         }
+        if let Err(not_until) = self.global.check() {
+            self.global_limited.fetch_add(1, Ordering::Relaxed);
+            let wait = not_until.wait_time_from(self.clock.now());
+            return Err(
+                ApiError::unavailable("explorer lookups are busy; try again shortly")
+                    .with_retry_after(wait.as_secs_f64().ceil().max(1.0) as u64),
+            );
+        }
+        Ok(())
     }
 
     /// Waits for a global upstream slot; 503 when none frees up in time.
@@ -508,6 +525,7 @@ mod tests {
             burst: 2,
             upstream_concurrency: 4,
             queue_timeout: Duration::from_secs(1),
+            ..ClientLimits::default()
         });
         let c: TtlCache<u32, u8> = TtlCache::new("x", 10);
         let ip: IpAddr = "203.0.113.1".parse().unwrap();
@@ -525,5 +543,36 @@ mod tests {
         guarded(&g, &c, Some("203.0.113.2".parse().unwrap()), 3, ok(3))
             .await
             .unwrap();
+        // IPv6 clients share a /64.
+        let v6a: IpAddr = "2001:db8:1:2::a".parse().unwrap();
+        let v6b: IpAddr = "2001:db8:1:2::b".parse().unwrap();
+        guarded(&g, &c, Some(v6a), 4, ok(4)).await.unwrap();
+        guarded(&g, &c, Some(v6b), 5, ok(5)).await.unwrap();
+        let e = guarded(&g, &c, Some(v6b), 6, ok(6)).await.unwrap_err();
+        assert_eq!(e.status, axum::http::StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn global_budget_holds_across_clients() {
+        let g = UpstreamGuard::new(ClientLimits {
+            rps: 100,
+            burst: 100,
+            global_rps: 1,
+            global_burst: 3,
+            ..ClientLimits::default()
+        });
+        let c: TtlCache<u32, u8> = TtlCache::new("x", 1 << 20);
+        let ok = |v| async move { Ok(Fetch::Found(v, Duration::from_secs(60))) };
+        // Forged addresses (a different client per request) still share the global budget.
+        for k in 0..3u32 {
+            let ip: IpAddr = format!("198.51.100.{k}").parse().unwrap();
+            guarded(&g, &c, Some(ip), k, ok(1)).await.unwrap();
+        }
+        let e = guarded(&g, &c, Some("198.51.100.99".parse().unwrap()), 9, ok(1))
+            .await
+            .unwrap_err();
+        assert_eq!(e.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert!(e.retry_after_s.unwrap() >= 1);
+        assert_eq!(g.global_limited.load(Ordering::Relaxed), 1);
     }
 }

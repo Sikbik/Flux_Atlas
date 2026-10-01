@@ -694,7 +694,11 @@ async fn timeline_and_state_at() {
     assert!(s.header("etag").is_some());
     let bin = decode_nodes_bin(&s.body).unwrap();
     assert_eq!(bin.seq, 0);
-    assert_eq!(bin.generated_ms, at);
+    // `t` is floored to the state resolution (10 s within a day of now).
+    assert_eq!(
+        bin.generated_ms,
+        atlas_server::routes::timeline::quantize(at, atlas_core::now_ms())
+    );
     assert_eq!(bin.len(), listed.len());
     let ids: Vec<u32> = listed.iter().map(|n| n.id.0).collect();
     assert_eq!(bin.ids, ids);
@@ -751,7 +755,8 @@ async fn timeline_and_state_at() {
     // Between the keyframes: the last node had not joined yet.
     let s = get(
         &e.app,
-        &format!("/api/v1/timeline/state?t={}", now - 2 * 3_600_000 + 1),
+        // One state quantum past the keyframe (requests are floored to 10 s).
+        &format!("/api/v1/timeline/state?t={}", now - 2 * 3_600_000 + 10_000),
     )
     .await;
     let bin = decode_nodes_bin(&s.body).unwrap();

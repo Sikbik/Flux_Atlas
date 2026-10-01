@@ -68,6 +68,12 @@ pub struct HubStats {
     pub hub_lagged: AtomicU64,
     /// Serialized bytes held by the frame ring.
     pub ring_bytes: AtomicU64,
+    /// `sub` messages over the per-connection rate (deferred).
+    pub subs_limited: AtomicU64,
+    /// Deferred `sub` messages applied later.
+    pub subs_deferred: AtomicU64,
+    /// Handshakes refused by the per-client handshake rate.
+    pub handshakes_limited: AtomicU64,
 }
 
 /// Why a new connection was refused.
@@ -87,9 +93,23 @@ struct MempoolMemo {
 
 const MEMPOOL_MEMO_CAP: usize = 8192;
 
+/// WebSocket handshakes a client may open at once, then one per second: a page load costs one,
+/// a reconnect loop cannot turn every handshake into a replay.
+pub const HANDSHAKE_BURST: u32 = 30;
+pub const HANDSHAKES_PER_SECOND: u32 = 1;
+
+impl std::fmt::Debug for Hub {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Hub")
+            .field("connections", &self.connections())
+            .field("ring_cap", &self.ring_cap)
+            .finish_non_exhaustive()
+    }
+}
+
 /// The fan-out hub.
-#[derive(Debug)]
 pub struct Hub {
+    handshakes: governor::DefaultKeyedRateLimiter<IpAddr>,
     tx: broadcast::Sender<Frame>,
     ring: Mutex<VecDeque<Frame>>,
     ring_cap: usize,
@@ -132,7 +152,14 @@ impl Hub {
     pub fn start(engine: &EngineHandle, cfg: WsConfig, ring_cap: usize) -> Arc<Self> {
         let (tx, _) = broadcast::channel(cfg.queue.max(2));
         let (shutdown, _) = watch::channel(false);
+        let quota = governor::Quota::per_second(
+            std::num::NonZeroU32::new(HANDSHAKES_PER_SECOND).unwrap_or(std::num::NonZeroU32::MIN),
+        )
+        .allow_burst(
+            std::num::NonZeroU32::new(HANDSHAKE_BURST).unwrap_or(std::num::NonZeroU32::MIN),
+        );
         let hub = Arc::new(Self {
+            handshakes: governor::RateLimiter::keyed(quota),
             tx,
             ring: Mutex::new(VecDeque::with_capacity(ring_cap.min(8192))),
             ring_cap: ring_cap.max(16),
@@ -152,6 +179,29 @@ impl Hub {
 
     pub fn config(&self) -> &WsConfig {
         &self.cfg
+    }
+
+    /// Charges a WebSocket handshake to the client `ip`; the seconds to wait when over.
+    pub fn admit_handshake(&self, ip: IpAddr) -> Result<(), u64> {
+        use governor::clock::{Clock as _, DefaultClock};
+        self.handshakes
+            .check_key(&crate::net::trust::client_key(ip))
+            .map_err(|not_until| {
+                self.stats
+                    .handshakes_limited
+                    .fetch_add(1, Ordering::Relaxed);
+                not_until
+                    .wait_time_from(DefaultClock::default().now())
+                    .as_secs_f64()
+                    .ceil()
+                    .max(1.0) as u64
+            })
+    }
+
+    /// Forgets idle handshake buckets (call periodically).
+    pub fn prune(&self) {
+        self.handshakes.retain_recent();
+        self.handshakes.shrink_to_fit();
     }
 
     /// A receiver of future frames (the connection's bounded queue).
@@ -191,8 +241,10 @@ impl Hub {
         self.shutdown.send_replace(true);
     }
 
-    /// Reserves a connection slot for `ip`.
+    /// Reserves a connection slot for the client `ip` (keyed by
+    /// [`crate::net::trust::client_key`]: IPv6 by /64).
     pub fn try_register(self: &Arc<Self>, ip: IpAddr) -> Result<ConnGuard, Reject> {
+        let ip = crate::net::trust::client_key(ip);
         if self.is_shutting_down() {
             return Err(Reject::ShuttingDown);
         }

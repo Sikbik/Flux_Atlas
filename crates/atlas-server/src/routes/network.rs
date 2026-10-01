@@ -363,7 +363,10 @@ pub async fn series(
     Q(q): Q<MetricsQuery>,
 ) -> ApiResult<Response> {
     let now = now_ms();
-    let req = SeriesRequest::parse(&q, now)?;
+    let mut req = SeriesRequest::parse(&q, now)?;
+    // `from` is aligned down to the step, so a client sliding `from` inside one step (or
+    // varying it to miss the cache) reads the same buckets.
+    req.from -= req.from % req.step;
     // Requests inside one step share a cache entry.
     let key = format!(
         "{}|{}|{}|{}",
@@ -372,16 +375,21 @@ pub async fn series(
         req.to - req.to % req.step,
         req.step
     );
-    if let Some(b) = s.metrics_cache.get(&key).await {
-        return Ok(b.respond(&headers, cache::HISTORY));
-    }
     let res = req.resolution(now);
-    let (from, to) = (req.from, req.to);
-    let rows = s
-        .store_read(move |st| Ok(st.metrics_range(from, to, res)?))
-        .await?;
-    let body = Arc::new(CachedBody::json(&bucket(&req, &rows)));
-    s.metrics_cache.insert(key, Arc::clone(&body)).await;
+    let st = s.clone();
+    // One read and bucketing per key, however many requests arrive at once; both run on the
+    // blocking pool.
+    let body = s
+        .metrics_cache
+        .try_get_with(key, async move {
+            st.store_read(move |store| {
+                let rows = store.metrics_range(req.from, req.to, res)?;
+                Ok(Arc::new(CachedBody::json(&bucket(&req, &rows))))
+            })
+            .await
+        })
+        .await
+        .map_err(|e| (*e).clone())?;
     Ok(body.respond(&headers, cache::HISTORY))
 }
 

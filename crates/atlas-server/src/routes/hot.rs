@@ -47,7 +47,10 @@ pub async fn mesh(State(s): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(b) = &p.bodies.mesh_bin {
         return respond_prebuilt(&headers, b, cache::HOT);
     }
-    let body = CachedBody::new(OCTET, encode_mesh_bin(p.seq, p.generated_ms, []));
+    let body = Arc::new(CachedBody::new(
+        OCTET,
+        encode_mesh_bin(p.seq, p.generated_ms, []),
+    ));
     body.respond(&headers, cache::HOT)
 }
 

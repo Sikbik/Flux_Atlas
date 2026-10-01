@@ -7,6 +7,7 @@ use axum::http::request::Parts;
 use serde::de::DeserializeOwned;
 
 use crate::error::ApiError;
+use crate::net::trust::TrustedProxies;
 use crate::state::AppState;
 
 /// Longest accepted query string.
@@ -49,30 +50,28 @@ impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for P<T> {
     }
 }
 
-/// The client's IP: the socket peer, or the right-most `X-Forwarded-For` entry when the server
-/// is configured to trust its reverse proxy.
+/// The client's address: the TCP peer, or the `X-Forwarded-For` client when the peer is a
+/// trusted proxy (see [`crate::net::trust`]). Resolved once per request by
+/// [`crate::net::client_ip`]; limits key it with [`crate::net::trust::client_key`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClientIp(pub IpAddr);
 
 impl ClientIp {
-    pub fn from_parts(parts: &Parts, trust_proxy: bool) -> Self {
-        if trust_proxy
-            && let Some(ip) = parts
-                .headers
-                .get_all("x-forwarded-for")
-                .iter()
-                .filter_map(|v| v.to_str().ok())
-                .flat_map(|v| v.split(','))
-                .filter_map(|s| s.trim().parse::<IpAddr>().ok())
-                .next_back()
-        {
-            return Self(ip);
+    /// Resolves from the request parts (when the middleware did not run).
+    pub fn from_parts(parts: &Parts, proxies: &TrustedProxies) -> Self {
+        if let Some(c) = parts.extensions.get::<Self>() {
+            return *c;
         }
         let peer = parts
             .extensions
             .get::<ConnectInfo<SocketAddr>>()
             .map_or(IpAddr::V4(Ipv4Addr::LOCALHOST), |c| c.0.ip());
-        Self(peer)
+        Self(crate::net::trust::resolve(peer, &parts.headers, proxies).0)
+    }
+
+    /// The limiter key (IPv6 by /64).
+    pub fn key(self) -> IpAddr {
+        crate::net::trust::client_key(self.0)
     }
 }
 
@@ -83,7 +82,7 @@ impl FromRequestParts<AppState> for ClientIp {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        Ok(Self::from_parts(parts, state.cfg.trust_proxy))
+        Ok(Self::from_parts(parts, &state.cfg.proxies))
     }
 }
 
@@ -138,11 +137,12 @@ mod tests {
             .unwrap()
             .into_parts();
         assert_eq!(
-            ClientIp::from_parts(&parts, true).0,
+            ClientIp::from_parts(&parts, &TrustedProxies::all()).0,
             "203.0.113.9".parse::<IpAddr>().unwrap()
         );
+        // In-process requests come from loopback, which is not an FDM balancer.
         assert_eq!(
-            ClientIp::from_parts(&parts, false).0,
+            ClientIp::from_parts(&parts, &TrustedProxies::fdm()).0,
             IpAddr::V4(Ipv4Addr::LOCALHOST)
         );
     }
