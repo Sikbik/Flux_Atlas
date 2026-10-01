@@ -1,8 +1,30 @@
-// Placeholder. Reserved for the globe engine port (labs/globe -> web/src/globe): the next teammate
-// replaces this with GlobeCanvas (mounted once as the living wallpaper), store bindings
-// (NetworkStore.subscribe -> engine.setNodes/updateNodes/setMesh) and an EffectSink attached with
-// runtime.setEffectSink().
+// The globe: the persistent living wallpaper (GlobeCanvas), its bindings to the live runtime and the
+// URL, the anchor system for labels and tethers, and the overlays that ride it. The engine itself
+// (./engine, three.js) is a lazily loaded chunk; nothing here imports it at runtime.
 
-export function GlobeLayer() {
-  return <div className="globe-layer" data-globe="placeholder" aria-hidden="true" />;
-}
+import './globe.css';
+
+export { type Anchor, type AnchorPoint, AnchorSystem, type PlaceOptions } from './anchors';
+export {
+  type GlobeBinding,
+  type GlobeHover,
+  type GlobeIntent,
+  type GlobeTarget,
+  type GlobeView,
+  globeViewFromLocation,
+} from './bindings';
+export {
+  createGlobeHandles,
+  GlobeLabel,
+  GlobeProvider,
+  type GlobeStatus,
+  Tether,
+  useGlobeAnchor,
+  useGlobeBinding,
+  useGlobeEngine,
+  useGlobeHandles,
+  useGlobeHover,
+  useGlobeStatus,
+} from './context';
+export { effectiveArt, GlobeCanvas, loadEngine } from './GlobeCanvas';
+export { GlobeOverlay, GlobeTooltip, MoonProxy, PlaceLabels } from './overlays';
