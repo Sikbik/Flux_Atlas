@@ -234,13 +234,14 @@ export function AppHistoryView({ name, n }: { name: string; n: number }) {
                 ? upgraded
                   ? `upgraded from v${item.versionFrom}`
                   : 'same format'
-                : undefined
+                : 'as registered'
             }
           />
           <Stat
             label="Paid"
             value={entry?.paid ? formatFlux(entry.paid, { unit: false }) : null}
             unit={entry?.paid ? 'FLUX' : undefined}
+            caption={entry?.paid ? 'for this message' : undefined}
           />
         </StatGrid>
       </Section>
