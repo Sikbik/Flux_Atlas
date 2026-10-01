@@ -14,6 +14,7 @@ import { type Earnings, earningsFromPayments, earningsFromTotals, NO_EARNINGS } 
 import { buildFleet, buildWatchFleet, type FleetNode } from '../derive/operator';
 import { useFirstIngestMs } from './hooks';
 import { tierPayouts, useQueues, useTierInfo } from './live';
+import { useWatchRows } from './watchRoster';
 
 /** The route key that stands for the user's own watchlist (`/operator/watchlist`). */
 export const WATCHLIST_KEY = 'watchlist';
@@ -56,6 +57,7 @@ export function useFleet(addr: string): FleetData {
   const watchlist = isWatchlist(addr);
   const op = useQuery({ ...queries.operator(addr), enabled: !watchlist });
   const watched = useUi((s) => s.watched);
+  const rows = useWatchRows(watched, watchlist);
   const { store } = useRuntime();
   const loaded = useNetwork((s) => s.loaded);
   // Re-run when any node changes: status, reachability, check-ins and paid heights live in the table.
@@ -69,9 +71,9 @@ export function useFleet(addr: string): FleetData {
   const built = useMemo(() => {
     if (!loaded) return [];
     const payouts = tierPayouts(info);
-    if (watchlist) return buildWatchFleet(watched, store.nodes, queues, tip, payouts);
+    if (watchlist) return buildWatchFleet(watched, store.nodes, queues, tip, payouts, rows);
     return op.data ? buildFleet(op.data.nodes, store.nodes, queues, tip, payouts) : [];
-  }, [loaded, watchlist, watched, op.data, store, queues, tip, info, nodesVersion]);
+  }, [loaded, watchlist, watched, rows, op.data, store, queues, tip, info, nodesVersion]);
 
   const nodes = useStableFleet(built);
   return {

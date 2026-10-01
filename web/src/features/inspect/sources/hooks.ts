@@ -5,25 +5,80 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeRow } from '../../../api/generated/NodeRow';
 import { queries, useTimeline } from '../../../api/queries';
+import { useRuntime } from '../../../app/context';
+import { toast } from '../../../app/toasts';
 import { parseEndpoint } from '../../../lib/format';
 import { useUi } from '../../../store/ui';
+import { WATCH_LIVE_LIMIT } from '../watch/model';
+import { readNodeLive } from './live';
 
 /** When our own ingest began; history older than this does not exist. Null until known. */
 export function useFirstIngestMs(): number | null {
   return useTimeline().data?.first_ms ?? null;
 }
 
+/** Says that a node joined the watchlist and where the list lives (a toast that opens it). */
+export function announceWatch(endpoint: string | null): void {
+  toast({
+    kind: 'info',
+    title: endpoint ? `Watching ${endpoint}` : 'Added to your watchlist',
+    body: 'You will be told when it goes offline, nears expiry, is paid or changes address.',
+    to: '/operator/watchlist',
+  });
+}
+
 /** Whether node `id` is on the watchlist, and the toggle. Server registration is the runtime's job. */
 export function useWatch(id: number | null): { watched: boolean; toggle: () => void } {
+  const { store } = useRuntime();
   const watched = useUi((s) => id !== null && s.watched.includes(id));
   const watch = useUi((s) => s.watch);
   const unwatch = useUi((s) => s.unwatch);
   const toggle = useCallback(() => {
     if (id === null) return;
-    if (watched) unwatch(id);
-    else watch(id);
-  }, [id, watched, watch, unwatch]);
+    if (watched) {
+      unwatch(id);
+      return;
+    }
+    watch(id);
+    announceWatch(readNodeLive(store, id)?.endpoint || null);
+  }, [id, watched, watch, unwatch, store]);
   return { watched, toggle };
+}
+
+/**
+ * The watch state of a group of nodes (an operator's fleet): how many are watched, how many more fit
+ * (the server follows up to 64 watched nodes live), and one toggle for the whole group.
+ */
+export function useWatchMany(ids: readonly number[]): {
+  all: boolean;
+  some: number;
+  room: number;
+  toggle: () => void;
+} {
+  const watched = useUi((s) => s.watched);
+  const watch = useUi((s) => s.watch);
+  const unwatch = useUi((s) => s.unwatch);
+  const set = useMemo(() => new Set(watched), [watched]);
+  const some = ids.filter((id) => set.has(id)).length;
+  const all = ids.length > 0 && some === ids.length;
+  const room = Math.min(ids.length, Math.max(0, WATCH_LIVE_LIMIT - (watched.length - some)));
+  const toggle = useCallback(() => {
+    if (all) {
+      for (const id of ids) unwatch(id);
+      return;
+    }
+    let free = Math.max(0, WATCH_LIVE_LIMIT - watched.length);
+    let added = 0;
+    for (const id of ids) {
+      if (set.has(id)) continue;
+      if (free <= 0) break;
+      watch(id);
+      free--;
+      added++;
+    }
+    if (added > 0) announceWatch(null);
+  }, [all, ids, set, watched.length, watch, unwatch]);
+  return { all, some, room, toggle };
 }
 
 /**

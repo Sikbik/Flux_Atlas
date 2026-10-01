@@ -2,12 +2,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { Coins, Network, OctagonX, TriangleAlert, WifiOff } from 'lucide-react';
 import { type ComponentType, useEffect, useRef } from 'react';
-import { api } from '../../../api/endpoints';
 import { useRuntime } from '../../../app/context';
 import { toast } from '../../../app/toasts';
 import { Slice } from '../../../store/network';
 import { useUi } from '../../../store/ui';
 import type { AlertKind } from '../derive/watch';
+import { watchNodeQuery } from '../sources/watchRoster';
 import { WatchEngine } from './engine';
 import { type AlertText, describeGroup, groupAlerts, type WatchAlert } from './model';
 import { notificationPermission, useWatchPrefs } from './prefs';
@@ -128,11 +128,7 @@ export function WatchAlerts(): null {
         await Promise.all(
           missing.slice(i, i + BASE_BATCH).map(async (id) => {
             try {
-              const detail = await qc.fetchQuery({
-                queryKey: ['atlas', 'inspect', 'watch-base', id],
-                queryFn: ({ signal }) => api.node(id, { signal }),
-                staleTime: 30 * 60_000,
-              });
+              const detail = await qc.fetchQuery(watchNodeQuery(id));
               if (cancelled) return;
               e.setBase(id, detail.node.last_confirmed_height ?? 0);
               // The height changes what the engine sees; record it as the new baseline, not as news.
