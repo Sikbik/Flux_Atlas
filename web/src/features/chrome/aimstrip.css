@@ -96,10 +96,6 @@ a.aimchip:focus-visible {
   box-shadow: var(--focus-ring);
 }
 
-.aimchip .glyph-tier {
-  color: var(--tier);
-}
-
 .aim-place {
   min-width: 0;
   overflow: hidden;
@@ -121,7 +117,7 @@ a.aimchip:focus-visible {
   animation: none;
 }
 
-.aimchip[data-pending] .glyph-tier {
+.aimchip[data-pending] .ui-tier-glyph {
   opacity: 0.45;
 }
 

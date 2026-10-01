@@ -24,10 +24,6 @@
 
 /* ---- the Beat chip -------------------------------------------------------------------------- */
 
-.beat-anchor {
-  display: inline-flex;
-}
-
 .beat {
   display: flex;
   align-items: center;
@@ -319,10 +315,6 @@ a.beat:hover {
   color: var(--status-crit);
 }
 
-.beat-card {
-  min-width: 220px;
-}
-
 /* ---- the Live chip -------------------------------------------------------------------------- */
 
 .livechip {
@@ -363,44 +355,11 @@ a.beat:hover {
   --t: var(--status-off);
 }
 
-.live-dot {
-  position: relative;
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--t);
-}
-
-[data-tone="ok"] .live-dot {
-  box-shadow: var(--glow-ok);
-}
-
-[data-tone="ok"] .live-dot::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 1px solid var(--t);
-  opacity: 0;
-  animation: live-ping 2400ms var(--ease-out) infinite;
-}
-
-[data-tone="pending"] .live-dot,
-[data-tone="warn"] .live-dot {
+/* The connection dot is the kit's LiveDot (the green one pings). Reconnecting and catching up blink at 1 Hz
+   on top of it (design 8.8); under reduced motion they hold still. */
+.live-blink[data-status="pending"],
+.live-blink[data-status="warn"] {
   animation: live-blink 1100ms var(--ease-in-out) infinite alternate;
-}
-
-@keyframes live-ping {
-  0% {
-    transform: scale(0.5);
-    opacity: 0.8;
-  }
-  80%,
-  100% {
-    transform: scale(1.5);
-    opacity: 0;
-  }
 }
 
 @keyframes live-blink {
@@ -410,16 +369,14 @@ a.beat:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) .live-dot,
-  :root:not([data-motion="full"]) .live-dot::after {
+  :root:not([data-motion="full"]) .live-blink {
     animation: none;
   }
 }
 
-:root[data-motion="reduced"] .live-dot,
-:root[data-motion="reduced"] .live-dot::after,
-:root[data-motion-off] .live-dot,
-:root[data-motion-off] .live-dot::after {
+:root[data-motion="reduced"] .live-blink,
+:root[data-motion="off"] .live-blink,
+:root[data-motion-off] .live-blink {
   animation: none;
 }
 

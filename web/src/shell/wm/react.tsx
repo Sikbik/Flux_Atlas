@@ -22,8 +22,8 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { FreshChip } from '../../features/chrome/FreshChip';
 import { cssValue, play } from '../../features/chrome/motion';
+import { Freshness } from '../../ui';
 import { flipBetween, flipTransform, stableOrder, withGutter } from './chrome';
 import { ghostOut } from './ghost';
 import { WINDOW_ACCENT, WindowGlyph } from './glyphs';
@@ -336,7 +336,14 @@ function Frame({
             </h2>
             {meta?.subtitle ? <small className="wm-sub">{meta.subtitle}</small> : null}
           </div>
-          {meta?.fresh ? <FreshChip {...meta.fresh} className="wm-fresh" /> : null}
+          {meta?.fresh ? (
+            <Freshness
+              ts={meta.fresh.evidenceMs}
+              cadenceMs={meta.fresh.cadenceMs}
+              label={meta.fresh.label}
+              className="wm-fresh"
+            />
+          ) : null}
           <div className="wm-controls">
             {phone ? null : (
               <>

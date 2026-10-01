@@ -142,12 +142,6 @@
   list-style: none;
 }
 
-.blk-anchor {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
 .blk {
   position: relative;
   display: flex;
@@ -554,8 +548,8 @@ a.blk:focus-visible {
 
 /* ---- the peek ---------------------------------------------------------------------------------- */
 
-.blk-peek {
-  min-width: 250px;
+.peek {
+  min-width: 226px;
 }
 
 .peek-title {

@@ -14,10 +14,10 @@ import { globeInset } from '../../shell/wm/machine';
 import { useWm } from '../../shell/wm/react';
 import type { WindowType } from '../../shell/wm/types';
 import { useUi } from '../../store/ui';
-import { usePayoutLines } from './data';
-import { TIER_LABEL, TIER_ORDER, TierGlyph } from './glyphs';
+import { TierGlyph } from '../../ui';
+import { useNodeKey, usePayoutLines } from './data';
+import { TIER_LABEL, TIER_ORDER } from './glyphs';
 import { amountLabel, amountWords, type PayoutLine } from './payouts';
-import { useNodeKey } from './tickers';
 import './aimstrip.css';
 
 /** Where the strip is not shown (design 8.13). */
@@ -84,7 +84,7 @@ export function AimStrip() {
         const mine = l.node !== null && watched.includes(l.node);
         const body = (
           <>
-            <TierGlyph tier={l.tier} size={13} title={`${TIER_LABEL[l.tier]} tier`} />
+            <TierGlyph tier={l.tier} size={13} label={`${TIER_LABEL[l.tier]} tier`} />
             <span className="aim-place">{l.place ?? UNKNOWN}</span>
             <i>{amountLabel(l.amount)}</i>
           </>

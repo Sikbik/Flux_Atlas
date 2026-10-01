@@ -3,30 +3,15 @@
 // aim strip's card and the views that want the same facts (Analytics' cut card, About Flux, ambient)
 // render them. Everything shown as an estimate is marked as one.
 
-import { useCallback } from 'react';
-import { useRuntime } from '../../app/context';
 import { formatDuration, formatHeight, formatInt, formatUtcDateTime } from '../../lib/format';
 import { ShellLink } from '../../shell/frame/ShellLink';
-import { usePayoutLines } from './data';
-import { TIER_LABEL, TIER_ORDER, TierGlyph } from './glyphs';
+import { TierGlyph } from '../../ui';
+import { useNodeKey, usePayoutLines } from './data';
+import { TIER_LABEL, TIER_ORDER } from './glyphs';
 import { amountLabel, payoutSentence } from './payouts';
 import type { RewardCutView } from './rewardcut';
 import './tickers.css';
-
-/** The route key of a node (its endpoint, `ip:port`), or null when it is unknown. */
-export function useNodeKey(): (node: number | null) => string | null {
-  const { store } = useRuntime();
-  return useCallback(
-    (node: number | null) => {
-      if (node === null) return null;
-      const i = store.nodes.indexOf(node);
-      if (i < 0) return null;
-      const ep = store.nodes.endpoint(i);
-      return ep || null;
-    },
-    [store],
-  );
-}
+import './hovercard.css';
 
 /** One sentence per tier: "Next Stratus payout: Helsinki, 9 FLUX, in ~12 s", each linking to the node. */
 export function NextPayoutTicker({ className }: { className?: string }) {

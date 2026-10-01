@@ -1,33 +1,5 @@
-/* Tooltips and hover cards (design 8.17): glass, 10 px radius, quiet. */
-
-.hc-anchor {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.hc-card {
-  position: fixed;
-  z-index: var(--z-tooltip);
-  max-width: min(360px, calc(100vw - 16px));
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: var(--glass-bg-strong);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-pop), var(--shadow-inset-hi);
-  color: var(--text-2);
-  font-size: var(--fs-xs);
-  line-height: 1.4;
-  animation: hc-in var(--dur-fast) var(--ease-out) both;
-}
-
-@keyframes hc-in {
-  from {
-    opacity: 0;
-  }
-}
+/* The content of the chrome's hover cards (design 8.17): a title and label and value rows. The card itself
+   (glass, rim, shadow, placement) is the UI kit's HoverCard. */
 
 .hc-title {
   display: block;
@@ -59,8 +31,4 @@
 
 .hc-rows dd.mono {
   font-size: 11.5px;
-}
-
-:root[data-motion-off] .hc-card {
-  animation: none;
 }

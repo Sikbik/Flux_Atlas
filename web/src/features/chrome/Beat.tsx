@@ -5,15 +5,17 @@
 // blocks; React re-renders these components once a second for their text.
 
 import { useMemo, useRef } from 'react';
-import { useConnection, useNetwork, useRuntime, useTip } from '../../app/context';
+import { useConnection, useRuntime, useTip } from '../../app/context';
 import { formatHeight, formatUtcTime } from '../../lib/format';
 import { useBeat, useNow } from '../../lib/useClock';
 import { ShellLink } from '../../shell/frame/ShellLink';
-import { HoverCard } from './HoverCard';
+import { AnimatedNumber, HoverCard, LiveDot } from '../../ui';
+import { lazyCard } from './lazyCard';
 import { useLiveView } from './live';
-import { Odometer } from './Odometer';
-import { placeOfRow } from './places';
 import './beat.css';
+
+// The Beat's card is part of the chrome's hover-card chunk, fetched when the pointer nears the chip.
+const beatCard = lazyCard(() => import('./ChromeCards').then((m) => m.BeatCard));
 
 /** Milliseconds into the current block interval at the moment the block changes (for animation offsets). */
 export function useBlockSince(): { height: number | null; since: number } {
@@ -83,7 +85,11 @@ export function BeatChip() {
       <BeatRing height={height} since={since} phase={phase} />
       <span className="beat-txt">
         <b className="beat-tip">
-          {height === null ? 'No block yet' : <Odometer value={height} format={formatHeight} />}
+          {height === null ? (
+            'No block yet'
+          ) : (
+            <AnimatedNumber value={height} format={formatHeight} font="display" maxHz={0} />
+          )}
         </b>
         <small className="beat-sub">{sub}</small>
       </span>
@@ -92,10 +98,9 @@ export function BeatChip() {
   return (
     <HoverCard
       placement="bottom"
-      card={<BeatCard />}
-      cardClassName="beat-card"
+      label="The chain's pulse"
+      content={() => <beatCard.Card />}
       disabled={height === null}
-      className="beat-anchor"
     >
       {height === null ? (
         <span className="beat" data-phase={phase}>
@@ -107,6 +112,8 @@ export function BeatChip() {
           className="beat"
           data-phase={phase}
           aria-label={`Block ${formatHeight(height)}, ${sub}`}
+          onPointerEnter={beatCard.preload}
+          onFocus={beatCard.preload}
         >
           {body}
         </ShellLink>
@@ -115,43 +122,12 @@ export function BeatChip() {
   );
 }
 
-function BeatCard() {
-  const { clock, store } = useRuntime();
-  const tip = useTip();
-  const now = useNow(clock);
-  const producer = useNetwork((s) => (s.tip?.producer === null || !s.tip ? null : s.tip.producer));
-  if (!tip) return null;
-  const idx = producer === null ? -1 : store.nodes.indexOf(producer);
-  const city = idx >= 0 ? placeOfRow(store, idx) : null;
-  return (
-    <>
-      <span className="hc-title">The chain's pulse</span>
-      <dl className="hc-rows">
-        <dt>Last block</dt>
-        <dd className="mono">{formatHeight(tip.height)}</dd>
-        <dt>Time</dt>
-        <dd className="mono">{formatUtcTime(tip.time_ms)}</dd>
-        <dt>Age</dt>
-        <dd className="mono">{Math.max(0, Math.round((now - tip.time_ms) / 1000))} s</dd>
-        {city ? (
-          <>
-            <dt>Producer</dt>
-            <dd>{city}</dd>
-          </>
-        ) : null}
-        <dt>Interval</dt>
-        <dd>30 s</dd>
-      </dl>
-    </>
-  );
-}
-
 /** The Live chip: connection in words, with the round trip when flowing. The e2e hook is `live-status`. */
 export function LiveChip({ compact = false }: { compact?: boolean }) {
   const view = useLiveView();
   return (
     <span className="livechip" data-testid="live-status" data-status={view.status} data-tone={view.tone}>
-      <i className="live-dot" aria-hidden="true" />
+      <LiveDot status={view.tone} className="live-blink" />
       <span className="live-label">{view.label}</span>
       {!compact && view.detail ? <span className="live-detail">{view.detail}</span> : null}
     </span>

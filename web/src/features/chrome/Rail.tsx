@@ -17,22 +17,21 @@ import {
   useState,
 } from 'react';
 import { useChainBlocks, useRuntime } from '../../app/context';
-import { formatBytes, formatHeight, formatInt, formatUtcTime, UNKNOWN } from '../../lib/format';
+import { formatBytes, formatHeight, formatInt, UNKNOWN } from '../../lib/format';
 import { useAgo, useBeat } from '../../lib/useClock';
 import { useShellActions } from '../../shell/frame/actions';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import type { ChainBlock } from '../../store/network';
-import { type NodeFacts, useNodeFacts, usePayoutLines } from './data';
-import { ProducerGlyph, TIER_LABEL, TierGlyph } from './glyphs';
-import { HoverCard } from './HoverCard';
+import { HoverCard, TierGlyph } from '../../ui';
+import { useNodeFacts, usePayoutLines } from './data';
+import { ProducerGlyph } from './glyphs';
+import { lazyCard } from './lazyCard';
 import { cssValue, play } from './motion';
-import { amountLabel } from './payouts';
 import {
   freshKeys,
   mempoolWeight,
   mixSegments,
   nextTombs,
-  payeesByTier,
   STRIP_SHARES,
   type Tomb,
   txMix,
@@ -40,6 +39,9 @@ import {
   withTombs,
 } from './rail';
 import './rail.css';
+
+// The peek card is part of the chrome's hover-card chunk, fetched when the pointer nears a block card.
+const peekCard = lazyCard(() => import('./ChromeCards').then((m) => m.CardPeek));
 
 /** Cards drawn at most; the ring holds 100, the rail keeps the recent ones in the DOM. */
 const MAX_CARDS = 40;
@@ -226,16 +228,17 @@ function BlockCard({ block, orphan, isNew }: { block: ChainBlock; orphan: boolea
     >
       <HoverCard
         placement="top"
-        delay={260}
-        className="blk-anchor"
-        cardClassName="blk-peek"
-        card={<CardPeek block={block} orphan={orphan} />}
+        openDelay={260}
+        label={`Block ${formatHeight(block.height)}`}
+        content={() => <peekCard.Card block={block} orphan={orphan} />}
       >
         <ShellLink
           to={{ type: 'block', key: String(block.height) }}
           className="blk"
           data-tier={prod?.tier}
           aria-label={label}
+          onPointerEnter={peekCard.preload}
+          onFocus={peekCard.preload}
         >
           <span className="r1">
             <b className="blk-h">{formatHeight(block.height)}</b>
@@ -265,75 +268,6 @@ function BlockCard({ block, orphan, isNew }: { block: ChainBlock; orphan: boolea
         </ShellLink>
       </HoverCard>
     </li>
-  );
-}
-
-function PayeeRow({ p, facts }: { p: ChainBlock['payouts'][number]; facts: NodeFacts | null }) {
-  const tier = p.tier === 'unknown' ? 'unknown' : p.tier;
-  return (
-    <li className="peek-payee" data-tier={tier}>
-      <TierGlyph tier={tier} size={13} />
-      {facts?.endpoint ? (
-        <ShellLink to={{ type: 'node', key: facts.endpoint }} className="peek-link">
-          {facts.place ?? facts.endpoint}
-        </ShellLink>
-      ) : (
-        <span className="peek-link">{facts?.place ?? 'Node not in the list'}</span>
-      )}
-      <span className="mono peek-amt">{amountLabel(Number(p.amount))}</span>
-    </li>
-  );
-}
-
-function CardPeek({ block, orphan }: { block: ChainBlock; orphan: boolean }) {
-  const facts = useNodeFacts();
-  const prod = facts(block.producer);
-  const mix = txMix(block);
-  const payees = payeesByTier(block.payouts);
-  return (
-    <div className="peek">
-      <span className="hc-title">
-        <ShellLink to={{ type: 'block', key: String(block.height) }} className="peek-title">
-          Block {formatHeight(block.height)}
-        </ShellLink>
-        {orphan ? <span className="blk-orphan">orphaned</span> : null}
-      </span>
-      <dl className="hc-rows">
-        <dt>Time</dt>
-        <dd className="mono">{formatUtcTime(block.timeMs)}</dd>
-        <dt>Size</dt>
-        <dd className="mono">{formatBytes(block.size)}</dd>
-        <dt>Confirmations</dt>
-        <dd className="mono">{formatInt(mix.confirms)}</dd>
-        <dt>Starts</dt>
-        <dd className="mono">{formatInt(mix.starts)}</dd>
-        <dt>Large transfers</dt>
-        <dd className="mono">{formatInt(mix.transfers)}</dd>
-        <dt>Other</dt>
-        <dd className="mono">{formatInt(mix.other)}</dd>
-        <dt>Producer</dt>
-        <dd>
-          {prod?.endpoint ? (
-            <ShellLink to={{ type: 'node', key: prod.endpoint }} className="peek-link">
-              {prod.tier === 'unknown' ? '' : `${TIER_LABEL[prod.tier]}, `}
-              {prod.place ?? prod.endpoint}
-            </ShellLink>
-          ) : (
-            UNKNOWN
-          )}
-        </dd>
-      </dl>
-      {payees.length > 0 ? (
-        <>
-          <span className="hc-title peek-gap">Paid</span>
-          <ul className="peek-payees">
-            {payees.map((p) => (
-              <PayeeRow key={p.tier} p={p} facts={facts(p.node)} />
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </div>
   );
 }
 

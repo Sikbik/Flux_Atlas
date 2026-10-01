@@ -84,6 +84,21 @@ export function useRewardCut(): RewardCutView | null {
 /** Whether the store holds the first snapshot. */
 export const useLoaded = (): boolean => useNetwork((s) => s.loaded);
 
+/** The route key of a node (its endpoint, `ip:port`), or null when it is unknown. */
+export function useNodeKey(): (node: number | null) => string | null {
+  const { store } = useRuntime();
+  return useCallback(
+    (node: number | null) => {
+      if (node === null) return null;
+      const i = store.nodes.indexOf(node);
+      if (i < 0) return null;
+      const ep = store.nodes.endpoint(i);
+      return ep || null;
+    },
+    [store],
+  );
+}
+
 export interface NodeFacts {
   tier: Tier;
   /** `ip:port` as the node table holds it (the route key of the node's window), or null. */

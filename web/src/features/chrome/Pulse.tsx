@@ -41,6 +41,7 @@ import { useWm } from '../../shell/wm/react';
 import { WINDOW_SPECS } from '../../shell/wm/specs';
 import type { WindowType } from '../../shell/wm/types';
 import { useUi } from '../../store/ui';
+import { LiveDot } from '../../ui';
 import { useNodeFacts } from './data';
 import { useLiveView } from './live';
 import { cssValue, play } from './motion';
@@ -431,7 +432,7 @@ function PulseCard({ mode }: { mode: PulseMode }) {
       onBlur={() => release()}
     >
       <header className="pulse-head" data-tone={view.tone}>
-        <i className="live-dot" aria-hidden="true" />
+        <LiveDot status={view.tone} className="live-blink" />
         <b>Pulse</b>
         {offline ? <span className="pulse-stale">offline</span> : null}
         {compact ? null : (

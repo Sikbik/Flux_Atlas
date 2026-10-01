@@ -133,10 +133,6 @@
   font-size: 11px;
 }
 
-.gt-tier-chip .glyph-tier {
-  color: var(--tier);
-}
-
 .gt-hint {
   display: flex;
   gap: 6px;

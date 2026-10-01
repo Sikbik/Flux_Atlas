@@ -11,7 +11,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { useNetwork, useRuntime } from '../app/context';
 import { useBootPhase } from '../features/chrome/boot/state';
 import { cardFlips, hoverKey, moonCardPlace, TIP_DELAY_MS } from '../features/chrome/cardplace';
-import { TIER_LABEL, TierGlyph, tierOf } from '../features/chrome/glyphs';
+import { TIER_LABEL, tierOf } from '../features/chrome/glyphs';
 import {
   MOON_HINT_DELAY_MS,
   MOON_HINT_LEAVE_MS,
@@ -33,6 +33,7 @@ import {
 import { countryName } from '../features/chrome/places';
 import { formatHeight, formatInt } from '../lib/format';
 import { useBeat } from '../lib/useClock';
+import { TierGlyph } from '../ui';
 import type { Anchor, PlaceOptions } from './anchors';
 import { GlobeLabel, useGlobeAnchor, useGlobeEngine, useGlobeHandles } from './context';
 import type { ZoomBand } from './engine/types';

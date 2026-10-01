@@ -240,8 +240,15 @@
   white-space: nowrap;
 }
 
-.wm-fresh {
+/* The freshness chip is the kit's; in a title bar it drops its pill and reads as quiet text. */
+.wm-fresh.ui-fresh[data-variant="chip"] {
   flex: none;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-size: var(--fs-2xs);
 }
 
 .wm-controls {
@@ -290,7 +297,7 @@
 
 /* On a narrow bar the data's name steps aside and keeps its dot and age. */
 @container (max-width: 400px) {
-  .wm-fresh .fresh-label {
+  .wm-fresh .ui-fresh__label {
     display: none;
   }
 }

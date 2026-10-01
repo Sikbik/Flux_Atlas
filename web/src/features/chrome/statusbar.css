@@ -294,9 +294,9 @@ button.sb-left {
 
 /* ---- hover cards ------------------------------------------------------------------------------ */
 
-.sb-card {
-  min-width: 260px;
-  max-width: 340px;
+.sb-card-body {
+  min-width: 236px;
+  max-width: 320px;
 }
 
 .sb-card-gap {
@@ -322,7 +322,7 @@ button.sb-left {
   font-size: var(--fs-2xs);
 }
 
-.sb-card .sb-tier {
+.sb-card-body .sb-tier {
   color: var(--tier);
 }
 

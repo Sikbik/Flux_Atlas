@@ -20,7 +20,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { FluxMarkWhite } from '../../features/chrome/brand';
-import { TierGlyph } from '../../features/chrome/glyphs';
+import { TierGlyph } from '../../ui';
 import type { WindowType } from './types';
 
 export const WINDOW_ICON: Record<WindowType, LucideIcon | null> = {
