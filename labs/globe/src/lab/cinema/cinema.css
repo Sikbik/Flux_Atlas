@@ -1,0 +1,307 @@
+/* The reel's page: the globe full bleed and a thin layer of typography over it. Sizes are in vh, so the
+   layout is the same picture at 540p, 1080p and 2160p. Colors, faces and tracking come from the design
+   tokens. There are no CSS transitions or animations here on purpose: scripts/virtual-time.js cannot
+   stop the compositor's clock, so every moving style is written by script from the frame number. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  --u: 1vh;
+}
+
+#under,
+#globe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#under {
+  visibility: hidden;
+}
+
+#fx,
+#dim,
+#overlay,
+#black {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#dim {
+  background: #000;
+  opacity: 0;
+}
+#black {
+  background: #000;
+  opacity: 0;
+}
+#overlay {
+  overflow: hidden;
+}
+
+/* ---- wipes and flashes ---------------------------------------------------------------------- */
+
+.wipe-edge {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+.flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+
+/* ---- the type ------------------------------------------------------------------------------- */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  font-family: var(--font-sans);
+}
+.pad {
+  position: absolute;
+  margin: calc(5.2 * var(--u));
+}
+.pad.tl {
+  top: 0;
+  left: 0;
+}
+.pad.tr {
+  top: 0;
+  right: 0;
+  text-align: right;
+}
+.pad.bl {
+  bottom: 0;
+  left: 0;
+}
+.pad.br {
+  bottom: 0;
+  right: 0;
+  text-align: right;
+}
+
+.mark {
+  display: flex;
+  align-items: center;
+  gap: calc(1.1 * var(--u));
+  font: 600 calc(1.55 * var(--u)) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+  color: var(--text-1);
+}
+.mark svg {
+  width: calc(2.4 * var(--u));
+  height: calc(2.4 * var(--u));
+  color: var(--accent-400);
+}
+.clock {
+  margin-top: calc(0.9 * var(--u));
+  font: 500 calc(1.3 * var(--u)) var(--font-mono);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.label {
+  margin-bottom: calc(0.5 * var(--u));
+  font: 400 calc(1.25 * var(--u)) var(--font-sans);
+  color: var(--text-3);
+}
+.odo {
+  display: inline-flex;
+  align-items: baseline;
+  height: 1em;
+  font: 300 calc(11.2 * var(--u)) / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  filter: drop-shadow(0 0 calc(2.6 * var(--u)) rgb(124 151 255 / 0.22)) drop-shadow(0 calc(0.2 * var(--u)) calc(1.8 * var(--u)) rgb(4 4 11 / 0.8));
+  overflow: hidden;
+  padding: 0.08em 0;
+  box-sizing: content-box;
+}
+.odo .col {
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+  position: relative;
+}
+.odo .strip {
+  display: flex;
+  flex-direction: column;
+}
+.odo .strip span {
+  display: block;
+  height: 1em;
+  line-height: 1;
+  text-align: center;
+}
+.odo .sep {
+  display: inline-block;
+  height: 1em;
+  line-height: 1;
+  width: 0.34em;
+  text-align: center;
+  color: var(--text-3);
+}
+
+.cap {
+  text-shadow: 0 calc(0.2 * var(--u)) calc(2.6 * var(--u)) rgb(4 4 11 / 0.95);
+}
+.cap .t {
+  font: 300 calc(3.7 * var(--u)) / 1.1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+  color: var(--text-1);
+}
+.cap .s {
+  margin-top: calc(0.8 * var(--u));
+  font: italic 400 calc(1.75 * var(--u)) / 1.4 var(--font-accent);
+  color: var(--text-2);
+}
+.cap .k {
+  margin-bottom: calc(1.0 * var(--u));
+  font: 500 calc(1.2 * var(--u)) var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-300);
+}
+
+.tag {
+  font: 500 calc(1.2 * var(--u)) var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  text-shadow: 0 0 calc(1.4 * var(--u)) rgb(4 4 11 / 0.9);
+}
+.tag b {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+/* A payout callout pinned to a node on screen: tier meter, place, amount. */
+.pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  white-space: nowrap;
+  text-shadow: 0 calc(0.2 * var(--u)) calc(1.8 * var(--u)) rgb(4 4 11 / 0.95);
+}
+.pin .row {
+  display: flex;
+  align-items: center;
+  gap: calc(0.9 * var(--u));
+  font: 500 calc(1.9 * var(--u)) var(--font-sans);
+  color: var(--text-1);
+}
+.pin .amt {
+  font: 500 calc(1.7 * var(--u)) var(--font-mono);
+  letter-spacing: 0.02em;
+}
+.pin .sub {
+  margin: calc(0.35 * var(--u)) 0 0 calc(2.2 * var(--u));
+  font: 400 calc(1.2 * var(--u)) var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.pin svg.tier {
+  width: calc(1.5 * var(--u));
+  height: calc(1.5 * var(--u));
+  flex: none;
+}
+.pin svg.tier rect {
+  fill: rgb(255 255 255 / 0.2);
+}
+.pin svg.tier rect.on {
+  fill: currentColor;
+}
+.pin .rule {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  width: 1px;
+  background: linear-gradient(to top, currentColor, transparent);
+  opacity: 0.8;
+}
+.tier-1 {
+  color: var(--tier-cumulus);
+}
+.tier-2 {
+  color: var(--tier-nimbus);
+}
+.tier-3 {
+  color: var(--tier-stratus);
+}
+.pin .row .place {
+  color: var(--text-1);
+}
+
+/* The closing card. */
+.end {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+.end .word {
+  font: 300 calc(9.4 * var(--u)) / 1 var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+  filter: drop-shadow(0 0 calc(3.2 * var(--u)) rgb(124 151 255 / 0.3));
+}
+.end .word i {
+  font-style: normal;
+  color: var(--accent-400);
+}
+.end .line {
+  margin-top: calc(2.2 * var(--u));
+  font: italic 400 calc(2.1 * var(--u)) / 1.4 var(--font-accent);
+  color: var(--text-2);
+}
+.prov {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(5.2 * var(--u));
+  text-align: center;
+  font: 500 calc(1.35 * var(--u)) var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  text-shadow: 0 0 calc(1.6 * var(--u)) rgb(4 4 11 / 0.95);
+}
+.prov b {
+  font-weight: 500;
+  color: var(--text-1);
+}
+.prov span.dot {
+  display: inline-block;
+  width: calc(0.7 * var(--u));
+  height: calc(0.7 * var(--u));
+  margin-right: calc(1.0 * var(--u));
+  border-radius: 50%;
+  background: var(--accent-400);
+  box-shadow: 0 0 calc(1.4 * var(--u)) var(--accent-400);
+  vertical-align: middle;
+}

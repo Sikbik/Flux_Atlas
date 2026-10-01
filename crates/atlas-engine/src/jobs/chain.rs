@@ -400,6 +400,7 @@ async fn block_sync(
     mut tips: mpsc::Receiver<(BlockHash, u64)>,
     tip_height: Arc<AtomicU32>,
 ) {
+    let mut caught_up = false;
     while let Some((hash, received_ms)) = tips.recv().await {
         let mut target = Some((hash, received_ms));
         // Collapse a burst to the newest announced tip (the gap fill covers the rest).
@@ -412,7 +413,13 @@ async fn block_sync(
         if ctx.stopping() {
             break;
         }
-        sync_to(&ctx, &mut cursor, hash, received_ms).await;
+        // Until the chain first reaches an announced tip after a restart, gaps replay the
+        // downtime (bounded by `max_catchup_gap`) instead of jumping.
+        let catch_up = !caught_up && cursor.tip().is_some();
+        sync_to(&ctx, &mut cursor, hash, received_ms, catch_up).await;
+        if cursor.contains(&hash) {
+            caught_up = true;
+        }
         if let Some((h, _)) = cursor.tip() {
             tip_height.store(h, Ordering::Release);
         }
@@ -435,15 +442,34 @@ async fn apply(ctx: &JobCtx, cursor: &mut Cursor, d: DecodedBlock, received_ms: 
         .await;
 }
 
-/// Brings the reducer's chain to `target`.
-pub async fn sync_to(ctx: &JobCtx, cursor: &mut Cursor, target: BlockHash, received_ms: u64) {
-    let max_gap = ctx.cfg.max_live_gap;
+/// Brings the reducer's chain to `target`. Gaps up to `max_live_gap` blocks (or
+/// `max_catchup_gap` when `catch_up`, the first sync after a restart) are filled block by block;
+/// larger gaps jump to the target.
+pub async fn sync_to(
+    ctx: &JobCtx,
+    cursor: &mut Cursor,
+    target: BlockHash,
+    received_ms: u64,
+    catch_up: bool,
+) {
+    let max_gap = if catch_up {
+        ctx.cfg.max_catchup_gap.max(ctx.cfg.max_live_gap)
+    } else {
+        ctx.cfg.max_live_gap
+    };
+    // The target block is fetched once and kept while the gap below it fills.
+    let mut kept: Option<DecodedBlock> = None;
+    let mut announced = false;
     for _ in 0..(max_gap + 2 * FINALITY + 8) {
         if cursor.contains(&target) {
             return;
         }
-        let Some(d) = fetch(ctx, &target).await else {
-            return;
+        let d = match kept.take() {
+            Some(d) => d,
+            None => match fetch(ctx, &target).await {
+                Some(d) => d,
+                None => return,
+            },
         };
         let h = d.summary.height;
         let Some((th, thash)) = cursor.tip() else {
@@ -464,6 +490,10 @@ pub async fn sync_to(ctx: &JobCtx, cursor: &mut Cursor, target: BlockHash, recei
                 apply(ctx, cursor, d, received_ms, true).await;
                 return;
             }
+            if catch_up && !announced {
+                announced = true;
+                tracing::info!(from = th, to = h, "replaying the blocks missed while down");
+            }
             // Gap: fetch the next height and link it.
             let Some(nh) = hash_at(ctx, th + 1).await else {
                 return;
@@ -471,6 +501,7 @@ pub async fn sync_to(ctx: &JobCtx, cursor: &mut Cursor, target: BlockHash, recei
             let Some(n) = fetch(ctx, &nh).await else {
                 return;
             };
+            kept = Some(d);
             if n.summary.prev_hash == thash {
                 apply(ctx, cursor, n, now_ms(), false).await;
                 continue;
@@ -483,6 +514,7 @@ pub async fn sync_to(ctx: &JobCtx, cursor: &mut Cursor, target: BlockHash, recei
         if cursor.get(h) == Some(d.summary.hash) {
             return;
         }
+        kept = Some(d);
         if !reorg(ctx, cursor).await {
             return;
         }

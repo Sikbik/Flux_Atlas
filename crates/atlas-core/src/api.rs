@@ -32,6 +32,10 @@ pub struct NodeRef {
     pub lat: Option<f32>,
     pub lon: Option<f32>,
     pub country_code: Option<String>,
+    /// City name, when known (local GeoIP).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub city: Option<String>,
 }
 
 /// Node counts per tier.
@@ -222,6 +226,25 @@ pub struct AppIndexEntry {
     pub expire_height: u32,
 }
 
+/// A third-party data credit the UI must show (licence terms), for example DB-IP's
+/// "IP Geolocation by DB-IP" (CC BY 4.0).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DataAttribution {
+    /// Provider (`DB-IP`).
+    pub name: String,
+    /// Credit line to show verbatim.
+    pub text: String,
+    /// Link the credit line must carry.
+    pub url: String,
+    /// Licence name (`CC BY 4.0`).
+    pub license: String,
+    pub license_url: String,
+    /// What the data is used for (`City names and approximate node locations`).
+    pub scope: String,
+    /// Dataset version, when known (`2026-09`).
+    pub version: Option<String>,
+}
+
 /// `GET /bootstrap`: everything a client needs to boot, in one response.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct BootstrapDto {
@@ -237,6 +260,11 @@ pub struct BootstrapDto {
     pub blocks: Vec<BlockLite>,
     pub apps: Vec<AppIndexEntry>,
     pub freshness: Vec<JobFreshness>,
+    /// Third-party data credits the UI must show (About view); an empty list when none
+    /// applies. Always sent by this server; optional for older servers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub attributions: Option<Vec<DataAttribution>>,
 }
 
 // ---------------------------------------------------------------------------------------------

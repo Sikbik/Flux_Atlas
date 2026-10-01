@@ -1,0 +1,289 @@
+/* The Flux interaction language: CSS half. See docs/design/motion-language.md.
+
+   Everything here is zero cost at rest: no loops, no idle animations, no always-on layers. Static
+   states (charge ring, focus glow) are transitions on input; the travelling light is created by
+   the effect runners on demand and removed when it ends. The travelling light is transform and
+   opacity on tiny elements (compositor only); the one exception is the optional tab indicator, which
+   animates two registered custom properties on a 2 px bar (clip insets, paint only, never layout).
+
+   New tokens are --fx-*; they sit on top of tokens.css and never redefine it. Modes:
+   [data-fx-mode="full|reduced|off"] on <html> (the resolved mode, written by MotionRoot from
+   <html data-motion> and the stored preference) or on any subtree that overrides it. */
+
+/* ---- tokens --------------------------------------------------------------------------------- */
+
+:root {
+  /* timing (mirrored in motion/timing.ts; a test keeps the two in step) */
+  --fx-dur-pulse: 240ms; /* press: the run round a 600 px outline; 180..260 by size */
+  --fx-dur-seed: 180ms; /* press: the burst at the contact point */
+  --fx-dur-charge: 140ms; /* hover and focus energise */
+  --fx-dur-spark: 360ms; /* commit: bright head, settles */
+  --fx-dur-current: 640ms; /* live arrival: the run along a 700 px edge; 440..920 by length */
+  --fx-dur-lap: 900ms; /* live arrival once around a card */
+  --fx-dur-power-on: 420ms; /* window or panel opens */
+  --fx-dur-surge: 480ms; /* the light surge across a window as it opens */
+  --fx-dur-power-off: 180ms; /* and closes, faster than it opens */
+  --fx-dur-slide: 300ms; /* selection indicator travels between tabs */
+
+  /* easing */
+  --fx-ease-run: cubic-bezier(0.33, 0.4, 0.5, 1); /* light along a wire and the front of a surge */
+  --fx-ease-arrive: cubic-bezier(0.2, 0.8, 0.2, 1); /* a window or panel arriving: scale and fade */
+  --fx-ease-burst: cubic-bezier(0.16, 1, 0.3, 1); /* = --ease-out-expo: a bloom that is gone */
+  --fx-ease-lead: cubic-bezier(0.16, 1, 0.3, 1); /* slide: the leading edge */
+  --fx-ease-trail: cubic-bezier(0.4, 0, 0.2, 1); /* slide: the trailing edge catches up */
+  --fx-ease-lap: cubic-bezier(0.4, 0.25, 0.3, 1); /* once around a card: nearly even */
+
+  /* energy colours: white head, Blue Wave body, brand blue glow (never a tier or status colour) */
+  --fx-head: var(--hot, #ffffff);
+  --fx-body: var(--accent-300, #abbee4);
+  --fx-glow: var(--accent-500, #4f7ad4);
+  --fx-glow-hot: rgb(174 198 255 / 0.85);
+  --fx-glow-soft: rgb(79 122 212 / 0.5);
+
+  /* geometry of the charge ring */
+  --fx-bw: 1px; /* ring thickness */
+  --fx-inset: -1px; /* sits over the control's own 1px border; use 0 on overflow:hidden controls */
+  --fx-reach: 104px; /* how far the hover light spreads from the pointer along the edge */
+
+  /* the energised focus outline: the kit's ring plus a Blue Wave bloom */
+  --fx-focus-ring: 0 0 0 2px var(--ink-0, #080a0f), 0 0 0 4px var(--accent-400, #86a1da);
+  --fx-focus-shadow: var(--fx-focus-ring), 0 0 20px -2px rgb(79 122 212 / 0.7);
+
+  /* layer */
+  --fx-z: calc(var(--z-tooltip, 130) + 5);
+}
+
+/* Typed custom properties: tiny gradients and clip insets only.
+   --fx-ring is the surge radius (read by the element it is set on). The indicator's four are read by
+   its ::before and ::after, so they must inherit: a pseudo-element only receives an originating
+   element's custom property when the property is registered as inherited. */
+@property --fx-ring {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --fx-l {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --fx-r {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --fx-hl {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+@property --fx-hr {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/* ---- charge: hover and focus ---------------------------------------------------------------- */
+/* The controls that charge are the kit's buttons (.ui-button, every variant) and anything that says
+   data-fx="charge". The list is attach.ts `rules.charge`; a test keeps the two in step. They reserve
+   ::after for the edge light. The ring is the control's own border box masked down to its edge; the
+   light is a radial gradient around the pointer (--fx-x, --fx-y are set by the engine while the
+   pointer moves). Controls that already use ::after (a hit band, a focus mark) are left out. */
+
+:where([data-fx]) {
+  position: relative;
+}
+
+.ui-button::after,
+[data-fx~="charge"]::after {
+  content: "";
+  position: absolute;
+  inset: var(--fx-inset);
+  padding: var(--fx-bw);
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    var(--fx-reach) circle at var(--fx-x, 50%) var(--fx-y, 0%),
+    rgb(255 255 255 / 0.9),
+    rgb(174 198 255 / 0.55) 32%,
+    rgb(79 122 212 / 0.26) 62%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  transition: opacity var(--fx-dur-charge) var(--ease-out, ease-out);
+}
+
+/* The kit's primary button draws its chamfered shape on ::before and has no border, so the ring takes
+   the same clip and sits on the edge itself. */
+.ui-button[data-variant="primary"]::after {
+  inset: 0;
+  border-radius: 0;
+  clip-path: var(--clip-chamfer-dual-sm);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ui-button:not(:disabled, [aria-disabled="true"]):hover::after,
+  [data-fx~="charge"]:hover::after {
+    opacity: 1;
+  }
+}
+
+/* Quiet zones (attach.ts QUIET: an opt-out, a dense view, a table): no ring at all, on hover or focus.
+   The kit's own focus ring is untouched. */
+:is([data-fx~="off"], [data-fx-density="dense"], .ui-table) :is(.ui-button, [data-fx~="charge"])::after,
+.ui-button[data-fx~="off"]::after,
+[data-fx~="charge"][data-fx~="off"]::after {
+  display: none;
+}
+
+/* Keyboard focus: a steady, even ring (no pointer). The kit's own focus ring stays: this lights the
+   control's edge inside it. The transition only fades it in; it is never animated away. */
+.ui-button:focus-visible::after,
+[data-fx~="charge"]:focus-visible::after {
+  opacity: 1;
+  background: linear-gradient(rgb(174 198 255 / 0.8), rgb(174 198 255 / 0.8));
+}
+
+/* Controls outside the kit that charge, or only want the energised focus ring, get the ring plus a
+   Blue Wave bloom. The kit's buttons keep the kit's ring (--focus-ring). */
+:where([data-fx~="charge"]:focus-visible, [data-fx~="focus"]:focus-visible) {
+  outline: none;
+  box-shadow: var(--fx-focus-shadow);
+}
+
+/* ---- current: the inline track a <Current> renders along one edge of its host ----------------- */
+
+.fx-current {
+  position: absolute;
+  pointer-events: none;
+  contain: layout style;
+}
+
+.fx-current[data-edge="top"] {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+}
+.fx-current[data-edge="bottom"] {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+}
+.fx-current[data-edge="left"] {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+}
+.fx-current[data-edge="right"] {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 0;
+}
+.fx-current[data-edge="perimeter"] {
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* ---- indicator: the selection that travels (tabs, segmented controls) ------------------------ */
+
+.fx-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  pointer-events: none;
+}
+
+.fx-indicator::before {
+  /* the bloom under the bar, soft at both ends */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--fx-glow);
+  filter: blur(4px);
+  opacity: 0.75;
+  clip-path: inset(-10px calc(100% - var(--fx-r) - 8px) -10px calc(var(--fx-l) - 8px));
+}
+
+.fx-indicator::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 calc(100% - var(--fx-r)) 0 var(--fx-l));
+  background:
+    linear-gradient(
+      90deg,
+      transparent calc(var(--fx-r) - 36px),
+      rgb(255 255 255 / var(--fx-hr)) calc(var(--fx-r) - 1px),
+      transparent var(--fx-r)
+    ),
+    linear-gradient(
+      270deg,
+      transparent calc(100% - var(--fx-l) - 36px),
+      rgb(255 255 255 / var(--fx-hl)) calc(100% - var(--fx-l) - 1px),
+      transparent calc(100% - var(--fx-l))
+    ),
+    var(--accent-400, #86a1da);
+}
+
+:root[data-perf="lite"] .fx-indicator::before {
+  display: none;
+}
+
+/* ---- modes ------------------------------------------------------------------------------------ */
+
+/* Reduced: the edge brightens statically; nothing travels, follows the pointer or loops. */
+[data-fx-mode="reduced"] .ui-button::after,
+[data-fx-mode="reduced"] [data-fx~="charge"]::after {
+  background: linear-gradient(rgb(174 198 255 / 0.55), rgb(174 198 255 / 0.55));
+  transition-duration: var(--dur-fast, 140ms);
+}
+
+/* Off: every effect is a state, never a motion. The focus ring stays (it is the indicator). */
+[data-fx-mode="off"] .ui-button::after,
+[data-fx-mode="off"] [data-fx~="charge"]::after {
+  transition: none;
+  background: linear-gradient(rgb(174 198 255 / 0.55), rgb(174 198 255 / 0.55));
+}
+
+[data-fx-mode="off"] .ui-button:not(:hover, :focus-visible)::after,
+[data-fx-mode="off"] [data-fx~="charge"]:not(:hover, :focus-visible)::after {
+  opacity: 0;
+}
+
+[data-fx-mode="off"] .fx-layer {
+  display: none;
+}
+
+/* Contrast and forced colours: the system draws the focus ring; decoration steps aside. */
+@media (prefers-contrast: more) {
+  :root {
+    --fx-glow-soft: rgb(79 122 212 / 0.2);
+  }
+}
+
+@media (forced-colors: active) {
+  .ui-button::after,
+  [data-fx]::after,
+  .fx-layer {
+    display: none;
+  }
+
+  :where([data-fx~="charge"]:focus-visible, [data-fx~="focus"]:focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}

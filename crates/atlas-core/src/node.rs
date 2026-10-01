@@ -275,6 +275,12 @@ impl Geo {
             && (-90.0..=90.0).contains(&self.lat)
             && (-180.0..=180.0).contains(&self.lon)
     }
+
+    /// True when the coordinates are usable and come from a source that locates this host,
+    /// not the approximate local GeoIP fallback (`GeoSource::LocalDb`, city-level).
+    pub fn is_precise(&self) -> bool {
+        self.has_coords() && self.source != GeoSource::LocalDb
+    }
 }
 
 /// Benchmarked hardware of a node.

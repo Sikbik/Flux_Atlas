@@ -527,6 +527,8 @@ export class Effects implements EffectSink {
     } else {
       // The reticle collapses into the payee pulse: ring 6 to 36 px over 900 ms, node flare, +40% hold.
       fx.ringPx(slot, RingKind.Impact, this.col, 6, 36, 0.9, 1.7, tier);
+      // And a spark: a six-point star that opens and thins out over half a second, white-hot at its heart.
+      fx.sparkPx(slot, this.col, 4, 38, 0.5, 1.6);
       fx.flash(slot, 2.6);
       fx.shake(0.04);
     }
@@ -557,6 +559,8 @@ export class Effects implements EffectSink {
       moon.flare(0, 1, 0.34);
       this.stamp(0);
     }
+    // The slanted bar flashes (above) and the output drifts off into space (a pulse unlike a payout).
+    if (moon) h.fx.devPulse();
     h.moonPiecePoint(0, this.pt);
     h.emit('devfund', { height: c.height, x: this.pt.x, y: this.pt.y, amount: c.amount });
   }

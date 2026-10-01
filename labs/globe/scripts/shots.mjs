@@ -6,7 +6,7 @@
 //
 //   npm run dev                              # in one terminal (or `npm run preview` after a build)
 //   node scripts/shots.mjs                   # every shot into ./shots
-//   node scripts/shots.mjs --only relay      # the shots whose name contains "relay"
+//   node scripts/shots.mjs --only relay      # the shots whose name matches "relay" (a regular expression)
 //   node scripts/shots.mjs --base http://127.0.0.1:5391 --gpu
 //
 // Needs `playwright-core` (the web app has it: run `npm i` in ../../web, or set PLAYWRIGHT_CORE to its
@@ -20,12 +20,15 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const OUT = resolve(here, '..', 'shots');
 const argv = process.argv.slice(2);
 const opt = (k, d) => {
   const i = argv.indexOf(`--${k}`);
   return i < 0 ? d : argv[i + 1];
 };
+const OUT = resolve(here, '..', opt('out', 'shots'));
+const PREFIX = opt('prefix', '');
+/** Extra query parameters appended to every shot's URL (for experiments, for example `--q trail=wake`). */
+const EXTRA = opt('q', '');
 const BASE = opt('base', process.env.GLOBE_LAB_URL ?? 'http://127.0.0.1:5391');
 const ONLY = opt('only', '');
 const GPU = argv.includes('--gpu');
@@ -42,6 +45,7 @@ function loadPlaywright() {
   throw new Error('playwright-core not found: run `npm i` in ../../web or set PLAYWRIGHT_CORE');
 }
 const { chromium } = loadPlaywright();
+const VT = resolve(here, 'virtual-time.js');
 
 // ---- helpers that run inside the page ------------------------------------------------------------------
 
@@ -64,7 +68,27 @@ engine.emitBlock({ height: 2996930, producer: nearest(${prod}), payees: [
   { id: nearest(${p1}, 1), tier: 1, amount: 1 }, { id: nearest(${p2}, 2), tier: 2, amount: 3.5 }, { id: nearest(${p3}, 3), tier: 3, amount: 9 } ] });`;
 
 const SUN = 'sun=2026-09-30T14:00:00Z';
+/** The real instant a virtual-clock shot stands for (moon, sun and the chain of beads all follow it). */
+const VT_WALL = Date.UTC(2026, 9, 1, 1, 11, 45);
+const VSUN = 'sun=2026-10-01T01:11:45Z';
+const VBARE = `intro=0&hud=0&feed=0&labels=0&${VSUN}`;
 const BARE = `intro=0&hud=0&feed=0&${SUN}`;
+
+
+/** Seconds after the beat starts: the uplink arrives, the seal, the pieces fire, the beams fly, the landings. */
+const SEAL_T = [0.62, 0.74, 0.8, 0.86, 0.94, 1.04, 1.2, 1.45, 1.75, 1.95, 2.2, 2.7];
+/** The hero block's geography (real: a Virginia producer, payees in Denmark, the Netherlands and Finland). */
+const BLOCK_HERO = BLOCK('39.0, -77.3', '55.7, 12.5', '51.7, 4.3', '60.2, 25');
+/** The ambient director's wide landing frame, as a free camera: the producer, the moon and the payees in one view. */
+const SKY_SETUP = `{
+  ${NEAREST}
+  const sto = engine.nodes; const V3 = engine.moon.pos.constructor;
+  const dirOf = (id) => { const k = sto.slotOf(id); return new V3(sto.dir[k * 3], sto.dir[k * 3 + 1], sto.dir[k * 3 + 2]); };
+  const pts = [nearest(39.0, -77.3), nearest(55.7, 12.5, 1), nearest(51.7, 4.3, 2), nearest(60.2, 24.9, 3)].map(dirOf);
+  const pose = engine.shots.planWide(engine.moon, pts, 0.8, engine.rig.fovV, engine.rig.aspect);
+  engine.rig.setFree(pose.pos, pose.look, pose.up, 1e6, 1e6); engine.rig.snapFree(true);
+}
+`;
 
 // ---- the shots -------------------------------------------------------------------------------------------
 
@@ -128,6 +152,42 @@ const SHOTS = [
   // Ambient under reduced motion: still compositions, the moon parked right of the planet, cross-fades between them.
   { name: 'ambient-reduced', q: `art=marble&ambient=1&intro=0&hud=0&feed=0&${SUN}`, times: [3, 28, 52], reduced: true, sheet: { cols: 3, cell: 800 } },
   { name: 'ambient-earthrise', q: `art=marble&ambient=1&intro=0&hud=0&feed=0&${SUN}`, times: [5, 10], setup: `engine.ambient.scene('earthrise');`, sheet: { cols: 2, cell: 800 } },
+  // The moon's orbit and chain, companion (the shell) and sky (ambient), in the three art directions. On the
+  // virtual clock, so the moon and its beads are in the same place on every run.
+  // The 900 ms blend from companion to sky: the companion's trail fades where it was, the sky's wake appears only once the mark
+  // has arrived (a mark in flight has none), and no ring shows at any point. `-dense` is ten frames of it.
+  { name: 'trail-blend', q: `art=marble&moonmode=companion&${VBARE}&cam=12,18,4.8`, times: [0.1, 0.4, 0.7, 1.0], vt: true, setup: `engine.setMoon({ mode: 'orbit' });`, sheet: { cols: 2, cell: 800 } },
+  { name: 'trail-blend-dense', q: `art=marble&moonmode=companion&${VBARE}&cam=12,18,4.8`, times: [0.1, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.1], vt: true, setup: `engine.setMoon({ mode: 'orbit' });`, clip: [300, 110, 700, 280], dpr: 2, sheet: { cols: 2, cell: 900 } },
+  ...['marble', 'dotmatrix', 'neon'].flatMap((art) => [
+    { name: `trail-companion-${art}`, q: `art=${art}&moonmode=companion&${VBARE}&cam=25,15,2.9`, times: [1.0], vt: true },
+    { name: `trail-sky-${art}`, q: `art=${art}&moonmode=orbit&${VBARE}&cam=12,18,4.8`, times: [1.0], vt: true },
+    // Close-ups of the moon with its trail.
+    { name: `trailzoom-companion-${art}`, q: `art=${art}&moonmode=companion&${VBARE}&cam=25,15,2.9`, times: [1.0], vt: true, clip: [420, 40, 700, 420], dpr: 2 },
+    { name: `trailzoom-sky-${art}`, q: `art=${art}&moonmode=orbit&${VBARE}&cam=12,18,4.8`, times: [1.0], vt: true, clip: [220, 60, 760, 460], dpr: 2 },
+  ]),
+
+  // A quick look while tuning: the wide sky frame at a couple of moments, one art direction (`--q art=neon` overrides it).
+  { name: 'dbg-sky', q: `art=marble&moonmode=orbit&${VBARE}`, times: [0.5, 0.62], vt: true, setup: SKY_SETUP + BLOCK_HERO },
+  // Switching the art direction live: the moon's finishes blend (about a second), the planet swaps at once.
+  { name: 'art-switch-marble-neon', q: `art=marble&moonmode=orbit&${VBARE}`, times: [0.05, 0.2, 0.4, 0.7, 1.2, 2.0], vt: true, setup: `${SKY_SETUP} engine.setArtDirection('neon');`, clipMoon: 360, dpr: 2, sheet: { cols: 3, cell: 600 } },
+  { name: 'art-switch-neon-dotmatrix', q: `art=neon&moonmode=orbit&${VBARE}`, times: [0.05, 0.2, 0.4, 0.7, 1.2, 2.0], vt: true, setup: `${SKY_SETUP} engine.setArtDirection('dotmatrix');`, clipMoon: 360, dpr: 2, sheet: { cols: 3, cell: 600 } },
+  // Reduced motion in the sky: a parked moon, nothing drifting or sweeping, the beams lit whole instead of flown.
+  ...['marble', 'dotmatrix'].map((art) => ({ name: `seal-sky-reduced-${art}`, q: `art=${art}&moonmode=orbit&${VBARE}`, times: [0.3, 0.6, 0.9, 1.2, 1.6, 2.4], vt: true, reduced: true, setup: `engine.setReduced(true); ${SKY_SETUP}${BLOCK_HERO}`, sheet: { cols: 3, cell: 800 } })),
+  // Lookdev: the moon at rest, close up, on the night side and in the sun, in the three art directions.
+  ...['marble', 'dotmatrix', 'neon'].flatMap((art) => [
+    { name: `look-night-${art}`, q: `art=${art}&moonmode=orbit&${VBARE}`, times: [2.0, 5.0], vt: true, setup: SKY_SETUP, clipMoon: 300, dpr: 3 },
+    { name: `look-sun-${art}`, q: `art=${art}&moonmode=orbit&intro=0&hud=0&feed=0&labels=0&sun=2026-10-01T13:11:45Z`, times: [2.0, 5.0], vt: true, setup: SKY_SETUP, clipMoon: 300, dpr: 3 },
+  ]),
+  // ---- the style pass: frame sequences around a seal (the moon receives the block at 0.78 s) ----------------------
+  // Sky: the moon in orbit over the Atlantic (phase 90 degrees at the virtual clock's start), the wide landing frame
+  // the ambient director uses, the hero geometry (Virginia to Denmark, the Netherlands and Finland). Companion: the
+  // shell's moon on the standard camera. `clipMoon` crops a square (CSS px) around the moon for the close-ups.
+  ...['marble', 'dotmatrix', 'neon'].flatMap((art) => [
+    { name: `seal-sky-${art}`, q: `art=${art}&moonmode=orbit&${VBARE}`, times: SEAL_T, vt: true, setup: SKY_SETUP + BLOCK_HERO, sheet: { cols: 4, cell: 720 } },
+    { name: `seal-companion-${art}`, q: `art=${art}&moonmode=companion&${VBARE}&cam=36,-16,2.55`, times: SEAL_T, vt: true, setup: BLOCK_HERO, sheet: { cols: 4, cell: 720 } },
+    { name: `sealzoom-sky-${art}`, q: `art=${art}&moonmode=orbit&${VBARE}`, times: SEAL_T, vt: true, setup: SKY_SETUP + BLOCK_HERO, clipMoon: 420, dpr: 2, sheet: { cols: 4, cell: 480 } },
+    { name: `sealzoom-companion-${art}`, q: `art=${art}&moonmode=companion&${VBARE}&cam=36,-16,2.55`, times: SEAL_T, vt: true, setup: BLOCK_HERO, clipMoon: 420, dpr: 2, sheet: { cols: 4, cell: 480 } },
+  ]),
 ];
 
 const BOOT_SETUP = `
@@ -142,7 +202,10 @@ __lab.bootAt(0, 39, -77);`;
 mkdirSync(OUT, { recursive: true });
 const exe = process.env.CHROMIUM || ['/usr/bin/chromium', '/usr/bin/google-chrome-stable'].find(existsSync);
 const args = GPU ? ['--enable-gpu', '--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
-const browser = await chromium.launch({ executablePath: exe, headless: true, args });
+const launch = () => chromium.launch({ executablePath: exe, headless: true, args });
+let browser = await launch();
+/** `--fresh` starts a new browser for every shot (long GPU runs: the driver is happier with a clean process). */
+const FRESH = argv.includes('--fresh');
 const haveMagick = (() => {
   try {
     execFileSync('magick', ['-version'], { stdio: 'ignore' });
@@ -152,7 +215,8 @@ const haveMagick = (() => {
   }
 })();
 
-for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
+/** Renders one shot: a fresh page, the setup, the frames. Throws when the browser misbehaves (the caller retries). */
+async function runShot(shot) {
   const mobile = shot.mobile === true;
   const ctx = await browser.newContext({
     viewport: { width: mobile ? 390 : 1600, height: mobile ? 844 : 900 },
@@ -163,11 +227,27 @@ for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
   });
   const page = await ctx.newPage();
   const errors = [];
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+    if (process.env.SHOT_DEBUG) console.log('  [console]', m.type(), m.text().slice(0, 240));
+  });
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(`${BASE}/?${shot.q}`, { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(3500);
-  await page.evaluate(() => engine.pause());
+  page.on('crash', () => console.log('  [page crashed]'));
+  if (shot.vt) {
+    await page.addInitScript({ path: VT });
+    await page.addInitScript(`window.__vt.setWall(${VT_WALL});`);
+  }
+  await page.goto(`${BASE}/?${shot.q}${EXTRA ? `&${EXTRA}` : ''}`, { waitUntil: 'load', timeout: 90000 });
+  if (shot.vt) {
+    // Time stands still until it is stepped: wait (in real time) for the page and the textures, then run a few frames.
+    await page.waitForFunction(() => window.engine && window.__lab, null, { timeout: 60000 });
+    await page.evaluate(() => engine.assets.ready);
+    await page.waitForTimeout(800);
+    await page.evaluate(() => { for (let i = 0; i < 4; i++) __vt.advance(1000 / 60); engine.pause(); });
+  } else {
+    await page.waitForTimeout(3500);
+    await page.evaluate(() => engine.pause());
+  }
   if (shot.pre) await page.evaluate((n) => { for (let i = 0; i < n; i++) engine.stepFrame(1 / 60); }, Math.round(shot.pre * 60));
   if (shot.hudOff) await page.evaluate(() => document.querySelector('.hud')?.classList.add('collapsed'));
   if (shot.setup) await page.evaluate(`(async()=>{ ${shot.setup === 'BOOT' ? BOOT_SETUP : shot.setup} })()`);
@@ -186,27 +266,66 @@ for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
     }
     // The overlays (captions, counters) run on the page's own clock: let their transitions finish.
     await page.waitForTimeout(shot.q.includes('ambient=1') ? 1100 : 120);
-    const name = shot.times.length > 1 ? `${shot.name}-${String(i + 1).padStart(2, '0')}` : shot.name;
+    const name = PREFIX + (shot.times.length > 1 ? `${shot.name}-${String(i + 1).padStart(2, '0')}` : shot.name);
     const file = join(OUT, `${name}.png`);
     const o = { path: file };
     if (shot.clip) o.clip = { x: shot.clip[0], y: shot.clip[1], width: shot.clip[2], height: shot.clip[3] };
+    if (shot.clipMoon) {
+      // A square around the moon as it is on screen now.
+      const m = await page.evaluate(() => engine.moonScreen());
+      const w = shot.clipMoon;
+      const vp = page.viewportSize();
+      o.clip = { x: Math.round(Math.min(Math.max(0, m.x - w / 2), vp.width - w)), y: Math.round(Math.min(Math.max(0, m.y - w / 2), vp.height - w)), width: w, height: w };
+    }
     await page.screenshot(o);
     files.push(file);
   }
   console.log(`${shot.name.padEnd(24)} ${files.length} frame(s)${errors.length ? `  ERRORS: ${errors.slice(0, 3).join(' | ')}` : ''}`);
   if (haveMagick && shot.sheet && files.length > 1) {
-    execFileSync('magick', ['montage', ...files, '-tile', `${shot.sheet.cols}x`, '-geometry', `${shot.sheet.cell}x+3+3`, '-background', '#0a0b12', join(OUT, `${shot.name}-sheet.png`)]);
+    try {
+      execFileSync('magick', ['montage', ...files, '-tile', `${shot.sheet.cols}x`, '-geometry', `${shot.sheet.cell}x+3+3`, '-background', '#0a0b12', join(OUT, `${PREFIX}${shot.name}-sheet.png`)], { stdio: 'pipe' });
+    } catch (e) {
+      console.log(`  (sheet for ${shot.name} failed: ${String(e.stderr ?? e).slice(0, 160)})`);
+    }
   }
   await ctx.close();
+}
+
+let shotIndex = 0;
+for (const shot of SHOTS.filter((s) => !ONLY || new RegExp(ONLY).test(s.name))) {
+  if (FRESH && shotIndex++ > 0) {
+    await browser.close();
+    browser = await launch();
+  }
+  // The GPU driver now and then drops a page under load ("Unable to capture screenshot"): start over on a clean browser.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await runShot(shot);
+      break;
+    } catch (e) {
+      console.log(`  ${shot.name}: ${String(e.message).split('\n')[0]} (attempt ${attempt})`);
+      if (attempt >= 3) throw e;
+      try {
+        await browser.close();
+      } catch {
+        /* already gone */
+      }
+      browser = await launch();
+    }
+  }
 }
 await browser.close();
 
 // PNG to WebP, like the design's shots.
 if (haveMagick) {
-  for (const f of readdirSync(OUT).filter((f) => f.endsWith('.png'))) {
+  for (const f of readdirSync(OUT).filter((f) => f.endsWith('.png') && f.startsWith(PREFIX))) {
     const src = join(OUT, f);
-    execFileSync('magick', [src, '-quality', '90', src.replace(/\.png$/, '.webp')]);
-    rmSync(src);
+    try {
+      execFileSync('magick', [src, '-quality', '90', src.replace(/\.png$/, '.webp')], { stdio: 'pipe' });
+      rmSync(src);
+    } catch (e) {
+      console.log(`  (could not convert ${f}: ${String(e.stderr ?? e).slice(0, 120)})`);
+    }
   }
 }
 console.log(`shots in ${OUT}`);

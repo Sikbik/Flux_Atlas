@@ -31,6 +31,8 @@ pub const JOBS: &[(&str, u64)] = &[
     ("watch_probe", u64::MAX),
     ("backfill", u64::MAX),
     ("maintenance", 7_200_000),
+    // Daily DB-IP City Lite check (or an operator file); stale after three days without one.
+    ("geoip_db", 259_200_000),
 ];
 
 #[derive(Debug, Clone, Default)]

@@ -209,6 +209,7 @@ impl Demo {
             last_paid_height: n.last_paid_height,
             app_count: n.app_count,
             flags: row.flags,
+            city: r.city,
         }
     }
 

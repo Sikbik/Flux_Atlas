@@ -4,6 +4,7 @@
 mod apps;
 mod backfill;
 pub(crate) mod chain;
+pub(crate) mod geoip;
 mod maintenance;
 mod market;
 mod registry;
