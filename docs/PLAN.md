@@ -59,7 +59,7 @@ called out in the hand-back.
 | L1 Lead fixes (done) | lead | globe froze 0.5 to 1.2 s on every 12 s topology sweep (each streamed link re-resolved all 134k edges): fixed in f277752, max frame 33 ms live |
 | B7 API defects from the views (running, worktree) | Opus | operator earned_24h bug, top_operators cap, /tx app_ref, app-economy aggregates, blocks limit, mesh outlier hosts, monotonic app records |
 | Q1 Visual QA & polish (next) | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
-| X1 Review | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
+| X1 Review (running, worktree; report only, to docs/review/X1-security-correctness.md) | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
 
 ## Phase 5 — Ship
 `deploy/Dockerfile`, `deploy/flux_app_spec.json`, README, removal of v1 dirs, final review, and hand-off.
