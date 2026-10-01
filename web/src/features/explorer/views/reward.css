@@ -1,0 +1,162 @@
+/* The reward strip and the recipient cards. */
+
+.ex-split {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ex-strip {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+
+.ex-strip__seg {
+  display: block;
+  flex-basis: 0;
+  min-width: 6px;
+  border-radius: 2px;
+  background: var(--c);
+  transform-origin: left center;
+  animation: ex-strip-in var(--dur-slower) var(--ease-out-expo) both;
+  animation-delay: calc(var(--i, 0) * var(--stagger));
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.ex-strip__seg:first-child {
+  border-radius: 6px 2px 2px 6px;
+}
+
+.ex-strip__seg:last-child {
+  border-radius: 2px 6px 6px 2px;
+}
+
+.ex-strip__seg:only-child {
+  border-radius: 6px;
+}
+
+.ex-strip[data-hot] .ex-strip__seg:not([data-hot]) {
+  opacity: 0.4;
+}
+
+.ex-strip__seg[data-hot] {
+  box-shadow: 0 0 16px -1px var(--c);
+}
+
+@keyframes ex-strip-in {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.ex-payouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ex-payout {
+  --ex-edge: var(--accent-500);
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-5) var(--space-6) var(--space-5) calc(var(--space-6) + 2px);
+  border-radius: var(--r-lg);
+  background: var(--ex-card);
+  box-shadow:
+    inset 0 0 0 1px var(--line-1),
+    var(--shadow-inset-hi);
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+  animation: ex-rise var(--dur-enter) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+.ex-payout[data-tier] {
+  --ex-edge: var(--tier);
+}
+
+.ex-payout::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: var(--space-5);
+  bottom: var(--space-5);
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ex-edge);
+  box-shadow: 0 0 10px 0 color-mix(in oklab, var(--ex-edge) 70%, transparent);
+  opacity: 0.8;
+}
+
+.ex-payout[data-hot] {
+  background: var(--ex-card-hi);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--ex-edge) 40%, transparent),
+    var(--shadow-inset-hi);
+}
+
+.ex-payout__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.ex-payout__head > svg:not(.ex-tier-glyph) {
+  color: var(--accent-400);
+}
+
+.ex-payout__name {
+  color: var(--text-1);
+  font-weight: var(--fw-semibold);
+}
+
+.ex-payout__share {
+  margin-left: auto;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+.ex-payout__amt {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-snug);
+}
+
+.ex-payout__who {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--fs-xs);
+}
+
+.ex-payout__note {
+  color: var(--text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ex-strip__seg,
+  :root:not([data-motion="full"]) .ex-payout {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-strip__seg,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-payout {
+  animation: none;
+}
