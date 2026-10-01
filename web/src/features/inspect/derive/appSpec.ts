@@ -30,7 +30,7 @@ export const CONTINENTS: Record<string, string> = {
 };
 
 let regionNames: Intl.DisplayNames | null | undefined;
-function countryName(code: string): string {
+export function countryName(code: string): string {
   if (regionNames === undefined) {
     try {
       regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
