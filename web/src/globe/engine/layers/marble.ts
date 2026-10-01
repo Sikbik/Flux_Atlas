@@ -79,22 +79,22 @@ void main() {
   float gl = luma(g);
   vec3 photo = mix(vec3(gl), g, 0.78) * vec3(0.96, 0.99, 1.04);
   vec3 duo = gl < 0.1 ? mix(uOcean, uOceanLit, gl / 0.1) : mix(uOceanLit, uLand * 1.5, clamp((gl - 0.1) / 0.45, 0.0, 1.0));
-  vec3 seaCol = mix(photo, duo * 1.6, 0.62);
-  // Land is the photograph's light and shade through a cool slate ramp, keeping a quarter of its own
-  // color, so deserts and forests stay legible without a warm cast against the blue interface.
-  vec3 slate = mix(vec3(0.05, 0.075, 0.13), vec3(0.50, 0.57, 0.66), smoothstep(0.04, 0.6, gl));
-  vec3 landCol = mix(slate, mix(vec3(gl), g, 0.6), 0.25);
+  vec3 seaCol = mix(photo, duo * 1.3, 0.7) * 0.82;
+  // Land is the photograph's light and shade through a light slate ramp, keeping about two fifths of
+  // its own color: even its darkest forest sits well above the sea, so the continents read at a glance.
+  vec3 slate = mix(vec3(0.13, 0.15, 0.17), vec3(0.66, 0.69, 0.72), smoothstep(0.04, 0.6, gl));
+  vec3 landCol = mix(slate, mix(vec3(gl), g, 0.75), 0.42) * 1.15;
   g = mix(seaCol, landCol, land);
-  float diff = smoothstep(-0.03, 0.5, mu);
+  float diff = smoothstep(-0.02, 0.32, mu);
   float wrap = 0.12 + 0.88 * pow(max(mu, 0.0), 0.72);
-  vec3 dayCol = g * 0.46 * mix(1.0, wrap, 0.85) * diff;
+  vec3 dayCol = g * 0.74 * mix(1.0, wrap, 0.6) * diff;
   // Up close the day side keeps its daylight as a dim, desaturated stage: the brightest haze is compressed
   // to about 0.11, far under a marker's body, so the tier colours read on it.
   dayCol = mix(vec3(luma(dayCol)), dayCol, 1.0 - 0.5 * L);
   dayCol = dayCol / (1.0 + dayCol * (8.0 * L * L * L)) * (1.0 - 0.1 * L);
 
   // Earthshine keeps the geography readable on the night side.
-  vec3 shine = g * vec3(0.05, 0.075, 0.15) * 0.42;
+  vec3 shine = g * vec3(0.05, 0.075, 0.15) * 0.3;
   float nightF = 1.0 - smoothstep(-0.12, 0.10, mu);
   float lights = smoothstep(0.10, 0.55, luma(nt));
   vec3 cityCol = nt * (0.35 + 2.3 * lights) * uLights * 1.05;
