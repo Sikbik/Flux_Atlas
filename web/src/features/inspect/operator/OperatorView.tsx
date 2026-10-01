@@ -34,8 +34,9 @@ import './operator.css';
 
 const LEGEND: readonly FleetState[] = ['ok', 'risk', 'down', 'pending', 'gone'];
 
-function Legend({ counts }: { counts: Record<FleetState, number> }) {
-  const shown = LEGEND.filter((k) => counts[k] > 0);
+/** The count of each state; while reachability is still arriving, the healthy count would be a guess, so it waits. */
+function Legend({ counts, settling }: { counts: Record<FleetState, number>; settling: boolean }) {
+  const shown = LEGEND.filter((k) => counts[k] > 0 && !(settling && k === 'ok'));
   return (
     <ul className="ix-legend" aria-label="Nodes by state">
       {shown.map((k) => (
@@ -240,7 +241,7 @@ export function OperatorView({ addr }: { addr: string }) {
           {nodes.length >= 12 ? (
             <Card tone="flat" padding="sm" className="ix-fleet-card">
               <FleetGrid nodes={sorted} onOpen={openNode} />
-              <Legend counts={counts} />
+              <Legend counts={counts} settling={data.settling} />
             </Card>
           ) : null}
           <FleetTable nodes={sorted} label={watchlist ? 'Watched nodes' : 'Nodes of this operator'} />

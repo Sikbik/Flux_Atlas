@@ -332,6 +332,7 @@ export function HostView({ ip }: { ip: string }) {
           />
           <Stat
             label="Paid to"
+            loading={rowsPending && apiRows.length === 0}
             value={apiRows.length === 0 ? null : <AnimatedNumber value={operators.length} />}
             unit={operators.length === 1 ? 'address' : 'addresses'}
             caption={
