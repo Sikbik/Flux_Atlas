@@ -499,6 +499,68 @@ fn first_boot_block_before_the_list_is_attributed_by_the_reconcile() {
 }
 
 #[test]
+fn first_boot_block_at_the_list_height_is_attributed_from_the_list() {
+    // A list whose height is exactly the block's: it already counts that block's payments
+    // (one node per tier reports being paid at that height).
+    let mut list = common::node_list();
+    let h = list
+        .iter()
+        .map(|n| {
+            n.last_confirmed_height
+                .unwrap_or(0)
+                .max(n.last_paid_height.unwrap_or(0))
+        })
+        .max()
+        .unwrap();
+    let mut payees = Vec::new();
+    for t in Tier::ALL {
+        let n = list.iter_mut().find(|n| n.tier == t).unwrap();
+        n.last_paid_height = Some(h);
+        payees.push((t, n.outpoint, n.payment_address.clone()));
+    }
+    let mut d = common::block("flux/daemon_getblock_2996916_verbosity2.json");
+    d.summary.height = h;
+    for p in &mut d.summary.payouts {
+        let (_, _, addr) = payees.iter().find(|(t, _, _)| *t == p.tier).unwrap();
+        p.address = addr.clone();
+    }
+
+    // The ranks the list alone gives.
+    let mut reference = NetworkState::default();
+    reconcile(&mut reference, &mut Tick::new(NOW), &list);
+
+    // First boot: the block lands before the first node list, so nobody is attributed.
+    let mut st = NetworkState::default();
+    let mut tick = Tick::new(NOW);
+    apply_block(&mut st, &mut tick, &d, false);
+    assert!(block_msg(&tick).payouts.iter().all(|p| p.node.is_none()));
+
+    // The initial reconcile names the payees from the list without rotating anyone again.
+    let mut tick = Tick::new(NOW);
+    let rep = reconcile(&mut st, &mut tick, &list);
+    assert_eq!(rep.list_height, h);
+    assert_eq!(rep.reattributed, 3);
+    let blk = st.recent.iter().find(|b| b.height == h).unwrap();
+    for p in &blk.payouts {
+        let (_, op, _) = payees.iter().find(|(t, _, _)| *t == p.tier).unwrap();
+        let (id, _) = st.nodes.intern(*op, NOW);
+        assert_eq!(p.node, Some(id), "{}", p.tier);
+        assert_eq!(st.nodes.rec(id).unwrap().last_paid_height, Some(h));
+    }
+    for e in reference.nodes.listed() {
+        let id = st.nodes.id_of(&e.rec.outpoint).unwrap();
+        assert_eq!(
+            st.nodes.rec(id).unwrap().rank,
+            e.rec.rank,
+            "{}",
+            e.rec.outpoint
+        );
+    }
+    let mut tick = Tick::new(NOW);
+    assert_eq!(reconcile(&mut st, &mut tick, &list).reattributed, 0);
+}
+
+#[test]
 fn stats_round_diff_ignores_zero_placeholders() {
     let rows: Vec<atlas_flux::models::stats::StatsNodeRow> =
         common::envelope("flux/stats_fluxinfo.json");
