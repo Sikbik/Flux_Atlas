@@ -279,9 +279,11 @@
   text-shadow: 0 1px 12px color-mix(in oklab, var(--ink-0) 70%, transparent);
 }
 
+/* The place name never shrinks before its detail line has: a one-pixel squeeze would ellipsize "Helsinki" to
+   "Helsin...". It only gives way when it alone is wider than the caption. */
 .ix-loc-place > b {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: none;
+  max-width: 100%;
   overflow: hidden;
   font: var(--fw-semibold) var(--fs-md) / 1.2 var(--font-display);
   letter-spacing: var(--tracking-heading);
@@ -292,7 +294,7 @@
 }
 
 .ix-loc-place > span {
-  flex: 0 100 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

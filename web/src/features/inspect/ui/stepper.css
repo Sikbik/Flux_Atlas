@@ -93,7 +93,7 @@
 }
 
 .ix-stp small {
-  color: var(--text-4);
+  color: var(--text-3);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: -0.02em;
