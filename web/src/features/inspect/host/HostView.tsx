@@ -219,6 +219,8 @@ export function HostView({ ip }: { ip: string }) {
   const hosting = geo?.hosting ?? null;
   const multi = live.length > 1;
   const single = operators.length === 1 && multi;
+  // A host of one node says who it pays, as a link, rather than leaving the tile's caption empty.
+  const soleOperator = operators.length === 1 && !multi ? (operators[0]?.[0] ?? null) : null;
   const ports = live
     .map((n) => parseEndpoint(n.endpoint)?.port)
     .filter((p): p is number => typeof p === 'number');
@@ -327,7 +329,13 @@ export function HostView({ ip }: { ip: string }) {
             label="Paid to"
             value={apiRows.length === 0 ? null : <AnimatedNumber value={operators.length} />}
             unit={operators.length === 1 ? 'address' : 'addresses'}
-            caption={single ? 'one operator' : undefined}
+            caption={
+              single ? (
+                'one operator'
+              ) : soleOperator ? (
+                <EntityLink kind="operator" value={soleOperator} />
+              ) : undefined
+            }
           />
         </StatGrid>
       </Section>
