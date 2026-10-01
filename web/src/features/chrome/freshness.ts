@@ -29,6 +29,7 @@ export const PATHS: readonly PathDef[] = [
     what: 'The chain tip: a block about every 30 s',
     cadenceMs: 30_000,
     messages: ['block'],
+    // The tip reads as the age of the last block; the server's job times only stand in before one is known.
     jobs: ['chain_stream', 'block_decoder'],
   },
   {
@@ -93,7 +94,8 @@ export function readPath(def: PathDef, input: FreshnessInput): PathReading {
   if (def.id === 'tip' && input.tipAnchorMs !== null && (streamMs === null || input.tipAnchorMs > streamMs))
     streamMs = input.tipAnchorMs;
   let jobMs: number | null = null;
-  for (const j of def.jobs) {
+  const ignoreJobs = def.id === 'tip' && input.tipAnchorMs !== null;
+  for (const j of ignoreJobs ? [] : def.jobs) {
     const t = input.jobs.get(j)?.last_ok_ms;
     if (t !== null && t !== undefined && (jobMs === null || t > jobMs)) jobMs = t;
   }

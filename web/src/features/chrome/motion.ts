@@ -68,3 +68,9 @@ export function cssMs(name: string, fallback: number, root: Element = document.d
   if (!Number.isFinite(n)) return fallback;
   return raw.endsWith('ms') ? n : raw.endsWith('s') ? n * 1000 : fallback;
 }
+
+/** A custom property's value as written (`--ease-out`), read once per call from the root. */
+export function cssValue(name: string, fallback: string, root: Element = document.documentElement): string {
+  if (typeof getComputedStyle !== 'function') return fallback;
+  return getComputedStyle(root).getPropertyValue(name).trim() || fallback;
+}

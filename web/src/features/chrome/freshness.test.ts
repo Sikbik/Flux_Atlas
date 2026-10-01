@@ -44,6 +44,17 @@ describe('readPath', () => {
     expect(r.state).toBe('fresh');
   });
 
+  it('reads the tip as the age of the last block, ignoring a newer server job time', () => {
+    const r = readPath(tipDef, {
+      nowMs: 100_000,
+      jobs: jobs(job('chain_stream', 99_000)),
+      lastMessage: new Map(),
+      tipAnchorMs: 70_000,
+    });
+    expect(r.ageMs).toBe(30_000);
+    expect(r.source).toBe('stream');
+  });
+
   it('is unknown, never zero, without evidence', () => {
     const r = readPath(nodesDef, { nowMs: 5, jobs: jobs(), lastMessage: new Map(), tipAnchorMs: null });
     expect(r.ageMs).toBeNull();

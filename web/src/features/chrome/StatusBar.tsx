@@ -93,7 +93,7 @@ function StatusLeft() {
 }
 
 function StatusCard({ readings }: { readings: PathReading[] }) {
-  const { store, clock } = useRuntime();
+  const { clock } = useRuntime();
   const conn = useNetwork((s) => s.connection);
   const server = useNetwork((s) => s.server);
   const jobs = useNetwork((s) => s.freshness);
@@ -129,8 +129,7 @@ function StatusCard({ readings }: { readings: PathReading[] }) {
             ))}
           </dl>
           <p className="sb-note">
-            Job times are as of the last snapshot
-            {store.freshness.size > 0 ? ` (${formatUtcTime(store.lastMessageMs.get('hello') ?? null)})` : ''}.
+            Job times are as of the last snapshot and refresh when the stream resyncs.
           </p>
         </>
       ) : null}

@@ -152,7 +152,9 @@ export function GoMenu() {
   const engine = useGlobeEngine();
   const { store } = useRuntime();
   const items = (): MenuItemDef[] => {
-    const places = store.loaded ? computePlaces(store).cities.slice(0, 8) : [];
+    // City labels when the data has them, otherwise the biggest countries.
+    const all = store.loaded ? computePlaces(store) : { cities: [], countries: [] };
+    const places = (all.cities.length > 0 ? all.cities : all.countries).slice(0, 8);
     return [
       { kind: 'heading', id: 'h-views', label: 'Views' },
       ...GO_ORDER.map(

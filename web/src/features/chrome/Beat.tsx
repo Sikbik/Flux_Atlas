@@ -12,6 +12,7 @@ import { ShellLink } from '../../shell/frame/ShellLink';
 import { HoverCard } from './HoverCard';
 import { useLiveView } from './live';
 import { Odometer } from './Odometer';
+import { placeOfRow } from './places';
 import './beat.css';
 
 /** Milliseconds into the current block interval at the moment the block changes (for animation offsets). */
@@ -121,7 +122,7 @@ function BeatCard() {
   const producer = useNetwork((s) => (s.tip?.producer === null || !s.tip ? null : s.tip.producer));
   if (!tip) return null;
   const idx = producer === null ? -1 : store.nodes.indexOf(producer);
-  const city = idx >= 0 ? store.nodes.locations.info(store.nodes.loc[idx] ?? 0)?.city : undefined;
+  const city = idx >= 0 ? placeOfRow(store, idx) : null;
   return (
     <>
       <span className="hc-title">The chain's pulse</span>

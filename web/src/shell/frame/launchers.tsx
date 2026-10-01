@@ -59,7 +59,7 @@ export interface Launcher {
 const EXPLORER_TYPES = ['block', 'tx', 'address', 'mempool', 'supply', 'richlist'] as const;
 
 export const LAUNCHERS: Record<LauncherId, Launcher> = {
-  globe: { id: 'globe', label: 'Globe', key: 'G', icon: Globe, types: [], accent: 'pulse' },
+  globe: { id: 'globe', label: 'Globe', key: 'G', icon: Globe, types: [], accent: 'chain' },
   nodes: { id: 'nodes', label: 'Nodes', key: 'N', icon: Server, types: ['node', 'host'], accent: 'operator' },
   apps: { id: 'apps', label: 'Apps', key: 'A', icon: Boxes, types: ['app'], accent: 'app' },
   explorer: {

@@ -22,7 +22,8 @@ export interface PayoutLine {
   tier: TierName;
   node: number | null;
   address: string;
-  city: string | null;
+  /** City, or country when the data has no city. */
+  place: string | null;
   /** FLUX paid to this tier in one block. */
   amount: number;
   /** Estimated ms until the block that pays it (0 once due). */
@@ -35,7 +36,7 @@ export function nextPayoutLines(
   tip: { height: number; timeMs: number } | null,
   nowMs: number,
   subsidy: number,
-  cityOf: (node: number) => string | null,
+  placeOf: (node: number) => string | null,
 ): PayoutLine[] {
   if (!next) return [];
   const split = splitReward(subsidy);
@@ -48,7 +49,7 @@ export function nextPayoutLines(
       tier,
       node: p.node,
       address: p.address,
-      city: p.node === null ? null : cityOf(p.node),
+      place: p.node === null ? null : placeOf(p.node),
       amount: split[tier],
       etaMs,
     });
@@ -78,6 +79,6 @@ export function approxIn(ms: number): string {
 
 /** The ticker sentence for one tier: "Next Stratus payout: Helsinki, 9 FLUX, in ~12 s". */
 export function payoutSentence(line: PayoutLine, label: string): string {
-  const where = line.city ?? 'an unlocated node';
+  const where = line.place ?? 'an unlocated node';
   return `Next ${label} payout: ${where}, ${amountWords(line.amount)}, ${approxIn(line.etaMs)}`;
 }

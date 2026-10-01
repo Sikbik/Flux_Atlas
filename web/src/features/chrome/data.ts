@@ -2,24 +2,25 @@
 // most once a second (the clock's tick) or when the data it reads changes; none polls anything.
 
 import { useCallback, useEffect, useState } from 'react';
+import type { Tier } from '../../api/generated/Tier';
 import { useNetwork, useNextPayees, useRuntime, useSummary, useTip } from '../../app/context';
 import { fluxToNumber } from '../../lib/format';
 import { useNow } from '../../lib/useClock';
+import { tierOf } from './glyphs';
 import { nextPayoutLines, type PayoutLine } from './payouts';
+import { placeOfRow } from './places';
 import { type RewardCutView, rewardCutView } from './rewardcut';
 
 /** How long the previous payees stay on the aim strip after a block: until the last beam has landed. */
 export const AIM_HOLD_MS = 2_600;
 
-/** The city of a node by id, from the node table (null when the node or its place is unknown). */
-export function useCityOf(): (node: number) => string | null {
+/** The place of a node by id: its city, or its country when the data has no city (null when unknown). */
+export function usePlaceOf(): (node: number) => string | null {
   const { store } = useRuntime();
   return useCallback(
     (node: number) => {
       const i = store.nodes.indexOf(node);
-      if (i < 0) return null;
-      const city = store.nodes.locations.info(store.nodes.loc[i] ?? 0)?.city;
-      return city ? city : null;
+      return i < 0 ? null : placeOfRow(store, i);
     },
     [store],
   );
@@ -39,7 +40,7 @@ export function usePayoutLines(): PayoutLine[] {
   const { clock, store } = useRuntime();
   const next = useNextPayees();
   const tip = useTip();
-  const cityOf = useCityOf();
+  const placeOf = usePlaceOf();
   const subsidy = useSubsidy();
   const now = useNow(clock);
   const [shown, setShown] = useState(next);
@@ -61,7 +62,7 @@ export function usePayoutLines(): PayoutLine[] {
     tip ? { height: tip.height, timeMs: tip.time_ms } : null,
     now,
     subsidy,
-    cityOf,
+    placeOf,
   );
 }
 
@@ -82,3 +83,33 @@ export function useRewardCut(): RewardCutView | null {
 
 /** Whether the store holds the first snapshot. */
 export const useLoaded = (): boolean => useNetwork((s) => s.loaded);
+
+export interface NodeFacts {
+  tier: Tier;
+  /** `ip:port` as the node table holds it (the route key of the node's window), or null. */
+  endpoint: string | null;
+  /** The address without the port. */
+  ip: string | null;
+  /** City, or country when the data has no city; null when neither is known. */
+  place: string | null;
+}
+
+/** Looks up what the node table knows about a node (null when the node is not in it). */
+export function useNodeFacts(): (node: number | null) => NodeFacts | null {
+  const { store } = useRuntime();
+  return useCallback(
+    (node: number | null) => {
+      if (node === null) return null;
+      const i = store.nodes.indexOf(node);
+      if (i < 0) return null;
+      const ep = store.nodes.endpoint(i) || null;
+      return {
+        tier: tierOf(store.nodes.tier[i]),
+        endpoint: ep,
+        ip: ep ? (ep.split(':')[0] ?? null) : null,
+        place: placeOfRow(store, i),
+      };
+    },
+    [store],
+  );
+}

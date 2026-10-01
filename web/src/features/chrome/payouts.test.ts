@@ -17,8 +17,8 @@ describe('nextPayoutLines', () => {
     const lines = nextPayoutLines(next, tip, 1_012_000, 14, (id) => cities[id] ?? null);
     expect(lines.map((l) => l.tier)).toEqual(['stratus', 'nimbus', 'cumulus']);
     expect(lines.map((l) => l.amount)).toEqual([9, 3.5, 1]);
-    expect(lines[0]?.city).toBe('Helsinki');
-    expect(lines[1]?.city).toBeNull();
+    expect(lines[0]?.place).toBe('Helsinki');
+    expect(lines[1]?.place).toBeNull();
   });
 
   it('estimates the time to the paying block from the tip and the 30 s cadence', () => {
