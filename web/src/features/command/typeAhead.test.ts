@@ -89,4 +89,20 @@ describe('the buffer', () => {
     document.body.dispatchEvent(key('b'));
     expect(drainTypeAhead()).toBe('b');
   });
+
+  it('does not take the key that started it (the slash that opens the palette)', () => {
+    // The hotkey handler listens in the bubble phase and starts the buffer from inside the event; the
+    // buffer listens in the capture phase, which that event has already passed.
+    const open = (e: KeyboardEvent) => {
+      if (e.key === '/') startTypeAhead();
+    };
+    window.addEventListener('keydown', open);
+    try {
+      document.body.dispatchEvent(key('/'));
+      document.body.dispatchEvent(key('a'));
+      expect(drainTypeAhead()).toBe('a');
+    } finally {
+      window.removeEventListener('keydown', open);
+    }
+  });
 });
