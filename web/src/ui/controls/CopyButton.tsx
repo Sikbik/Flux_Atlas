@@ -37,20 +37,23 @@ export function CopyButton({ value, what, size = 'sm', onCopied, className }: Co
   const tip = state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : label;
 
   return (
-    <Tooltip content={tip} placement="top">
-      <button
-        type="button"
-        className={cx('ui-copy', className)}
-        data-size={size}
-        data-state={state}
-        aria-label={label}
-        onClick={onClick}
-      >
-        <Icon size={size === 'sm' ? 13 : 15} strokeWidth={1.75} />
-        <span className="ui-copy__live" role="status">
-          {state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : ''}
-        </span>
-      </button>
-    </Tooltip>
+    <>
+      <Tooltip content={tip} placement="top">
+        <button
+          type="button"
+          className={cx('ui-copy', className)}
+          data-size={size}
+          data-state={state}
+          aria-label={label}
+          onClick={onClick}
+        >
+          <Icon size={size === 'sm' ? 13 : 15} strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      </Tooltip>
+      {/* A sibling, not a child: a button's children are presentational and would not be announced. */}
+      <span className="ui-copy__live" role="status" aria-live="polite">
+        {state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : ''}
+      </span>
+    </>
   );
 }

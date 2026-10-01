@@ -67,5 +67,8 @@ export const STATUS_META: Record<StatusKind, StatusMeta> = {
 
 /** Metadata for a status; unrecognised values fall back to `unknown` (never a guessed state). */
 export function statusMeta(status: string | null | undefined): StatusMeta {
-  return (status && (STATUS_META as Record<string, StatusMeta | undefined>)[status]) || STATUS_META.unknown;
+  // Own keys only: `toString` and friends must not resolve through the prototype chain.
+  return status && Object.hasOwn(STATUS_META, status)
+    ? STATUS_META[status as StatusKind]
+    : STATUS_META.unknown;
 }

@@ -39,7 +39,8 @@ function assignRef(ref: Ref<HTMLElement> | undefined, el: HTMLElement | null): v
 
 /**
  * An accessible tooltip: shows on hover (mouse only, after a short delay) and on keyboard focus,
- * hides on pointer leave, blur and Escape, never covers its trigger and never takes the pointer.
+ * hides on pointer leave, blur and Escape (which it swallows, so the window under it stays open),
+ * never covers its trigger and never takes the pointer.
  * The trigger gets `aria-describedby` while it is open.
  */
 export function Tooltip({ content, children, placement = 'top', delay = 120, disabled }: TooltipProps) {
@@ -72,11 +73,14 @@ export function Tooltip({ content, children, placement = 'top', delay = 120, dis
 
   useEffect(() => {
     if (!open) return;
+    // Capture phase and swallowed: Escape dismisses the tooltip only, never also the window under it.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') hide();
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      hide();
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
   }, [open, hide]);
 
   useEffect(() => () => clearTimeout(timer.current), []);

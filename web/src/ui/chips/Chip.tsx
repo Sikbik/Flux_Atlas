@@ -15,7 +15,7 @@ export interface ChipProps extends Omit<ComponentPropsWithoutRef<'span'>, 'onCli
   icon?: LucideIcon;
   /** Set the label in Plex Mono (ids, amounts, counts). */
   mono?: boolean;
-  /** Makes the chip a toggle button (a filter): renders a `<button>` with `aria-pressed={selected}`. */
+  /** Makes the chip a toggle button (a filter): renders a `<button>` with `aria-pressed={Boolean(selected)}`. */
   onClick?: MouseEventHandler<HTMLButtonElement>;
   /** Pressed state for a toggle chip. */
   selected?: boolean;
@@ -57,7 +57,7 @@ export function Chip({
         type="button"
         {...(rest as ComponentPropsWithoutRef<'button'>)}
         {...common}
-        aria-pressed={selected}
+        aria-pressed={Boolean(selected)}
         data-selected={selected || undefined}
         onClick={onClick}
       >

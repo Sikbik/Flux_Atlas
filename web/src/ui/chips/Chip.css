@@ -90,11 +90,9 @@ button.ui-chip:focus-visible {
 }
 
 /* Tier chip: --tier-soft fill, --tier-line border, the capsule glyph in the tier colour, the word in
-   white. A soft light rises from behind the glyph, so the chip reads as lit rather than filled. */
+   white. A flat fill on purpose: chips fill tables of hundreds of rows, where gradients cost raster time. */
 .ui-chip[data-tier] {
-  background:
-    radial-gradient(70% 150% at 10% 50%, color-mix(in oklab, var(--tier) 26%, transparent), transparent 72%),
-    var(--tier-soft);
+  background: var(--tier-soft);
   border-color: var(--tier-line);
   color: var(--text-1);
 }
@@ -115,9 +113,7 @@ button.ui-chip:focus-visible {
 
 /* Status chip: --status-soft fill, a 40% status border, status-coloured icon, the word in white. */
 .ui-chip[data-status] {
-  background:
-    radial-gradient(70% 150% at 10% 50%, color-mix(in oklab, var(--status) 22%, transparent), transparent 72%),
-    var(--status-soft);
+  background: var(--status-soft);
   border-color: color-mix(in oklab, var(--status) 40%, transparent);
   color: var(--text-1);
 }

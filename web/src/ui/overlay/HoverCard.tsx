@@ -73,14 +73,15 @@ export function HoverCard({
 
   useEffect(() => {
     if (!open) return;
+    // Capture phase and swallowed: Escape closes the card only, never also the window under it.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        clearTimeout(timer.current);
-        setOpen(false);
-      }
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      clearTimeout(timer.current);
+      setOpen(false);
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
   }, [open]);
 
   useEffect(() => () => clearTimeout(timer.current), []);
