@@ -92,33 +92,11 @@ h2 {
   background: var(--ink-3);
 }
 
-/* Layers: the globe is the desktop; the shell and windows float over it. */
+/* Layers: the globe is the desktop (globe/globe.css); the shell and windows float over it
+   (shell/frame/frame.css, shell/wm/wm.css). */
 .atlas {
   position: relative;
   min-height: 100%;
-}
-
-.globe-layer {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-globe, 0);
-  background: var(--globe-space, var(--void));
-}
-
-.shell-frame {
-  position: relative;
-  z-index: var(--z-window, 10);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  padding: var(--space-6);
-  padding-inline: max(var(--space-6), env(safe-area-inset-left));
-}
-
-.windows {
-  display: grid;
-  gap: var(--space-6);
-  max-width: 1200px;
 }
 
 /* Placeholder window surface */
@@ -230,16 +208,6 @@ h2 {
   margin-right: var(--space-6);
 }
 
-/* Minimal status line (until the shell's status bar lands) */
-.status-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-6);
-  color: var(--text-2);
-  font-size: var(--fs-xs);
-}
-
 .dot {
   width: 8px;
   height: 8px;
@@ -284,10 +252,4 @@ h2 {
   font-size: var(--fs-ambient);
   font-weight: var(--fw-light, 300);
   margin: 0;
-}
-
-@media (max-width: 719px) {
-  .shell-frame {
-    padding: var(--space-5);
-  }
 }

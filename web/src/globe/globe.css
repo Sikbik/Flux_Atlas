@@ -1,0 +1,110 @@
+/* The globe layer and the overlays that ride it. Structure only, token-driven; the shell team owns
+   the visual pass (labels, tooltip, tether, the moon proxy's focus ring). */
+
+.globe-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-globe);
+  background: var(--globe-space, var(--void));
+  overflow: hidden;
+}
+
+.globe-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  outline: none;
+}
+
+/* Full-viewport, pointer-transparent layer for labels, tooltips, tethers and the moon proxy. */
+.globe-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-globe-hud);
+  pointer-events: none;
+  overflow: hidden;
+  contain: strict;
+}
+
+.globe-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+  white-space: nowrap;
+}
+
+.globe-place {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--globe-label-dim);
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.8);
+}
+
+.globe-place-country {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: var(--fw-medium, 500);
+  color: var(--globe-label);
+}
+
+.globe-tip {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  z-index: 1;
+}
+
+.globe-tip-title {
+  color: var(--text-1);
+}
+
+.globe-tip-hint kbd {
+  font-family: var(--font-mono);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-xs);
+  padding: 0 var(--space-1);
+}
+
+.globe-tether {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: var(--z-globe-hud);
+}
+
+.globe-tether path {
+  fill: none;
+  stroke: var(--globe-select, #ffffff);
+  stroke-opacity: 0.58;
+  stroke-width: 1px;
+}
+
+/* The moon's keyboard and assistive-technology target: transparent, the canvas does pointer hits. */
+.globe-moon-proxy {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max(44px, var(--touch-min, 44px));
+  height: max(44px, var(--touch-min, 44px));
+  margin: -22px 0 0 -22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: none;
+}
+
+.globe-moon-proxy:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 2px;
+}

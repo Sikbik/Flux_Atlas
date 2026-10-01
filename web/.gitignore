@@ -3,6 +3,12 @@
 
 node_modules/
 dist/
+dist-*/
 test-results/
 e2e/artifacts/
 *.tsbuildinfo
+
+# The repository ignores any folder named data/ (runtime data). public/data holds the Natural Earth
+# geography the globe engine loads, so it is kept.
+!public/data/
+!public/data/**

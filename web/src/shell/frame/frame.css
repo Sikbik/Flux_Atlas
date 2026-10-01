@@ -1,0 +1,348 @@
+/* Shell frame: structural regions over the persistent globe (design 3.1, 3.6). Token-driven and
+   deliberately neutral: the shell team owns the visual pass (glass, light sweeps, chips, odometers,
+   the designed boot). The shell layer passes pointer events through to the globe everywhere except
+   on its regions. */
+
+.shell {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  color: var(--text-1);
+}
+
+.shell-topbar,
+.shell-dock,
+.shell-bottom,
+.shell-statusbar,
+.shell-tabs,
+.shell-page {
+  pointer-events: auto;
+}
+
+/* ---- top bar --------------------------------------------------------------------------------- */
+
+.shell-topbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--topbar-h);
+  z-index: var(--z-topbar);
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding-inline: var(--space-6);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.shell-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-1);
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold, 600);
+}
+
+.shell-menus {
+  display: flex;
+  gap: var(--space-5);
+  color: var(--text-2);
+}
+
+.shell-omnibox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 1 440px;
+  min-width: 0;
+  height: 32px;
+  padding-inline: var(--space-4);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  color: var(--text-3);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.shell-topbar-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.shell-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.shell-chip-sub {
+  color: var(--text-3);
+}
+
+.shell-chip[data-phase="late"] .shell-chip-sub {
+  color: var(--status-warn);
+}
+
+.shell-chip[data-phase="quiet"] .shell-chip-sub {
+  color: var(--status-crit);
+}
+
+/* ---- dock ------------------------------------------------------------------------------------ */
+
+.shell-dock {
+  position: fixed;
+  left: var(--space-6);
+  top: calc(var(--topbar-h) + var(--space-6));
+  z-index: var(--z-dock);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 56px;
+  padding-block: var(--space-4);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+}
+
+.shell-launcher {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-2);
+}
+
+.shell-launcher:hover:not(:disabled),
+.shell-launcher[data-status="active"] {
+  background: var(--ink-3);
+  color: var(--text-1);
+}
+
+.shell-launcher:disabled {
+  opacity: 0.35;
+}
+
+.shell-dock-divider {
+  width: 24px;
+  height: 1px;
+  background: var(--line-2);
+  margin-block: var(--space-2);
+}
+
+/* ---- stage (the globe's free area; page routes without a window) ------------------------------ */
+
+.shell-stage {
+  position: fixed;
+  inset: var(--topbar-h) 0 calc(var(--rail-h) + var(--timeline-h) + var(--statusbar-h)) 0;
+  pointer-events: none;
+}
+
+.shell-page {
+  position: absolute;
+  top: var(--space-6);
+  left: calc(var(--dock-w) + var(--space-8));
+  max-width: min(820px, calc(100% - var(--dock-w) - var(--space-10)));
+  max-height: calc(100% - var(--space-10));
+  overflow: auto;
+  z-index: var(--z-window);
+}
+
+.shell-page:empty {
+  display: none;
+}
+
+/* ---- block rail and timeline strip ------------------------------------------------------------ */
+
+.shell-bottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--statusbar-h);
+  z-index: var(--z-rail);
+  display: grid;
+  grid-template-rows: var(--timeline-h) var(--rail-h);
+  background: linear-gradient(to top, var(--ink-0), transparent);
+}
+
+.shell-timeline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding-inline: var(--space-6);
+  font-size: var(--fs-2xs, var(--fs-xs));
+  border-bottom: 1px solid var(--line-1);
+}
+
+.shell-timeline-track {
+  flex: 1;
+  height: 1px;
+  background: var(--line-2);
+}
+
+.shell-rail {
+  list-style: none;
+  margin: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+  overflow: hidden;
+}
+
+.shell-block-card {
+  display: grid;
+  gap: var(--space-1);
+  width: 158px;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  background: var(--slab-bg-solid);
+  color: var(--text-1);
+  text-decoration: none;
+  font-size: var(--fs-xs);
+}
+
+.shell-block-ghost {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-3);
+}
+
+/* ---- status bar ------------------------------------------------------------------------------ */
+
+.shell-statusbar {
+  position: fixed;
+  inset: auto 0 0 0;
+  height: var(--statusbar-h);
+  z-index: var(--z-statusbar);
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding-inline: var(--space-6);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: var(--glass-bg);
+  border-top: 1px solid var(--glass-border);
+}
+
+.shell-statusbar-end {
+  margin-left: auto;
+}
+
+/* ---- boot veil ------------------------------------------------------------------------------- */
+
+.shell-boot {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-boot);
+  display: grid;
+  place-items: end start;
+  padding: var(--space-10);
+  background: var(--void);
+  pointer-events: auto;
+  transition:
+    opacity 600ms var(--ease-out, ease-out),
+    visibility 0s linear 0s;
+}
+
+.shell-boot[data-done] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 600ms var(--ease-out, ease-out),
+    visibility 0s linear 600ms;
+}
+
+.shell-boot-line {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* ---- phone ----------------------------------------------------------------------------------- */
+
+.shell-tabs {
+  display: none;
+}
+
+.shell[data-layout="phone"] .shell-topbar {
+  gap: var(--space-4);
+  padding-inline: var(--space-5);
+}
+
+.shell[data-layout="phone"] .shell-omnibox {
+  flex: 1 1 auto;
+}
+
+.shell[data-layout="phone"] .shell-stage {
+  inset: var(--topbar-h) 0 var(--tabbar-h) 0;
+}
+
+.shell[data-layout="phone"] .shell-page {
+  left: var(--space-5);
+  right: var(--space-5);
+  max-width: none;
+}
+
+.shell[data-layout="phone"] .shell-tabs {
+  position: fixed;
+  inset: auto 0 0 0;
+  height: var(--tabbar-h);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: var(--z-statusbar);
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  border-top: 1px solid var(--glass-border);
+}
+
+.shell-tab {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-1);
+  min-height: var(--touch-min);
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--fs-2xs, var(--fs-xs));
+  text-decoration: none;
+}
+
+.shell-tab[data-status="active"] {
+  color: var(--text-1);
+}
+
+.shell-tab:disabled {
+  opacity: 0.4;
+}
+
+@media (max-width: 1360px) {
+  .shell-hide-compact {
+    display: none;
+  }
+}
+
+/* Placeholder views inside a window: the window frame already draws the surface. */
+.wm-body > .panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}

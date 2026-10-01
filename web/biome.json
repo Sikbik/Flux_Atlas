@@ -12,6 +12,8 @@
       "!src/styles/tokens.css",
       "!src/styles/fonts.css",
       "!dist",
+      "!dist-*",
+      "!public",
       "!node_modules"
     ]
   },

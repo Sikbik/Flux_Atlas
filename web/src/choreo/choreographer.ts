@@ -2,16 +2,19 @@
 //
 // Rules (ARCHITECTURE section 8, design sections 4.2, 6.4 I and M, 6.5, 6.6):
 //
-// The Beat. A block is one message with its child events, played as a staged sequence. The Flux
-// moon is the chain: the producer flares (t = 0, with the shockwave), a beam climbs to the moon,
-// the moon flares as it accepts the block, then three beams descend in tier order (Stratus,
-// Nimbus, Cumulus) to the payees and land as payout pulses; the dev-fund share drifts off; the
-// heartbeat ripple (confirm transactions) spreads over 2 to 4 s. A second block inside 3 s plays
-// the compact version (beams only). The Beat is never skipped or delayed: a new block flushes the
-// previous block's pending beams at once and drops its leftover texture.
+// The Beat (design 6.4 I). A block is one message with its child events, played as a staged
+// sequence on the `RELAY_MS` timeline. The Flux moon is the chain: the producer flares (t = 0, with
+// the shockwave), a beam climbs to the moon (60 to 780), the moon receives the block (all four pieces
+// flash at 780), then it fires its four outputs in coinbase order, `DOWNLINK_ORDER` (dev fund,
+// Cumulus, Nimbus, Stratus), 130 ms apart from 890: each output's piece flashes 60 ms before it fires
+// (`moonFlare` with `piece`), the dev fund's chip leaves the bar (950), and each payout beam leaves
+// its piece (1020, 1150, 1280) and lands 860 ms later (1880, 2010, 2140). The heartbeat ripple
+// (confirm transactions) spreads over 2 to 4 s. A second block inside 3 s plays the compact version
+// (beams only). The Beat is never skipped or delayed: a new block flushes the previous block's
+// pending beams at once and drops its leftover texture.
 //
 // Pre-aim. `next_payees` aims reticles on the three payees of the next block, but never during a
-// landing: the aim waits until the landing's beams have arrived.
+// landing: the aim waits until the next payees resolve at 2600 ms (the sequence ends at 2780).
 //
 // Budgets. P2 network effects (joins, leaves, status changes, app instances) are capped at 8 per
 // second by a token bucket; in any 1 s window the first 3 of a kind render individually and the
@@ -23,8 +26,9 @@
 // command summarizes what happened. Messages that are already old when they arrive (a replay
 // after reconnect) are not animated either; they are recapped once the catch-up is over.
 //
-// Motion. `reduced`: a static flash at the producer and a 1.2 s highlight of the payees instead
-// of beams, no stagger. `off`: no commands at all (the UI shows text).
+// Motion. `reduced`: a static flash at the producer, the uplink as a static line (380 ms, the moon
+// receives at 440), every output at 480 together as static lines, and the payees highlighted for
+// 1.2 s from 860; no stagger, no shockwave. `off`: no commands at all (the UI shows text).
 //
 // Deterministic: all timing goes through the injected scheduler.
 
@@ -35,16 +39,25 @@ import type { NodeChange } from '../api/generated/NodeChange';
 import type { NodesDelta } from '../api/generated/NodesDelta';
 import type { Tier } from '../api/generated/Tier';
 import { realScheduler, type Scheduler, type TimerHandle } from '../lib/scheduler';
-import type { EffectSink, Motion, PulseKind, RecapCmd } from './effects';
+import {
+  type CoinbaseOutput,
+  DOWNLINK_ORDER,
+  type EffectSink,
+  type Motion,
+  type PayoutPiece,
+  PIECE_OF,
+  type PulseKind,
+  RELAY_MS,
+  type RecapCmd,
+} from './effects';
 
-/** Beat timeline (ms), from the design tokens (--dur-uplink, --dur-downlink, --dur-moon-flash). */
+/**
+ * Beat timeline (ms). The relay itself (uplink, moon, outputs, landings, aim) is `RELAY_MS` in
+ * effects.ts, shared with the globe engine; these are the choreographer's own texture timings.
+ */
 export const BEAT_TIMING = {
-  uplinkDelay: 160,
-  uplinkMs: 720,
-  moonFlashMs: 180,
-  downlinkMs: 900,
-  downlinkStagger: 120,
-  devFundAfterFlare: 360,
+  uplinkMs: RELAY_MS.upDur,
+  downlinkMs: RELAY_MS.downDur,
   heartbeatStart: 1_600,
   heartbeatSpreadMinMs: 2_000,
   heartbeatSpreadMaxMs: 4_000,
@@ -52,10 +65,7 @@ export const BEAT_TIMING = {
   heartbeatTickMs: 100,
   startsAt: 2_200,
   startsStagger: 80,
-  compactWindowMs: 3_000,
-  compactUplinkMs: 300,
-  compactDownlinkMs: 600,
-  compactStagger: 60,
+  compactWindowMs: RELAY_MS.compactWindow,
   reducedHighlightMs: 1_200,
   instanceStagger: 80,
 } as const;
@@ -96,8 +106,73 @@ export interface ChoreographerOptions {
   emissionHeights?: readonly number[];
 }
 
-/** Tier order of the downlinks: the chain pays the largest share first. */
-const DOWNLINK_ORDER: Record<Tier, number> = { stratus: 0, nimbus: 1, cumulus: 2, unknown: 3 };
+/** Coinbase output index of a payout's tier (`DOWNLINK_ORDER`); an unclassified payout fires last. */
+function outputIndex(tier: Tier): number {
+  const i = DOWNLINK_ORDER.indexOf(tier as CoinbaseOutput);
+  return i > 0 ? i : DOWNLINK_ORDER.length;
+}
+
+/** The moon piece a payout beam leaves from (an unclassified payout uses the cap's slot). */
+function payoutPiece(tier: Tier): PayoutPiece {
+  return tier === 'cumulus' || tier === 'nimbus' ? PIECE_OF[tier] : PIECE_OF.stratus;
+}
+
+/** One relay timeline, resolved for full, compact or reduced motion (ms after the Beat). */
+interface RelayPlan {
+  upAt: number;
+  upDur: number;
+  recvAt: number;
+  fireAt: number;
+  gap: number;
+  downDur: number;
+  flashLead: number;
+  landEarly: number;
+  aimAt: number;
+}
+
+function relayPlan(compact: boolean, reduced: boolean): RelayPlan {
+  const R = RELAY_MS;
+  if (reduced) {
+    return {
+      upAt: R.up,
+      upDur: R.reducedUpDur,
+      recvAt: R.reducedRecv,
+      fireAt: R.reducedFire,
+      gap: 0,
+      downDur: R.reducedLand - R.reducedFire,
+      flashLead: 0,
+      landEarly: 0,
+      aimAt: R.aim,
+    };
+  }
+  if (compact) {
+    const recvAt = R.compactUpDur;
+    const fireAt = recvAt + R.compactRecvToFire;
+    const lastLand = fireAt + (DOWNLINK_ORDER.length - 1) * R.compactGap + R.compactDownDur - R.landEarly;
+    return {
+      upAt: 0,
+      upDur: R.compactUpDur,
+      recvAt,
+      fireAt,
+      gap: R.compactGap,
+      downDur: R.compactDownDur,
+      flashLead: R.flashLead,
+      landEarly: R.landEarly,
+      aimAt: lastLand,
+    };
+  }
+  return {
+    upAt: R.up,
+    upDur: R.upDur,
+    recvAt: R.recv,
+    fireAt: R.fire,
+    gap: R.gap,
+    downDur: R.downDur,
+    flashLead: R.flashLead,
+    landEarly: R.landEarly,
+    aimAt: R.aim,
+  };
+}
 
 class TokenBucket {
   private tokens: number;
@@ -134,9 +209,9 @@ interface Landing {
   height: number;
   /** Scheduler time of t = 0. */
   start: number;
-  /** Scheduler time when the last payout lands. */
-  landsAt: number;
-  /** True once the beams have landed (the aim may be placed for the next block). */
+  /** Scheduler time when the sequence has played out (2780 ms after the Beat at full motion). */
+  endsAt: number;
+  /** True once the next payees may be aimed (2600 ms after the Beat). */
   done: boolean;
   /** Pending P0 steps (flushed, not dropped, when the next block arrives). */
   p0: Map<TimerHandle, () => void>;
@@ -341,7 +416,7 @@ export class Choreographer {
     const landing: Landing = {
       height: m.height,
       start: now,
-      landsAt: now,
+      endsAt: now,
       done: false,
       p0: new Map(),
       texture: new Set(),
@@ -359,57 +434,47 @@ export class Choreographer {
       }),
     );
 
-    const payouts = [...m.payouts].sort((a, b) => DOWNLINK_ORDER[a.tier] - DOWNLINK_ORDER[b.tier]);
+    const payouts = [...m.payouts].sort((a, b) => outputIndex(a.tier) - outputIndex(b.tier));
     const aimed = this.aimedHeight === m.height;
+    const P = relayPlan(compact, reduced);
+    const flare = (at: number, piece: 'bar' | PayoutPiece) =>
+      this.p0(landing, at, () =>
+        this.sink.moonFlare({ height: m.height, durationMs: RELAY_MS.pieceFlashDur, compact, piece }),
+      );
 
-    if (reduced) {
-      for (const p of payouts) {
-        this.play(() =>
-          this.sink.payoutLanded({
-            height: m.height,
-            node: p.node,
-            tier: p.tier,
-            amount: p.amount,
-            mine: p.node !== null && this.focus.has(p.node),
-            highlightMs: BEAT_TIMING.reducedHighlightMs,
-          }),
-        );
-      }
-      const hb = [...m.heartbeats, ...m.confirms];
-      if (hb.length)
-        this.play(() => this.sink.heartbeats({ height: m.height, nodes: this.sampleForBudget(hb, 1) }));
-      this.focusPulses(m);
-      landing.landsAt = now;
-      this.landed(landing, aimed);
-      return;
-    }
-
-    const T = BEAT_TIMING;
-    const uplinkDelay = compact ? 0 : T.uplinkDelay;
-    const uplinkMs = compact ? T.compactUplinkMs : T.uplinkMs;
-    const downMs = compact ? T.compactDownlinkMs : T.downlinkMs;
-    const staggerMs = compact ? T.compactStagger : T.downlinkStagger;
-    const flareAt = uplinkDelay + uplinkMs;
-
-    this.p0(landing, uplinkDelay, () =>
-      this.sink.uplink({ height: m.height, from: m.producer?.id ?? null, durationMs: uplinkMs }),
+    this.p0(landing, P.upAt, () =>
+      this.sink.uplink({ height: m.height, from: m.producer?.id ?? null, durationMs: P.upDur }),
     );
-    this.p0(landing, flareAt, () =>
-      this.sink.moonFlare({ height: m.height, durationMs: T.moonFlashMs, compact }),
+    // The moon receives the block: all four pieces flash and a bead joins its chain.
+    this.p0(landing, P.recvAt, () =>
+      this.sink.moonFlare({ height: m.height, durationMs: RELAY_MS.recvFlashDur, compact }),
     );
-    let lastLand = flareAt;
-    payouts.forEach((p, order) => {
-      const launch = flareAt + order * staggerMs;
-      const land = launch + downMs;
-      lastLand = Math.max(lastLand, land);
+    // Output 0, the dev fund: the bar flashes, then its chip leaves the bar (no beam, no node).
+    const devAt = P.fireAt;
+    flare(devAt - P.flashLead, PIECE_OF.dev);
+    this.p0(landing, devAt + (reduced ? 0 : RELAY_MS.fundAfter), () =>
+      this.sink.devFund({ height: m.height, amount: m.dev_fund, piece: PIECE_OF.dev }),
+    );
+    // Outputs 1 to 3: Cumulus, Nimbus, Stratus, a crescendo that ends on the largest payout.
+    const flashed = new Set<PayoutPiece>();
+    for (const p of payouts) {
+      const order = outputIndex(p.tier);
+      const launch = P.fireAt + order * P.gap;
+      const land = launch + P.downDur - P.landEarly;
+      const piece = payoutPiece(p.tier);
       const mine = p.node !== null && this.focus.has(p.node);
+      if (!flashed.has(piece)) {
+        flashed.add(piece);
+        flare(launch - P.flashLead, piece);
+      }
       this.p0(landing, launch, () =>
         this.sink.downlink({
           height: m.height,
           to: p.node,
           tier: p.tier,
+          piece,
           amount: p.amount,
-          durationMs: downMs,
+          durationMs: P.downDur,
           order,
           mine,
         }),
@@ -421,17 +486,23 @@ export class Choreographer {
           tier: p.tier,
           amount: p.amount,
           mine,
-          highlightMs: null,
+          highlightMs: reduced ? BEAT_TIMING.reducedHighlightMs : null,
         }),
       );
-    });
-    this.p0(landing, flareAt + (compact ? T.moonFlashMs : T.devFundAfterFlare), () =>
-      this.sink.devFund({ height: m.height, amount: m.dev_fund }),
-    );
-    // The last beam arrives: the reticles collapse, then the next block's payees may be aimed.
-    this.p0(landing, lastLand, () => this.landed(landing, aimed));
-    landing.landsAt = now + lastLand;
+    }
+    // The next payees resolve: the reticles of this block clear and the next block's are aimed.
+    this.p0(landing, P.aimAt, () => this.landed(landing, aimed));
+    landing.endsAt = now + (reduced || compact ? P.aimAt : RELAY_MS.end);
 
+    if (reduced) {
+      const hb = [...m.heartbeats, ...m.confirms];
+      if (hb.length)
+        this.play(() => this.sink.heartbeats({ height: m.height, nodes: this.sampleForBudget(hb, 1) }));
+      this.focusPulses(m);
+      return;
+    }
+
+    const T = BEAT_TIMING;
     // P1: focus nodes among the heartbeats, confirms and starts pulse individually.
     this.focusPulses(m);
     if (compact) {
@@ -477,7 +548,7 @@ export class Choreographer {
       });
   }
 
-  /** End of a landing's beams: clear this height's aim, then place any aim that was waiting. */
+  /** The next payees resolve (2600 ms): clear this height's aim, then place any aim that was waiting. */
   private landed(l: Landing, aimed: boolean): void {
     l.done = true;
     if (aimed && this.aimedHeight === l.height) this.clearAim();

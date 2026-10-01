@@ -25,7 +25,7 @@ import {
 } from '../../api/queries';
 import { formatAgo, formatHeight, formatInt, formatUtcTime } from '../../lib/format';
 import { useNow } from '../../lib/useClock';
-import { type MotionPref, useUi } from '../../store/ui';
+import { GLOBE_ARTS, type MotionPref, type PerfPref, useUi } from '../../store/ui';
 import { useMempoolEntries, useNetwork, useNextPayees, useRuntime, useSummary, useTip } from '../context';
 import type { AnalyticsTab, QueueTier } from '../search';
 import { Panel, QueryState } from './Panel';
@@ -276,10 +276,15 @@ export function AboutView() {
 }
 
 const MOTIONS: MotionPref[] = ['system', 'full', 'reduced', 'off'];
+const PERFS: PerfPref[] = ['auto', 'high', 'balanced', 'lite'];
 
 export function SettingsView() {
   const motion = useUi((s) => s.motion);
   const setMotion = useUi((s) => s.setMotion);
+  const perf = useUi((s) => s.perf);
+  const setPerf = useUi((s) => s.setPerf);
+  const art = useUi((s) => s.globeArt);
+  const setArt = useUi((s) => s.setGlobeArt);
   return (
     <Panel title="Settings" kind="settings">
       <fieldset className="field">
@@ -294,6 +299,23 @@ export function SettingsView() {
               onChange={() => setMotion(m)}
             />{' '}
             {m}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset className="field">
+        <legend>Globe style</legend>
+        {GLOBE_ARTS.map((a) => (
+          <label key={a} className="radio">
+            <input type="radio" name="globe-art" value={a} checked={art === a} onChange={() => setArt(a)} />{' '}
+            {a}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset className="field">
+        <legend>Performance</legend>
+        {PERFS.map((p) => (
+          <label key={p} className="radio">
+            <input type="radio" name="perf" value={p} checked={perf === p} onChange={() => setPerf(p)} /> {p}
           </label>
         ))}
       </fieldset>
