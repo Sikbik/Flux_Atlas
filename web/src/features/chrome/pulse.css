@@ -239,8 +239,9 @@ button.evt-link:focus-visible {
   text-align: right;
 }
 
-/* The fresh row: a 2 px bar and a wash that decay over 1.6 s. */
-.evt[data-fresh]::before {
+/* The fresh row: a 2 px bar and a wash that decay over 1.6 s (Settle). A payment to a watched node earns the
+   motion language's Current instead (`data-fx="current"`): a row either settles or is lit, never both. */
+.evt[data-fresh]:not([data-fx~="current"])::before {
   content: "";
   position: absolute;
   inset: 0;
