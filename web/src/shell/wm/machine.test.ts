@@ -4,6 +4,7 @@ import {
   globeInset,
   initialWmState,
   minimizedWindows,
+  planetMinWidth,
   snapPreview,
   topmost,
   visibleWindows,
@@ -351,6 +352,77 @@ describe('globe inset', () => {
       t: 'minimize',
       id: 'block:1',
     });
+    expect(globeInset(s).left).toBe(0);
+  });
+});
+
+describe("the planet's minimum width", () => {
+  it('is about 328 px on a 1600 by 900 screen and follows the height', () => {
+    expect(planetMinWidth(1600, 900)).toBeCloseTo(328, 0);
+    expect(planetMinWidth(3200, 1800)).toBeCloseTo(2 * planetMinWidth(1600, 900), 3);
+    expect(planetMinWidth(1100, 700)).toBeLessThan(planetMinWidth(1600, 900));
+  });
+});
+
+describe('globe inset policy for floating windows', () => {
+  const about = { type: 'about', key: null } as const;
+  const explorer = { type: 'block', key: '1' } as const;
+
+  it("keeps a floating explorer's side while the planet still fits beside it", () => {
+    const s = run(start(), route(explorer));
+    expect(globeInset(s).left).toBe(118 + 820 + 24);
+  });
+
+  it('lets a floating window float over the globe when it would squeeze the planet out', () => {
+    // About docked at the right reserves 464 + 24; the explorer would leave 1600 - 962 - 488 = 150 px, under
+    // the planet's 328, so it does not count and the planet frames in what About leaves.
+    const s = run(start(), route(explorer, [about]));
+    expect(s.windows['about:']!.placement).toBe('docked');
+    expect(globeInset(s)).toEqual({ left: 0, right: 464 + 24, top: 52, bottom: 132 });
+  });
+
+  it('counts the same window once it is narrow enough to leave the planet its room', () => {
+    let s = run(start(), route(explorer, [about]));
+    s = run(s, { t: 'nudge', id: 'block:1', dx: 0, dy: 0, dw: -400, dh: 0 });
+    expect(s.windows['block:1']!.rect.w).toBe(420);
+    // 1600 - (118 + 420 + 24) - 488 = 550, over 328.
+    expect(globeInset(s).left).toBe(118 + 420 + 24);
+  });
+
+  it('stops counting windows from the widest down, never the nearest first', () => {
+    // 1500 wide: the queue (820 from x 118) leaves 538 and counts; analytics (1112) would leave 246, under the
+    // planet's 328, so it floats over the globe and the queue's edge is the one that counts.
+    let s = start();
+    s = run(s, {
+      t: 'setViewport',
+      viewport: { w: 1500, h: 900 },
+      workspace: { x: 0, y: 52, w: 1500, h: 716 },
+    });
+    s = run(s, open('queue'));
+    s = run(s, open('analytics'));
+    const queue = s.windows['queue:']!.rect;
+    const analytics = s.windows['analytics:']!.rect;
+    expect(analytics.x + analytics.w + 24).toBeGreaterThan(1500 - planetMinWidth(1500, 900));
+    expect(globeInset(s).left).toBe(queue.x + queue.w + 24);
+  });
+
+  it('always reserves a docked window, even when the planet no longer fits beside it', () => {
+    // 720 wide: the app inspector reserves 452 + 24 and leaves 244, under the planet's minimum there.
+    let s = start();
+    s = run(s, {
+      t: 'setViewport',
+      viewport: { w: 720, h: 900 },
+      workspace: { x: 0, y: 52, w: 720, h: 716 },
+    });
+    s = run(s, route({ type: 'app', key: 'Fluxtracker' }));
+    expect(s.layout).toBe('desktop');
+    expect(720 - globeInset(s).right).toBeLessThan(planetMinWidth(720, 900));
+    expect(globeInset(s).right).toBe(452 + 24);
+  });
+
+  it('reserves nothing for a maximized window: the planet stays framed behind it', () => {
+    let s = run(start(), route(explorer));
+    s = run(s, { t: 'maximize', id: 'block:1' });
     expect(globeInset(s).left).toBe(0);
   });
 });

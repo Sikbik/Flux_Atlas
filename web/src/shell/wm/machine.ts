@@ -1,6 +1,8 @@
 // The window manager as a pure reducer: `wmReduce(state, action) -> state`. No DOM, no timers, no
 // React. Unchanged state is returned by identity, so subscribers can skip work. See README.md.
 
+import { DEFAULT_FRAMING } from '../../globe/engine/framing';
+import { homeView } from '../../globe/engine/moon/orbit';
 import {
   defaultFloatRect,
   FREE_GAP,
@@ -167,10 +169,30 @@ const LEFT_TYPES = new Set<WindowType>(
   (Object.keys(WINDOW_SPECS) as WindowType[]).filter((t) => WINDOW_SPECS[t].side === 'left'),
 );
 
+const NO_INSET = { left: 0, right: 0, top: 0, bottom: 0 } as const;
+let minWidthFor = { w: 0, h: 0, px: 0 };
+
+/**
+ * The narrowest the planet is ever drawn on a desktop viewport, CSS px: the framing never shrinks it below
+ * `minFit` of its design size (framing.ts), and the design size is what the camera shows at the home zoom
+ * (`homeView` mirrors the rig). A free area narrower than this cannot hold the planet at all.
+ */
+export function planetMinWidth(w: number, h: number): number {
+  if (minWidthFor.w !== w || minWidthFor.h !== h)
+    minWidthFor = { w, h, px: 2 * DEFAULT_FRAMING.minFit * homeView(w, h, NO_INSET).planetR };
+  return minWidthFor.px;
+}
+
 /**
  * Insets for `engine.setInset` so the globe and the moon centre in the free area (design 3.2): the
  * workspace edges, plus the docked inspector (its width + 24) on the right and a left-floating
  * explorer, queue or analytics window (its right edge + 24) on the left. Phone: the sheet's height.
+ *
+ * Docked windows always reserve their side. A maximized window covers the whole workspace and reserves
+ * nothing: the planet stays framed behind it. A floating window reserves its side only while the free
+ * area left after it is still as wide as the planet's minimum (`planetMinWidth`); beyond that it floats
+ * over the globe, and the planet frames in what the docked windows leave. So an 820 px explorer beside
+ * a docked About Flux on a 1600 px screen no longer squeezes the planet out of its free area.
  */
 export function globeInset(s: WmState): Insets {
   const ws = s.workspace;
@@ -185,13 +207,21 @@ export function globeInset(s: WmState): Insets {
   let right = Math.max(0, v.w - (ws.x + ws.w));
   const top = ws.y;
   const bottom = Math.max(0, v.h - (ws.y + ws.h));
+  const floating: number[] = [];
   for (const w of framedOpen(s)) {
     if (w.mode === 'maximized') continue;
     if (w.placement === 'docked') {
       right = Math.max(right, v.w - dockedRect(s, w).x + FREE_GAP);
     } else if (LEFT_TYPES.has(w.type) && w.rect.x + w.rect.w / 2 < v.w / 2) {
-      left = Math.max(left, w.rect.x + w.rect.w + FREE_GAP);
+      floating.push(w.rect.x + w.rect.w + FREE_GAP);
     }
+  }
+  // The nearest edges first: a window that does not fit leaves every wider one over the globe as well.
+  const room = planetMinWidth(v.w, v.h);
+  for (const edge of floating.sort((a, b) => a - b)) {
+    const next = Math.max(left, edge);
+    if (v.w - next - right < room) break;
+    left = next;
   }
   // Never leave less than a sliver of globe.
   if (left + right > v.w - 120) left = Math.max(ws.x, v.w - 120 - right);
