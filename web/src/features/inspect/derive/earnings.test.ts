@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { earningsFromPayments, earningsFromTotals, windowLabel } from './earnings';
+import { earningsFromPayments, earningsFromTotals, earningTiles, windowLabel } from './earnings';
 
 const DAY = 86_400_000;
 const NOW = 100 * DAY;
@@ -69,5 +69,59 @@ describe('windowLabel', () => {
       '30 days, since first ingest',
     );
     expect(windowLabel('30 days', { flux: null, complete: false, estimate: false })).toBe('30 days');
+  });
+});
+
+describe('earningTiles', () => {
+  const cut = (flux: number) => ({ flux, complete: false, estimate: false });
+  const full = (flux: number) => ({ flux, complete: true, estimate: false });
+  const names = ['24 hours', '7 days', '30 days'] as const;
+  const tilesOf = (a: ReturnType<typeof cut>, b: ReturnType<typeof cut>, c: ReturnType<typeof cut>) =>
+    earningTiles([
+      [names[0], a],
+      [names[1], b],
+      [names[2], c],
+    ]);
+
+  it('says a young ledger once instead of three times', () => {
+    const t = tilesOf(cut(10), cut(10), cut(10));
+    expect(t).toHaveLength(1);
+    expect(t[0]).toMatchObject({ label: '24 hours', cut: true, merged: true });
+  });
+
+  it('keeps every window that has its own figure', () => {
+    const t = tilesOf(full(10), full(70), full(300));
+    expect(t.map((x) => x.label)).toEqual(names);
+    expect(t.every((x) => !x.merged)).toBe(true);
+  });
+
+  it('merges only the windows cut to the same figure', () => {
+    const t = tilesOf(full(10), cut(30), cut(30));
+    expect(t.map((x) => x.label)).toEqual(['24 hours', '7 days']);
+    expect(t[1]).toMatchObject({ merged: true });
+    expect(t[0]).toMatchObject({ merged: false });
+  });
+
+  it('never merges an unknown or an estimated window', () => {
+    const unknown = { flux: null, complete: false, estimate: false };
+    const est = { flux: 5, complete: false, estimate: true };
+    expect(
+      earningTiles([
+        [names[0], unknown],
+        [names[1], unknown],
+        [names[2], unknown],
+      ]),
+    ).toHaveLength(3);
+    expect(
+      earningTiles([
+        [names[0], est],
+        [names[1], est],
+        [names[2], est],
+      ]),
+    ).toHaveLength(3);
+  });
+
+  it('keeps cut windows with different figures apart', () => {
+    expect(tilesOf(cut(10), cut(10), cut(25)).map((x) => x.label)).toEqual(['24 hours', '30 days']);
   });
 });

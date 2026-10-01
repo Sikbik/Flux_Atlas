@@ -78,3 +78,36 @@ export function earningsFromTotals(o: {
 export function windowLabel(name: string, w: EarnedWindow): string {
   return w.complete || w.flux === null ? name : `${name}, since first ingest`;
 }
+
+export interface EarnTile {
+  label: string;
+  window: EarnedWindow;
+  /** The ledger began inside this window, so the figure is everything since the first ingest. */
+  cut: boolean;
+  /** Stands for more than one window that all came to the same figure. */
+  merged: boolean;
+}
+
+/**
+ * A ledger younger than a window cuts that window short, so a young ledger gives the same figure for the day,
+ * the week and the month. Windows cut short to the same figure collapse into one tile, so they are said once
+ * (as "paid so far") rather than three times, which reads as a mistake.
+ */
+export function earningTiles(windows: readonly (readonly [string, EarnedWindow])[]): EarnTile[] {
+  const tiles: EarnTile[] = [];
+  for (const [label, window] of windows) {
+    const cut = window.flux !== null && !window.estimate && !window.complete;
+    const prev = tiles[tiles.length - 1];
+    if (
+      cut &&
+      prev?.cut &&
+      prev.window.flux !== null &&
+      Math.abs(prev.window.flux - (window.flux ?? 0)) < 1e-9
+    ) {
+      prev.merged = true;
+      continue;
+    }
+    tiles.push({ label, window, cut, merged: false });
+  }
+  return tiles;
+}

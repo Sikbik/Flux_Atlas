@@ -3,7 +3,7 @@
 
 import { formatInt } from '../../../lib/format';
 import { AnimatedNumber, Section, Stat, StatGrid, tierLabel } from '../../../ui';
-import type { EarnedWindow, Earnings } from '../derive/earnings';
+import { type EarnedWindow, type Earnings, earningTiles } from '../derive/earnings';
 import { etaShort } from '../derive/eta';
 import type { FleetNode, FleetState } from '../derive/operator';
 import { estimatePayment } from '../derive/queue';
@@ -94,29 +94,35 @@ export function EarningsSection({
   scope?: string;
 }) {
   const e = earnings;
-  const windows: [string, EarnedWindow][] = [
+  const tiles = earningTiles([
     ['24 hours', e.h24],
     ['7 days', e.d7],
     ['30 days', e.d30],
-  ];
-  const unknown = windows.every(([, w]) => w.flux === null);
-  const notes = windows.map(([, w]) => windowCaption(w, 'since first ingest'));
+  ]);
+  const unknown = tiles.every((t) => t.window.flux === null);
+  const notes = tiles.map((t) => windowCaption(t.window, 'since first ingest'));
   // When every figure carries the same note (a young ledger), say it once, in the heading.
-  const shared = notes.every((n) => n === notes[0]) ? notes[0] : undefined;
+  // A lone tile keeps its own note: a tile with no caption sits half empty.
+  const shared = tiles.length > 1 && notes.every((n) => n === notes[0]) ? notes[0] : undefined;
+  const three = tiles.length === 3;
   return (
     <Section
       title="Earnings"
       aside={pending ? undefined : (shared ?? (unknown ? undefined : 'paid to the fleet'))}
     >
-      <StatGrid min={TRIO_MIN} className="ix-trio">
-        {windows.map(([label, w], i) => (
+      <StatGrid
+        min={TRIO_MIN}
+        columns={three ? undefined : tiles.length}
+        className={three ? 'ix-trio' : undefined}
+      >
+        {tiles.map((t, i) => (
           <Stat
-            key={label}
-            label={label}
+            key={t.label}
+            label={t.merged ? 'Paid so far' : t.label}
             loading={pending}
-            value={w.flux === null ? null : <AnimatedNumber value={w.flux} format={fmt2} />}
+            value={t.window.flux === null ? null : <AnimatedNumber value={t.window.flux} format={fmt2} />}
             unit="FLUX"
-            caption={shared ? undefined : (notes[i] ?? (w.flux === null && scope ? scope : undefined))}
+            caption={shared ? undefined : (notes[i] ?? (t.window.flux === null && scope ? scope : undefined))}
           />
         ))}
       </StatGrid>
