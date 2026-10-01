@@ -31,6 +31,7 @@ export function createEnv(d: EnvDeps): CmdEnv {
   const ctx: RunCtx = {
     router: d.router,
     store: d.runtime.store,
+    effects: d.runtime.effects,
     engine: d.engine,
     dismiss: () => {},
     page: true,

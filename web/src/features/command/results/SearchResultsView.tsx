@@ -28,14 +28,14 @@ function summary(model: PaletteModel, loading: boolean): string {
 
 export function SearchResultsView({ text }: { text: string }) {
   const router = useRouter();
-  const { store } = useRuntime();
+  const { store, effects } = useRuntime();
   const handles = useGlobeHandles();
   const [chip, setChip] = useState<KindChip>('all');
   const { model, server } = useSearchModel({ raw: text, chip, limits: PAGE_LIMITS, ask: 'all' });
 
   const ctx = useMemo<RunCtx>(
-    () => ({ router, store, engine: () => handles.engine.get(), dismiss: () => {}, page: true }),
-    [router, store, handles],
+    () => ({ router, store, effects, engine: () => handles.engine.get(), dismiss: () => {}, page: true }),
+    [router, store, effects, handles],
   );
 
   const close = useCallback(() => {

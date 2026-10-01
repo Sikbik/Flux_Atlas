@@ -1028,6 +1028,8 @@ const sudo = wink('sudo', (_e, io) =>
 const gm = wink('gm', (env, io) => {
   const tip = env.store.tip;
   io.line(sp('gm.'), tip ? dim(` The chain says gm back, at block ${formatInt(tip.height)}.`) : sp(''));
+  // The same hidden greeting as the palette's: the moon answers.
+  env.action('egg.gm');
 });
 const exit = wink('exit', (_e, io) => io.line(sp('There is no exit. There is Esc, and the close button.')));
 const whoami = wink('whoami', (_e, io) =>

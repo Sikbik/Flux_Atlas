@@ -339,3 +339,14 @@ describe('kind chips', () => {
     expect(all.counts.all).toBeGreaterThanOrEqual(all.counts.apps);
   });
 });
+
+describe('the hidden greeting', () => {
+  it('is found by typing gm, first in its group, and by nothing else', () => {
+    const m = run('gm');
+    expect(ids(m)).toContain('egg:gm');
+    expect(group(m, 'commands')?.rows[0]?.id).toBe('egg:gm');
+    expect(ids(run('GM '))).toContain('egg:gm');
+    expect(ids(run('gmx'))).not.toContain('egg:gm');
+    expect(ids(run(''))).not.toContain('egg:gm');
+  });
+});

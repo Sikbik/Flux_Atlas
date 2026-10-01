@@ -45,7 +45,7 @@ const PLACEHOLDER = 'Search nodes, apps, blocks, addresses, or type a command';
 
 export default function Palette({ phase, urlText, seed, close, via }: PaletteProps) {
   const router = useRouter();
-  const { store } = useRuntime();
+  const { store, effects } = useRuntime();
   const handles = useGlobeHandles();
   const loaded = useNetwork((s) => s.loaded);
 
@@ -77,8 +77,8 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
   // ---- running rows ---------------------------------------------------------------------------
 
   const ctx = useMemo<RunCtx>(
-    () => ({ router, store, engine: () => handles.engine.get(), dismiss: close }),
-    [router, store, handles, close],
+    () => ({ router, store, effects, engine: () => handles.engine.get(), dismiss: close }),
+    [router, store, effects, handles, close],
   );
 
   const focusInput = useCallback((at?: number) => {

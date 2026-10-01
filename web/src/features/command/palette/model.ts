@@ -11,6 +11,7 @@ import type { NetworkStore } from '../../../store/network';
 import { activeFilters, describeFilters, type FilterLookup, parseFilterExpr } from '../filters';
 import { countryPlace, matchPlaces } from '../places';
 import { ACTIONS, type ActionEnv, actionById, actionRow, actionRows } from './actions';
+import { gmRow, isGm } from './egg';
 import {
   classifyIpQuery,
   getLocalIndex,
@@ -684,6 +685,9 @@ function collectGeneral(
   const shape = classifyText(text);
   const lower = text.toLowerCase();
   const total = index.total;
+
+  // The hidden greeting: nothing advertises it, and it is not saved under Recent.
+  if (isGm(text)) c.add(gmRow());
 
   // A word that is itself a prefix teaches the prefix.
   const asPrefix = PREFIX_WORDS[lower];

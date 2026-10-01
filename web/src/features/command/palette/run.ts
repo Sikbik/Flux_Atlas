@@ -4,9 +4,10 @@
 
 import type { AnyRouter } from '@tanstack/react-router';
 import { toast } from '../../../app/toasts';
+import type { EffectSink } from '../../../choreo/effects';
 import type { GlobeTarget } from '../../../globe';
 import type { NetworkStore } from '../../../store/network';
-import { type GlobeArtPref, type MotionPref, type PerfPref, useUi } from '../../../store/ui';
+import { effectiveMotion, type GlobeArtPref, type MotionPref, type PerfPref, useUi } from '../../../store/ui';
 import { track } from '../../achievements/events';
 import { enterAmbient, hrefWithoutPalette } from '../../ambient/enter';
 import { usePrefs } from '../../settings/prefs';
@@ -15,6 +16,7 @@ import type { MeshMode } from '../layers';
 import { withLayer, withMeshMode } from '../layers';
 import { type NavTarget, navigateTo } from '../navigation';
 import type { ActionEnv } from './actions';
+import { GM_ACTION, playGm } from './egg';
 import { getLocalIndex } from './local';
 import { rememberRow } from './recents';
 import type { FlyView, PaletteRow } from './types';
@@ -31,6 +33,8 @@ export interface RunCtx {
    * go to the globe instead.
    */
   page?: boolean;
+  /** The effect sink the moon answers to (the hidden greeting flashes it); absent where there is no globe. */
+  effects?: Pick<EffectSink, 'moonFlare'>;
 }
 
 export type RunMode = 'open' | 'alongside' | 'fly';
@@ -153,10 +157,21 @@ async function copyLink(ctx: RunCtx): Promise<void> {
   }
 }
 
+/** The hidden greeting: the moon's pieces answer in turn, and the visitor has found the egg. */
+function sayGm(ctx: RunCtx): void {
+  playGm(ctx.effects, ctx.store.tip?.height ?? 0, effectiveMotion(useUi.getState().motion));
+  track({ type: 'egg' });
+}
+
 /** Runs an action by id. Navigating actions replace the palette's history entry; the rest dismiss it. */
 export function runAction(id: string, arg: string | undefined, ctx: RunCtx): void {
   const ui = useUi.getState();
   const prefs = usePrefs.getState();
+  if (id === GM_ACTION) {
+    ctx.dismiss();
+    sayGm(ctx);
+    return;
+  }
   if (id === 'fly') {
     const v = parseFlyArg(arg);
     if (v) flyTo(ctx, v);
