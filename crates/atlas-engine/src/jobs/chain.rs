@@ -226,12 +226,12 @@ pub async fn run(ctx: JobCtx, recent: Vec<(u32, BlockHash)>) {
                         }
                     }
                     ChainPush::Tx(tx) => {
+                        // Socket fluxnode txids do not resolve (see the reducer): only the
+                        // reconcile's real txids are fetched for them.
                         let pays_apps = tx.outputs.iter().any(|(a, _)| a == APP_PAYMENT_ADDRESS);
-                        if tx.is_coinbase_like() {
-                            enrich.done(tx.txid);
-                        } else if tx.is_node_tx() || pays_apps {
+                        if pays_apps && !tx.is_node_tx() {
                             enrich.push(tx.txid);
-                        } else {
+                        } else if !tx.is_node_tx() {
                             enrich.done(tx.txid);
                         }
                         if !ctx.send(Obs::MempoolTx { tx, received_ms: ev.received_ms }).await {

@@ -612,21 +612,28 @@ fn enricher_queue() {
 async fn mempool_classification_refines_and_discovers() {
     use atlas_core::chain::TxKind;
     use atlas_flux::insight_socket::SocketTx;
+    use atlas_flux::models::apps::APP_PAYMENT_ADDRESS;
     let dir = tempfile::tempdir().unwrap();
     let eng = start(Store::open(dir.path().join("m.redb")).unwrap());
     let mut rx = eng.subscribe();
-    // The socket pushes a node tx: start or confirm is unknown.
+    let socket = |txid, outputs: Vec<(String, Amount)>| Obs::MempoolTx {
+        tx: SocketTx {
+            txid,
+            value_out: outputs.iter().map(|(_, v)| *v).sum(),
+            outputs,
+            is_rbf: false,
+        },
+        received_ms: now_ms(),
+    };
+    // A socket fluxnode push (no outputs): its txid resolves nowhere, so it is ignored.
+    inject(&eng, socket(h(9), Vec::new())).await;
+    // A socket app payment: `app_message` until the fetch reads its OP_RETURN.
     inject(
         &eng,
-        Obs::MempoolTx {
-            tx: SocketTx {
-                txid: h(10),
-                value_out: Amount::ZERO,
-                outputs: Vec::new(),
-                is_rbf: false,
-            },
-            received_ms: now_ms(),
-        },
+        socket(
+            h(10),
+            vec![(APP_PAYMENT_ADDRESS.to_string(), Amount::from_flux(1))],
+        ),
     )
     .await;
     let set: std::collections::HashMap<Hash32, u32> =
@@ -639,9 +646,10 @@ async fn mempool_classification_refines_and_discovers() {
         size: Some(199),
         output_count: 0,
     };
-    // Refines the socket tx; adds h(11), which the socket never pushed; ignores h(12), which is
-    // not in the reconciled set (mined meanwhile).
-    inject(&eng, classified(h(10), TxKind::NodeConfirm)).await;
+    // Refines the socket tx (no message hash: a plain transfer to the app address); adds h(11),
+    // which the socket never pushed; ignores h(12), which is not in the reconciled set (mined
+    // meanwhile).
+    inject(&eng, classified(h(10), TxKind::Transfer)).await;
     inject(&eng, classified(h(11), TxKind::NodeStart)).await;
     inject(&eng, classified(h(12), TxKind::NodeStart)).await;
     until("classified mempool published", || {
@@ -649,7 +657,7 @@ async fn mempool_classification_refines_and_discovers() {
         p.mempool.len() == 2
             && p.mempool
                 .iter()
-                .any(|(t, _)| t.txid == h(10) && t.kind == TxKind::NodeConfirm)
+                .any(|(t, _)| t.txid == h(10) && t.kind == TxKind::Transfer)
     })
     .await;
     let p = eng.published();
@@ -658,8 +666,10 @@ async fn mempool_classification_refines_and_discovers() {
     assert_eq!(by[&h(10)].size, Some(201), "size from the reconcile");
     assert_eq!(by[&h(11)].size, Some(199), "size from the fetched tx");
     assert_eq!(by[&h(11)].kind, TxKind::NodeStart);
+    assert!(!by.contains_key(&h(9)), "socket node push ignored");
     assert!(!by.contains_key(&h(12)));
-    // Live: the socket tx as node_tx, then the discovered one; refinements are not re-sent.
+    // Live: the socket app payment, then the discovered node tx; refinements are not re-sent and
+    // the socket node push never reaches browsers.
     let mut seen: Vec<(Hash32, TxKind)> = Vec::new();
     until("mempool messages", || {
         while let Ok(m) = rx.try_recv() {
@@ -672,6 +682,6 @@ async fn mempool_classification_refines_and_discovers() {
     .await;
     assert_eq!(
         seen,
-        vec![(h(10), TxKind::NodeTx), (h(11), TxKind::NodeStart)]
+        vec![(h(10), TxKind::AppMessage), (h(11), TxKind::NodeStart)]
     );
 }

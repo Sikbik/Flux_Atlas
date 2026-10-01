@@ -140,8 +140,9 @@ pub struct NodeTx {
 pub enum TxKind {
     /// Ordinary value transfer.
     Transfer,
-    /// Fluxnode start or confirm seen only on the explorer socket (no inputs/outputs), before
-    /// the engine fetched the transaction; becomes `node_start` / `node_confirm` once classified.
+    /// Fluxnode transaction whose start/confirm type the source does not state. Mempool entries
+    /// are fetched and classified as `node_start` / `node_confirm`; the explorer socket's own
+    /// fluxnode pushes are not used (their txids do not resolve anywhere).
     NodeTx,
     NodeStart,
     NodeConfirm,

@@ -168,7 +168,7 @@ impl Default for IngestConfig {
             reconcile_min_spacing: Duration::from_secs(120),
             count_interval: Duration::from_secs(60),
             lists_interval: Duration::from_secs(60),
-            mempool_reconcile_interval: Duration::from_secs(60),
+            mempool_reconcile_interval: Duration::from_secs(20),
             price_interval: Duration::from_secs(60),
             supply_interval: Duration::from_secs(600),
             round_check_interval: Duration::from_secs(300),

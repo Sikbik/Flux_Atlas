@@ -331,12 +331,19 @@ impl Reducer {
                 orphaned,
             } => self.reorg(tick, fork_height, old_tip, orphaned),
             Obs::MempoolTx { tx, received_ms } => {
+                // Fluxnode txs pushed by the socket carry a txid that resolves nowhere
+                // (measured: none of 66 such pushes was in the gateway mempool, in a block or
+                // in Insight's own /api/tx). They are not mempool entries: the reconcile
+                // finds the real ones and the fetch classifies them.
+                if tx.is_node_tx() {
+                    self.stats().event("mempool_node_push_ignored");
+                    self.fresh().ok("mempool_stream");
+                    return;
+                }
                 if tx.is_coinbase_like() || self.st.mempool.contains_key(&tx.txid) {
                     return;
                 }
-                let kind = if tx.is_node_tx() {
-                    TxKind::NodeTx
-                } else if tx.outputs.iter().any(|(a, _)| a == APP_PAYMENT_ADDRESS) {
+                let kind = if tx.outputs.iter().any(|(a, _)| a == APP_PAYMENT_ADDRESS) {
                     TxKind::AppMessage
                 } else {
                     TxKind::Transfer
@@ -353,17 +360,15 @@ impl Reducer {
                 self.mempool_buf
                     .push(tx_lite(tx.txid, tx.value_out, kind, None));
                 self.stats().event("mempool_tx");
-                if kind != TxKind::NodeTx {
-                    tick.event(
-                        Event::MempoolTx {
-                            txid: tx.txid,
-                            value: tx.value_out,
-                            kind,
-                            output_count: tx.outputs.len() as u16,
-                        },
-                        Some(received_ms),
-                    );
-                }
+                tick.event(
+                    Event::MempoolTx {
+                        txid: tx.txid,
+                        value: tx.value_out,
+                        kind,
+                        output_count: tx.outputs.len() as u16,
+                    },
+                    Some(received_ms),
+                );
                 self.st.summary_dirty = true;
                 tick.publish = true;
                 self.fresh().ok("mempool_stream");
