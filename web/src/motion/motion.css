@@ -1,0 +1,301 @@
+/* The Flux interaction language: CSS half. See docs/design/motion-language.md.
+
+   Everything here is zero cost at rest: no loops, no idle animations, no always-on layers. Static
+   states (charge ring, focus glow) are transitions on input; the travelling light is created by
+   the effect runners on demand and removed when it ends. Compositor properties only (transform,
+   opacity, filter, clip-path, masks and gradients); the few registered properties below drive tiny
+   gradients, never layout.
+
+   New tokens are --fx-*; they sit on top of tokens.css and never redefine it. Modes:
+   [data-fx-mode="full|reduced|off"] on <html> (set by MotionRoot) or on any subtree. */
+
+/* ---- tokens --------------------------------------------------------------------------------- */
+
+:root {
+  /* timing (mirrored in motion/timing.ts; a test keeps the two in step) */
+  --fx-dur-pulse: 240ms; /* press: light runs once along the edge, 180..260 by size */
+  --fx-dur-seed: 180ms; /* press: the burst at the contact point */
+  --fx-dur-charge: 140ms; /* hover and focus energise */
+  --fx-dur-spark: 360ms; /* commit: bright head, settles */
+  --fx-dur-current: 640ms; /* live arrival along an edge */
+  --fx-dur-lap: 900ms; /* live arrival once around a card */
+  --fx-dur-power-on: 420ms; /* window or panel opens */
+  --fx-dur-surge: 480ms; /* the light surge across a window as it opens */
+  --fx-dur-power-off: 180ms; /* and closes, faster than it opens */
+  --fx-dur-settle: 900ms; /* a changed value lands: glow decay */
+  --fx-dur-slide: 300ms; /* selection indicator travels between tabs */
+
+  /* easing */
+  --fx-ease-run: cubic-bezier(0.33, 0.4, 0.5, 1); /* light along a wire and the front of a surge */
+  --fx-ease-settle: cubic-bezier(0.2, 0.8, 0.2, 1); /* a window or panel arriving: scale and fade */
+  --fx-ease-burst: cubic-bezier(0.16, 1, 0.3, 1); /* = --ease-out-expo: a bloom that is gone */
+  --fx-ease-lead: cubic-bezier(0.16, 1, 0.3, 1); /* slide: the leading edge */
+  --fx-ease-trail: cubic-bezier(0.4, 0, 0.2, 1); /* slide: the trailing edge catches up */
+  --fx-ease-lap: cubic-bezier(0.4, 0.25, 0.3, 1); /* once around a card: nearly even */
+
+  /* energy colours: white head, Blue Wave body, brand blue glow (never a tier or status colour) */
+  --fx-head: var(--hot, #ffffff);
+  --fx-body: var(--accent-300, #abbee4);
+  --fx-mid: var(--accent-400, #86a1da);
+  --fx-glow: var(--accent-500, #4f7ad4);
+  --fx-deep: var(--accent-600, #2b61d1);
+  --fx-glow-hot: rgb(174 198 255 / 0.85);
+  --fx-glow-soft: rgb(79 122 212 / 0.5);
+
+  /* geometry of the charge ring */
+  --fx-bw: 1px; /* ring thickness */
+  --fx-inset: -1px; /* sits over the control's own 1px border; use 0 on overflow:hidden controls */
+  --fx-reach: 104px; /* how far the hover light spreads from the pointer along the edge */
+
+  /* the energised focus outline: the kit's ring plus a Blue Wave bloom */
+  --fx-focus-ring: 0 0 0 2px var(--ink-0, #080a0f), 0 0 0 4px var(--accent-400, #86a1da);
+  --fx-focus-shadow: var(--fx-focus-ring), 0 0 20px -2px rgb(79 122 212 / 0.7);
+
+  /* layer */
+  --fx-z: calc(var(--z-tooltip, 130) + 5);
+}
+
+/* Typed custom properties: tiny gradients and clip insets only.
+   --fx-ring is the surge radius (read by the element it is set on). The indicator's four are read by
+   its ::before and ::after, so they must inherit: a pseudo-element only receives an originating
+   element's custom property when the property is registered as inherited. */
+@property --fx-ring {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --fx-l {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --fx-r {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --fx-hl {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+@property --fx-hr {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/* ---- charge: hover and focus ---------------------------------------------------------------- */
+/* [data-fx~="charge"] reserves ::after for the edge light. The ring is the control's own border box
+   masked down to its edge; the light is a radial gradient around the pointer (--fx-x, --fx-y are set
+   by the engine while the pointer moves). Specificity is kept at zero where overriding is sane. */
+
+:where([data-fx]) {
+  position: relative;
+}
+
+[data-fx~="charge"]::after {
+  content: "";
+  position: absolute;
+  inset: var(--fx-inset);
+  padding: var(--fx-bw);
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    var(--fx-reach) circle at var(--fx-x, 50%) var(--fx-y, 0%),
+    rgb(255 255 255 / 0.9),
+    rgb(174 198 255 / 0.55) 32%,
+    rgb(79 122 212 / 0.26) 62%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  transition: opacity var(--fx-dur-charge) var(--ease-out, ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-fx~="charge"]:hover::after {
+    opacity: 1;
+  }
+}
+
+/* Keyboard focus: a steady, even ring (no pointer), plus the bloom. The ring itself is the focus
+   indicator and is never animated away; the transition only fades it in. */
+[data-fx~="charge"]:focus-visible::after {
+  opacity: 1;
+  background: linear-gradient(rgb(174 198 255 / 0.8), rgb(174 198 255 / 0.8));
+}
+
+:where([data-fx~="charge"]:focus-visible, [data-fx~="focus"]:focus-visible) {
+  outline: none;
+  box-shadow: var(--fx-focus-shadow);
+}
+
+/* ---- current: the inline track a <Current> renders along one edge of its host ----------------- */
+
+.fx-current {
+  position: absolute;
+  pointer-events: none;
+  contain: layout style;
+}
+
+.fx-current[data-edge="top"] {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+}
+.fx-current[data-edge="bottom"] {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+}
+.fx-current[data-edge="left"] {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+}
+.fx-current[data-edge="right"] {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 0;
+}
+.fx-current[data-edge="perimeter"] {
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* ---- settle: a row or card that is new this block ------------------------------------------- */
+/* Add .fx-fresh to a row or card for a block; it is a white wash and a 2px bar that decay together. */
+
+.fx-fresh {
+  animation: fx-fresh var(--dur-fresh, 1600ms) var(--ease-out, ease-out) both;
+}
+
+@keyframes fx-fresh {
+  from {
+    box-shadow:
+      inset 2px 0 0 0 var(--accent-400, #86a1da),
+      inset 0 0 0 999px rgb(255 255 255 / 0.1);
+  }
+  to {
+    box-shadow:
+      inset 2px 0 0 0 transparent,
+      inset 0 0 0 999px transparent;
+  }
+}
+
+/* ---- indicator: the selection that travels (tabs, segmented controls) ------------------------ */
+
+.fx-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  pointer-events: none;
+}
+
+.fx-indicator::before {
+  /* the bloom under the bar, soft at both ends */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--fx-glow);
+  filter: blur(4px);
+  opacity: 0.75;
+  clip-path: inset(-10px calc(100% - var(--fx-r) - 8px) -10px calc(var(--fx-l) - 8px));
+}
+
+.fx-indicator::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 calc(100% - var(--fx-r)) 0 var(--fx-l));
+  background:
+    linear-gradient(
+      90deg,
+      transparent calc(var(--fx-r) - 36px),
+      rgb(255 255 255 / var(--fx-hr)) calc(var(--fx-r) - 1px),
+      transparent var(--fx-r)
+    ),
+    linear-gradient(
+      270deg,
+      transparent calc(100% - var(--fx-l) - 36px),
+      rgb(255 255 255 / var(--fx-hl)) calc(100% - var(--fx-l) - 1px),
+      transparent calc(100% - var(--fx-l))
+    ),
+    var(--accent-400, #86a1da);
+}
+
+:root[data-perf="lite"] .fx-indicator::before {
+  display: none;
+}
+
+/* ---- modes ------------------------------------------------------------------------------------ */
+
+/* Reduced: the edge brightens statically; nothing travels, follows the pointer or loops. */
+[data-fx-mode="reduced"] [data-fx~="charge"]::after {
+  background: linear-gradient(rgb(174 198 255 / 0.55), rgb(174 198 255 / 0.55));
+  transition-duration: var(--dur-fast, 140ms);
+}
+
+[data-fx-mode="reduced"] .fx-fresh {
+  animation: fx-fresh-reduced 1000ms linear both;
+}
+
+@keyframes fx-fresh-reduced {
+  from {
+    box-shadow: inset 2px 0 0 0 var(--accent-400, #86a1da);
+  }
+  to {
+    box-shadow: inset 2px 0 0 0 transparent;
+  }
+}
+
+/* Off: every effect is a state, never a motion. The focus ring stays (it is the indicator). */
+[data-fx-mode="off"] [data-fx~="charge"]::after {
+  transition: none;
+  background: linear-gradient(rgb(174 198 255 / 0.55), rgb(174 198 255 / 0.55));
+}
+
+[data-fx-mode="off"] [data-fx~="charge"]:not(:hover):not(:focus-visible)::after {
+  opacity: 0;
+}
+
+[data-fx-mode="off"] .fx-fresh {
+  animation: none;
+}
+
+[data-fx-mode="off"] .fx-layer {
+  display: none;
+}
+
+/* Contrast and forced colours: the system draws the focus ring; decoration steps aside. */
+@media (prefers-contrast: more) {
+  :root {
+    --fx-glow-soft: rgb(79 122 212 / 0.2);
+  }
+}
+
+@media (forced-colors: active) {
+  [data-fx]::after,
+  .fx-layer {
+    display: none;
+  }
+
+  :where([data-fx~="charge"]:focus-visible, [data-fx~="focus"]:focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
