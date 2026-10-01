@@ -54,6 +54,10 @@ fn job(nodes: Arc<[NodeRecord]>, apps: usize, prev: Arc<Published>) -> PublishJo
 fn summary() -> NetworkSummary {
     NetworkSummary {
         node_count: 6724,
+        listed_count: 6731,
+        started_count: 4,
+        dos_count: 3,
+        expired_count: 0,
         host_count: 2655,
         tiers: TierCounts::default(),
         country_count: 70,

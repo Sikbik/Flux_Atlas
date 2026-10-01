@@ -1826,10 +1826,25 @@ pub fn summarize(st: &NetworkState) -> NetworkSummary {
     let mut providers = HashSet::new();
     let mut arcane = 0;
     let mut unreachable = 0;
+    let (mut listed, mut started, mut dos, mut expired) = (0u32, 0u32, 0u32, 0u32);
     for e in st.nodes.listed() {
         let r = &e.rec;
-        if r.status != NodeStatus::Confirmed {
-            continue;
+        listed += 1;
+        match r.status {
+            NodeStatus::Confirmed => {}
+            NodeStatus::Started => {
+                started += 1;
+                continue;
+            }
+            NodeStatus::Dos => {
+                dos += 1;
+                continue;
+            }
+            NodeStatus::Expired => {
+                expired += 1;
+                continue;
+            }
+            _ => continue,
         }
         tiers.add(r.tier);
         if let Some(ep) = r.endpoint {
@@ -1859,6 +1874,10 @@ pub fn summarize(st: &NetworkState) -> NetworkSummary {
     let next = st.tip_height() + 1;
     NetworkSummary {
         node_count: tiers.total,
+        listed_count: listed,
+        started_count: started,
+        dos_count: dos,
+        expired_count: expired,
         host_count: hosts.len() as u32,
         tiers,
         country_count: countries.len() as u32,

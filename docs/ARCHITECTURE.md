@@ -402,13 +402,13 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /nodes.bin` | **binary columnar node snapshot** (§7), feeds the globe + tables |
 | `GET /mesh.bin` | binary P2P mesh: header + `u32 edge_count` + `u32 a[]`, `u32 b[]` (NodeIds, a<b, deduped) + `u8 flags[]` (bit0 bidirectional, bit1 cross-continent); refreshed per PeerCrawl sweep |
 | `GET /nodes/{id}/peers` | the node's peers with geo, for selection-reveal |
-| `GET /nodes?…` | JSON node table with filters/sort/pagination (`tier`, `status`, `country`, `org`, `q`, `sort`, `cursor`). |
+| `GET /nodes?…` | JSON node table with filters/sort/pagination (`tier`, `status`, `country`, `org`, `q`, `sort`, `cursor`). Rows carry `city` and `region` (`null` when unknown). `total` counts the rows matching the filters: unfiltered, every tracked node (`listed_count`, see Node counts below) |
 | `GET /nodes/{id\|ip\|outpoint}` | full node detail: record, geo, hw, versions, rank + payment ETA, hosted apps, recent events |
 | `GET /nodes/{id}/history?from&to` | status timeline, uptime %, events |
 | `GET /nodes/{id}/payments?cursor` | payment history |
 | `GET /apps` / `GET /apps/{name}` | app index / full app: normalized spec, components, instances (node ids), history |
 | `GET /apps/{name}/history` | spec versions with diffs |
-| `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates |
+| `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates. The summary's counts are defined under Node counts below |
 | `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
 | `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations) |
@@ -421,6 +421,18 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine) |
 
 Everything else serves the embedded web app (SPA fallback to `index.html`, immutable caching for hashed assets).
+
+> **Node counts (B6).** One headline number: `NetworkSummary.node_count` (bootstrap `network`, `/network/summary`,
+> the live `stats` message) is the count of **confirmed** nodes, i.e. fluxd's deterministic list and the
+> `getfluxnodecount` total. The server also tracks nodes that are not in that list yet or any more, and shows them on
+> the globe with their status, so `nodes.bin` (header `count`) and the unfiltered `GET /nodes` `total` hold more rows.
+> The summary names the difference: `listed_count` (every tracked row = `nodes.bin` rows = unfiltered `/nodes`
+> `total`) = `node_count` + `started_count` (start mined, not confirmed: fluxd's start list) + `dos_count` (fluxd's
+> DOS list) + `expired_count` (predicted expired by the block path, dropped by the next reconcile, at most 10 min).
+> Measured on 3106: `node_count` 6,725 and `listed_count` 6,729 (2 started, 2 DOS). Before B6 a DOS entry never
+> left the model, so the difference also grew with every DOS ban (fixed: it leaves at `added + 720`). A
+> view that says "N nodes" shows `node_count` (or counts `status == confirmed` rows of `nodes.bin`, the same number);
+> `listed_count` is only for a "rows on the map" or "including pending" label.
 
 
 ## 7. Binary node snapshot — `nodes.bin` (format v1)

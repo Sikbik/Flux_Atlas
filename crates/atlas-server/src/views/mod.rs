@@ -394,6 +394,8 @@ pub fn node_row(n: &NodeRecord) -> NodeRow {
         payment_address: n.payment_address.to_string(),
         country_code: g.and_then(|g| non_empty(&g.country_code)),
         country: g.and_then(|g| non_empty(&g.country)),
+        city: g.and_then(|g| non_empty(&g.city)),
+        region: g.and_then(|g| non_empty(&g.region)),
         org: g.and_then(|g| non_empty(&g.org)),
         lat: loc.map(|g| g.lat),
         lon: loc.map(|g| g.lon),

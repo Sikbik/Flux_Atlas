@@ -662,8 +662,17 @@ impl Fixture {
         let last = self.blocks.last();
         let transparent = Amount::from_flux(430_557_127);
         let shielded = Amount::from_flux(250_000);
+        let count = |st: NodeStatus| self.nodes.iter().filter(|n| n.status == st).count() as u32;
         NetworkSummary {
             node_count: tiers.total,
+            listed_count: self
+                .nodes
+                .iter()
+                .filter(|n| n.status != NodeStatus::Departed)
+                .count() as u32,
+            started_count: count(NodeStatus::Started),
+            dos_count: count(NodeStatus::Dos),
+            expired_count: count(NodeStatus::Expired),
             host_count: hosts.len() as u32,
             tiers,
             country_count: countries.len() as u32,

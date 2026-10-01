@@ -8,7 +8,30 @@ import type { TipInfo } from "./TipInfo";
 /**
  * Network-wide summary (also pushed as the live `stats` message).
  */
-export type NetworkSummary = { node_count: number, host_count: number, tiers: TierCounts, country_count: number, provider_count: number, arcane_count: number, unreachable_count: number, app_count: number, instance_count: number, tip: TipInfo | null, 
+export type NetworkSummary = { 
+/**
+ * The headline count: confirmed nodes, i.e. fluxd's deterministic list (the
+ * `getfluxnodecount` total). Every view that says "N nodes" shows this.
+ */
+node_count: number, 
+/**
+ * Every node row the server tracks: the `nodes.bin` row count and the unfiltered
+ * `GET /nodes` total. `node_count` plus `started_count`, `dos_count` and `expired_count`.
+ */
+listed_count: number, 
+/**
+ * Started (start transaction mined), not confirmed yet: fluxd's start list.
+ */
+started_count: number, 
+/**
+ * On fluxd's DOS list (not confirmed within 240 blocks; banned for 720 blocks).
+ */
+dos_count: number, 
+/**
+ * Predicted expired by the block path and still shown until the next reconcile drops them
+ * (at most one reconcile interval, 10 min).
+ */
+expired_count: number, host_count: number, tiers: TierCounts, country_count: number, provider_count: number, arcane_count: number, unreachable_count: number, app_count: number, instance_count: number, tip: TipInfo | null, 
 /**
  * Current block subsidy.
  */

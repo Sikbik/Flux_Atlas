@@ -149,7 +149,19 @@ pub struct SupplyInfo {
 /// Network-wide summary (also pushed as the live `stats` message).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct NetworkSummary {
+    /// The headline count: confirmed nodes, i.e. fluxd's deterministic list (the
+    /// `getfluxnodecount` total). Every view that says "N nodes" shows this.
     pub node_count: u32,
+    /// Every node row the server tracks: the `nodes.bin` row count and the unfiltered
+    /// `GET /nodes` total. `node_count` plus `started_count`, `dos_count` and `expired_count`.
+    pub listed_count: u32,
+    /// Started (start transaction mined), not confirmed yet: fluxd's start list.
+    pub started_count: u32,
+    /// On fluxd's DOS list (not confirmed within 240 blocks; banned for 720 blocks).
+    pub dos_count: u32,
+    /// Predicted expired by the block path and still shown until the next reconcile drops them
+    /// (at most one reconcile interval, 10 min).
+    pub expired_count: u32,
     pub host_count: u32,
     pub tiers: TierCounts,
     pub country_count: u32,
@@ -315,6 +327,10 @@ pub struct NodeRow {
     pub payment_address: String,
     pub country_code: Option<String>,
     pub country: Option<String>,
+    /// City (local DB-IP City Lite, or the stats lookup); `None` when unknown.
+    pub city: Option<String>,
+    /// Region or state; `None` when unknown.
+    pub region: Option<String>,
     pub org: Option<String>,
     pub lat: Option<f32>,
     pub lon: Option<f32>,
