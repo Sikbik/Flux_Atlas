@@ -1,0 +1,248 @@
+/* Tabs (design 8.9 and 8.3): underline tabs. The selected mark is one 2 px line that glides on a
+   transform (it never reflows) and pools a soft light in the window accent above itself. */
+
+.ui-tabs {
+  /* The window accent (`data-accent` sets --accent on the window); Flux blue shade 2 otherwise. */
+  --ui-tabs-accent: var(--accent, var(--accent-400));
+  --ui-tabs-h: 34px;
+  --ui-tabs-fade: 28px;
+  position: relative;
+  min-width: 0;
+}
+
+.ui-tabs[data-size="sm"] {
+  --ui-tabs-h: 32px;
+}
+
+/* Overflow: the strip scrolls sideways without a scrollbar and fades toward the hidden side. */
+.ui-tabs__scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.ui-tabs__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.ui-tabs__scroll[data-fade="start"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, var(--void) var(--ui-tabs-fade));
+  mask-image: linear-gradient(to right, transparent, var(--void) var(--ui-tabs-fade));
+}
+
+.ui-tabs__scroll[data-fade="end"] {
+  -webkit-mask-image: linear-gradient(to left, transparent, var(--void) var(--ui-tabs-fade));
+  mask-image: linear-gradient(to left, transparent, var(--void) var(--ui-tabs-fade));
+}
+
+.ui-tabs__scroll[data-fade="both"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    var(--void) var(--ui-tabs-fade),
+    var(--void) calc(100% - var(--ui-tabs-fade)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    var(--void) var(--ui-tabs-fade),
+    var(--void) calc(100% - var(--ui-tabs-fade)),
+    transparent
+  );
+}
+
+/* The hairline lives on the list so it spans every tab, and the indicator sits on top of it. */
+.ui-tabs__list {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: max-content;
+  min-width: 100%;
+  height: var(--ui-tabs-h);
+  box-shadow: inset 0 -1px 0 var(--line-1);
+}
+
+.ui-tabs__tab {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  height: 100%;
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-display);
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+/* Window tabs: the label is heavier and a hair smaller (design 8.3). Same weight in every state, so
+   selecting never changes a tab's width. */
+.ui-tabs[data-size="sm"] .ui-tabs__tab {
+  font-weight: var(--fw-semibold);
+  font-size: 12.5px;
+}
+
+.ui-tabs__tab > * {
+  position: relative;
+}
+
+/* A faint band rising from the selected mark. It is a box-shadow on a 2 px element sitting where the
+   mark will be, fading in with the selection, so it never has to be scaled along with the gliding line. */
+.ui-tabs__tab::before {
+  content: "";
+  position: absolute;
+  inset: auto 10px 0;
+  height: 2px;
+  border-radius: 2px;
+  box-shadow: 0 -8px 20px -6px color-mix(in oklab, var(--ui-tabs-accent) 40%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.ui-tabs__icon {
+  flex: none;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.ui-tabs__tab[aria-selected="true"] {
+  color: var(--text-1);
+}
+
+.ui-tabs__tab[aria-selected="true"]::before {
+  opacity: 1;
+}
+
+.ui-tabs__tab[aria-selected="true"] .ui-tabs__icon {
+  color: var(--ui-tabs-accent);
+}
+
+/* Hover is light, not a box: a faint ellipse rising from the baseline, like the selected tab's pool. */
+@media (hover: hover) {
+  .ui-tabs__tab:hover:not(:disabled) {
+    color: var(--text-1);
+    background: radial-gradient(
+      70% 100% at 50% 100%,
+      color-mix(in oklab, var(--text-1) 9%, transparent),
+      transparent 78%
+    );
+  }
+}
+
+.ui-tabs__tab:active:not(:disabled) {
+  color: var(--text-1);
+}
+
+/* Keyboard focus rings the label area and stops short of the mark, so the ring never covers the
+   underline of a focused, selected tab. */
+.ui-tabs__tab::after {
+  content: "";
+  position: absolute;
+  inset: 3px 2px 6px;
+  border-radius: var(--r-sm);
+  box-shadow: inset 0 0 0 2px var(--accent-400);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ui-tabs__tab:focus-visible {
+  outline: none;
+}
+
+.ui-tabs__tab:focus-visible::after {
+  opacity: 1;
+}
+
+.ui-tabs__tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ui-tabs__badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.ui-tabs__tab[aria-selected="true"] .ui-tabs__badge {
+  background: color-mix(in oklab, var(--ui-tabs-accent) 24%, transparent);
+  color: var(--text-1);
+}
+
+/* The mark: a 100 px line scaled to the selected tab (--ui-ink-sx) and moved to it (--ui-ink-x), both
+   set from script. Transform only: no layout, and it keeps gliding when the main thread is busy
+   with the globe. */
+.ui-tabs__ink {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ui-tabs-accent);
+  transform-origin: 0 50%;
+  transform: translateX(var(--ui-ink-x, 0px)) scaleX(var(--ui-ink-sx, 0));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dur-base) var(--ease-out-expo),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-tabs__ink[data-placed] {
+  opacity: 1;
+}
+
+.ui-tabpanel[hidden] {
+  display: none;
+}
+
+.ui-tabpanel:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: -2px;
+  border-radius: var(--r-md);
+}
+
+/* Touch: the 44 px target. */
+@media (pointer: coarse) {
+  .ui-tabs,
+  .ui-tabs[data-size="sm"] {
+    --ui-tabs-h: var(--touch-min);
+  }
+}
+
+/* Reduced motion: no travel; the mark and the light switch at once. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-tabs__ink,
+  :root:not([data-motion="full"]) .ui-tabs__tab::before {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-tabs__ink,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-tabs__tab::before {
+  transition: none;
+}

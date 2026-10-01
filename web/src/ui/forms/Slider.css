@@ -1,0 +1,195 @@
+/* Slider (design 8.9 controls): a native range input restyled. A 4 px track filled in Flux blue up to
+   a 16 px white thumb, a Montserrat label, and the value in tabular Plex Mono. */
+
+.ui-slider {
+  --ui-slider-thumb: 16px;
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ui-slider[data-disabled] {
+  opacity: 0.45;
+}
+
+.ui-slider__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.ui-slider__label {
+  color: var(--text-2);
+  font: var(--fw-semibold) var(--fs-xs) / var(--lh-snug) var(--font-display);
+}
+
+.ui-slider__value {
+  color: var(--text-1);
+  font: var(--fw-medium) 12.5px / 1.35 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-slider__control {
+  /* Where the fill ends: the thumb's centre, which travels (width - thumb) across the track. */
+  --ui-slider-fill: calc(
+    var(--ui-slider-thumb) /
+    2 +
+    (100% - var(--ui-slider-thumb)) *
+    var(--ui-slider-p, 0)
+  );
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--hit-min);
+}
+
+.ui-slider__control[data-marks] {
+  margin-bottom: 18px;
+}
+
+.ui-slider__input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.ui-slider__input:disabled {
+  cursor: not-allowed;
+}
+
+.ui-slider__input:focus {
+  outline: none;
+}
+
+/* Track: ink-3, with the filled part drawn as a second background sized to --ui-slider-fill. */
+.ui-slider__input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background:
+    linear-gradient(90deg, var(--accent-700), var(--accent-500)) 0 0 / var(--ui-slider-fill) 100% no-repeat,
+    var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.ui-slider__input::-moz-range-track {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.ui-slider__input::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--accent-700), var(--accent-500));
+}
+
+.ui-slider__input::-webkit-slider-thumb {
+  width: var(--ui-slider-thumb);
+  height: var(--ui-slider-thumb);
+  margin-top: calc((4px - var(--ui-slider-thumb)) / 2);
+  border: 0;
+  border-radius: 50%;
+  background: var(--text-1);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--accent-400) 55%, transparent),
+    0 2px 6px color-mix(in oklab, var(--void) 65%, transparent),
+    0 0 14px -2px color-mix(in oklab, var(--accent-600) 80%, transparent);
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.ui-slider__input::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--ui-slider-thumb);
+  height: var(--ui-slider-thumb);
+  border: 0;
+  border-radius: 50%;
+  background: var(--text-1);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--accent-400) 55%, transparent),
+    0 2px 6px color-mix(in oklab, var(--void) 65%, transparent),
+    0 0 14px -2px color-mix(in oklab, var(--accent-600) 80%, transparent);
+}
+
+@media (hover: hover) {
+  .ui-slider__input:hover:not(:disabled)::-webkit-slider-thumb {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--accent-400) 70%, transparent),
+      0 0 0 5px color-mix(in oklab, var(--accent-500) 22%, transparent),
+      0 2px 6px color-mix(in oklab, var(--void) 65%, transparent),
+      0 0 16px -2px color-mix(in oklab, var(--accent-600) 90%, transparent);
+  }
+
+  .ui-slider__input:hover:not(:disabled)::-moz-range-thumb {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--accent-400) 70%, transparent),
+      0 0 0 5px color-mix(in oklab, var(--accent-500) 22%, transparent),
+      0 2px 6px color-mix(in oklab, var(--void) 65%, transparent);
+  }
+}
+
+.ui-slider__input:active:not(:disabled)::-webkit-slider-thumb {
+  transform: scale(0.94);
+}
+
+.ui-slider__input:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--focus-ring);
+}
+
+.ui-slider__input:focus-visible::-moz-range-thumb {
+  box-shadow: var(--focus-ring);
+}
+
+/* Marks: hairline ticks under the track, lit up to the current value, with mono labels. */
+.ui-slider__marks {
+  position: absolute;
+  inset: calc(50% + 7px) 0 auto;
+  height: 4px;
+  pointer-events: none;
+}
+
+.ui-slider__mark {
+  position: absolute;
+  left: calc(var(--ui-slider-thumb) / 2 + (100% - var(--ui-slider-thumb)) * var(--ui-slider-at, 0));
+  width: 1px;
+  height: 4px;
+  background: var(--line-3);
+}
+
+.ui-slider__mark[data-on] {
+  background: var(--accent-400);
+}
+
+.ui-slider__mark-label {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  transform: translateX(-50%);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Touch: a larger thumb and the 44 px target. */
+@media (pointer: coarse) {
+  .ui-slider {
+    --ui-slider-thumb: 24px;
+  }
+
+  .ui-slider__control {
+    height: var(--touch-min);
+  }
+}
