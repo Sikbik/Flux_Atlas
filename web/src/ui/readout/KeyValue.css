@@ -1,0 +1,119 @@
+/* Key-value list: labels hug the left, values align to the right edge (inspectors) or sit beside
+   the labels (wide panes). Rows share one label column through subgrid, so values line up. */
+
+.ui-kv {
+  --ui-kv-label-col: minmax(var(--ui-kv-label-min, 96px), max-content);
+  display: grid;
+  grid-template-columns: var(--ui-kv-label-col) minmax(0, 1fr);
+  column-gap: var(--space-6);
+  margin: 0;
+  font-size: var(--fs-xs);
+}
+
+.ui-kv[style*="--ui-kv-label"] {
+  grid-template-columns: var(--ui-kv-label) minmax(0, 1fr);
+}
+
+.ui-kv__row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  padding: 4px var(--space-4);
+  margin-inline: calc(var(--space-4) * -1);
+  border-radius: var(--r-sm);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ui-kv__row:hover,
+.ui-kv__row:focus-within {
+  background: var(--ink-1);
+}
+
+.ui-kv[data-ruled] .ui-kv__row + .ui-kv__row {
+  box-shadow: 0 -1px 0 var(--line-1);
+}
+
+.ui-kv__label {
+  color: var(--text-3);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.ui-kv__value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  text-align: right;
+}
+
+.ui-kv[data-align="start"] .ui-kv__value {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.ui-kv__main {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.ui-kv[data-align="end"] .ui-kv__main {
+  justify-content: flex-end;
+}
+
+.ui-kv__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.ui-kv__note {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+.ui-kv__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--accent-400);
+  text-decoration: none;
+  border-radius: var(--r-xs);
+}
+
+.ui-kv__link:hover {
+  color: var(--accent-300);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.ui-kv__link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Copy buttons wake with the row, and stay visible on touch. */
+.ui-kv__copy {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-kv__row:hover .ui-kv__copy,
+.ui-kv__row:focus-within .ui-kv__copy {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .ui-kv__copy {
+    opacity: 1;
+  }
+}

@@ -1,0 +1,177 @@
+/* Stat tile (design 8.11): label, a big tabular figure, delta, caption, sparkline slot. Raised one ink
+   step with a lit top edge and a soft corner light; the hero tile takes the hexagon chamfer. */
+
+.ui-stat {
+  --ui-stat-surface: var(--ink-1);
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 11px 13px 12px;
+  border: 0;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(
+      130% 120% at 0% 0%,
+      color-mix(in oklab, var(--accent, var(--accent-500)) 8%, transparent),
+      transparent 58%
+    ),
+    var(--ui-stat-surface);
+  box-shadow:
+    0 0 0 1px var(--line-1),
+    var(--shadow-inset-hi);
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  isolation: isolate;
+}
+
+button.ui-stat {
+  cursor: pointer;
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+button.ui-stat:hover {
+  box-shadow:
+    0 0 0 1px var(--line-3),
+    var(--shadow-inset-hi);
+  transform: translateY(-1px);
+}
+
+button.ui-stat:active {
+  transform: scale(0.995);
+}
+
+button.ui-stat:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ui-stat__label {
+  overflow: hidden;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-stat[data-spark] .ui-stat__label {
+  padding-right: 72px;
+}
+
+.ui-stat__value {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-height: 1.1em;
+  color: var(--text-1);
+  font: var(--fw-semibold) 22px / 1.1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-stat__unit {
+  margin-left: 3px;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-sans);
+  letter-spacing: 0;
+}
+
+.ui-stat__unknown {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+}
+
+.ui-stat__nodata {
+  color: var(--text-4);
+  font-weight: var(--fw-medium);
+}
+
+.ui-stat__stale {
+  color: var(--status-warn);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+.ui-stat__delta {
+  display: flex;
+  min-height: 14px;
+}
+
+.ui-stat__caption {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+.ui-stat__spark {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  display: block;
+  line-height: 0;
+}
+
+.ui-stat__skel-value {
+  margin-block: 1px;
+}
+
+/* Hero: the view's one big figure, chamfered at the hexagon angle with a lit rim. */
+.ui-stat[data-hero] {
+  padding: 14px 18px 16px;
+  border-radius: 0;
+  box-shadow: none;
+  clip-path: var(--clip-chamfer-sm);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--accent, var(--accent-500)) 16%, var(--ui-stat-surface)),
+    var(--ui-stat-surface) 62%
+  );
+}
+
+.ui-stat[data-hero]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  padding: 1px;
+  clip-path: inherit;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--accent-300) 70%, transparent),
+    transparent 38%,
+    transparent 68%,
+    color-mix(in oklab, var(--accent-400) 32%, transparent)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.ui-stat[data-hero] .ui-stat__value {
+  font-size: var(--fs-3xl);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-display);
+}
+
+.ui-stat[data-hero] .ui-stat__label {
+  font-size: var(--fs-sm);
+}
+
+.ui-stat[data-hero]:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 3px;
+  box-shadow: none;
+}

@@ -1,0 +1,70 @@
+/* Card: one ink step above the slab. Depth is lightness plus a lit top edge (one light source, top
+   left), not a heavy outline (design 5.2, 5.5). */
+
+.ui-card {
+  position: relative;
+  min-width: 0;
+  border-radius: var(--r-lg);
+  background: var(--ink-1);
+  box-shadow:
+    0 0 0 1px var(--line-1),
+    var(--shadow-inset-hi);
+  isolation: isolate;
+}
+
+.ui-card[data-tone="flat"] {
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--line-1);
+}
+
+.ui-card[data-padding="sm"] {
+  padding: var(--space-4) var(--space-5);
+}
+
+.ui-card[data-padding="md"] {
+  padding: var(--space-5) var(--space-6);
+}
+
+.ui-card[data-padding="lg"] {
+  padding: var(--space-7) var(--space-8);
+}
+
+/* The corner light: a soft spill of the surface's accent, fading before it can touch any edge. */
+.ui-card[data-glow]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(
+    120% 100% at 0% 0%,
+    color-mix(in oklab, var(--accent, var(--accent-500)) 11%, transparent),
+    transparent 62%
+  );
+  pointer-events: none;
+}
+
+.ui-card[data-interactive] {
+  cursor: pointer;
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.ui-card[data-interactive]:hover {
+  background: color-mix(in oklab, var(--ink-1) 82%, var(--ink-2));
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    var(--shadow-inset-hi);
+  transform: translateY(-1px);
+}
+
+.ui-card[data-interactive]:active {
+  transform: scale(0.995);
+}
+
+.ui-card[data-interactive]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

@@ -11,7 +11,6 @@ import './base.css';
 export * from './charts';
 export * from './chips';
 export * from './controls';
-export * from './data';
 export * from './forms';
 export * from './identity';
 // Utilities for views that build their own surfaces on the same foundations.
@@ -27,6 +26,7 @@ export * from './live';
 export * from './nav';
 export * from './overlay';
 export * from './popover';
+export * from './readout';
 export * from './states';
 export * from './table';
 export * from './timeline';

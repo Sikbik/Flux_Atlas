@@ -1,0 +1,39 @@
+/* Delta: Plex Mono 11 px; the diverging pair (blue up, coral down) with an arrow and a sign. */
+
+.ui-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-2xs);
+  line-height: 1.2;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.ui-delta[data-dir="up"] {
+  color: var(--div-pos);
+}
+
+.ui-delta[data-dir="down"] {
+  color: var(--div-neg);
+}
+
+.ui-delta__icon {
+  flex: none;
+}
+
+.ui-delta__period {
+  margin-left: var(--space-2);
+  color: var(--text-3);
+  font-family: var(--font-sans);
+}
+
+.ui-delta .ui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

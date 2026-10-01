@@ -1,0 +1,137 @@
+/* Section: hairline divider, a heading row (title, aside, actions), then the body. The fold animates
+   grid-template-rows (the one layout property the motion rules allow, design 6.1). */
+
+.ui-section {
+  --ui-section-px: var(--space-6);
+  padding: var(--space-5) var(--ui-section-px) var(--space-6);
+  border-top: 1px solid var(--line-1);
+  min-width: 0;
+}
+
+.ui-section:first-child {
+  border-top: 0;
+}
+
+.ui-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  min-height: 28px;
+  margin-bottom: var(--space-5);
+}
+
+.ui-section__title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  font: var(--fw-semibold) var(--fs-md) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+  color: var(--text-1);
+}
+
+.ui-section__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: var(--hit-min);
+  margin: 0 calc(var(--space-4) * -1);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ui-section__toggle:hover {
+  background: var(--ink-1);
+}
+
+.ui-section__toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ui-section__icon {
+  flex: none;
+  margin-right: var(--space-3);
+  color: var(--accent-400);
+}
+
+.ui-section__toggle .ui-section__icon {
+  margin-right: 0;
+}
+
+.ui-section__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-section__chevron {
+  flex: none;
+  color: var(--text-3);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.ui-section[data-collapsible][data-open="false"] .ui-section__chevron {
+  transform: rotate(-90deg);
+}
+
+.ui-section__side {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.ui-section__aside {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/* The body folds through grid rows; the inner box clips and fades. */
+.ui-section__fold {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.ui-section[data-collapsible] .ui-section__fold {
+  transition: grid-template-rows var(--dur-base) var(--ease-out);
+}
+
+.ui-section[data-collapsible][data-open="false"] .ui-section__fold {
+  grid-template-rows: 0fr;
+}
+
+.ui-section__body {
+  min-height: 0;
+  min-width: 0;
+}
+
+.ui-section[data-collapsible] .ui-section__body {
+  overflow: hidden;
+  /* Room for focus rings at the edges of folded content. */
+  padding: var(--space-2);
+  margin: calc(var(--space-2) * -1);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.ui-section[data-collapsible][data-open="false"] .ui-section__body {
+  opacity: 0;
+}
+
+.ui-section[data-flush] {
+  padding-inline: 0;
+}
+
+.ui-section[data-flush] > .ui-section__head {
+  padding-inline: var(--ui-section-px);
+}

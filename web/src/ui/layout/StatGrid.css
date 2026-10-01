@@ -1,0 +1,12 @@
+/* Stat grid: columns follow the width of the window, not the viewport. */
+
+.ui-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--ui-stat-min, 140px)), 1fr));
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ui-stat-grid[data-fixed] {
+  grid-template-columns: repeat(var(--ui-stat-cols), minmax(0, 1fr));
+}
