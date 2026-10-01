@@ -43,7 +43,7 @@ import { useMempoolLive } from '../hooks/useMempoolLive';
 import { payoutSchedule } from '../lib/emission';
 import { BlockTxs } from './BlockTxs';
 import { buildSlices, RewardSplit } from './RewardSplit';
-import { NodeLink, useNodeInfo } from './shared';
+import { cityOf, NodeLink, useNodeInfo } from './shared';
 import './block.css';
 import './view.css';
 
@@ -126,11 +126,14 @@ function Producer({
   endpoint,
   tier,
   outpoint,
+  city: apiCity,
 }: {
   id: number | null;
   endpoint: string | null;
   tier: string | null;
   outpoint: string | null;
+  /** The city the block's producer record names; the live node table is the fallback. */
+  city: string;
 }) {
   const info = useNodeInfo(id);
   const t = (info?.tier ?? tier ?? 'unknown') as TierName | 'unknown';
@@ -152,7 +155,10 @@ function Producer({
             <Row gap={5} className="ex-producer__sub">
               {info?.cc ? (
                 <span>
-                  Hosted in <EntityLink kind="country" value={info.cc} />
+                  Hosted in {apiCity || info.city ? `${apiCity || info.city}, ` : ''}
+                  <EntityLink kind="country" value={info.cc}>
+                    {info.country || info.cc}
+                  </EntityLink>
                 </span>
               ) : null}
               {outpoint ? (
@@ -270,6 +276,7 @@ export function BlockView({ blockKey }: { blockKey: string }) {
           endpoint={d.producer_ref?.endpoint ?? null}
           tier={d.producer_ref?.tier ?? null}
           outpoint={d.producer_ref?.outpoint ?? d.producer_collateral}
+          city={cityOf(d.producer_ref)}
         />
       </Section>
 

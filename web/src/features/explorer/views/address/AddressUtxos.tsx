@@ -15,6 +15,7 @@ import {
 } from '../../../../ui';
 import { liveConfirmations, useTipHeight } from '../../hooks/useChain';
 import { useAddressUtxos } from '../../hooks/useExplorerData';
+import { Dense } from '../shared';
 
 function Standing({ u }: { u: UtxoDto }) {
   const tip = useTipHeight();
@@ -88,30 +89,32 @@ export function AddressUtxos({ addr }: { addr: string }) {
         <strong className="ui-mono">{formatInt(total)}</strong> unspent outputs, worth{' '}
         <Amount value={totalValue} decimals={2} />.
       </p>
-      <DataTable
-        aria-label="Unspent outputs"
-        rows={items}
-        columns={COLUMNS}
-        rowKey={rowKey}
-        rowLink={(u) => ({ kind: 'tx', value: u.txid })}
-        maxHeight={520}
-        footer={
-          <div className="ex-foot">
-            <span aria-live="polite">
-              {q.isFetchingNextPage
-                ? 'Loading more'
-                : q.hasNextPage
-                  ? `${formatInt(items.length)} of ${formatInt(total)} loaded`
-                  : `All ${formatInt(items.length)} loaded`}
-            </span>
-            {q.hasNextPage ? (
-              <Button size="sm" onClick={() => void q.fetchNextPage()} loading={q.isFetchingNextPage}>
-                Load more
-              </Button>
-            ) : null}
-          </div>
-        }
-      />
+      <Dense>
+        <DataTable
+          aria-label="Unspent outputs"
+          rows={items}
+          columns={COLUMNS}
+          rowKey={rowKey}
+          rowLink={(u) => ({ kind: 'tx', value: u.txid })}
+          maxHeight={520}
+          footer={
+            <div className="ex-foot">
+              <span aria-live="polite">
+                {q.isFetchingNextPage
+                  ? 'Loading more'
+                  : q.hasNextPage
+                    ? `${formatInt(items.length)} of ${formatInt(total)} loaded`
+                    : `All ${formatInt(items.length)} loaded`}
+              </span>
+              {q.hasNextPage ? (
+                <Button size="sm" onClick={() => void q.fetchNextPage()} loading={q.isFetchingNextPage}>
+                  Load more
+                </Button>
+              ) : null}
+            </div>
+          }
+        />
+      </Dense>
     </>
   );
 }

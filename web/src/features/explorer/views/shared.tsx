@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { TxKind } from '../../../api/generated/TxKind';
+import { splitCountry } from '../../../api/nodesBin';
 import { useNetwork } from '../../../app/context';
 import { shallowEqual } from '../../../store/react';
 import { Chip, cx, EntityLink, TierGlyph, type TierName, Unknown } from '../../../ui';
@@ -28,22 +29,49 @@ export interface NodeInfo {
   endpoint: string;
   tier: TierName | 'unknown';
   cc: string;
+  /** The country's name ('' when the table lists only a code). */
+  country: string;
+  /** The city the node's address resolves to, or '' when the server has no city for it. */
+  city: string;
 }
 
-/** A node's endpoint, tier and country from the live node table (null when the id is not listed). */
+/** A node's endpoint, tier, country and city from the live node table (null when the id is not listed). */
 export function useNodeInfo(id: number | null | undefined): NodeInfo | null {
   const t = useNetwork(
     (s) => {
       if (id === null || id === undefined) return null;
       const i = s.nodes.indexOf(id);
       if (i < 0) return null;
-      return [s.nodes.endpoint(i), s.nodes.tier[i] ?? 0, s.nodes.countryCode(i)] as const;
+      const city = s.nodes.locations.info(s.nodes.loc[i] ?? 0)?.city ?? '';
+      const country = splitCountry(s.nodes.countries.get(s.nodes.country[i] ?? 0)).name;
+      return [s.nodes.endpoint(i), s.nodes.tier[i] ?? 0, s.nodes.countryCode(i), city, country] as const;
     },
     (a, b) =>
       a === b || (a !== null && b !== null && shallowEqual(a as readonly unknown[], b as readonly unknown[])),
   );
   if (!t) return null;
-  return { endpoint: t[0], tier: TIERS[t[1]] ?? 'unknown', cc: t[2] };
+  return { endpoint: t[0], tier: TIERS[t[1]] ?? 'unknown', cc: t[2], city: t[3], country: t[4] };
+}
+
+/**
+ * The city named on an API object, if it carries one. The server now sends `city` on a block's
+ * producer; reading it by name keeps this working for objects that do not have the field.
+ */
+export function cityOf(x: object | null | undefined): string {
+  const c = (x as { city?: unknown } | null | undefined)?.city;
+  return typeof c === 'string' ? c.trim() : '';
+}
+
+/**
+ * Marks its children as a dense, data-heavy surface (a table, a long live list): the interaction
+ * effects of the motion language stay quiet there. It adds no box of its own.
+ */
+export function Dense({ children }: { children: ReactNode }) {
+  return (
+    <div className="ex-dense" data-fx-density="dense">
+      {children}
+    </div>
+  );
 }
 
 /** A node as a link: tier glyph, then `ip:port` (or the id when the node is not in the table). */

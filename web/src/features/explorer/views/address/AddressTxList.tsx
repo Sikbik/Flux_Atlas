@@ -23,7 +23,7 @@ import { liveConfirmations, useTipHeight } from '../../hooks/useChain';
 import { useAddressTxsLive } from '../../hooks/useExplorerData';
 import { describeTxForAddress, type TxForAddress } from '../../lib/addressTxs';
 import { TX_KINDS } from '../../lib/txkinds';
-import { AddressTag } from '../shared';
+import { AddressTag, Dense } from '../shared';
 
 interface AddrTx {
   tx: TxDetailDto;
@@ -145,29 +145,31 @@ export function AddressTxList({ addr }: { addr: string }) {
     );
   }
   return (
-    <DataTable
-      aria-label="Transactions"
-      rows={rows}
-      columns={COLUMNS}
-      rowKey={(r) => r.tx.txid}
-      rowLink={(r) => ({ kind: 'tx', value: r.tx.txid })}
-      maxHeight={560}
-      footer={
-        <div className="ex-foot">
-          <span aria-live="polite">
-            {q.isFetchingNextPage
-              ? 'Loading older transactions'
-              : q.hasNextPage
-                ? `${formatInt(q.items.length)} of ${formatInt(q.total)} loaded`
-                : `All ${formatInt(q.items.length)} transactions loaded`}
-          </span>
-          {q.hasNextPage ? (
-            <Button size="sm" onClick={() => void q.fetchNextPage()} loading={q.isFetchingNextPage}>
-              Load older
-            </Button>
-          ) : null}
-        </div>
-      }
-    />
+    <Dense>
+      <DataTable
+        aria-label="Transactions"
+        rows={rows}
+        columns={COLUMNS}
+        rowKey={(r) => r.tx.txid}
+        rowLink={(r) => ({ kind: 'tx', value: r.tx.txid })}
+        maxHeight={560}
+        footer={
+          <div className="ex-foot">
+            <span aria-live="polite">
+              {q.isFetchingNextPage
+                ? 'Loading older transactions'
+                : q.hasNextPage
+                  ? `${formatInt(q.items.length)} of ${formatInt(q.total)} loaded`
+                  : `All ${formatInt(q.items.length)} transactions loaded`}
+            </span>
+            {q.hasNextPage ? (
+              <Button size="sm" onClick={() => void q.fetchNextPage()} loading={q.isFetchingNextPage}>
+                Load older
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
+    </Dense>
   );
 }

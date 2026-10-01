@@ -28,6 +28,7 @@ import {
   satsToFlux,
   subsidyAt,
 } from '../../lib/emission';
+import { Dense } from '../shared';
 
 interface Tip {
   height: number;
@@ -232,14 +233,16 @@ export function CutSchedule({ tip }: { tip: Tip }) {
       <p className="ex-note ex-pad">
         {MAX_REDUCTIONS} cuts, one every {formatInt(REDUCTION_INTERVAL)} blocks. Amounts are FLUX per block.
       </p>
-      <DataTable
-        aria-label="Reward cut schedule"
-        rows={cuts}
-        columns={columns}
-        rowKey={(c) => c.k}
-        rowHeight="compact"
-        maxHeight={420}
-      />
+      <Dense>
+        <DataTable
+          aria-label="Reward cut schedule"
+          rows={cuts}
+          columns={columns}
+          rowKey={(c) => c.k}
+          rowHeight="compact"
+          maxHeight={420}
+        />
+      </Dense>
     </Section>
   );
 }

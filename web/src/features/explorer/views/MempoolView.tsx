@@ -31,7 +31,7 @@ import { type MempoolRow, useMempoolLive } from '../hooks/useMempoolLive';
 import { TX_KINDS } from '../lib/txkinds';
 import { txSizeText } from '../lib/txsize';
 import { MempoolRing } from './mempool/MempoolRing';
-import { KIND_ICON } from './shared';
+import { Dense, KIND_ICON } from './shared';
 import './mempool/mempool.css';
 import './view.css';
 
@@ -118,22 +118,24 @@ function Feed({ rows }: { rows: readonly MempoolRow[] }) {
           Node check-ins {formatInt(counts.checkin)}
         </Chip>
       </Row>
-      <DataTable
-        aria-label="Pending transactions"
-        rows={shown}
-        columns={COLUMNS}
-        rowKey={rowKey}
-        rowLink={(r) => ({ kind: 'tx', value: r.tx.txid })}
-        highlightKeys={fresh}
-        maxHeight={480}
-        empty={
-          <p className="ex-note ex-pad" role="status">
-            {rows.length === 0
-              ? 'The mempool is empty. The next transaction will appear here the moment the network sees it.'
-              : 'Nothing pending matches this filter.'}
-          </p>
-        }
-      />
+      <Dense>
+        <DataTable
+          aria-label="Pending transactions"
+          rows={shown}
+          columns={COLUMNS}
+          rowKey={rowKey}
+          rowLink={(r) => ({ kind: 'tx', value: r.tx.txid })}
+          highlightKeys={fresh}
+          maxHeight={480}
+          empty={
+            <p className="ex-note ex-pad" role="status">
+              {rows.length === 0
+                ? 'The mempool is empty. The next transaction will appear here the moment the network sees it.'
+                : 'Nothing pending matches this filter.'}
+            </p>
+          }
+        />
+      </Dense>
     </>
   );
 }

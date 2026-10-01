@@ -41,3 +41,8 @@
   color: var(--text-3);
   background: var(--ink-1);
 }
+
+/* The wrapper that marks a table as a dense surface; it takes no part in layout. */
+.ex-dense {
+  display: contents;
+}

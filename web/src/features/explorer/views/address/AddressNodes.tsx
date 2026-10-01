@@ -17,7 +17,7 @@ import {
   tierLabel,
 } from '../../../../ui';
 import { DotMap, type MapSite } from '../../../analytics/viz/DotMap';
-import { NodeLink } from '../shared';
+import { Dense, NodeLink, useNodeInfo } from '../shared';
 
 const TIER_RANK: Record<string, number> = { stratus: 0, nimbus: 1, cumulus: 2, unknown: 3 };
 
@@ -76,6 +76,20 @@ export function NodesMap({ nodes }: { nodes: readonly NodeRow[] }) {
   );
 }
 
+/** A node's place: its city (when the server names one) and its country as a link. */
+function Where({ node: n }: { node: NodeRow }) {
+  const city = useNodeInfo(n.id)?.city ?? '';
+  if (!n.country_code) return city ? <span>{city}</span> : null;
+  return (
+    <span>
+      {city ? `${city}, ` : ''}
+      <EntityLink kind="country" value={n.country_code}>
+        {n.country ?? n.country_code}
+      </EntityLink>
+    </span>
+  );
+}
+
 const COLUMNS: readonly DataTableColumn<NodeRow>[] = [
   {
     id: 'node',
@@ -101,12 +115,7 @@ const COLUMNS: readonly DataTableColumn<NodeRow>[] = [
     id: 'where',
     header: 'Where',
     minWidth: 180,
-    cell: (n) =>
-      n.country_code ? (
-        <EntityLink kind="country" value={n.country_code}>
-          {n.country ?? n.country_code}
-        </EntityLink>
-      ) : null,
+    cell: (n) => <Where node={n} />,
   },
   {
     id: 'org',
@@ -166,15 +175,17 @@ export function AddressNodesList({
           ) : null,
         )}
       </Row>
-      <DataTable
-        aria-label="Nodes of this address"
-        rows={shown}
-        columns={COLUMNS}
-        rowKey={(n) => n.id}
-        rowLink={(n) => (n.endpoint ? { kind: 'node', value: n.endpoint } : null)}
-        loading={loading}
-        maxHeight={520}
-      />
+      <Dense>
+        <DataTable
+          aria-label="Nodes of this address"
+          rows={shown}
+          columns={COLUMNS}
+          rowKey={(n) => n.id}
+          rowLink={(n) => (n.endpoint ? { kind: 'node', value: n.endpoint } : null)}
+          loading={loading}
+          maxHeight={520}
+        />
+      </Dense>
     </>
   );
 }

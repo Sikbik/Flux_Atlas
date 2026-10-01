@@ -8,7 +8,7 @@ import type { TxLite } from '../../../api/generated/TxLite';
 import { formatBytes, formatInt, parseFlux } from '../../../lib/format';
 import { Amount, DataTable, type DataTableColumn, EntityLink, Section } from '../../../ui';
 import { BLOCK_GROUP_ORDER, NODE_TX_KINDS, TX_KINDS } from '../lib/txkinds';
-import { NodeLink } from './shared';
+import { Dense, NodeLink } from './shared';
 
 /** A group longer than this starts folded: the reader opens it on purpose. */
 const FOLD_AT = 12;
@@ -92,15 +92,17 @@ function TxGroup({
         </span>
       }
     >
-      <DataTable
-        aria-label={info.plural}
-        rows={rows}
-        columns={columns}
-        rowKey={(t) => t.txid}
-        rowLink={(t) => ({ kind: 'tx', value: t.txid })}
-        maxHeight={long ? MAX_HEIGHT : undefined}
-        rowHeight="compact"
-      />
+      <Dense>
+        <DataTable
+          aria-label={info.plural}
+          rows={rows}
+          columns={columns}
+          rowKey={(t) => t.txid}
+          rowLink={(t) => ({ kind: 'tx', value: t.txid })}
+          maxHeight={long ? MAX_HEIGHT : undefined}
+          rowHeight="compact"
+        />
+      </Dense>
     </Section>
   );
 }

@@ -43,7 +43,7 @@ import { JsonView } from '../json/JsonView';
 import { payoutSchedule } from '../lib/emission';
 import { buildFlow } from '../lib/txflow';
 import { NODE_TX_KINDS, TX_KINDS } from '../lib/txkinds';
-import { AddressTag, NodeLink } from './shared';
+import { AddressTag, Dense, NodeLink } from './shared';
 import './view.css';
 
 type TabId = 'overview' | 'io' | 'raw';
@@ -367,25 +367,29 @@ function IoTables({ tx }: { tx: TxDetailDto }) {
               : 'The explorer did not list any inputs.'}
           </p>
         ) : (
+          <Dense>
+            <DataTable
+              aria-label="Inputs"
+              rows={inRows}
+              columns={inCols}
+              rowKey={(r) => r.n}
+              rowHeight="compact"
+              maxHeight={360}
+            />
+          </Dense>
+        )}
+      </Section>
+      <Section title="Outputs" aside={formatInt(tx.outputs.length)} flush>
+        <Dense>
           <DataTable
-            aria-label="Inputs"
-            rows={inRows}
-            columns={inCols}
+            aria-label="Outputs"
+            rows={outRows}
+            columns={OUTPUT_COLUMNS}
             rowKey={(r) => r.n}
             rowHeight="compact"
             maxHeight={360}
           />
-        )}
-      </Section>
-      <Section title="Outputs" aside={formatInt(tx.outputs.length)} flush>
-        <DataTable
-          aria-label="Outputs"
-          rows={outRows}
-          columns={OUTPUT_COLUMNS}
-          rowKey={(r) => r.n}
-          rowHeight="compact"
-          maxHeight={360}
-        />
+        </Dense>
       </Section>
     </>
   );

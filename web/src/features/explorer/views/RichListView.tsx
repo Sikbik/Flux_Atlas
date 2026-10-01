@@ -30,7 +30,7 @@ import { useCollateral } from '../hooks/useCollateral';
 import { useDwell } from '../hooks/useDom';
 import { knownEntity } from '../lib/entities';
 import { concentration, formatShare, lockedSats } from '../lib/richlist';
-import { AddressTag } from './shared';
+import { AddressTag, Dense } from './shared';
 import './richlist/richlist.css';
 import './view.css';
 
@@ -238,15 +238,17 @@ export function RichListView() {
             </Chip>
           ) : null}
         </Row>
-        <DataTable
-          aria-label="Addresses by balance"
-          rows={shown}
-          columns={COLUMNS}
-          rowKey={rowKey}
-          rowLink={(e) => ({ kind: 'address', value: e.address })}
-          maxHeight={560}
-          empty={<p className="ex-note ex-pad">No address matches both filters.</p>}
-        />
+        <Dense>
+          <DataTable
+            aria-label="Addresses by balance"
+            rows={shown}
+            columns={COLUMNS}
+            rowKey={rowKey}
+            rowLink={(e) => ({ kind: 'address', value: e.address })}
+            maxHeight={560}
+            empty={<p className="ex-note ex-pad">No address matches both filters.</p>}
+          />
+        </Dense>
       </Section>
     </div>
   );

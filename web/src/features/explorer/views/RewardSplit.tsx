@@ -17,7 +17,7 @@ import {
   tierLabel,
 } from '../../../ui';
 import { DEV_FUND_ADDRESS } from '../lib/entities';
-import { AddressTag, NodeLink } from './shared';
+import { AddressTag, Dense, NodeLink } from './shared';
 
 export interface Slice {
   key: string;
@@ -117,14 +117,16 @@ export function RewardSplit({ slices }: { slices: readonly Slice[] }) {
         label="How the block reward was split"
         format={(v) => `${v.toFixed(2)} FLUX`}
       />
-      <DataTable
-        aria-label="Recipients of the block reward"
-        rows={slices}
-        columns={columns}
-        rowKey={(s) => s.key}
-        rowHeight="compact"
-        zebra={false}
-      />
+      <Dense>
+        <DataTable
+          aria-label="Recipients of the block reward"
+          rows={slices}
+          columns={columns}
+          rowKey={(s) => s.key}
+          rowHeight="compact"
+          zebra={false}
+        />
+      </Dense>
     </Stack>
   );
 }
