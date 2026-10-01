@@ -38,11 +38,18 @@ pub struct Inner {
     pub metrics_cache: moka::future::Cache<String, Arc<CachedBody>>,
     /// `/timeline/state` reconstructions keyed by `t` (60 s).
     pub timeline_cache: moka::future::Cache<u64, Arc<CachedBody>>,
-    hosted: tokio::sync::Mutex<Option<(Instant, HostedApps)>>,
+    hosted: tokio::sync::Mutex<HostedSlot>,
 }
 
 /// Node id to the apps with an instance on it.
 pub type HostedApps = Arc<HashMap<u32, Vec<AppRef>>>;
+
+/// The hosted-apps map and whether a rebuild is running.
+#[derive(Default)]
+pub struct HostedSlot {
+    map: Option<(Instant, HostedApps)>,
+    refreshing: bool,
+}
 
 /// How long the hosted-apps map (built from stored app locations) is reused.
 const HOSTED_TTL: Duration = Duration::from_secs(30);
@@ -86,7 +93,7 @@ impl AppState {
                 hub,
                 cfg,
                 engine,
-                hosted: tokio::sync::Mutex::new(None),
+                hosted: tokio::sync::Mutex::new(HostedSlot::default()),
                 metrics_cache: moka::future::Cache::builder()
                     .max_capacity(256)
                     .time_to_live(Duration::from_secs(15))
@@ -125,19 +132,35 @@ impl AppState {
         tokio::task::spawn_blocking(move || f(engine.store())).await?
     }
 
-    /// Apps hosted per node, rebuilt from the store at most every 30 s.
+    /// Apps hosted per node, rebuilt from the store at most every 30 s. Only the first request
+    /// waits for the build (reading every app record takes tens of ms); after that a stale map is
+    /// served while one background task rebuilds it, so node detail stays a memory read.
     pub async fn hosted_apps(&self) -> Result<HostedApps, ApiError> {
         let mut slot = self.hosted.lock().await;
-        if let Some((at, map)) = slot.as_ref()
-            && at.elapsed() < HOSTED_TTL
-        {
-            return Ok(Arc::clone(map));
+        if let Some((at, map)) = slot.map.as_ref() {
+            let map = Arc::clone(map);
+            if at.elapsed() >= HOSTED_TTL && !slot.refreshing {
+                slot.refreshing = true;
+                let s = self.clone();
+                tokio::spawn(async move {
+                    let built = s.build_hosted().await;
+                    let mut slot = s.hosted.lock().await;
+                    slot.refreshing = false;
+                    if let Ok(m) = built {
+                        slot.map = Some((Instant::now(), m));
+                    }
+                });
+            }
+            return Ok(map);
         }
-        let map: HostedApps = self
-            .store_read(|st| Ok(Arc::new(crate::routes::nodes::hosted_map(&st.apps()?))))
-            .await?;
-        *slot = Some((Instant::now(), Arc::clone(&map)));
+        let map = self.build_hosted().await?;
+        slot.map = Some((Instant::now(), Arc::clone(&map)));
         Ok(map)
+    }
+
+    async fn build_hosted(&self) -> Result<HostedApps, ApiError> {
+        self.store_read(|st| Ok(Arc::new(crate::routes::nodes::hosted_map(&st.apps()?))))
+            .await
     }
 
     /// Closes live connections and refuses new ones.

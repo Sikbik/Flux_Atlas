@@ -400,18 +400,47 @@ impl NodeRecord {
     }
 }
 
-/// Fluxnode consensus windows (post-PoN, from fluxd `fluxnode.h`).
+/// Fluxnode consensus windows (post-PoN, from fluxd `fluxnode.h`), and the exact heights at
+/// which fluxd applies them (`fluxnode.cpp`, called from `ConnectBlock` in `main.cpp` with the
+/// height of the block being connected).
 pub mod windows {
-    /// A node expires this many blocks after its last confirmation.
+    /// `FLUXNODE_CONFIRM_UPDATE_EXPIRATION_HEIGHT_V4`. A confirmed node is dropped by the first
+    /// block `H` with `last_confirmed < H - 640` (`GetUndoDataForExpiredConfirmFluxnodes`), so it
+    /// is still listed at `last_confirmed + 640` and gone at `last_confirmed + 641`
+    /// ([`expiry_height`]).
     pub const EXPIRATION_BLOCKS: u32 = 640;
     /// A periodic (update) confirm is allowed this many blocks after the previous one.
     pub const MIN_CONFIRM_INTERVAL_BLOCKS: u32 = 500;
     /// We flag a node as at risk once this many blocks passed without a confirm.
     pub const AT_RISK_BLOCKS: u32 = 560;
-    /// Start transactions expire after this many blocks without an initial confirm.
+    /// `FLUXNODE_START_TX_EXPIRATION_HEIGHT_V2`. A start not confirmed by then moves to the DOS
+    /// list at exactly `added + 240` (`CheckForExpiredStartTx`), unless that same block confirms
+    /// it ([`dos_height`]).
     pub const START_EXPIRATION_BLOCKS: u32 = 240;
-    /// DOS ban length.
+    /// `FLUXNODE_DOS_REMOVE_AMOUNT_V2`. A DOS entry is forgotten by the first block `H` with
+    /// `added <= H - 720` (`GetUndoDataForExpiredFluxnodeDosScores`), so at `added + 720`
+    /// ([`dos_end_height`]); the collateral may then start again.
     pub const DOS_BLOCKS: u32 = 720;
+
+    /// Height of the block that drops a node last confirmed at `last_confirmed`.
+    pub const fn expiry_height(last_confirmed: u32) -> u32 {
+        last_confirmed.saturating_add(EXPIRATION_BLOCKS + 1)
+    }
+
+    /// True when the block at `height` (or an earlier one) has dropped the node.
+    pub const fn is_expired_at(last_confirmed: u32, height: u32) -> bool {
+        height >= expiry_height(last_confirmed)
+    }
+
+    /// Height of the block that moves an unconfirmed start (mined at `added`) to the DOS list.
+    pub const fn dos_height(added: u32) -> u32 {
+        added.saturating_add(START_EXPIRATION_BLOCKS)
+    }
+
+    /// Height of the block that removes a DOS entry (start mined at `added`).
+    pub const fn dos_end_height(added: u32) -> u32 {
+        added.saturating_add(DOS_BLOCKS)
+    }
 }
 
 #[cfg(test)]

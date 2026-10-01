@@ -361,12 +361,13 @@ async fn fetch(ctx: &JobCtx, hash: &BlockHash) -> Option<DecodedBlock> {
         )
         .await
     {
-        Ok(b) => b,
+        Ok(b) => std::sync::Arc::new(b),
         Err(e) => {
             ctx.fail("block_decoder", &e);
             return None;
         }
     };
+    ctx.handle.keep_raw_block(std::sync::Arc::clone(&raw));
     match decode_block(&raw) {
         Ok(d) => Some(d),
         Err(e) => {

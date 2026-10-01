@@ -1,12 +1,17 @@
 //! Overlay mesh model fed by TopologySweep.
 //!
 //! Every `/flux/topology` call returns the peer lists that about 60 reporters sent to the
-//! queried node. Each reporter's list replaces its previous one. An undirected edge `{a, b}`
-//! is decided by the newer of the two reports (a connection one side dropped since the other
-//! side last reported is gone); with one report, that report decides. It is bidirectional
-//! when both reports list each other. Edges are undirected `NodeId` pairs (`a < b`) and
-//! peers that resolve to no node never enter the set. Reports expire after
-//! [`REPORT_TTL_MS`], about two full sweep cycles, and their edges are removed.
+//! queried node. Each reporter's list replaces its previous one. Edges are undirected `NodeId`
+//! pairs (`a < b`); peers that resolve to no node never enter the set.
+//!
+//! **Hysteresis.** An edge `{a, b}` appears as soon as a report from `a` or `b` lists it. It is
+//! removed only on real evidence: [`MISSES_TO_REMOVE`] consecutive reports covering it (new
+//! reports from either endpoint) that do not list it, or no unexpired report of either endpoint
+//! left. One report that omits the edge is not enough: the copies of a reporter's list that
+//! different queried nodes hold differ in age, and the two endpoints' lists disagree for a while
+//! after any reconnect, so a single omission was mostly noise (measured on 3106: about a third
+//! of the removed links came back within 10 minutes). It is bidirectional when both latest
+//! reports list each other. Reports expire after [`REPORT_TTL_MS`], about two full sweep cycles.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -15,6 +20,9 @@ use atlas_core::codec::mesh_bin::flags;
 
 /// A reporter's peer list is dropped when not refreshed for this long.
 pub const REPORT_TTL_MS: u64 = 3_600_000;
+
+/// Consecutive covering reports without the edge that remove it.
+pub const MISSES_TO_REMOVE: u8 = 2;
 
 /// One reporter's latest peer list.
 #[derive(Debug, Clone, Default)]
@@ -60,11 +68,26 @@ pub struct Mesh {
     pub edges: BTreeMap<(NodeId, NodeId), u8>,
     /// First time each edge was seen (persisted with the edge).
     pub first_seen: HashMap<(NodeId, NodeId), u64>,
+    /// Consecutive covering reports that did not list an edge (edges with at least one miss).
+    misses: HashMap<(NodeId, NodeId), u8>,
+    /// Edges by endpoint.
+    adj: HashMap<NodeId, BTreeSet<NodeId>>,
     pub dirty: bool,
 }
 
 fn ordered(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
     if a < b { (a, b) } else { (b, a) }
+}
+
+/// Edge state before a change, recorded the first time a change touches the edge, so one merge
+/// reports only net changes.
+#[derive(Default)]
+struct Touched(BTreeMap<(NodeId, NodeId), Option<u8>>);
+
+impl Touched {
+    fn note(&mut self, m: &Mesh, k: (NodeId, NodeId)) {
+        self.0.entry(k).or_insert_with(|| m.edges.get(&k).copied());
+    }
 }
 
 impl Mesh {
@@ -74,7 +97,7 @@ impl Mesh {
         let mut m = Self::default();
         for (a, b, f, first) in edges {
             let k = ordered(a, b);
-            m.edges.insert(k, f);
+            m.link(k, f);
             m.first_seen.insert(k, first);
             let mut add = |from: NodeId, to: NodeId| {
                 let r = m.reports.entry(from).or_insert_with(|| Report {
@@ -112,41 +135,86 @@ impl Mesh {
             .map(|r| (r.outbound.len() as u16, r.inbound.len() as u16))
     }
 
+    fn link(&mut self, k: (NodeId, NodeId), f: u8) {
+        self.edges.insert(k, f);
+        self.adj.entry(k.0).or_default().insert(k.1);
+        self.adj.entry(k.1).or_default().insert(k.0);
+    }
+
+    fn unlink(&mut self, k: (NodeId, NodeId)) {
+        self.edges.remove(&k);
+        self.first_seen.remove(&k);
+        self.misses.remove(&k);
+        for (x, y) in [(k.0, k.1), (k.1, k.0)] {
+            if let Some(s) = self.adj.get_mut(&x) {
+                s.remove(&y);
+                if s.is_empty() {
+                    self.adj.remove(&x);
+                }
+            }
+        }
+    }
+
+    /// Flags of an edge from the latest reports.
+    fn flags_of(&self, (a, b): (NodeId, NodeId), cross: &dyn Fn(NodeId, NodeId) -> bool) -> u8 {
+        let by_a = self.reports.get(&a).is_some_and(|r| r.lists(b));
+        let by_b = self.reports.get(&b).is_some_and(|r| r.lists(a));
+        let mut f = 0u8;
+        if by_a && by_b {
+            f |= flags::BIDIRECTIONAL;
+        }
+        if cross(a, b) {
+            f |= flags::CROSS_CONTINENT;
+        }
+        f
+    }
+
     /// Merges a batch of reports. `cross` tells whether two nodes are on different continents.
     pub fn merge(
         &mut self,
         reports: Vec<(NodeId, Report)>,
         cross: &dyn Fn(NodeId, NodeId) -> bool,
     ) -> MeshDiff {
-        let mut candidates: BTreeSet<(NodeId, NodeId)> = BTreeSet::new();
+        let mut touched = Touched::default();
         let mut diff = MeshDiff::default();
         for (r, rep) in reports {
-            if let Some(old) = self.reports.get(&r) {
-                for p in old.peers() {
-                    if p != r {
-                        candidates.insert(ordered(r, p));
-                    }
-                }
-            }
-            for p in rep.peers() {
-                if p != r {
-                    candidates.insert(ordered(r, p));
-                }
-            }
-            // Edges held up only by other reporters' older lists are re-decided too.
-            for (o, orep) in &self.reports {
-                if *o != r && orep.lists(r) {
-                    candidates.insert(ordered(r, *o));
-                }
-            }
+            let listed: BTreeSet<NodeId> = rep.peers().filter(|p| *p != r).collect();
+            let linked: Vec<NodeId> = self
+                .adj
+                .get(&r)
+                .map(|s| s.iter().copied().collect())
+                .unwrap_or_default();
             self.reports.insert(r, rep);
             diff.reporters.push(r);
+            for p in &listed {
+                let k = ordered(r, *p);
+                touched.note(self, k);
+                self.misses.remove(&k);
+                if !self.edges.contains_key(&k) {
+                    self.link(k, 0);
+                }
+            }
+            for p in linked {
+                if listed.contains(&p) {
+                    continue;
+                }
+                let k = ordered(r, p);
+                touched.note(self, k);
+                let n = {
+                    let n = self.misses.entry(k).or_insert(0);
+                    *n += 1;
+                    *n
+                };
+                if n >= MISSES_TO_REMOVE {
+                    self.unlink(k);
+                }
+            }
         }
-        self.recompute(candidates, cross, &mut diff);
+        self.finish(touched, cross, &mut diff);
         diff
     }
 
-    /// Drops reports older than `before_ms` and the edges only they supported.
+    /// Drops reports older than `before_ms`; an edge with no unexpired report listing it goes.
     pub fn expire(&mut self, before_ms: u64, cross: &dyn Fn(NodeId, NodeId) -> bool) -> MeshDiff {
         let stale: Vec<NodeId> = self
             .reports
@@ -154,18 +222,26 @@ impl Mesh {
             .filter(|(_, r)| r.at_ms < before_ms)
             .map(|(n, _)| *n)
             .collect();
-        let mut candidates = BTreeSet::new();
+        let mut touched = Touched::default();
+        for n in &stale {
+            self.reports.remove(n);
+        }
         for n in stale {
-            if let Some(r) = self.reports.remove(&n) {
-                for p in r.peers() {
-                    if p != n {
-                        candidates.insert(ordered(n, p));
-                    }
+            let linked: Vec<NodeId> = self
+                .adj
+                .get(&n)
+                .map(|s| s.iter().copied().collect())
+                .unwrap_or_default();
+            for x in linked {
+                let k = ordered(n, x);
+                touched.note(self, k);
+                if !self.reports.get(&x).is_some_and(|r| r.lists(n)) {
+                    self.unlink(k);
                 }
             }
         }
         let mut diff = MeshDiff::default();
-        self.recompute(candidates, cross, &mut diff);
+        self.finish(touched, cross, &mut diff);
         diff
     }
 
@@ -176,16 +252,16 @@ impl Mesh {
             r.outbound.remove(&n);
             r.inbound.remove(&n);
         }
-        let doomed: Vec<(NodeId, NodeId)> = self
-            .edges
-            .keys()
-            .filter(|(a, b)| *a == n || *b == n)
-            .copied()
-            .collect();
+        let linked: Vec<NodeId> = self
+            .adj
+            .get(&n)
+            .map(|s| s.iter().copied().collect())
+            .unwrap_or_default();
         let mut diff = MeshDiff::default();
+        let mut doomed: Vec<(NodeId, NodeId)> = linked.into_iter().map(|x| ordered(n, x)).collect();
+        doomed.sort_unstable();
         for k in doomed {
-            self.edges.remove(&k);
-            self.first_seen.remove(&k);
+            self.unlink(k);
             diff.removed.push(k);
         }
         if !diff.is_empty() {
@@ -194,39 +270,26 @@ impl Mesh {
         diff
     }
 
-    fn recompute(
+    /// Turns the touched edges into a net diff (sorted) and refreshes their flags.
+    fn finish(
         &mut self,
-        candidates: BTreeSet<(NodeId, NodeId)>,
+        touched: Touched,
         cross: &dyn Fn(NodeId, NodeId) -> bool,
         diff: &mut MeshDiff,
     ) {
-        for (a, b) in candidates {
-            let ra = self.reports.get(&a);
-            let rb = self.reports.get(&b);
-            let by_a = ra.is_some_and(|r| r.lists(b));
-            let by_b = rb.is_some_and(|r| r.lists(a));
-            let present = match (ra, rb) {
-                (Some(x), Some(y)) if x.at_ms > y.at_ms => by_a,
-                (Some(x), Some(y)) if y.at_ms > x.at_ms => by_b,
-                _ => by_a || by_b,
-            };
-            let key = (a, b);
-            if present {
-                let mut f = 0u8;
-                if by_a && by_b {
-                    f |= flags::BIDIRECTIONAL;
+        for (k, before) in touched.0 {
+            if !self.edges.contains_key(&k) {
+                if before.is_some() {
+                    diff.removed.push(k);
                 }
-                if cross(a, b) {
-                    f |= flags::CROSS_CONTINENT;
-                }
-                match self.edges.insert(key, f) {
-                    None => diff.added.push((a, b, f)),
-                    Some(old) if old != f => diff.reflagged.push((a, b, f)),
-                    Some(_) => {}
-                }
-            } else if self.edges.remove(&key).is_some() {
-                self.first_seen.remove(&key);
-                diff.removed.push(key);
+                continue;
+            }
+            let f = self.flags_of(k, cross);
+            self.edges.insert(k, f);
+            match before {
+                None => diff.added.push((k.0, k.1, f)),
+                Some(old) if old != f => diff.reflagged.push((k.0, k.1, f)),
+                Some(_) => {}
             }
         }
         if !diff.is_empty() {
