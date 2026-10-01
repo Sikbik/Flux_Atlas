@@ -93,17 +93,19 @@
   height: 100%;
 }
 
-/* A ring that has not arrived: the same square, round. */
-.ix-wheel-skel {
+/* A ring that has not arrived: the same square, round. The kit's skeleton sets a 12 px height, which the
+   square's aspect ratio only replaces once the height is auto again. */
+.ix-queue .ix-wheel-skel {
   display: block;
   width: 100%;
   max-width: 232px;
+  height: auto;
   aspect-ratio: 1;
   margin: 0 auto;
   border-radius: 50%;
 }
 
-.ix-q-card[data-solo] .ix-wheel-skel {
+.ix-queue .ix-q-card[data-solo] .ix-wheel-skel {
   max-width: 340px;
 }
 

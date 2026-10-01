@@ -68,6 +68,27 @@ const columns: DataTableColumn<NextRow>[] = [
 const rowKey = (r: NextRow) => r.id;
 const rowLink = (r: NextRow) => ({ kind: 'node' as const, value: r.endpoint || String(r.id) });
 
+/** The list's place before the queue has arrived: the same heading and columns, as skeleton rows. */
+export function NextInLineSkeleton({ tier }: { tier: QueueTier }) {
+  return (
+    <section className="ix-q-next" data-tier={tier}>
+      <div className="ix-sub-h">
+        <span>Next in line</span>
+        <span className="ix-dim">one per block</span>
+      </div>
+      <DataTable
+        aria-label={`Next payees of ${tierLabel(tier)}`}
+        rows={[]}
+        columns={columns}
+        rowKey={rowKey}
+        loading
+        skeletonRows={9}
+        maxHeight={NEXT_MAX_HEIGHT}
+      />
+    </section>
+  );
+}
+
 /** The next payees of one tier as a table: their place, where they are and when they are paid. */
 export function NextInLine({
   tier,

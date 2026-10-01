@@ -15,7 +15,7 @@ import { useOpenSet } from '../ui/openset';
 import { LaneRow } from './Belts';
 import { TierCard } from './Cards';
 import { QueueHeader, TIER_ORDER } from './Header';
-import { NextInLine } from './NextInLine';
+import { NextInLine, NextInLineSkeleton } from './NextInLine';
 import './queue.css';
 
 // ---- selection (the URL carries it, so a link shows the same node) --------------------------------------
@@ -93,34 +93,56 @@ function LiveNote() {
 
 // ---- loading ----------------------------------------------------------------------------------------------
 
-function QueueSkeleton({ tiers }: { tiers: readonly QueueTier[] }) {
+/** What stands in for the view until the node list arrives: the header is known, the rest is placeholders. */
+function QueueSkeleton({
+  focus,
+  active,
+  onActive,
+}: {
+  focus: QueueTier | null;
+  active: QueueTier;
+  onActive: (t: QueueTier) => void;
+}) {
+  const tiers = focus ? [focus] : TIER_ORDER;
   return (
-    <article className="ix ix-queue" aria-busy="true" aria-label="Loading the payment queues">
-      <div className="ix-skel-head">
-        <Skeleton w={96} h={12} />
-        <Skeleton w="52%" h={24} />
-        <Skeleton w="68%" h={12} />
-      </div>
+    <article
+      className="ix ix-queue"
+      data-focus={focus ?? undefined}
+      aria-busy="true"
+      aria-label="Loading the payment queues"
+    >
+      <QueueHeader focus={focus} active={active} onActive={onActive} />
       <div className="ix-pad ix-gap-top">
         <Skeleton h={30} radius="var(--r-md)" />
       </div>
       <Section>
-        <div className="ix-q-wheels" data-n={tiers.length}>
-          {tiers.map((t) => (
-            <div className="ix-q-card" key={t} data-tier={t} data-solo={tiers.length === 1 || undefined}>
-              <Skeleton className="ix-wheel-skel" />
-              <div className="ix-q-foot">
-                <Skeleton w="62%" h={12} />
+        <div className="ix-q-main">
+          <div className="ix-q-wheels" data-n={tiers.length}>
+            {tiers.map((t) => (
+              <div
+                className="ix-q-card"
+                key={t}
+                data-tier={t}
+                data-active={t === active || undefined}
+                data-solo={tiers.length === 1 || undefined}
+              >
+                <Skeleton className="ix-wheel-skel" />
+                <div className="ix-q-foot">
+                  <Skeleton w="62%" h={12} />
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          {focus ? <NextInLineSkeleton tier={focus} /> : null}
         </div>
       </Section>
       <Section title="Next to be paid">
         <div className="ix-q-lanes">
-          <Skeleton h={56} radius="var(--r-lg)" />
-          <Skeleton h={56} radius="var(--r-lg)" />
-          <Skeleton h={56} radius="var(--r-lg)" />
+          {tiers.map((t) => (
+            <div className="ix-q-lane" key={t} data-tier={t} data-active={t === active || undefined}>
+              <Skeleton h={56} radius="var(--r-lg)" />
+            </div>
+          ))}
         </div>
       </Section>
     </article>
@@ -158,7 +180,7 @@ export function QueueView({ tier }: { tier?: QueueTier }) {
   const clear = useCallback(() => sel.set(null), [sel]);
   const onPick = useCallback((h: NodeHit) => select(h.id), [select]);
 
-  if (!loaded) return <QueueSkeleton tiers={shown} />;
+  if (!loaded) return <QueueSkeleton focus={focus} active={current} onActive={setActive} />;
   const empty = QUEUE_TIERS.every((t) => queues.tiers[t].size === 0);
 
   return (
