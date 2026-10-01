@@ -35,12 +35,6 @@
   margin: 0;
 }
 
-/* The page slot lives in the shell's stage, which stacks below the globe's HUD layer, so place labels and the
-   glows would paint over the panel. While the weather is open, the stage is lifted to window level. */
-.shell-stage:has(> .shell-page > .ix-weather) {
-  z-index: var(--z-window);
-}
-
 /* The verdict word: a status dot and the word, on the title's own line. */
 .ix-verdict {
   display: inline-flex;
