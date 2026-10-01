@@ -1,72 +1,64 @@
-import { Ban, Check, ExternalLink, Lock } from 'lucide-react';
+// The spec of an app, one fold at a time: its components (one tab each), where the network may place
+// instances, and who owns it. An enterprise app is encrypted, so only the public fields appear.
+
+import { Ban, Check, Lock } from 'lucide-react';
+import { useId, useState } from 'react';
 import type { AppComponent } from '../../../api/generated/AppComponent';
 import type { GeoRule } from '../../../api/generated/GeoRule';
-import { formatInt, middleTruncate } from '../../../lib/format';
-import { defaultAppDomain, describeGeoPlace, envNames, parseImage } from '../derive/appSpec';
+import { formatInt } from '../../../lib/format';
 import {
-  AddressLink,
-  BlockLink,
   Chip,
-  CopyButton,
-  Disclosure,
-  HostLink,
-  Kv,
-  KvRow,
-  State,
-  useOpenSet,
-} from '../ui';
+  EmptyState,
+  EntityLink,
+  Hash,
+  Height,
+  KeyValue,
+  type KeyValueItem,
+  TabPanel,
+  Tabs,
+} from '../../../ui';
+import { defaultAppDomain, describeGeoPlace, envNames, parseImage } from '../derive/appSpec';
 import { useAppCtx } from './context';
+import { plural } from './summary';
 
-const plural = (n: number, one: string, many = `${one}s`) => `${formatInt(n)} ${n === 1 ? one : many}`;
-
-function Facts({ c }: { c: AppComponent }) {
+function ComponentFacts({ c }: { c: AppComponent }) {
   const img = parseImage(c.repotag);
   const env = envNames(c.environment);
   const domains = c.domains.filter(Boolean);
   const ports = c.ports.map((p, i) => ({ pub: p, inner: c.container_ports[i] }));
+  const items: KeyValueItem[] = [
+    {
+      label: 'Image',
+      value: img
+        ? img.href
+          ? `${img.repository}:${img.tag}`
+          : `${img.registry}/${img.repository}:${img.tag}`
+        : null,
+      ...(img?.href ? { href: img.href } : null),
+      mono: true,
+    },
+    {
+      label: 'Resources',
+      value: `${c.cpu} CPU · ${formatInt(c.ram_mb)} MB RAM · ${formatInt(c.hdd_gb)} GB disk`,
+      mono: true,
+    },
+  ];
+  if (ports.length) {
+    items.push({
+      label: 'Ports',
+      value: ports.map((p) => (p.inner ? `${p.pub} to ${p.inner}` : String(p.pub))).join(', '),
+      mono: true,
+    });
+  }
+  if (domains.length) items.push({ label: 'Domains', value: domains.join(', '), mono: true });
+  if (c.container_data) items.push({ label: 'Data', value: c.container_data, mono: true });
+  if (c.commands.length) items.push({ label: 'Commands', value: plural(c.commands.length, 'command') });
   return (
     <div className="ix-comp">
-      <dl className="ix-comp-grid">
-        <div>
-          <dt>CPU</dt>
-          <dd className="ix-mono">{c.cpu}</dd>
-        </div>
-        <div>
-          <dt>Memory</dt>
-          <dd className="ix-mono">{formatInt(c.ram_mb)} MB</dd>
-        </div>
-        <div>
-          <dt>Disk</dt>
-          <dd className="ix-mono">{formatInt(c.hdd_gb)} GB</dd>
-        </div>
-      </dl>
-      <Kv>
-        <KvRow label="Image" sans>
-          {img ? (
-            img.href ? (
-              <a href={img.href} target="_blank" rel="noopener noreferrer" className="ix-link ix-trunc">
-                {img.repository}:{img.tag} <ExternalLink size={11} strokeWidth={1.75} aria-hidden="true" />
-              </a>
-            ) : (
-              <span className="ix-mono ix-trunc">
-                {img.registry}/{img.repository}:{img.tag}
-              </span>
-            )
-          ) : (
-            'Unknown'
-          )}
-        </KvRow>
-        {ports.length ? (
-          <KvRow label="Ports">
-            {ports.map((p) => (p.inner ? `${p.pub} to ${p.inner}` : String(p.pub))).join(', ')}
-          </KvRow>
-        ) : null}
-        {domains.length ? <KvRow label="Domains">{domains.join(', ')}</KvRow> : null}
-        {c.container_data ? <KvRow label="Data">{c.container_data}</KvRow> : null}
-        {c.commands.length ? <KvRow label="Commands">{plural(c.commands.length, 'command')}</KvRow> : null}
-      </Kv>
+      {c.description ? <p className="ix-app-desc">{c.description}</p> : null}
+      <KeyValue align="start" items={items} />
       {env.length ? (
-        <div className="ix-comp-env">
+        <div className="ix-chipgroup">
           <span className="ix-cap">Environment, names only</span>
           <div className="ix-chips">
             {env.map((e) => (
@@ -100,52 +92,46 @@ function Facts({ c }: { c: AppComponent }) {
   );
 }
 
-/** The containers of the app, each one row until opened; a single component opens straight away. */
-export function ComponentsBody() {
+/** The containers of the app: a single component shows straight away, several get a tab each. */
+export function ComponentsPanel() {
   const { detail } = useAppCtx();
-  const open = useOpenSet(`comp:${detail.name}`);
   const { spec } = detail;
+  const tabsId = useId();
+  const [picked, setPicked] = useState<string | null>(null);
   if (spec.enterprise) {
     return (
-      <State compact icon={<Lock size={20} strokeWidth={1.5} />} title="Encrypted enterprise app">
+      <EmptyState compact icon={Lock} title="Encrypted enterprise app">
         Enterprise apps keep their components private; only the public fields (owner, instance count, expiry
         and placement) can be shown.
-      </State>
+      </EmptyState>
     );
   }
-  if (spec.components.length === 0) {
-    return <p className="ix-cap">This spec lists no components.</p>;
-  }
-  if (spec.components.length === 1) return <Facts c={spec.components[0]!} />;
+  const comps = spec.components;
+  if (comps.length === 0) return <p className="ix-cap">This spec lists no components.</p>;
+  const first = comps[0] as AppComponent;
+  if (comps.length === 1) return <ComponentFacts c={first} />;
+  const value = comps.some((c) => c.name === picked) ? (picked as string) : first.name;
   return (
     <div className="ix-comps">
-      {spec.components.map((c, i) => {
-        const img = parseImage(c.repotag);
-        return (
-          <Disclosure
-            compact
-            index={i}
-            key={c.name}
-            title={<span className="ix-mono">{c.name}</span>}
-            summary={
-              <span>
-                {img ? `${img.repository.split('/').pop()}:${img.tag}` : 'Unknown image'} · {c.cpu} CPU ·{' '}
-                {formatInt(c.ram_mb)} MB · {formatInt(c.hdd_gb)} GB
-              </span>
-            }
-            open={open.isOpen(c.name)}
-            onToggle={(v) => open.setOpen(c.name, v)}
-          >
-            <Facts c={c} />
-          </Disclosure>
-        );
-      })}
+      <Tabs
+        size="sm"
+        id={tabsId}
+        aria-label="Components"
+        items={comps.map((c) => ({ id: c.name, label: c.name }))}
+        value={value}
+        onChange={setPicked}
+      />
+      {comps.map((c) => (
+        <TabPanel key={c.name} tabsId={tabsId} id={c.name} value={value} className="ix-comps-panel">
+          <ComponentFacts c={c} />
+        </TabPanel>
+      ))}
     </div>
   );
 }
 
 /** Where the network may place instances: geographic rules, host requirements and pinned nodes. */
-export function PlacementBody() {
+export function PlacementPanel() {
   const { detail } = useAppCtx();
   const { spec } = detail;
   const allowed = spec.geolocation.filter((r) => r.allow);
@@ -156,11 +142,11 @@ export function PlacementBody() {
   return (
     <div className="ix-place">
       {allowed.length ? (
-        <div className="ix-place-group">
+        <div className="ix-chipgroup">
           <span className="ix-cap">Only in</span>
           <div className="ix-chips">
             {allowed.map((r) => (
-              <Chip key={place(r)} data-status="ok" icon={<Check size={12} strokeWidth={2} />}>
+              <Chip key={place(r)} data-status="ok" icon={Check}>
                 {describeGeoPlace(r)}
               </Chip>
             ))}
@@ -168,11 +154,11 @@ export function PlacementBody() {
         </div>
       ) : null}
       {forbidden.length ? (
-        <div className="ix-place-group">
+        <div className="ix-chipgroup">
           <span className="ix-cap">Never in</span>
           <div className="ix-chips">
             {forbidden.map((r) => (
-              <Chip key={place(r)} data-status="crit" icon={<Ban size={12} strokeWidth={2} />}>
+              <Chip key={place(r)} data-status="crit" icon={Ban}>
                 {describeGeoPlace(r)}
               </Chip>
             ))}
@@ -187,85 +173,59 @@ export function PlacementBody() {
         </div>
       ) : null}
       {spec.nodes.length ? (
-        <div className="ix-place-group">
+        <div className="ix-chipgroup">
           <span className="ix-cap">Pinned to these hosts</span>
           <div className="ix-chips">
             {spec.nodes.map((ip) => (
-              <HostLink key={ip} ip={ip.split(':')[0] ?? ip} className="ix-chip" data-mono="">
+              <EntityLink key={ip} kind="host" value={ip.split(':')[0] ?? ip} mono>
                 {ip}
-              </HostLink>
+              </EntityLink>
             ))}
           </div>
         </div>
       ) : null}
-      {any ? (
-        <p className="ix-cap">No placement rules: any node may run an instance.</p>
-      ) : (
-        <p className="ix-cap">
-          The owner set these rules in the specification; the network follows them when it picks nodes.
-        </p>
-      )}
+      <p className="ix-cap">
+        {any
+          ? 'No placement rules: any node may run an instance.'
+          : 'The owner set these rules in the specification; the network follows them when it picks nodes.'}
+      </p>
     </div>
   );
 }
 
 /** Owner, description, contacts and the identifiers of the current spec. */
-export function OwnerBody() {
+export function OwnerPanel() {
   const { detail } = useAppCtx();
   const { spec } = detail;
   const url = defaultAppDomain(detail.name);
   return (
-    <>
-      {spec.description ? <p className="ix-desc">{spec.description}</p> : null}
-      <Kv>
-        <KvRow label="Owner">
-          <AddressLink addr={spec.owner} className="ix-trunc" title="Open the address">
-            {middleTruncate(spec.owner, 8, 5)}
-          </AddressLink>
-          <CopyButton value={spec.owner} label="Copy the owner" />
-        </KvRow>
-        <KvRow label="Address" sans>
-          <a href={`https://${url}`} target="_blank" rel="noopener noreferrer" className="ix-link ix-trunc">
-            {url} <ExternalLink size={11} strokeWidth={1.75} aria-hidden="true" />
-          </a>
-        </KvRow>
-        <KvRow label="Contacts" sans>
-          {spec.contacts.length ? `${plural(spec.contacts.length, 'contact')}, not shown` : 'None listed'}
-        </KvRow>
-        <KvRow label="Spec hash">
-          {detail.spec_hash ? (
-            <>
-              <span className="ix-trunc" title={detail.spec_hash}>
-                {middleTruncate(detail.spec_hash, 8, 6)}
-              </span>
-              <CopyButton value={detail.spec_hash} label="Copy the spec hash" />
-            </>
-          ) : (
-            'Unknown'
-          )}
-        </KvRow>
-        <KvRow label="Registered">
-          {detail.registered_height ? (
-            <>
-              block{' '}
-              <BlockLink height={detail.registered_height} className="ix-mono">
-                {formatInt(detail.registered_height)}
-              </BlockLink>
-            </>
-          ) : (
-            'Unknown'
-          )}
-        </KvRow>
-        <KvRow label="Last update">
-          block{' '}
-          <BlockLink height={detail.height} className="ix-mono">
-            {formatInt(detail.height)}
-          </BlockLink>
-        </KvRow>
-        <KvRow label="Expires">
-          block <span className="ix-mono">{formatInt(detail.expire_height)}</span>
-        </KvRow>
-      </Kv>
-    </>
+    <div className="ix-comp">
+      {spec.description ? <p className="ix-app-desc">{spec.description}</p> : null}
+      <KeyValue
+        align="start"
+        items={[
+          {
+            label: 'Owner',
+            value: <EntityLink kind="address" value={spec.owner} copy />,
+          },
+          { label: 'Address', value: url, href: `https://${url}`, mono: true },
+          {
+            label: 'Contacts',
+            value: spec.contacts.length
+              ? `${plural(spec.contacts.length, 'contact')}, not shown`
+              : 'None listed',
+          },
+          {
+            label: 'Spec hash',
+            value: detail.spec_hash ? (
+              <Hash value={detail.spec_hash} head={8} tail={6} what="spec hash" />
+            ) : null,
+          },
+          { label: 'Registered', value: <Height value={detail.registered_height} /> },
+          { label: 'Last update', value: <Height value={detail.height} /> },
+          { label: 'Expires', value: <Height value={detail.expire_height} link={false} /> },
+        ]}
+      />
+    </div>
   );
 }
