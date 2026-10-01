@@ -1,0 +1,26 @@
+{
+  "name": "flux-atlas-globe-lab",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Standalone lab for the Flux Atlas v2 real-time 3D globe engine and ambient screensaver mode.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "fixtures": "node scripts/build-fixture.mjs",
+    "textures": "node scripts/build-textures.mjs",
+    "tokens": "node scripts/sync-tokens.mjs",
+    "check:sink": "tsc -p scripts/sink-check/tsconfig.json"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

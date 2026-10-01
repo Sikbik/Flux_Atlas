@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.log
+.vite/
+.cache/
+
+# The repository ignores any folder named data/ (runtime data). The lab's public/data holds the bundled
+# network snapshot and the Natural Earth geography the lab needs to run, so it is kept.
+!public/data/
+!public/data/**
+
+# Lockfiles are ignored repo-wide, but the web app commits its own (git add -f); so does the lab, for reproducible installs.
+!package-lock.json

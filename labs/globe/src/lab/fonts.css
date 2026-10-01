@@ -1,0 +1,32 @@
+/* The Flux brand pairing (Brand Book v2.0, "Typeface Pairing"), as in the design mock: Montserrat for
+   headings and display numerals, Open Sans for UI text, Lora for the one editorial line, and IBM Plex
+   Mono (from @fontsource) for tabular data. All four are SIL Open Font License 1.1; the texts are in
+   public/licenses. Latin subsets only: the lab shows numerals and English. */
+@font-face {
+  font-family: "Montserrat Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/montserrat-latin-wght-normal.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Open Sans Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 800;
+  src: url("./fonts/open-sans-latin-wght-normal.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Lora Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url("./fonts/lora-latin-wght-normal.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Lora Variable";
+  font-style: italic;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url("./fonts/lora-latin-wght-italic.woff2") format("woff2-variations");
+}

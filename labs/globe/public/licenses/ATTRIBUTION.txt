@@ -1,0 +1,124 @@
+Flux Atlas globe lab: attribution and licences
+==============================================
+
+Everything in labs/globe/src is original work written for Flux Atlas (a clean-room rewrite; no code
+from earlier versions of the project). This file lists everything else that ships in the lab's
+public/ folder or is bundled into its build, where it came from, and the terms it comes with.
+Nothing is hotlinked at runtime: every texture, map and font is served from this folder.
+
+
+1. Earth imagery (public/textures)
+----------------------------------
+
+earth_day_4096.jpg, earth_day_2048.jpg
+  NASA Visible Earth, "The Blue Marble: Next Generation with Topography and Bathymetry", December
+  2004 composite (image record 73909). Credit: NASA Earth Observatory (Reto Stockli), NASA Goddard
+  Space Flight Center.
+  Source file: https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg
+  Changes: resized to 4096 and 2048 pixels wide and JPEG compressed. The renderer also grades the
+  colours at runtime (the "marble" art direction), which does not alter the file.
+
+earth_night_4096.jpg, earth_night_2048.jpg
+  NASA Earth Observatory, "Earth at Night": Black Marble 2016 colour map, built from Suomi NPP VIIRS
+  day/night band data (image record 144898). Credit: NASA Earth Observatory / NASA Goddard Space
+  Flight Center.
+  Source file: https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_3km.jpg
+  Changes: resized (Lanczos), lightly sharpened so the lights survive downsampling, JPEG compressed.
+
+earth_clouds_2048.jpg
+  NASA Visible Earth, global cloud composite (image record 57747). Credit: NASA Goddard Space Flight
+  Center.
+  Source file: https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud_combined_2048.jpg
+  Changes: converted to one grey channel and JPEG compressed.
+
+Terms: NASA imagery is not subject to copyright in the United States and may be used, including in
+computer graphical simulations and web pages, without permission. NASA asks for credit and that the
+use does not suggest NASA's endorsement (https://www.nasa.gov/nasa-brand-center/images-and-media/).
+No NASA insignia is used in this project.
+
+
+2. Coastlines and borders (public/data/land-*.json, countries-*.json)
+--------------------------------------------------------------------
+
+Natural Earth (https://www.naturalearthdata.com/), 1:110m and 1:50m land and countries. Natural Earth
+is in the public domain: "Made with Natural Earth. Free vector and raster map data at
+naturalearthdata.com." The boundaries are Natural Earth's de facto lines and take no position on
+disputed territory.
+
+The files are the TopoJSON conversions published in the npm package world-atlas 2.0.2
+(https://github.com/topojson/world-atlas), whose own packaging is licensed ISC, Copyright 2013-2019
+Michael Bostock:
+
+  Permission to use, copy, modify, and/or distribute this software for any purpose with or without
+  fee is hereby granted, provided that the above copyright notice and this permission notice appear
+  in all copies.
+
+  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+  SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+  AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+  NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
+  OF THIS SOFTWARE.
+
+The files are copied unchanged. scripts/build-textures.mjs downloads them.
+
+
+3. Network snapshot (public/data/flux-snapshot.json, flux-snapshot.bin)
+----------------------------------------------------------------------
+
+A compact, columnar snapshot of the public Flux network (node locations, tiers, status, app
+locations, sampled peer links) taken on 2026-09-30 from the public Flux API dumps collected by the
+Flux Atlas research team. It carries no IP addresses, no collateral hashes and no payment addresses.
+Node ids are row numbers. One column is partly synthetic, and says so in the file's "note": the
+ArcaneOS flag is set at a 38% rate because the source does not expose it. scripts/build-fixture.mjs
+builds it.
+
+
+4. Fonts (public/licenses/OFL-*.txt, src/lab/fonts, @fontsource)
+----------------------------------------------------------------
+
+All four families are licensed under the SIL Open Font License, Version 1.1. The full licence text
+for each is in this folder. The engine itself draws no text; fonts are used by the lab's own
+overlays, which follow the Flux Atlas design system.
+
+  Montserrat      Copyright 2011 The Montserrat Project Authors (https://github.com/JulietaUla/Montserrat)
+                  display and accent type in the ambient overlay (OFL-Montserrat.txt)
+  Open Sans       Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)
+                  interface text (OFL-OpenSans.txt)
+  Lora            Copyright 2011 The Lora Project Authors (https://github.com/cyrealtype/Lora-Cyrillic)
+                  italic captions (OFL-Lora.txt)
+  IBM Plex Mono   Copyright 2017 IBM Corp. (https://github.com/IBM/plex)
+                  numerals and labels, served by @fontsource/ibm-plex-mono (OFL-IBMPlexMono.txt)
+
+Montserrat, Open Sans and Lora are the Latin-subset variable WOFF2 files (the same files the design
+mock ships in docs/design/mock/assets/fonts), copied unchanged into src/lab/fonts.
+
+
+5. The Flux symbol (public/brand/Flux_symbol-mark_blue.svg)
+-----------------------------------------------------------
+
+The official Flux symbol from the Flux media kit, copied unchanged from assets/brand/flux/symbol. It
+is the shape of the "Flux moon" in the globe. Flux, the Flux logo and the Flux symbol are
+trademarks of their owners. The renderer follows the rules of the Flux Brand Book (v2.0) as
+summarised in assets/brand/flux/README.md: the symbol is drawn only in Flux blue #2B61D1, white,
+black, gray or the tonal blue of the brand guides, with its proportions unchanged, and no tier color
+ever touches it. It stands for the Flux chain in a Flux ecosystem tool; it is not the logo of this
+project.
+
+
+6. Software
+-----------
+
+three.js r0.186 (https://threejs.org), MIT licence, Copyright 2010-2026 three.js authors. Bundled
+into the lab's build. The engine uses only plain three.js (no React renderer, no add-ons beyond
+what ships in the core package).
+
+Vite, TypeScript and @types/three are development tools and are not part of what ships.
+
+
+7. The easter egg
+-----------------
+
+The handlebar moustache drawn in light across the planet (src/engine/ambient/egg.ts) is an original
+outline made for this project: two mirrored runs of Bezier segments. The phrase "brewed, not hosted"
+and the name stache.beer belong to the project's author.
