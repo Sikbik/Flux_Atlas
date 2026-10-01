@@ -1,8 +1,9 @@
-// Providers: the error boundary, TanStack Query, the live runtime and the router.
+// Providers: the error boundary, TanStack Query, the live runtime, the motion language and the router.
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { useState } from 'react';
+import { MotionRoot } from '../motion/react/MotionRoot';
 import { RuntimeProvider } from './context';
 import { AppErrorBoundary } from './errors';
 import { createAtlasRouter } from './router';
@@ -14,7 +15,9 @@ export function App({ runtime }: { runtime: AtlasRuntime }) {
     <AppErrorBoundary>
       <QueryClientProvider client={runtime.queryClient}>
         <RuntimeProvider runtime={runtime}>
-          <RouterProvider router={router} />
+          <MotionRoot>
+            <RouterProvider router={router} />
+          </MotionRoot>
         </RuntimeProvider>
       </QueryClientProvider>
     </AppErrorBoundary>

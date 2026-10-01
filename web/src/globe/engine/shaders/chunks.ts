@@ -123,7 +123,7 @@ vec4 fetchPos(float slot) {
  * Block shockwaves. Up to four rings expand over the surface from a center with an ease-out-expo
  * front (fast start, slow finish), like the design's Beat: a great-circle ring that reaches about 70
  * degrees in 1.6 s. Nodes use `waveLift` (a +35% lift for 300 ms as the front passes); the planet
- * bodies use `waveGlow` (a crisp 2px to 0.5px ring cooling from shock-hot to shock).
+ * bodies use `waveGlow` (a luminous front with a trailing wash, cooling from shock-hot to shock).
  */
 export const GLSL_WAVES = /* glsl */ `
 uniform vec4 uWave[4];      // xyz = center (unit), w = start time (negative = inactive)
@@ -155,8 +155,11 @@ float waveLift(vec3 n) {
 export const GLSL_WAVE_GLOW = /* glsl */ `
 uniform vec3 uShock;
 uniform vec3 uShockHot;
-// The front is four passes (design 6.4 I): 24, 10, 3.6 and 1.4 px at alpha .05, .12, .3 and .62, the
-// last one white, fading as (1 - t)^1.7.
+// The front of a block's shockwave. Styled so it reads as a wave sweeping the surface, never as a line drawn on it
+// (seen from far away the design's 1.4 px white hairline looked like an orbit guide): a wide soft swell (about 40 px),
+// a 16 px shoulder, a wash that trails behind the front and dies away, and a sharp 5 px band with a hot core that
+// only the young wave has: it starts as a crisp front and ends as a soft glow. Overall it fades as (1 - t)^1.7.
+// (The design's passes, for the record: 24, 10, 3.6 and 1.4 px at alpha .05, .12, .3, .62.)
 vec3 waveGlow(vec3 n) {
   vec3 s = vec3(0.0);
   for (int i = 0; i < 4; i++) {
@@ -169,14 +172,18 @@ vec3 waveGlow(vec3 n) {
     float r = uWaveP[i].x * waveEase(u);
     float ang = acos(clamp(dot(n, uWave[i].xyz), -1.0, 1.0));
     float px = (ang - r) / max(uWaveP[i].w, 1e-6);
-    float g24 = exp(-px * px / 144.0);
-    float g10 = exp(-px * px / 25.0);
-    float g36 = exp(-px * px / 3.24);
-    float g14 = exp(-px * px / 0.49);
-    float trail = step(ang, r) * exp(-(r - ang) * 22.0) * 0.07;
+    float g40 = exp(-px * px / 450.0);
+    float g14 = exp(-px * px / 150.0);
+    float g5 = exp(-px * px / 14.0);
+    float g1 = exp(-px * px / 1.2);
+    // The wash behind the front: smooth across the front itself (no step), then a few degrees of fading light.
+    float bpx = -px;
+    float wash = smoothstep(-10.0, 10.0, bpx) * exp(-max(bpx, 0.0) * uWaveP[i].w * 6.0) * 0.2;
     float fade = pow(1.0 - u, 1.7);
-    vec3 halo = uShock * (0.05 * g24 + 0.12 * g10 + 0.3 * g36 + trail) + mix(uShock, uShockHot, 0.85) * 0.62 * g14;
-    s += halo * uWaveP[i].z * fade * 1.7;
+    float crisp = (1.0 - u) * (1.0 - u);
+    vec3 soft = uShock * (0.1 * g40 + 0.14 * g14 + wash);
+    vec3 hard = uShock * 0.26 * g5 + mix(uShock, uShockHot, 0.85) * 0.34 * g1;
+    s += (soft + hard * crisp) * uWaveP[i].z * fade * 1.7;
   }
   return s;
 }

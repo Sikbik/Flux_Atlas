@@ -6,4 +6,13 @@ import type { Tier } from "./Tier";
 /**
  * Changed fields of one node; absent fields did not change.
  */
-export type NodeChange = { id: NodeId, status?: NodeStatus, tier?: Tier, endpoint?: string, lat?: number, lon?: number, country_code?: string, org?: string, rank?: number, last_paid_height?: number, last_confirmed_height?: number, app_count?: number, flags?: number, flux_os?: string, reachable?: boolean, };
+export type NodeChange = { id: NodeId, status?: NodeStatus, tier?: Tier, endpoint?: string, lat?: number, lon?: number, country_code?: string, org?: string, 
+/**
+ * City name; sent with a location change when known (absent: unchanged or unknown).
+ */
+city?: string, 
+/**
+ * Payment-queue rank, 0-based. Absent: unchanged. `null`: the node is not queued
+ * (unranked), the explicit leave signal of the rank contract (ARCHITECTURE section 8).
+ */
+rank?: number | null, last_paid_height?: number, last_confirmed_height?: number, app_count?: number, flags?: number, flux_os?: string, reachable?: boolean, };

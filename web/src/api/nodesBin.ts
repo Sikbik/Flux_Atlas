@@ -4,6 +4,9 @@
 // Fixed-width columns are zero-copy typed-array views over the response buffer. String tables are
 // decoded lazily. Unknown sections are ignored; missing optional columns are defaulted (NaN
 // coordinates, zeros, empty strings) so the server may drop columns without breaking clients.
+// A missing column means the producer did not record it (for example `/timeline/state` has no
+// ranks): `present` tells a defaulted column apart from real zeros, and readers must treat an
+// absent column as unknown, never as 0.
 
 import {
   BinFormatError,
@@ -46,6 +49,41 @@ export const NodeSection = {
 } as const;
 
 const KNOWN = new Set<number>(Object.values(NodeSection));
+
+/** The dtype each known column is read with; a column stored with another dtype is skipped. */
+const EXPECTED_DTYPE: Record<number, number> = {
+  [NodeSection.Ids]: DType.U32,
+  [NodeSection.Lat]: DType.F32,
+  [NodeSection.Lon]: DType.F32,
+  [NodeSection.Tier]: DType.U8,
+  [NodeSection.Status]: DType.U8,
+  [NodeSection.Flags]: DType.U8,
+  [NodeSection.Loc]: DType.U32,
+  [NodeSection.Country]: DType.U16,
+  [NodeSection.Org]: DType.U16,
+  [NodeSection.AppCount]: DType.U16,
+  [NodeSection.Rank]: DType.U32,
+  [NodeSection.LastPaid]: DType.U32,
+  [NodeSection.Cores]: DType.U16,
+  [NodeSection.RamGb]: DType.U16,
+  [NodeSection.SsdGb]: DType.U32,
+  [NodeSection.Version]: DType.U16,
+  [NodeSection.Ips]: DType.Strings,
+  [NodeSection.Countries]: DType.Strings,
+  [NodeSection.Orgs]: DType.Strings,
+  [NodeSection.Versions]: DType.Strings,
+  [NodeSection.Locations]: DType.Struct,
+};
+
+/** Section kinds actually readable from `c`: unknown kinds, and known kinds with their dtype. */
+function presentKinds(c: Container): Set<number> {
+  const out = new Set<number>();
+  for (const [kind, e] of c.sections) {
+    const want = EXPECTED_DTYPE[kind];
+    if (want === undefined || want === e.dtype) out.add(kind);
+  }
+  return out;
+}
 
 /** Bits of the `flags` column (and of `NodeLite.flags`). */
 export const NodeFlag = {
@@ -182,6 +220,16 @@ export interface NodesBin {
   locations: Locations;
   /** Section kinds present in the file that were skipped. */
   unknownSections: number[];
+  /**
+   * Every section kind present in the file. A known column missing from it was not recorded by
+   * the producer: its defaulted values (zeros, NaN, empty strings) mean "unknown".
+   */
+  present: ReadonlySet<number>;
+}
+
+/** True when `bin` carries column `kind` (a `NodeSection`); false means "not recorded". */
+export function hasColumn(bin: Pick<NodesBin, 'present'>, kind: number): boolean {
+  return bin.present.has(kind);
 }
 
 function nanColumn(n: number): Float32Array {
@@ -234,5 +282,6 @@ export function decodeNodesBin(input: ArrayBuffer | ArrayBufferView): NodesBin {
     versions: stringSection(c, NodeSection.Versions) ?? StringTable.empty(1),
     locations,
     unknownSections: c.unknownKinds,
+    present: presentKinds(c),
   };
 }

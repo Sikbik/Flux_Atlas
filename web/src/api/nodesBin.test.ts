@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BinFormatError, DType } from './bin/container';
 import { bytesOf, encodeContainer, encodeSyntheticNodesBin, stringTableBytes } from './bin/writer';
-import { decodeNodesBin, NodeSection, splitCountry } from './nodesBin';
+import { decodeNodesBin, hasColumn, NodeSection, splitCountry } from './nodesBin';
 
 // Golden files written by the Rust test `golden_nodes_bin` (crates/atlas-core/tests).
 const goldenDir = new URL('../../../crates/atlas-core/tests/golden/', import.meta.url);
@@ -150,6 +150,7 @@ describe('nodes.bin evolution rules', () => {
     const d = decodeNodesBin(buf);
     expect(Number.isNaN(d.lat[0]!)).toBe(true);
     expect(d.seq).toBe(5);
+    expect(hasColumn(d, NodeSection.Lat)).toBe(false);
   });
 
   it('defaults missing optional columns', () => {
@@ -164,6 +165,15 @@ describe('nodes.bin evolution rules', () => {
     expect(d.countries.get(0)).toBe('');
     expect(d.locations.length).toBe(1);
     expect(Number.isNaN(d.locations.lat(0))).toBe(true);
+    // Defaulted, not recorded: `present` tells these zeros apart from real ones.
+    expect(hasColumn(d, NodeSection.Ids)).toBe(true);
+    expect(hasColumn(d, NodeSection.Rank)).toBe(false);
+    expect(hasColumn(d, NodeSection.Cores)).toBe(false);
+  });
+
+  it('reports every column of a full file as present', () => {
+    const d = decodeNodesBin(goldenBin);
+    for (const kind of Object.values(NodeSection)) expect(hasColumn(d, kind)).toBe(true);
   });
 
   it('rejects a bad magic, a newer version and truncated files', () => {

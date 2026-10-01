@@ -159,6 +159,16 @@ impl Hub {
         self.tx.subscribe()
     }
 
+    /// Frames held by the replay ring, and its capacity.
+    pub fn ring_len_cap(&self) -> (usize, usize) {
+        let len = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        (len, self.ring_cap)
+    }
+
     pub fn connections(&self) -> usize {
         self.conns.load(Ordering::Acquire)
     }

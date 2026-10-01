@@ -94,6 +94,10 @@ pub struct NodeLite {
     pub app_count: u16,
     /// Same bit layout as the `nodes.bin` flags column.
     pub flags: u8,
+    /// City name, when known (local GeoIP).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub city: Option<String>,
 }
 
 /// Changed fields of one node; absent fields did not change.
@@ -121,9 +125,20 @@ pub struct NodeChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub org: Option<String>,
+    /// City name; sent with a location change when known (absent: unchanged or unknown).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub rank: Option<u32>,
+    pub city: Option<String>,
+    /// Payment-queue rank, 0-based. Absent: unchanged. `null`: the node is not queued
+    /// (unranked), the explicit leave signal of the rank contract (ARCHITECTURE section 8).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    #[ts(optional, type = "number | null")]
+    #[allow(clippy::option_option)]
+    pub rank: Option<Option<u32>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub last_paid_height: Option<u32>,
@@ -142,6 +157,17 @@ pub struct NodeChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub reachable: Option<bool>,
+}
+
+/// Deserializes a field that tells absent (`None`, through `#[serde(default)]`) from `null`
+/// (`Some(None)`) and a value (`Some(Some(v))`). The tri-state is the wire contract.
+#[allow(clippy::option_option)]
+fn present_or_null<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
 }
 
 impl NodeChange {
@@ -486,8 +512,22 @@ mod tests {
     fn node_change_omits_unchanged() {
         let mut c = NodeChange::new(NodeId(4));
         assert!(c.is_empty());
-        c.rank = Some(9);
+        c.rank = Some(Some(9));
         assert_eq!(serde_json::to_string(&c).unwrap(), r#"{"id":4,"rank":9}"#);
+    }
+
+    #[test]
+    fn node_change_rank_absent_null_or_value() {
+        let mut c = NodeChange::new(NodeId(4));
+        c.rank = Some(None);
+        let j = serde_json::to_string(&c).unwrap();
+        assert_eq!(j, r#"{"id":4,"rank":null}"#, "unranked is an explicit null");
+        let back: NodeChange = serde_json::from_str(&j).unwrap();
+        assert_eq!(back.rank, Some(None));
+        let absent: NodeChange = serde_json::from_str(r#"{"id":4}"#).unwrap();
+        assert_eq!(absent.rank, None, "absent is unchanged");
+        let ranked: NodeChange = serde_json::from_str(r#"{"id":4,"rank":3}"#).unwrap();
+        assert_eq!(ranked.rank, Some(Some(3)));
     }
 
     #[test]

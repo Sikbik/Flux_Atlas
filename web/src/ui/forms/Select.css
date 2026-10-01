@@ -1,0 +1,258 @@
+/* Select (design 8.9): a field-style trigger (the chrome is Field.css) and a glass listbox that is at
+   least as wide as the trigger. The highlighted row is a quiet accent wash with a 3 px bar, like the
+   menu; the chosen row has a check. A native select (`native`) wears the same field chrome. */
+
+.ui-select__trigger,
+.ui-select__native {
+  color: var(--text-1);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.ui-select__value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select__value[data-placeholder] {
+  color: var(--text-3);
+}
+
+.ui-select__trigger .ui-select__lead {
+  flex: none;
+  color: var(--text-2);
+}
+
+.ui-select__chevron,
+.ui-select__spin {
+  flex: none;
+  color: var(--text-3);
+}
+
+.ui-select__chevron {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.ui-select__spin {
+  color: var(--accent-400);
+  animation: ui-select-spin 800ms linear infinite;
+}
+
+.ui-select__wrap > .ui-select__chevron,
+.ui-select__wrap > .ui-select__spin {
+  position: absolute;
+  top: 50%;
+  right: var(--space-5);
+  margin-top: -8px;
+  pointer-events: none;
+}
+
+.ui-select__trigger[data-state="open"] .ui-select__chevron {
+  color: var(--text-2);
+  transform: rotate(180deg);
+}
+
+@media (hover: hover) {
+  .ui-select__trigger:hover .ui-select__chevron {
+    color: var(--text-2);
+  }
+}
+
+@keyframes ui-select-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The listbox: the glass surface is the shared layer (Layer.css). */
+.ui-select__list {
+  --ui-select-row: 32px;
+  --ui-layer-max-h: min(308px, calc(100vh - 16px));
+  /* As wide as the trigger (long labels truncate), and never narrower than 200 px. */
+  width: max(var(--ui-anchor-w, 0px), 200px);
+  padding: var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+}
+
+.ui-select__list[data-size="sm"] {
+  --ui-select-row: 28px;
+}
+
+.ui-select__empty {
+  padding: var(--space-5) var(--space-5);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-sm) / 1.3 var(--font-sans);
+}
+
+.ui-select__option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--ui-select-row);
+  padding: 0 var(--space-4);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-sm) / 1.25 var(--font-sans);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.ui-select__option[data-described] {
+  min-height: 44px;
+  padding-block: var(--space-3);
+}
+
+.ui-select__option + .ui-select__option {
+  margin-top: 2px;
+}
+
+.ui-select__list .ui-select__lead {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.ui-select__text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+
+.ui-select__label,
+.ui-select__desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select__desc {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* Data options. */
+.ui-select__trigger[data-mono] .ui-select__value,
+.ui-select__list[data-mono] .ui-select__label,
+.ui-select__native[data-mono] {
+  font: var(--fw-medium) 12.5px / 1.35 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.ui-select__check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--accent-400);
+}
+
+/* Highlighted: an accent wash fading to the right, and a 3 px bar. */
+.ui-select__option::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent-400);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-select__option[data-active] {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent-500) 22%, transparent),
+    color-mix(in oklab, var(--accent-500) 6%, transparent)
+  );
+  color: var(--text-1);
+}
+
+.ui-select__option[data-active]::before {
+  opacity: 1;
+}
+
+.ui-select__option[data-active] .ui-select__lead {
+  color: var(--accent-300);
+}
+
+.ui-select__option[data-state="selected"] {
+  color: var(--text-1);
+}
+
+.ui-select__option[data-pressed]:not([data-disabled]) {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent-500) 32%, transparent),
+    color-mix(in oklab, var(--accent-500) 12%, transparent)
+  );
+}
+
+.ui-select__option[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The native select: the box is the select itself, with the chevron laid over its right edge. */
+.ui-select__wrap {
+  position: relative;
+  display: grid;
+}
+
+.ui-select__native {
+  padding-right: 36px;
+  text-overflow: ellipsis;
+  color-scheme: dark;
+}
+
+.ui-select__native[data-placeholder] {
+  color: var(--text-3);
+}
+
+.ui-select__native option {
+  background: var(--ink-1);
+  color: var(--text-1);
+}
+
+/* Touch: 44 px rows. */
+@media (pointer: coarse) {
+  .ui-select__list,
+  .ui-select__list[data-size="sm"] {
+    --ui-select-row: var(--touch-min);
+  }
+
+  .ui-select__option {
+    font-size: var(--fs-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-select__spin {
+    animation-duration: 2400ms;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-select__spin {
+  animation-duration: 2400ms;
+}

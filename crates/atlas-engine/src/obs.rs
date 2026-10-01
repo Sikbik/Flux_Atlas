@@ -1,6 +1,6 @@
 //! Typed observations: what ingest jobs learned, sent to the reducer over one mpsc channel.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::net::IpAddr;
 
 use atlas_core::api::PriceInfo;
@@ -49,8 +49,17 @@ pub enum Obs {
         tx: SocketTx,
         received_ms: u64,
     },
-    /// Current mempool txids (periodic reconciliation).
-    MempoolSnapshot(HashSet<Txid>),
+    /// Current mempool txids with their sizes (periodic reconciliation).
+    MempoolSnapshot(HashMap<Txid, u32>),
+    /// A mempool transaction fetched (`getrawtransaction`) and classified with the block
+    /// classifier: refines a socket `node_tx`, or adds a transaction the socket never pushed.
+    MempoolClassified {
+        txid: Txid,
+        kind: atlas_core::chain::TxKind,
+        value: Amount,
+        size: Option<u32>,
+        output_count: u16,
+    },
     SocketInfo(SocketInfo),
     Price(PriceInfo),
     /// `fluxnodecurrentwinner` for `height`: `(tier, collateral, address)`.
@@ -119,6 +128,8 @@ pub enum Obs {
     PublishDone {
         elapsed_ms: u64,
     },
+    /// A (new) local GeoIP database is ready.
+    GeoIp(crate::geoip::LoadedGeoIp),
     /// Flush the store and acknowledge (shutdown).
     Flush(oneshot::Sender<()>),
 }

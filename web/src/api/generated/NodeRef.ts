@@ -10,4 +10,8 @@ export type NodeRef = { id: NodeId, outpoint: Outpoint, tier: Tier,
 /**
  * `ip:port`, when known.
  */
-endpoint: string | null, lat: number | null, lon: number | null, country_code: string | null, };
+endpoint: string | null, lat: number | null, lon: number | null, country_code: string | null, 
+/**
+ * City name, when known (local GeoIP).
+ */
+city?: string, };

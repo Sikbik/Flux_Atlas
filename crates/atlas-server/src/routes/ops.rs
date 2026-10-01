@@ -226,12 +226,13 @@ pub async fn prometheus(State(s): State<AppState>) -> Response {
             escape(name)
         );
     }
+    render_engine(&s, &mut out);
     let rows = s
         .store_read(|st| Ok(st.table_rows()?))
         .await
         .unwrap_or_default();
     let file = s.engine.store().file_usage().unwrap_or_default();
-    render_engine(&mut out, &s.engine.stats(), &rows, file);
+    render_latency_storage(&mut out, &s.engine.stats(), &rows, file);
     render_process(&mut out);
     render_caches(&mut out, &s);
     let mut r = out.into_response();
@@ -275,8 +276,9 @@ fn quantiles(out: &mut String, name: &str, help: &str, samples_ms: &[i64]) {
     let _ = writeln!(out, "{name}_count {}", v.len());
 }
 
-/// Engine and storage metrics.
-fn render_engine(
+/// Block pipeline latency, payout attribution and storage (file, tables, retention, disk
+/// budget guard, compaction). Counters already in [`render_engine`] are not repeated.
+fn render_latency_storage(
     out: &mut String,
     st: &atlas_engine::EngineStats,
     rows: &[(String, u64)],
@@ -284,52 +286,10 @@ fn render_engine(
 ) {
     family(
         out,
-        "atlas_engine_blocks_total",
-        "counter",
-        "Blocks applied live.",
-        st.blocks,
-    );
-    family(
-        out,
-        "atlas_engine_backfilled_blocks_total",
-        "counter",
-        "Blocks written by the backfill.",
-        st.backfilled_blocks,
-    );
-    family(
-        out,
-        "atlas_engine_publishes_total",
-        "counter",
-        "Published states built (bodies rebuilt off the reducer).",
-        st.publishes,
-    );
-    family(
-        out,
-        "atlas_engine_publish_last_seconds",
-        "gauge",
-        "Build time of the last publish.",
-        st.publish_last_ms as f64 / 1000.0,
-    );
-    family(
-        out,
         "atlas_engine_publish_max_seconds",
         "gauge",
         "Slowest publish since start.",
         st.publish_max_ms as f64 / 1000.0,
-    );
-    family(
-        out,
-        "atlas_engine_commits_total",
-        "counter",
-        "Store commits (one write transaction per reducer tick).",
-        st.commits,
-    );
-    family(
-        out,
-        "atlas_engine_commit_errors_total",
-        "counter",
-        "Failed store commits.",
-        st.commit_errors,
     );
     labeled(
         out,
@@ -349,13 +309,6 @@ fn render_engine(
         "counter",
         "fluxnodecurrentwinner answers that disagreed with the local queue.",
         st.winner_mismatches,
-    );
-    family(
-        out,
-        "atlas_engine_internal_errors_total",
-        "counter",
-        "Unexpected internal errors.",
-        st.internal_errors,
     );
     quantiles(
         out,
@@ -550,5 +503,327 @@ fn render_caches(out: &mut String, s: &AppState) {
             ("engine", s.engine.replay_bytes() as f64),
             ("hub", s.hub.stats.ring_bytes.load(Ordering::Relaxed) as f64),
         ],
+    );
+}
+
+/// Engine families: ingest jobs (runs, errors, upstream time, freshness), upstream calls,
+/// derived events, live messages, store commits, publishes and the replay rings. Labels are
+/// bounded sets (job, host, event kind, message type, ring); per-endpoint detail stays in logs.
+fn render_engine(s: &AppState, out: &mut String) {
+    use crate::metrics::{header, histogram_samples, sample};
+    let stats = s.engine.stats();
+    let jobs = s.engine.job_counters();
+
+    header(
+        out,
+        "atlas_ingest_job_runs_total",
+        "counter",
+        "Successful runs (updates delivered) per ingest job.",
+    );
+    for j in &jobs {
+        sample(
+            out,
+            "atlas_ingest_job_runs_total",
+            &format!("job=\"{}\"", j.job),
+            j.ok_total,
+        );
+    }
+    header(
+        out,
+        "atlas_ingest_job_errors_total",
+        "counter",
+        "Failed attempts per ingest job.",
+    );
+    for j in &jobs {
+        sample(
+            out,
+            "atlas_ingest_job_errors_total",
+            &format!("job=\"{}\"", j.job),
+            j.err_total,
+        );
+    }
+    header(
+        out,
+        "atlas_ingest_job_last_success_age_seconds",
+        "gauge",
+        "Seconds since the job last succeeded (absent before its first success).",
+    );
+    for j in &jobs {
+        if let Some(age) = j.age_s {
+            sample(
+                out,
+                "atlas_ingest_job_last_success_age_seconds",
+                &format!("job=\"{}\"", j.job),
+                age,
+            );
+        }
+    }
+    header(
+        out,
+        "atlas_ingest_job_stale",
+        "gauge",
+        "1 when the job's data is older than its freshness budget.",
+    );
+    for j in &jobs {
+        sample(
+            out,
+            "atlas_ingest_job_stale",
+            &format!("job=\"{}\"", j.job),
+            u8::from(j.stale),
+        );
+    }
+    header(
+        out,
+        "atlas_ingest_job_upstream_calls_total",
+        "counter",
+        "Upstream calls per ingest task.",
+    );
+    for (job, t) in &stats.job_upstream {
+        sample(
+            out,
+            "atlas_ingest_job_upstream_calls_total",
+            &format!("job=\"{job}\""),
+            t.calls,
+        );
+    }
+    header(
+        out,
+        "atlas_ingest_job_upstream_errors_total",
+        "counter",
+        "Failed upstream calls per ingest task.",
+    );
+    for (job, t) in &stats.job_upstream {
+        sample(
+            out,
+            "atlas_ingest_job_upstream_errors_total",
+            &format!("job=\"{job}\""),
+            t.errors,
+        );
+    }
+    header(
+        out,
+        "atlas_ingest_job_upstream_seconds_total",
+        "counter",
+        "Time spent in upstream calls per ingest task (the job duration).",
+    );
+    for (job, t) in &stats.job_upstream {
+        sample(
+            out,
+            "atlas_ingest_job_upstream_seconds_total",
+            &format!("job=\"{job}\""),
+            t.seconds,
+        );
+    }
+
+    header(
+        out,
+        "atlas_upstream_requests_total",
+        "counter",
+        "Upstream calls by host and result.",
+    );
+    for (host, c) in &stats.upstream {
+        let h = escape(host);
+        sample(
+            out,
+            "atlas_upstream_requests_total",
+            &format!("host=\"{h}\",result=\"ok\""),
+            c.ok,
+        );
+        sample(
+            out,
+            "atlas_upstream_requests_total",
+            &format!("host=\"{h}\",result=\"error\""),
+            c.err,
+        );
+    }
+    header(
+        out,
+        "atlas_upstream_request_duration_seconds",
+        "histogram",
+        "Upstream call latency by host.",
+    );
+    for (host, h) in &stats.upstream_seconds {
+        histogram_samples(
+            out,
+            "atlas_upstream_request_duration_seconds",
+            &format!("host=\"{}\"", escape(host)),
+            h,
+        );
+    }
+
+    header(
+        out,
+        "atlas_engine_events_total",
+        "counter",
+        "Domain events derived, by kind.",
+    );
+    for (kind, n) in &stats.events {
+        sample(
+            out,
+            "atlas_engine_events_total",
+            &format!("kind=\"{kind}\""),
+            n,
+        );
+    }
+    header(
+        out,
+        "atlas_live_messages_total",
+        "counter",
+        "Live messages emitted, by type.",
+    );
+    for (kind, n) in &stats.live {
+        sample(
+            out,
+            "atlas_live_messages_total",
+            &format!("type=\"{kind}\""),
+            n,
+        );
+    }
+    for (name, help, v) in [
+        (
+            "atlas_engine_blocks_total",
+            "Blocks applied live.",
+            stats.blocks,
+        ),
+        (
+            "atlas_engine_backfilled_blocks_total",
+            "Blocks written by the backfill.",
+            stats.backfilled_blocks,
+        ),
+        ("atlas_engine_reorgs_total", "Reorgs handled.", stats.reorgs),
+        (
+            "atlas_engine_reconciles_total",
+            "Node registry reconciles run.",
+            stats.reconciles,
+        ),
+        (
+            "atlas_engine_reconcile_diffs_total",
+            "Reconcile field diffs (bug signals).",
+            stats.reconcile_diffs,
+        ),
+        (
+            "atlas_engine_rank_corrections_total",
+            "Authoritative rank corrections sent (nodes).",
+            stats.rank_corrections,
+        ),
+        (
+            "atlas_engine_internal_errors_total",
+            "Unexpected internal errors (should stay 0).",
+            stats.internal_errors,
+        ),
+    ] {
+        header(out, name, "counter", help);
+        sample(out, name, "", v);
+    }
+    if !stats.block_latency_ms.is_empty() {
+        let mut v = stats.block_latency_ms.clone();
+        v.sort_unstable();
+        let q = |p: f64| v[((v.len() - 1) as f64 * p).round() as usize] as f64 / 1000.0;
+        header(
+            out,
+            "atlas_block_emit_latency_seconds",
+            "gauge",
+            "Block time to block message emit, over the recent blocks.",
+        );
+        sample(
+            out,
+            "atlas_block_emit_latency_seconds",
+            "quantile=\"0.5\"",
+            q(0.5),
+        );
+        sample(
+            out,
+            "atlas_block_emit_latency_seconds",
+            "quantile=\"0.95\"",
+            q(0.95),
+        );
+    }
+
+    header(
+        out,
+        "atlas_store_commits_total",
+        "counter",
+        "Store write transactions committed.",
+    );
+    sample(out, "atlas_store_commits_total", "", stats.commits);
+    header(
+        out,
+        "atlas_store_commit_errors_total",
+        "counter",
+        "Store commits that failed.",
+    );
+    sample(
+        out,
+        "atlas_store_commit_errors_total",
+        "",
+        stats.commit_errors,
+    );
+    header(
+        out,
+        "atlas_store_commit_ops_total",
+        "counter",
+        "Write operations committed.",
+    );
+    sample(out, "atlas_store_commit_ops_total", "", stats.commit_ops);
+    header(
+        out,
+        "atlas_store_commit_duration_seconds",
+        "histogram",
+        "Store commit duration (encode, write, commit).",
+    );
+    histogram_samples(
+        out,
+        "atlas_store_commit_duration_seconds",
+        "",
+        &stats.commit_seconds,
+    );
+
+    header(
+        out,
+        "atlas_publish_total",
+        "counter",
+        "Published state rebuilds (pre-built bodies).",
+    );
+    sample(out, "atlas_publish_total", "", stats.publishes);
+    header(
+        out,
+        "atlas_publish_duration_seconds",
+        "histogram",
+        "Duration of one publish (body rebuild and compression).",
+    );
+    histogram_samples(
+        out,
+        "atlas_publish_duration_seconds",
+        "",
+        &stats.publish_seconds,
+    );
+
+    let (hub_len, hub_cap) = s.hub.ring_len_cap();
+    let (eng_len, eng_cap) = s.engine.replay_ring();
+    header(
+        out,
+        "atlas_replay_ring_messages",
+        "gauge",
+        "Messages held for since_seq replay.",
+    );
+    sample(out, "atlas_replay_ring_messages", "ring=\"hub\"", hub_len);
+    sample(
+        out,
+        "atlas_replay_ring_messages",
+        "ring=\"engine\"",
+        eng_len,
+    );
+    header(
+        out,
+        "atlas_replay_ring_capacity",
+        "gauge",
+        "Replay ring capacity.",
+    );
+    sample(out, "atlas_replay_ring_capacity", "ring=\"hub\"", hub_cap);
+    sample(
+        out,
+        "atlas_replay_ring_capacity",
+        "ring=\"engine\"",
+        eng_cap,
     );
 }

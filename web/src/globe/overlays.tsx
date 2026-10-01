@@ -215,13 +215,43 @@ function MoonCard() {
 
 /**
  * A transparent button over the moon, positioned every frame, so the moon is reachable by keyboard
- * and assistive technology. The canvas does the pointer hit test (`pointer-events: none` here).
+ * and assistive technology. The canvas does the pointer hit test (`pointer-events: none` here). The moon
+ * is a real object on a world orbit: the button follows its projected place, grows with its perspective
+ * size (never under the 44 px touch target) and dims while the planet is hiding the moon, so a focus
+ * ring on it never sits on a moon that is not there. It stays reachable while hidden (the `M` key
+ * also opens About Flux from anywhere).
  */
 export function MoonProxy({ hidden }: { hidden?: boolean }) {
   const engine = useGlobeEngine();
   const ref = useRef<HTMLButtonElement>(null);
   const anchor = useMemo<Anchor>(() => ({ kind: 'moon' }), []);
-  useGlobeAnchor(ref, engine && !hidden ? anchor : null, { fade: false });
+  const last = useRef({ size: 0, dim: false });
+  const options = useMemo(
+    () => ({
+      fade: false,
+      onUpdate: () => {
+        const el = ref.current;
+        if (!el || !engine) return;
+        const m = engine.moonState();
+        // The button hugs the moon: its height plus a little air, 44 px at least.
+        const size = Math.max(44, Math.round(m.s * 1.1));
+        const dim = m.vis < 0.5;
+        const l = last.current;
+        if (size !== l.size) {
+          el.style.width = `${size}px`;
+          el.style.height = `${size}px`;
+          el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`;
+          l.size = size;
+        }
+        if (dim !== l.dim) {
+          el.style.opacity = dim ? '0.4' : '';
+          l.dim = dim;
+        }
+      },
+    }),
+    [engine],
+  );
+  useGlobeAnchor(ref, engine && !hidden ? anchor : null, options);
   if (!engine || hidden) return null;
   return (
     <button

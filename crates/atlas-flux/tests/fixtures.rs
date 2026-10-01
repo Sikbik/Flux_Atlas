@@ -68,6 +68,7 @@ fn parse_one(dir: &str, name: &str) -> Result<Claim, String> {
             {
                 Ok(Claim::Excluded)
             }
+            ("explorer", "tx_size_vectors.json") => ok(tx_size_vectors(r)),
             ("explorer", "coingecko_simple_price.json") => ok({
                 let p: CoinGeckoSimplePrice = plain(r);
                 assert!(p.0["zelcash"].usd > 0.0);
@@ -864,4 +865,59 @@ fn topology_edges_and_locations() {
     assert_eq!(i.endpoint.to_string(), "65.109.86.15:16127");
     assert_eq!(i.broadcast_ms, 1_790_794_516_430);
     assert_eq!(i.expire_ms - i.broadcast_ms, 7_500_000);
+}
+
+/// Every tx size vector (daemon JSON + the size Insight reports for the same txid) matches the
+/// size computed from the decoded fields.
+fn tx_size_vectors(r: &str) {
+    let v: serde_json::Value = plain(r);
+    let vectors = v["vectors"].as_array().unwrap();
+    assert!(vectors.len() >= 20);
+    let (mut starts, mut confirms, mut sapling) = (0, 0, 0);
+    for x in vectors {
+        let tx: DaemonTx = serde_json::from_value(x["tx"].clone()).unwrap();
+        let want = u32::try_from(x["insight_size"].as_u64().unwrap()).unwrap();
+        assert_eq!(tx.size, None, "getblock verbosity 2 carries no tx size");
+        assert_eq!(tx.serialized_size(), Some(want), "{}", tx.txid);
+        if tx.is_start() {
+            starts += 1;
+        } else if tx.is_confirm() {
+            confirms += 1;
+        } else {
+            sapling += 1;
+        }
+    }
+    assert!(starts > 0 && confirms > 0 && sapling > 1);
+}
+
+#[test]
+fn tx_sizes_match_insight_for_v6_p2sh_starts_and_whole_blocks() {
+    for (block, page) in [
+        (
+            "explorer/fluxos_daemon_getblock_2996879_with_start_v6.json",
+            "explorer/insight_block_txs_page0_2996879_with_start.json",
+        ),
+        (
+            "explorer/fluxos_daemon_getblock_2996914_verbose.json",
+            "explorer/insight_block_txs_page0_2996914.json",
+        ),
+    ] {
+        let b: DaemonBlock = env(block);
+        let p: serde_json::Value = plain(page);
+        let mut checked = 0;
+        for t in p["txs"].as_array().unwrap() {
+            let txid = t["txid"].as_str().unwrap();
+            let want = u32::try_from(t["size"].as_u64().unwrap()).unwrap();
+            let tx = b.full_txs().iter().find(|x| x.txid == txid).unwrap();
+            assert_eq!(tx.serialized_size(), Some(want), "{block} {txid}");
+            checked += 1;
+        }
+        assert!(checked > 0);
+    }
+    // Shapes that cannot be computed stay unknown rather than 0.
+    let legacy = DaemonTx {
+        version: 1,
+        ..DaemonTx::default()
+    };
+    assert_eq!(legacy.serialized_size(), None);
 }

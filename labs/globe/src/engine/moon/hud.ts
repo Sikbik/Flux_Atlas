@@ -1,7 +1,9 @@
 // The moon's screen-space dressing (design 7.10.3): the glow, the block clock (a hexagon that fills
 // over the block interval), the receive rings, the hover circle, the white bloom behind a firing
-// piece, the dashed outlines of the pieces still on their way during the boot, the dotted orbit and the chain of sealed blocks on it (a bead per block, a hairline between
-// them, the newest link running to the moon). Two additive quads, no geometry to speak of:
+// piece, the dashed outlines of the pieces still on their way during the boot, and the moon's trail: a
+// short tapering wake behind it and the chain of sealed blocks falling back along the path (a bead per
+// block, shrinking and fading with age). The path itself is never drawn: motion is implied, not outlined.
+// Two additive quads, no geometry to speak of:
 // everything is a distance field evaluated in CSS pixels, so the lines keep their designed widths
 // at any size or device pixel ratio.
 
@@ -158,12 +160,18 @@ uniform vec4 uOrb;
 uniform vec2 uRot;
 uniform float uPhase;
 uniform float uPxScale;
+uniform float uTime;
+uniform float uS;          // the symbol's height, CSS px
 uniform vec3 uEdge;
 uniform vec3 uEdgeHi;
-uniform float uGuideA;
 uniform float uChainA;
+uniform float uWakeLen;    // radians of path behind the moon
+uniform float uWakeA;
+uniform float uPulse;      // seconds since the last seal (negative: none)
+uniform float uMotion;     // 0 under reduced motion
 uniform int uBeadN;
-uniform vec4 uBead[24];   // phase on the ellipse, age 0..1, birth flash 0..1, radius (px)
+uniform vec4 uBead[24];    // phase on the ellipse, age 0..1, birth flash 0..1, radius (px)
+uniform vec4 uBeadB[24];   // tumble (radians), scatter off the path (-1..1), hash, age (s)
 in vec2 vPx;
 
 const float TAU = 6.2831853;
@@ -183,39 +191,73 @@ void main() {
   float f = q.x * q.x / (a * a) + q.y * q.y / (b * b) - 1.0;
   vec2 g = 2.0 * vec2(q.x / (a * a), q.y / (b * b));
   float d = abs(f) / max(length(g), 1e-5);
-  if (d > 14.0) discard;
+  if (d > 38.0) discard;
   float th = atan(q.y / b, q.x / a);
   vec3 col = vec3(0.0);
-  // A dotted hairline along the whole path: 1.5 px dashes with 7 px gaps, Flux light blue at 16%.
-  float arc = th * 0.5 * (a + b);
-  float dash = 1.0 - smoothstep(1.5 - aaw(), 1.5 + aaw(), mod(arc, 8.5));
-  col += uEdgeHi * 0.16 * band(d, 1.0) * dash * uGuideA;
 
-  // The chain: a link between consecutive beads (a 1.1 px hairline, 50% fresh to 10% old), the newest
-  // link running from the last bead to the moon, and a flat hexagon for every sealed block.
+  // The wake: a comet's tail behind the moon along the (invisible) path. It starts at the symbol's trailing edge,
+  // is brightest and widest there and thins hard to nothing; a thin white-hot core inside a Flux blue body inside a
+  // soft glow, a slow shimmer flowing backward, and a pulse that runs down it when a block is sealed.
+  if (uChainA > 0.002) {
+    float root = 0.42 * uS / (0.5 * (a + b));
+    float back = mod(uPhase - th, TAU) - root;
+    if (back > 0.0 && back < uWakeLen) {
+      float u = back / uWakeLen;
+      float head = clamp(0.07 * uS, 2.2, 8.0);
+      float hw = head * pow(max(1.0 - u, 0.0), 1.5);
+      float minW = 1.6 / uPxScale;
+      float wEff = max(hw, minW);
+      float ar = d / wEff;
+      float core = exp(-ar * ar / 0.03);
+      float body = exp(-ar * ar / 0.14);
+      float glow = exp(-ar * ar / 0.6) * (1.0 - smoothstep(0.6, 1.0, ar));
+      float taper = pow(max(1.0 - u, 0.0), 2.8) * smoothstep(0.0, 0.07, u);
+      float flow = 1.0 + 0.35 * uMotion * sin(TAU * (u * 1.8 - uTime * 0.5)) * (0.3 + 0.7 * u);
+      float pu = clamp(uPulse / 0.9, 0.0, 1.0);
+      float pulse = uPulse >= 0.0 ? exp(-pow((u - pu * 0.9) / 0.1, 2.0)) * (1.0 - smoothstep(0.55, 1.0, pu)) : 0.0;
+      float k = taper * flow * clamp(hw / wEff, 0.0, 1.0) * uWakeA * uChainA;
+      vec3 w = vec3(1.0) * core * (1.5 * pow(max(1.0 - u, 0.0), 2.2) + pulse * 1.2);
+      w += uEdgeHi * body * (0.5 + pulse * 0.7);
+      w += uEdge * glow * 0.55;
+      w += vec3(1.0) * glow * pulse * 0.2;
+      col += w * k;
+    }
+  }
+
+  // The chain: a tiny glowing hexagon for every sealed block, falling back along the path with a slight
+  // tumble, cooling from white to Flux blue and fading like an ember.
   if (uBeadN > 0 && uChainA > 0.002) {
     for (int i = 0; i < 24; i++) {
       if (i >= uBeadN) break;
       float t0 = uBead[i].x;
-      float t1 = i + 1 < uBeadN ? uBead[i + 1].x : uPhase;
-      float span = mod(t1 - t0, TAU);
-      if (span < 4.0 && mod(th - t0, TAU) <= span) col += uEdgeHi * mix(0.5, 0.1, uBead[i].y) * band(d, 1.1) * uChainA;
-      // The bead itself.
+      float ageF = uBead[i].y;
+      float vis = (1.0 - smoothstep(0.12, 1.0, ageF)) * smoothstep(0.0, 0.12, uBeadB[i].w);
+      float r = uBead[i].w;
       float c0 = cos(t0) * a;
       float s0 = sin(t0) * b;
       vec2 c = uOrb.xy + vec2(c0 * uRot.x - s0 * uRot.y, c0 * uRot.y + s0 * uRot.x);
-      float r = uBead[i].w;
-      float hd = hexD(vPx - c, r);
-      if (hd < 2.0) {
-        float fill = 1.0 - smoothstep(-aaw(), aaw(), hd);
-        float edge = band(abs(hd + 0.65), 1.3);
-        float ageF = uBead[i].y;
-        float fl = uBead[i].z;
-        col += uEdge * mix(0.6, 0.2, ageF) * fill * uChainA;
-        col += uEdgeHi * mix(1.0, 0.4, ageF) * edge * uChainA;
-        // Born with a white flash that settles.
-        col += vec3(1.0) * fl * (0.55 * fill + 0.6 * edge) * uChainA;
-      }
+      // A little scatter off the path, along the path's normal (an ember, not a bead on a string).
+      vec2 gn = vec2(cos(t0) / a, sin(t0) / b);
+      gn = normalize(gn + vec2(1e-6));
+      c += vec2(gn.x * uRot.x - gn.y * uRot.y, gn.x * uRot.y + gn.y * uRot.x) * uBeadB[i].y * r * (0.15 + 0.9 * ageF);
+      vec2 dv = vPx - c;
+      if (dot(dv, dv) > r * r * 12.0 || vis < 0.002) continue;
+      float tum = uBeadB[i].x * uMotion;
+      float cr = cos(tum);
+      float sr = sin(tum);
+      vec2 pr = vec2(cr * dv.x + sr * dv.y, -sr * dv.x + cr * dv.y);
+      float hd = hexD(pr, r);
+      float lw = max(1.3 * (1.0 - 0.45 * ageF), 1.3);
+      float stroke = band(abs(hd + lw * 0.5), lw);
+      float hd2 = hexD(pr, r * 0.46);
+      float inner = band(abs(hd2 + 0.4), 0.8) * 0.45;
+      float rr = dot(dv, dv) / (r * r);
+      float core = exp(-rr * 7.0);
+      float halo = exp(-rr * 2.2) * 0.18;
+      float fl = uBead[i].z;
+      vec3 hue = mix(uEdgeHi, uEdge, smoothstep(0.1, 0.9, ageF));
+      col += hue * (stroke * 1.35 + inner + core * 0.55 + halo) * vis * uChainA;
+      col += vec3(1.0) * (stroke * 0.9 + inner * 0.5 + core * 1.2) * fl * 1.5 * vis * uChainA;
     }
   }
   gl_FragColor = vec4(col, 1.0);
@@ -244,11 +286,20 @@ export interface HudState {
   piecePx: ArrayLike<number>;
   orbit: Orbit;
   phase: number;
-  guideA: number;
-  /** 0..1 for the chain of beads (off in the lite tier and under reduced motion). */
+  /** Length of the wake in radians of the path. */
+  wakeLen: number;
+  /** Wake brightness (rises with a seal). */
+  wakeA: number;
+  /** 0..1 for the trail and the chain of beads (off in the lite tier and under reduced motion). */
   chainA: number;
-  /** The chain, from `MoonChain.companionBeads`: four floats per bead. */
+  /** The chain, from `MoonChain.companionBeads`: eight floats per bead. */
   beads: Float32Array;
+  /** Engine seconds (the wake's shimmer). */
+  time: number;
+  /** Seconds since the last seal (negative: none): the pulse that runs down the wake. */
+  pulse: number;
+  /** 0 under reduced motion: no shimmer, no tumble. */
+  motion: number;
   beadN: number;
   /** Dashed outline alpha per piece (boot), in this mesh's piece order. */
   outline: ArrayLike<number>;
@@ -327,12 +378,18 @@ export class MoonHud {
         uRot: { value: new THREE.Vector2(1, 0) },
         uPhase: { value: 0 },
         uPxScale: { value: 1 },
+        uTime: { value: 0 },
+        uS: { value: 80 },
         uEdge: { value: new THREE.Color('#2b61d1') },
         uEdgeHi: { value: new THREE.Color('#86a1da') },
-        uGuideA: { value: 1 },
         uChainA: { value: 1 },
+        uWakeLen: { value: 0.5 },
+        uWakeA: { value: 1 },
+        uPulse: { value: -1 },
+        uMotion: { value: 1 },
         uBeadN: { value: 0 },
         uBead: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
+        uBeadB: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
       },
     });
     this.glow = new THREE.Mesh(this.geo, this.hudMat);
@@ -406,12 +463,21 @@ export class MoonHud {
       (o.uRot.value as THREE.Vector2).set(s.orbit.cs, s.orbit.sn);
       o.uPhase.value = ((s.phase % TAU) + TAU) % TAU;
       o.uPxScale.value = s.pxScale;
-      o.uGuideA.value = s.guideA * s.alpha;
+      o.uTime.value = s.time;
+      o.uS.value = s.s;
       o.uChainA.value = s.chainA * s.alpha;
+      o.uWakeLen.value = s.wakeLen;
+      o.uWakeA.value = s.wakeA;
+      o.uPulse.value = s.pulse;
+      o.uMotion.value = s.motion;
       const n = Math.min(24, s.beadN);
       o.uBeadN.value = n;
       const arr = o.uBead.value as THREE.Vector4[];
-      for (let i = 0; i < n; i++) arr[i].set(s.beads[i * 4], s.beads[i * 4 + 1], s.beads[i * 4 + 2], s.beads[i * 4 + 3]);
+      const arrB = o.uBeadB.value as THREE.Vector4[];
+      for (let i = 0; i < n; i++) {
+        arr[i].set(s.beads[i * 8], s.beads[i * 8 + 1], s.beads[i * 8 + 2], s.beads[i * 8 + 3]);
+        arrB[i].set(s.beads[i * 8 + 4], s.beads[i * 8 + 5], s.beads[i * 8 + 6], s.beads[i * 8 + 7]);
+      }
     }
   }
 

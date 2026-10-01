@@ -134,34 +134,81 @@ fn reattribute_recent_payouts(st: &mut NetworkState, tick: &mut Tick, list_heigh
     n
 }
 
+/// Height a node list reflects: the highest `last_confirmed_height` / `last_paid_height` in it.
+pub fn list_height(list: &[ListedNode]) -> u32 {
+    list.iter()
+        .map(|n| {
+            n.last_confirmed_height
+                .unwrap_or(0)
+                .max(n.last_paid_height.unwrap_or(0))
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// True when the model holds too few confirmed nodes for a list diff to mean anything (a first
+/// load, or a model far behind, e.g. only the few nodes seen confirming in blocks before the
+/// first list arrived). Such a reconcile is not a bug signal.
+pub fn is_initial(st: &NetworkState, list: &[ListedNode]) -> bool {
+    st.nodes
+        .listed()
+        .filter(|e| e.rec.status == NodeStatus::Confirmed)
+        .count()
+        * 2
+        < list.len()
+}
+
+/// Fills fields a node list knows and the model does not (empty or unknown) into a node that
+/// newer blocks already changed. Those blocks never set them (a node first seen in a block has
+/// no tier, payment address or confirm height), so taking them from the list is not a rollback.
+fn fill_unknown(st: &mut NetworkState, id: NodeId, n: &ListedNode) -> u16 {
+    let Some(e) = st.nodes.get_mut(id) else {
+        return 0;
+    };
+    let r = &mut e.rec;
+    let mut m = 0;
+    if r.tier == Tier::Unknown && n.tier != Tier::Unknown {
+        r.tier = n.tier;
+        m |= mask::TIER;
+    }
+    if r.payment_address.is_empty() {
+        r.payment_address.clone_from(&n.payment_address);
+    }
+    if r.pubkey.is_empty() {
+        r.pubkey.clone_from(&n.pubkey);
+    }
+    if r.confirmed_height.is_none() && n.confirmed_height.is_some() {
+        r.confirmed_height = n.confirmed_height;
+    }
+    if r.last_paid_height.is_none() && n.last_paid_height.is_some() {
+        r.last_paid_height = n.last_paid_height;
+        m |= mask::PAID;
+    }
+    if r.added_height == 0 {
+        r.added_height = n.added_height;
+    }
+    if r.active_since_ms.is_none() {
+        r.active_since_ms = n.active_since_ms;
+    }
+    m
+}
+
 /// Reconciles the model with a full node list.
 pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) -> ReconcileReport {
     let now = tick.now_ms;
     let mut rep = ReconcileReport {
         listed: list.len(),
-        list_height: list
-            .iter()
-            .map(|n| {
-                n.last_confirmed_height
-                    .unwrap_or(0)
-                    .max(n.last_paid_height.unwrap_or(0))
-            })
-            .max()
-            .unwrap_or(0),
-        // A first load (or a model far behind, e.g. only the few nodes seen confirming in
-        // blocks before the first list arrived) is not a bug signal.
-        initial: st
-            .nodes
-            .listed()
-            .filter(|e| e.rec.status == NodeStatus::Confirmed)
-            .count()
-            * 2
-            < list.len(),
+        list_height: list_height(list),
+        initial: is_initial(st, list),
         ..ReconcileReport::default()
     };
     let l = rep.list_height;
     let armed = st.expiry_armed && !rep.initial;
     let ranks_before: HashMap<NodeId, u32> = st.queue.ranks().collect();
+    let keys_before: HashMap<NodeId, (u32, u8)> = ranks_before
+        .keys()
+        .filter_map(|id| st.queue.key(*id).map(|k| (*id, (k.0, k.1))))
+        .collect();
     let mut seen: HashSet<NodeId> = HashSet::with_capacity(list.len());
     let mut list_rank: HashMap<NodeId, u32> = HashMap::with_capacity(list.len());
     let mut skipped: HashSet<NodeId> = HashSet::new();
@@ -176,6 +223,11 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
         if !created && touched > l {
             rep.skipped_newer += 1;
             skipped.insert(id);
+            let m = fill_unknown(st, id, n);
+            st.nodes.touch_persist(id);
+            if m != 0 {
+                tick.node_changed(RC, id, m);
+            }
             continue;
         }
         let (old_status, was_listed) = st.nodes.rec(id).map_or((NodeStatus::Unknown, false), |r| {
@@ -194,6 +246,7 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
                     if r.$field != v {
                         if check {
                             rep.diff($name);
+                            tracing::debug!(node = id.0, field = $name, model = ?r.$field, list = ?v, "reconcile field diff");
                         }
                         r.$field = v;
                         m |= $bit;
@@ -206,6 +259,7 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
             if r.payment_address != n.payment_address {
                 if check {
                     rep.diff("payment_address");
+                    tracing::debug!(node = id.0, model = %r.payment_address, list = %n.payment_address, status = ?old_status, "reconcile field diff payment_address");
                 }
                 r.payment_address.clone_from(&n.payment_address);
             }
@@ -376,6 +430,11 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
         for (id, r) in st.queue.ranks() {
             if seen.contains(&id) && ranks_before.get(&id).is_some_and(|b| *b != r) {
                 rep.rank_diffs += 1;
+            }
+            if let (Some(b), Some(k)) = (keys_before.get(&id), st.queue.key(id))
+                && (k.0, k.1) != *b
+            {
+                tracing::debug!(node = id.0, before = ?b, after = ?(k.0, k.1), rank_before = ?ranks_before.get(&id), rank = r, "reconcile queue key diff");
             }
         }
     }

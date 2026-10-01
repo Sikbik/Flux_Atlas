@@ -4,4 +4,16 @@ import type { TxLite } from "./TxLite";
 /**
  * `GET /mempool`.
  */
-export type MempoolDto = { txs: Array<TxLite>, size: number, bytes: number, updated_ms: number, };
+export type MempoolDto = { 
+/**
+ * Newest first.
+ */
+txs: Array<TxLite>, 
+/**
+ * Number of transactions.
+ */
+size: number, 
+/**
+ * Sum of the known `TxLite.size` values.
+ */
+bytes: number, updated_ms: number, };

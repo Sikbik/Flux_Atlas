@@ -1,0 +1,239 @@
+/* The light that travels: overlay visuals for the effect runners (a lazy chunk with them).
+   Tokens come from motion.css, which the runners import too. Nothing here is in the DOM until an
+   effect starts, and every node is removed when its effect ends. */
+
+.fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--fx-z);
+  pointer-events: none;
+  contain: layout style;
+}
+
+.fx-box {
+  position: fixed;
+  pointer-events: none;
+  contain: layout style;
+  isolation: isolate;
+}
+
+.fx-box[data-clip] {
+  overflow: hidden;
+}
+
+/* A comet is made of tiny elements animated with transform and opacity (see comet.ts).
+   `streak`: one tapered ribbon of three passes (wide and faint, medium, thin and hot: the globe's
+   beam morphology) for straight runs, its head at the right end (its transform-origin) and its body
+   trailing behind to the left.
+   `head` and `seg`: the links of a chain that follows a curved path. Each link is a tent (dark at
+   both ends, bright in the middle) centred on its point of the path, twice as long as the spacing
+   between links, so the tents of neighbours overlap and, added together, form one continuous ribbon
+   with no seams: the box that holds a chain is isolated and the links blend with plus-lighter.
+   --fx-c, --fx-b, --fx-g and --fx-h are the peak alpha of the link's four passes: the white core,
+   the body, the blue glow and a wide soft halo. */
+.fx-comet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--fx-tail, 44px);
+  height: var(--fx-th, 3px);
+  margin: calc(var(--fx-th, 3px) / -2) 0 0 calc(var(--fx-tail, 44px) * -1);
+  transform-origin: 100% 50%;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.fx-comet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.fx-comet[data-k="streak"]::before {
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--fx-head) 96%, transparent)) center / 100% 30%
+    no-repeat,
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--fx-body) 78%, transparent)) center / 100% 62%
+    no-repeat,
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--fx-glow) 52%, transparent)) center / 100%
+    100% no-repeat;
+}
+
+.fx-comet[data-k="head"],
+.fx-comet[data-k="seg"] {
+  height: calc(var(--fx-th, 3px) * 2.4);
+  margin: calc(var(--fx-th, 3px) * -1.2) 0 0 calc(var(--fx-tail, 44px) / -2);
+  transform-origin: 50% 50%;
+  mix-blend-mode: plus-lighter;
+}
+
+.fx-comet[data-k="head"]::before,
+.fx-comet[data-k="seg"]::before {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--fx-head) var(--fx-c, 0%), transparent),
+      transparent
+    )
+    center / 100% calc(var(--fx-th, 3px) * 0.34) no-repeat,
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--fx-body) var(--fx-b, 0%), transparent),
+      transparent
+    )
+    center / 100% calc(var(--fx-th, 3px) * 0.66) no-repeat,
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--fx-glow) var(--fx-g, 0%), transparent),
+      transparent
+    )
+    center / 100% var(--fx-th, 3px) no-repeat,
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--fx-glow) var(--fx-h, 0%), transparent),
+      transparent
+    )
+    center / 100% 100% no-repeat;
+}
+
+/* The head: a white bead with a bloom. Only the front of a comet has one. */
+.fx-comet[data-k="seg"]::after {
+  display: none;
+}
+
+.fx-comet::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: calc(var(--fx-th, 3px) * 1.25);
+  height: calc(var(--fx-th, 3px) * 1.25);
+  margin: calc(var(--fx-th, 3px) * -0.625) calc(var(--fx-th, 3px) * -0.5) 0 0;
+  border-radius: 50%;
+  background: var(--fx-head);
+  box-shadow:
+    0 0 calc(var(--fx-th, 3px) * 1.6) calc(var(--fx-th, 3px) * 0.3) var(--fx-glow-hot),
+    0 0 calc(var(--fx-th, 3px) * 5) calc(var(--fx-th, 3px) * 0.4) var(--fx-glow-soft);
+}
+
+.fx-comet[data-k="head"]::after {
+  right: auto;
+  left: 50%;
+  margin: calc(var(--fx-th, 3px) * -0.625) 0 0 calc(var(--fx-th, 3px) * -0.625);
+}
+
+:root[data-perf="lite"] .fx-comet::after {
+  box-shadow: 0 0 4px 1px var(--fx-glow-hot);
+}
+
+/* Hot variant: for light on a filled Blue Wave surface (primary buttons), all white. */
+.fx-tone-hot {
+  --fx-body: var(--accent-100, #e5ebf8);
+  --fx-glow: var(--accent-200, #cedaf0);
+  --fx-glow-hot: rgb(255 255 255 / 0.9);
+  --fx-glow-soft: rgb(206 218 240 / 0.5);
+}
+
+/* The burst at the press point. */
+.fx-seed {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--fx-seed, 56px);
+  height: var(--fx-seed, 56px);
+  margin: calc(var(--fx-seed, 56px) / -2) 0 0 calc(var(--fx-seed, 56px) / -2);
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(
+    circle closest-side,
+    color-mix(in srgb, var(--fx-head) 46%, transparent),
+    color-mix(in srgb, var(--fx-body) 22%, transparent) 48%,
+    transparent 100%
+  );
+  will-change: transform, opacity;
+}
+
+/* Reduced: no travel, only the edge flashes once. */
+.fx-edge-flash {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid var(--fx-body);
+  box-shadow: 0 0 10px -1px var(--fx-glow-soft);
+  opacity: 0;
+}
+
+/* Spark: a tiny bright head that settles, with one ring. */
+.fx-spark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+
+.fx-spark-core {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fx-head);
+  box-shadow:
+    0 0 6px 1px var(--fx-glow-hot),
+    0 0 16px 4px var(--fx-glow-soft);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.fx-spark-ring {
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid var(--fx-body);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+:root[data-perf="lite"] .fx-spark-core {
+  box-shadow: 0 0 5px 1px var(--fx-glow-hot);
+}
+
+/* Power-on: the light surge that crosses a window as it opens, a bright leading edge and a soft
+   wake behind it (the radial twin of a comet). --fx-ring is the front's radius. */
+.fx-surge {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(
+    circle at var(--fx-ox, 50%) var(--fx-oy, 50%),
+    transparent 0,
+    transparent calc(var(--fx-ring) - 70px),
+    color-mix(in srgb, var(--fx-glow) 9%, transparent) calc(var(--fx-ring) - 22px),
+    color-mix(in srgb, var(--fx-body) 30%, transparent) calc(var(--fx-ring) - 6px),
+    color-mix(in srgb, var(--fx-head) 86%, transparent) calc(var(--fx-ring) - 1.25px),
+    transparent var(--fx-ring)
+  );
+}
+
+/* Reduced motion draws a single edge line instead of a travelling comet. */
+.fx-line {
+  position: absolute;
+  background: linear-gradient(90deg, transparent, var(--fx-body) 14%, var(--fx-body) 86%, transparent);
+  box-shadow: 0 0 8px var(--fx-glow-soft);
+  opacity: 0;
+}
+
+.fx-line-v {
+  background: linear-gradient(180deg, transparent, var(--fx-body) 14%, var(--fx-body) 86%, transparent);
+}

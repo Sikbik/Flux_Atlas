@@ -1,0 +1,162 @@
+/* Gallery-only layout for the charts section: group headings, the stat-tile mimic, specimen rows.
+   Nothing here ships in a product view (the kit components carry their own CSS). */
+
+.kgc-group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  margin: var(--space-10) 0 var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line-1);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+}
+
+.kgc-group:first-of-type {
+  margin-top: 0;
+}
+
+.kgc-group small {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+}
+
+.kgc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-8);
+}
+
+.kgc-cell {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  min-width: 0;
+}
+
+.kgc-cell > span:last-child {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+/* The stage is the slab (ink-0): the dot's ring must match it. */
+.kgc-on-slab {
+  --ui-spark-surface: var(--ink-0);
+}
+
+/* Raised card with the geometry of the lead's stat tile (design 8.11): sparkline at the top right. */
+.kgc-tile {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 11px 13px 12px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-lg);
+  background: var(--ink-1);
+}
+
+.kgc-tile__k {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.kgc-tile__v {
+  color: var(--text-1);
+  font: var(--fw-semibold) 22px / 1.1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.kgc-tile__v small {
+  margin-left: 3px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+}
+
+.kgc-tile__d {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+.kgc-tile__d[data-dir="up"] {
+  color: var(--div-pos);
+}
+
+.kgc-tile__d[data-dir="down"] {
+  color: var(--div-neg);
+}
+
+.kgc-tile > .ui-spark {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+}
+
+.kgc-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.kgc-card {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-lg);
+  background: var(--ink-1);
+}
+
+.kgc-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.kgc-card__head h4 {
+  margin: 0;
+  font: var(--fw-semibold) var(--fs-sm) / 1.25 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.kgc-card__head span {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+.kgc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.kgc-readout {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.kgc-stack {
+  display: grid;
+  gap: var(--space-6);
+  width: 100%;
+}

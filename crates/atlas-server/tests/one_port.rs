@@ -153,7 +153,7 @@ async fn one_port_serves_everything() {
         "atlas_live_seq",
         "atlas_store_file_bytes",
         "atlas_store_table_rows{table=\"blocks\"}",
-        "atlas_engine_publishes_total",
+        "atlas_publish_total",
         "atlas_cache_bytes{cache=\"proxy_tx\"}",
         "atlas_replay_ring_bytes{ring=\"hub\"}",
     ] {

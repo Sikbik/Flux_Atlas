@@ -149,9 +149,9 @@ fn pending(n: u32, expires_ms: u64) -> PendingAppMessage {
 fn metrics(ts_ms: u64, node_count: u32, block_count: u32) -> MetricsRow {
     MetricsRow {
         ts_ms,
-        node_count,
-        block_count,
-        avg_block_time_ms: 30_000,
+        node_count: Some(node_count),
+        block_count: Some(block_count),
+        avg_block_time_ms: Some(30_000),
         samples: 1,
         ..MetricsRow::default()
     }
@@ -611,10 +611,12 @@ fn metrics_rollup_and_prune() {
     assert_eq!(hours.len(), 2);
     assert_eq!(hours[0].ts_ms, base);
     assert_eq!(
-        hours[0].node_count, 1_059,
+        hours[0].node_count,
+        Some(1_059),
         "gauge = last minute of the hour"
     );
-    assert_eq!(hours[0].block_count, 120, "counter = sum");
+    assert_eq!(hours[0].block_count, Some(120), "counter = sum");
+    assert_eq!(hours[0].price_usd, None, "unknown stays unknown");
     assert_eq!(hours[0].samples, 60);
     assert_eq!(hours[1].ts_ms, base + HOUR_MS);
 

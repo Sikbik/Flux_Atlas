@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use atlas_core::api::{
-    AppIndexEntry, AppsIndexDto, BlockLite, BootstrapDto, JobFreshness, NetworkSummary, PayoutDto,
-    ServerInfo, TierStats,
+    AppIndexEntry, AppsIndexDto, BlockLite, BootstrapDto, DataAttribution, JobFreshness,
+    NetworkSummary, PayoutDto, ServerInfo, TierStats, TxLite,
 };
 use atlas_core::chain::BlockSummary;
 use atlas_core::codec::mesh_bin::encode_mesh_bin;
@@ -42,6 +42,9 @@ pub struct PublishJob {
     pub mesh_edge_count: u32,
     pub freshness: Vec<JobFreshness>,
     pub next_payees: Vec<NextPayeeDto>,
+    pub mempool: Vec<(TxLite, u64)>,
+    /// Third-party data credits (bootstrap `attributions`).
+    pub attributions: Vec<DataAttribution>,
     pub prev: Arc<Published>,
 }
 
@@ -198,6 +201,8 @@ pub fn build_with(mut job: PublishJob, mesh: Option<&MeshWorker>) -> (Published,
         freshness: job.freshness.into(),
         next_payees: job.next_payees.into(),
         mesh_edge_count: job.mesh_edge_count,
+        mempool: job.mempool.into(),
+        attributions: job.attributions.into(),
     };
     (published, t)
 }
@@ -242,6 +247,7 @@ fn build_rest(job: &PublishJob, bodies: &mut PrebuiltBodies, t: &mut BuildTiming
         blocks: job.blocks.iter().take(30).cloned().collect(),
         apps: job.apps.to_vec(),
         freshness: job.freshness.clone(),
+        attributions: Some(job.attributions.clone()),
     };
     match PrebuiltBody::json(&boot) {
         Ok(b) => bodies.bootstrap = Some(b),

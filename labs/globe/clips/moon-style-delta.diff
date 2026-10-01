@@ -1,0 +1,1895 @@
+diff -ruN a/engine/effects.ts b/engine/effects.ts
+--- a/engine/effects.ts	2026-09-30 23:02:46.245949293 -0400
++++ b/engine/effects.ts	2026-09-30 23:34:06.180064331 -0400
+@@ -527,6 +527,8 @@
+     } else {
+       // The reticle collapses into the payee pulse: ring 6 to 36 px over 900 ms, node flare, +40% hold.
+       fx.ringPx(slot, RingKind.Impact, this.col, 6, 36, 0.9, 1.7, tier);
++      // And a spark: a six-point star that opens and thins out over half a second, white-hot at its heart.
++      fx.sparkPx(slot, this.col, 4, 38, 0.5, 1.6);
+       fx.flash(slot, 2.6);
+       fx.shake(0.04);
+     }
+@@ -557,6 +559,8 @@
+       moon.flare(0, 1, 0.34);
+       this.stamp(0);
+     }
++    // The slanted bar flashes (above) and the output drifts off into space (a pulse unlike a payout).
++    if (moon) h.fx.devPulse();
+     h.moonPiecePoint(0, this.pt);
+     h.emit('devfund', { height: c.height, x: this.pt.x, y: this.pt.y, amount: c.amount });
+   }
+diff -ruN a/engine/fx.ts b/engine/fx.ts
+--- a/engine/fx.ts	2026-09-30 23:02:46.245218717 -0400
++++ b/engine/fx.ts	2026-09-30 23:34:06.179604316 -0400
+@@ -6,7 +6,7 @@
+ import { RibbonLayer, RibbonStyle } from './layers/ribbons';
+ import { BeamEase, BeamKind, BeamLayer } from './layers/beams';
+ import { ANCHOR_BASE, RayKind, RayLayer } from './layers/rays';
+-import { RingLayer } from './layers/rings';
++import { RingKind, RingLayer } from './layers/rings';
+ import type { Activity } from './activity';
+ import { NO_CLUSTER, type NodeStore } from './nodes/store';
+ import type { SharedUniforms } from './uniforms';
+@@ -121,6 +121,11 @@
+     return this.t.rings.add(slot, kind, this.time + delay, dur, -px1, c.r, c.g, c.b, intensity, seed, px0);
+   }
+ 
++  /** A camera-facing six-point spark that opens from `px0` to `px1` CSS pixels (the landing spark). */
++  sparkPx(slot: number, c: THREE.Color, px0: number, px1: number, dur: number, intensity: number, delay = 0): number {
++    return this.t.rings.add(slot, RingKind.Spark, this.time + delay, dur, -px1, c.r, c.g, c.b, intensity, 0, px0);
++  }
++
+   ringAt(x: number, y: number, z: number, kind: number, c: THREE.Color, maxRad: number, dur: number, intensity: number): number {
+     return this.t.rings.addFree(x, y, z, kind, this.time, dur, maxRad, c.r, c.g, c.b, intensity);
+   }
+@@ -174,8 +179,8 @@
+    * `dur` seconds and leaves the conduit lit behind it until `life`. The color runs from `a` at the
+    * start to `b` at the end.
+    */
+-  ray(slotA: number, slotB: number, a: THREE.Color, b: THREE.Color, dur: number, life: number, widthPx: number, intensity: number, delay = 0): number {
+-    return this.t.rays.add(slotA, slotB, RayKind.Beam, this.time + delay, dur, life, widthPx, a.r, a.g, a.b, b.r, b.g, b.b, intensity);
++  ray(slotA: number, slotB: number, a: THREE.Color, b: THREE.Color, dur: number, life: number, widthPx: number, intensity: number, delay = 0, kind: number = RayKind.Beam): number {
++    return this.t.rays.add(slotA, slotB, kind, this.time + delay, dur, life, widthPx, a.r, a.g, a.b, b.r, b.g, b.b, intensity);
+   }
+ 
+   /** A faint dashed guide line (the pre-aim from the moon to a payee). */
+@@ -214,7 +219,10 @@
+       return;
+     }
+     this.color('block', _c);
+-    this.ray(producer, this.moonAnchor(0), _c, _tint, travel + 0.3, travel + 2.0, 2.8, 1.6, delay);
++    // The head reaches the moon exactly when the moon receives the block (`travel`). Under reduced motion the whole
++    // route is lit at once instead.
++    if (red) this.ray(producer, this.moonAnchor(0), _c, _tint, 0.38, 0.9, 2.8, 1.3, delay, RayKind.Beam + RayKind.Still);
++    else this.ray(producer, this.moonAnchor(0), _c, _tint, travel, travel + 1.2, 3.2, 1.9, delay);
+   }
+ 
+   /**
+@@ -234,7 +242,27 @@
+       return;
+     }
+     this.color('shockHot', _c);
+-    this.ray(this.moonAnchor(piece), slot, _c, tier, travel, travel + 1.4, 2.3, 1.8, delay);
++    if (red) this.ray(this.moonAnchor(piece), slot, _c, tier, 0.42, 0.95, 2.3, 1.4, delay, RayKind.Down + RayKind.Still);
++    else this.ray(this.moonAnchor(piece), slot, _c, tier, travel, travel + 1.1, 2.3, 1.8, delay, RayKind.Down);
++  }
++
++  /**
++   * The dev-fund pulse: the fourth coinbase output leaves the slanted bar and drifts out into space, away from
++   * the planet, to where no node is. A slow white streak with a light-blue tail (the tier colors belong to the
++   * payees), so it reads as something different from a payout.
++   */
++  devPulse(): void {
++    const red = this.reduced;
++    const travel = red ? 0.42 : 1.0;
++    if (this.companion) {
++      this.cb[0] = 0.52; this.cb[1] = 0.63; this.cb[2] = 0.85;
++      this.cb[3] = 0.76; this.cb[4] = 0.83; this.cb[5] = 0.93;
++      this.cb[6] = this.cb[7] = this.cb[8] = 1;
++      this.t.beams.add(ANCHOR_BASE, ANCHOR_BASE + 5, BeamKind.Beam, this.time, travel, travel + 0.5, red ? BeamEase.Static : BeamEase.OutCubic, 0.1, 0, 0, 0.34, 0, red ? 5 : 9, red ? 2.4 : 4, red ? 1.2 : 1.8, 0.9, this.cb);
++      return;
++    }
++    _c.set('#ffffff');
++    this.ray(this.moonAnchor(0), this.moonAnchor(5), _c, _tint, travel, travel + 0.9, 2.0, red ? 1.0 : 1.3, 0, RayKind.Drift + (red ? RayKind.Still : 0));
+   }
+ 
+   /**
+diff -ruN a/engine/GlobeEngine.ts b/engine/GlobeEngine.ts
+--- a/engine/GlobeEngine.ts	2026-09-30 23:02:46.246204823 -0400
++++ b/engine/GlobeEngine.ts	2026-09-30 23:34:06.180158345 -0400
+@@ -320,6 +320,7 @@
+     this.beams = new BeamLayer(this.u, 48);
+     this.moon = new Moon(this.u, { lite: this.profile.moonLite, ...(opts.moon ?? {}) });
+     this.moon.setTokens(this.tokens);
++    this.moon.setArt(this.artDirection, true);
+     this.scene.add(this.clusterLayer.mesh, this.nodeLayer.mesh, this.links.mesh, this.held.mesh, this.arcs.mesh, this.packets.mesh, this.rings.mesh, this.rays.mesh, this.moon.group);
+     this.overlayScene.add(this.moon.overlay, this.beams.mesh);
+ 
+@@ -427,6 +428,7 @@
+     const body = this.ensureBody(art);
+     for (const k of Object.keys(this.bodies) as ArtDirection[]) this.bodies[k]?.setVisible(k === art);
+     body.setVisible(true);
++    this.moon?.setArt(art);
+     this.setTokens({});
+   }
+ 
+diff -ruN a/engine/layers/beams.ts b/engine/layers/beams.ts
+--- a/engine/layers/beams.ts	2026-09-30 23:02:46.244879241 -0400
++++ b/engine/layers/beams.ts	2026-09-30 23:34:06.179333783 -0400
+@@ -124,7 +124,7 @@
+     head = easeInOut(hd);
+     fade = (1.0 - smoothstep(tu, 1.0, u)) * aW.w;
+   } else if (ease < 1.5) {
+-    head = (1.0 - pow(1.0 - hd, 3.0)) * 0.985 + 0.015 * hd;
++    head = (1.0 - pow(1.0 - hd, 3.0)) * 0.8 + 0.2 * hd;
+     fade = (1.0 - smoothstep(tu, 1.0, u)) * aW.w;
+   } else {
+     // Reduced motion: the whole route fades in and out with no head.
+@@ -133,7 +133,10 @@
+     fade = smoothstep(0.0, 0.3, u) * (1.0 - smoothstep(0.55, 1.0, u)) * aW.w;
+   }
+ 
+-  float t = aSeg.x;
++  // The strip runs a little past both ends of the route, so a head sitting at an end (leaving a piece, landing on a
++  // node) keeps its whole halo instead of having it cut square by the end of the strip.
++  float ext = kind > 0.5 ? 0.0 : 30.0 / (L * 1.06);
++  float t = mix(-ext, 1.0 + ext, aSeg.x);
+   vec2 P = (1.0 - t) * (1.0 - t) * A + 2.0 * (1.0 - t) * t * C + t * t * B;
+   vec2 tang = 2.0 * (1.0 - t) * (C - A) + 2.0 * t * (B - C);
+   float tl = max(length(tang), 1e-4);
+@@ -210,20 +213,25 @@
+   } else {
+     float t0 = max(0.0, head - trail);
+     float span = max(head - t0, 1e-4);
+-    // The whole route as a hairline, then the lit trail behind the head.
+-    col += vC1 * 0.26 * a * band(d, 1.0);
++    // The whole route as a faint hairline, then the lit tail behind the head: it thins to nothing at its end
++    // (a streak, not a bar) and gets brighter and wider toward the head.
++    col += vC1 * 0.15 * a * band(d, 1.0) * step(0.0, vT) * step(vT, 1.0);
+     if (vT >= t0 && vT <= head) {
+       float k = clamp((vT - t0) / span, 0.0, 1.0);
+-      float kk = pow(k, 1.5);
+-      float wf = 0.35 + 0.65 * k;
+-      col += vC0 * 0.10 * kk * a * band(d, vW.x * wf);
+-      col += vC1 * 0.40 * kk * a * band(d, vW.y * wf);
++      float kk = pow(k, 1.8);
++      float wf = 0.06 + 0.94 * pow(k, 0.85);
++      col += vC0 * 0.12 * kk * a * band(d, vW.x * wf);
++      col += vC1 * 0.42 * kk * a * band(d, vW.y * wf);
+       col += vC2 * 1.00 * kk * a * band(d, vW.z * wf);
+     }
+     if (kind < 1.5) {
+-      float dh = length(vPx - vHeadPx);
++      vec2 hp = vPx - vHeadPx;
++      float dh = length(hp);
+       col += vec3(0.81, 0.855, 0.94) * haloG(dh / 26.0) * a;
+       col += vec3(1.0) * coreG(dh / 6.0) * a;
++      // A fine four-point star on the head.
++      float arm = exp(-abs(hp.x) / 8.5) * exp(-hp.y * hp.y / 0.5) + exp(-abs(hp.y) / 8.5) * exp(-hp.x * hp.x / 0.5);
++      col += vec3(1.0) * arm * 0.5 * a;
+     }
+   }
+   gl_FragColor = vec4(srgbToLin(clamp(col, 0.0, 1.0)), 1.0);
+diff -ruN a/engine/layers/rays.ts b/engine/layers/rays.ts
+--- a/engine/layers/rays.ts	2026-09-30 23:02:46.244831392 -0400
++++ b/engine/layers/rays.ts	2026-09-30 23:34:06.179304020 -0400
+@@ -4,24 +4,38 @@
+ // the node as stacks fan out) or one of the moon's anchors (a uniform the moon rewrites every
+ // frame, so the beam stays glued to a piece as the moon drifts along its orbit). The path is a
+ // cubic curve that leaves the planet radially, like a space elevator, and meets the moon along its
+-// own radial line; if the straight route would dip into the planet it bows outward. Drawn as a
+-// constant-pixel-width ribbon, evaluated on the GPU, one instance per ray.
++// own radial line; if the straight route would dip into the planet it bows outward.
+ //
+-// Two kinds: a beam (a travelling head that lights the conduit behind it) and a guide (faint
+-// dashes that march along the path; the pre-aim line for a payee that is known one block ahead).
++// A beam is a streak of light, not a line: a white-hot head flies the route and drags a short tail that
++// thins to nothing (about 30 percent of the path, in the tier's color), over a faint hairline of the
++// whole route that drains away once the head has arrived. Two draws per layer, both evaluated on the
++// GPU from the same instance data: a constant-pixel-width ribbon for the tail and a camera-facing sprite
++// for the head (a hot core, a soft halo and a fine four-point star). Where the planet's limb would hide
++// the beam it has faded out first, so nothing is cut by the depth test; the first few percent of a
++// route that starts on the surface fade in from the ground.
++//
++// Kinds: a beam (an uplink: ease-in-out), a downlink (leaves fast, settles: ease-out-cubic), a guide
++// (faint dashes that march along the path; the pre-aim line for a payee that is known one block ahead)
++// and a drift (the dev fund's pulse: a gently bowed route between two points in space, no node).
+ 
+ import * as THREE from 'three';
+ import { GLSL_CONSTANTS, GLSL_POS_TEX } from '../shaders/chunks';
+ import type { SharedUniforms } from '../uniforms';
+ 
+-export const RayKind = { Beam: 0, Guide: 1 } as const;
++/**
++ * Kinds. `Still` is added to a kind (reduced motion): no head flies; the end of the route, the tail a flight would have
++ * left at its arrival, is lit at once (a comet frozen at its destination), fades in and holds, then fades out. (Lighting the
++ * whole route drew a long thin ellipse around the planet in the wide shot.)
++ */
++export const RayKind = { Beam: 0, Guide: 1, Down: 2, Drift: 3, Still: 4 } as const;
+ 
+ /** Slot numbers at or above this refer to the moon's anchors (base + anchor index). */
+ export const ANCHOR_BASE = 1000000;
+ 
+-const SEGMENTS = 64;
++const SEGMENTS = 72;
+ 
+-const VERT = /* glsl */ `
++/** The route and the head, shared by the ribbon and the sprite. */
++const COMMON = /* glsl */ `
+ ${GLSL_CONSTANTS}
+ ${GLSL_POS_TEX}
+ uniform vec2 uViewport;
+@@ -30,15 +44,10 @@
+ uniform float uTime;
+ uniform vec3 uCamPos;
+ uniform vec4 uAnchor[8];
+-in vec2 aSeg;     // t along the strip, side (-1 / +1)
+-in vec4 aEnds;    // slot A, slot B, unused, width px
+-in vec4 aTimes;   // start, duration, life, kind
++in vec4 aEnds;    // slot A, slot B, unused, half width px
++in vec4 aTimes;   // start, flight, life, kind
+ in vec4 aColA;    // rgb at the start, intensity
+-in vec4 aColB;    // rgb at the end, lit-trail fraction
+-out vec4 vCol;
+-out vec4 vInfo;   // x = along the drawn part (1 at the head), y = side, z = path param, w = kind
+-out float vHead;
+-out float vLen;   // path length in pixels
++in vec4 aColB;    // rgb at the end, unused
+ 
+ vec3 endpoint(float slot) {
+   if (slot > 999999.5) return uAnchor[int(slot - 1000000.0 + 0.5)].xyz;
+@@ -49,25 +58,27 @@
+   return u * u * u * P0 + 3.0 * u * u * t * P1 + 3.0 * u * t * t * P2 + t * t * t * P3;
+ }
+ float easeInOut(float x) { return x < 0.5 ? 4.0 * x * x * x : 1.0 - pow(-2.0 * x + 2.0, 3.0) * 0.5; }
++float easeOutCubic(float x) { return 1.0 - pow(1.0 - x, 3.0); }
+ 
+-void main() {
+-  float start = aTimes.x;
+-  float dur = max(aTimes.y, 0.001);
+-  float life = aTimes.z;
+-  float kind = aTimes.w;
+-  float age = uTime - start;
+-  if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec4(0.0); return; }
+-  vec3 A = endpoint(aEnds.x);
+-  vec3 B = endpoint(aEnds.y);
+-  float L = max(length(B - A), 1e-3);
++void route(out vec3 A, out vec3 P1, out vec3 P2, out vec3 B, out float L) {
++  A = endpoint(aEnds.x);
++  B = endpoint(aEnds.y);
++  L = max(length(B - A), 1e-3);
+   vec3 aHat = A / max(length(A), 1e-3);
+   vec3 bHat = B / max(length(B), 1e-3);
+   // Leave the planet radially; meet the moon along its radial line, from the planet side.
+   float sa = length(A) > 1.35 ? -1.0 : 1.0;
+   float sb = length(B) > 1.35 ? -1.0 : 1.0;
+   float h = 0.33 * L;
+-  vec3 P1 = A + aHat * h * sa;
+-  vec3 P2 = B + bHat * h * sb;
++  P1 = A + aHat * h * sa;
++  P2 = B + bHat * h * sb;
++  if ((aTimes.w > 2.5 && aTimes.w < 3.5) || aTimes.w > 6.5) {
++    // A drift between two points in space: a gentle sideways bow instead of the radial elevator.
++    vec3 side = normalize(cross(B - A, uCamPos - A) + vec3(1e-6));
++    P1 = mix(A, B, 0.33) + side * 0.16 * L;
++    P2 = mix(A, B, 0.66) + side * 0.10 * L;
++    return;
++  }
+   // Keep the route clear of the planet: bow the middle outward when it would graze the surface.
+   vec3 M = (A + 3.0 * P1 + 3.0 * P2 + B) * 0.125;
+   float ml = length(M);
+@@ -76,15 +87,57 @@
+     P1 += out_;
+     P2 += out_;
+   }
+-  float head = clamp(age / dur, 0.0, 1.0);
+-  float hd = kind < 0.5 ? easeInOut(head) : head;
+-  float fadeOut = 1.0 - smoothstep(max(life - 0.8, 0.0), life, age);
+-  float fadeIn = smoothstep(0.0, 0.25, age);
++}
++
++// How far the head has come along the route, 0..1 (an uplink eases in and out; a downlink leaves fast and settles).
++float headAt(float age, float dur, float kind) {
++  float p = clamp(age / dur, 0.0, 1.0);
++  // A downlink never quite stalls: a fifth of its way is at constant speed, so it lands moving instead of hovering.
++  return kind > 1.5 ? easeOutCubic(p) * 0.8 + 0.2 * p : easeInOut(p);
++}
++
++// 1 where the point is in clear sight of the camera, fading to 0 just before the planet's limb (or the
++// surface itself) would hide it: the beam is gone before the depth test could cut it.
++float clearSight(vec3 P) {
++  vec3 D = P - uCamPos;
++  float tt = clamp(-dot(uCamPos, D) / max(dot(D, D), 1e-4), 0.0, 1.0);
++  return smoothstep(1.0, 1.045, length(uCamPos + D * tt));
++}
++`;
++
++const VERT = /* glsl */ `
++${COMMON}
++in vec2 aSeg;     // t along the strip, side (-1 / +1)
++out vec4 vCol;
++out vec4 vInfo;   // x = along the lit tail (0 at its end, 1 at the head), y = side, z = path param, w = kind
++out vec2 vRoute;  // route hairline strength, route length in px
++
++void main() {
++  float start = aTimes.x;
++  float dur = max(aTimes.y, 0.001);
++  float life = aTimes.z;
++  bool still = aTimes.w > 3.5;
++  float kind = still ? aTimes.w - 4.0 : aTimes.w;
++  float age = uTime - start;
++  if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec4(0.0); return; }
++  vec3 A; vec3 P1; vec3 P2; vec3 B; float L;
++  route(A, P1, P2, B, L);
++  float pathPx = L * uProjScale / max(length(0.5 * (A + B) - uCamPos), 0.3);
++  float guide = kind > 0.5 && kind < 1.5 ? 1.0 : 0.0;
++  float hd = guide > 0.5 ? clamp(age / dur, 0.0, 1.0) : (still ? 1.0 : headAt(age, dur, kind));
++  float post = max(age - dur, 0.0);
++  // The lit tail: about 30 percent of the route, never shorter than 70 px nor longer than 340 px; once the head has
++  // arrived the tail drains into the end of the route.
++  float trailT = clamp(0.34, 80.0 * uPxScale / max(pathPx, 1.0), 380.0 * uPxScale / max(pathPx, 1.0));
++  float tailT = hd < 1.0 ? max(hd - trailT, 0.0) : (1.0 - trailT) + trailT * smoothstep(0.0, 0.34, post);
++  if (still) tailT = 1.0 - trailT;
++  float headT = max(min(hd, 1.0), 1e-3);
+   float tt = aSeg.x;
+-  float t = tt * hd;
++  float t = tt * headT;
++  float k = clamp((t - tailT) / max(headT - tailT, 1e-3), 0.0, 1.0);
+   vec3 P = bez(A, P1, P2, B, t);
+-  vec3 Pa = bez(A, P1, P2, B, clamp(t + 0.02, 0.0, 1.0));
+-  vec3 Pb = bez(A, P1, P2, B, clamp(t - 0.02, 0.0, 1.0));
++  vec3 Pa = bez(A, P1, P2, B, clamp(t + 0.015, 0.0, 1.0));
++  vec3 Pb = bez(A, P1, P2, B, clamp(t - 0.015, 0.0, 1.0));
+   vec4 c = projectionMatrix * viewMatrix * vec4(P, 1.0);
+   vec4 ca = projectionMatrix * viewMatrix * vec4(Pa, 1.0);
+   vec4 cb = projectionMatrix * viewMatrix * vec4(Pb, 1.0);
+@@ -93,17 +146,26 @@
+   float len = length(d);
+   vec2 dirS = len > 1e-4 ? d / len : vec2(0.0, 1.0);
+   vec2 perp = vec2(-dirS.y, dirS.x);
+-  float widthPx = aEnds.w * uPxScale;
+-  // Beams taper toward the head; guides stay hairline.
+-  if (kind < 0.5) widthPx *= mix(0.55, 1.0, tt);
++  // The tail thins to nothing at its end; a hairline marks the rest of the route. Guides stay hairline.
++  float wBase = aEnds.w * 1.7 * uPxScale;
++  float lineW = (guide > 0.5 ? 0.9 : 0.6) * uPxScale;
++  // The head end is round, not cut square (the sprite covers the very tip), and the tail narrows as it drains.
++  float cx = clamp((k - 0.86) / 0.14, 0.0, 1.0);
++  float cap = sqrt(max(1.0 - cx * cx, 0.0));
++  float drain = still ? 1.0 : 1.0 - smoothstep(0.02, 0.32, post);
++  float w = max(lineW, guide > 0.5 ? 0.0 : wBase * pow(k, 0.8) * cap * (0.35 + 0.65 * drain));
+   gl_Position = c;
+-  gl_Position.xy += perp * aSeg.y * widthPx * 2.0 / uViewport * c.w;
+-  float pathPx = L * uProjScale / max(length(0.5 * (A + B) - uCamPos), 0.3);
++  gl_Position.xy += perp * aSeg.y * w * 2.0 / uViewport * c.w;
++  float fadeIn = smoothstep(0.0, still ? 0.22 : 0.07, age);
++  float fadeOut = 1.0 - smoothstep(max(life - 0.45, dur + 0.25), life, age);
++  // The route's own light: a hairline while the head flies, draining away once it has arrived.
++  // (It cools with distance behind the head, so the route reads as an afterglow, never as a wire drawn across the planet.)
++  float route = guide > 0.5 ? 1.0 : (0.14 * exp(-(headT - t) * 3.2) * (1.0 - smoothstep(0.0, 0.6, post)));
++  float sight = clearSight(P) * smoothstep(0.0, 0.05, t + (guide > 0.5 ? 0.05 : 0.0));
+   vec3 col = mix(aColA.rgb, aColB.rgb, smoothstep(0.0, 0.55, t));
+-  vCol = vec4(col * aColA.a * fadeOut * fadeIn, 1.0);
+-  vInfo = vec4(tt, aSeg.y, t, kind);
+-  vHead = head;
+-  vLen = pathPx;
++  vCol = vec4(col * aColA.a * fadeIn * fadeOut * sight * (guide > 0.5 ? 1.0 : mix(1.0, drain, step(0.0001, post))), 1.0);
++  vInfo = vec4(k, aSeg.y, t, kind);
++  vRoute = vec2(route, pathPx);
+ }`;
+ 
+ const FRAG = /* glsl */ `
+@@ -111,37 +173,96 @@
+ uniform float uTime;
+ in vec4 vCol;
+ in vec4 vInfo;
+-in float vHead;
+-in float vLen;
++in vec2 vRoute;
+ void main() {
+   float side = abs(vInfo.y);
+-  float across = 1.0 - smoothstep(0.25, 1.0, side);
+-  float core = 1.0 - smoothstep(0.0, 0.5, side);
+   vec3 tint = vCol.rgb;
+   float lum = max(tint.r, max(tint.g, tint.b));
+   vec3 hot = mix(tint, vec3(lum), 0.72);
+   vec3 col;
+-  if (vInfo.w < 0.5) {
+-    float drawing = 1.0 - smoothstep(0.9, 1.0, vHead);
+-    float headGlow = exp(-pow((1.0 - vInfo.x) * 8.0, 2.0)) * drawing;
+-    float body = 0.22 + 0.78 * pow(vInfo.x, 2.2);
+-    // A few packets ride the conduit after the head has passed.
+-    float pk = pow(0.5 + 0.5 * sin(vInfo.z * vLen * 0.11 - uTime * 6.0), 6.0) * 0.5;
+-    col = tint * (across * 0.55 * body + core * 0.5 * body + core * pk * 0.35) + hot * core * headGlow * 2.6 + hot * across * headGlow * 0.5;
+-  } else {
++  if (vInfo.w > 0.5 && vInfo.w < 1.5) {
++    // A guide: dashes marching toward the payee.
+     float reveal = smoothstep(0.0, 1.0, vInfo.x);
+-    float px = vInfo.z * vLen;
+-    float dash = 1.0 - smoothstep(0.38, 0.46, abs(fract(px / 10.0 - uTime * 0.55) - 0.5) * 1.0);
++    float px = vInfo.z * vRoute.y;
++    float dash = 1.0 - smoothstep(0.38, 0.46, abs(fract(px / 10.0 - uTime * 0.55) - 0.5));
++    float across = 1.0 - smoothstep(0.25, 1.0, side);
++    float core = 1.0 - smoothstep(0.0, 0.5, side);
+     col = tint * (0.4 * across + 0.6 * core) * dash * (0.5 + 0.5 * reveal);
++  } else {
++    // The tail: bright toward the head, thinning to nothing; the hairline of the route under it.
++    float k = vInfo.x;
++    float across = exp(-side * side * 3.4);
++    float core = exp(-side * side * 15.0);
++    float lit = pow(k, 1.35);
++    float line = exp(-side * side * 2.6);
++    col = tint * (across * 1.0 + core * 0.8) * lit + hot * core * pow(k, 4.0) * 2.6 + tint * line * vRoute.x;
+   }
+   gl_FragColor = vec4(col, 1.0);
+ }`;
+ 
++// The head: a sprite that follows it, in CSS pixels, so it is the same size at any distance.
++const HEAD_VERT = /* glsl */ `
++${COMMON}
++out vec2 vQ;
++out vec4 vCol;
++out vec2 vTime;   // age (s), seconds since arrival
++
++void main() {
++  float start = aTimes.x;
++  float dur = max(aTimes.y, 0.001);
++  float kind = aTimes.w;
++  float age = uTime - start;
++  // (A guide has no head, and neither does a still ray: reduced motion lights the end of the route at once.)
++  if (age < 0.0 || age > dur + 0.22 || (kind > 0.5 && kind < 1.5) || kind > 3.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec4(0.0); return; }
++  vec3 A; vec3 P1; vec3 P2; vec3 B; float L;
++  route(A, P1, P2, B, L);
++  float hd = headAt(age, dur, kind);
++  vec3 P = bez(A, P1, P2, B, hd);
++  // A head that leaves or lands on the moon sits at a point inside a piece: lift it toward the camera (it does not
++  // move on screen) so the light shows on the face instead of sinking into the glass.
++  P += normalize(uCamPos - P) * 0.045;
++  vec4 c = projectionMatrix * viewMatrix * vec4(P, 1.0);
++  if (c.w <= 0.01) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec4(0.0); return; }
++  float R = 32.0 * uPxScale;
++  gl_Position = c;
++  gl_Position.xy += position.xy * R * 2.0 / uViewport * c.w;
++  vQ = position.xy;
++  float post = max(age - dur, 0.0);
++  float fade = smoothstep(0.0, 0.05, age) * (1.0 - smoothstep(0.0, 0.16, post));
++  float sight = clearSight(P) * smoothstep(0.0, 0.05, hd);
++  vec3 col = mix(aColA.rgb, aColB.rgb, smoothstep(0.0, 0.55, hd));
++  vCol = vec4(col * aColA.a * fade * sight, 1.0);
++  vTime = vec2(age, post);
++}`;
++
++const HEAD_FRAG = /* glsl */ `
++in vec2 vQ;
++in vec4 vCol;
++in vec2 vTime;
++void main() {
++  vec2 p = vQ * 32.0;                 // CSS px from the head
++  float r = length(p);
++  vec3 tint = vCol.rgb;
++  float lum = max(tint.r, max(tint.g, tint.b));
++  vec3 hot = mix(tint, vec3(lum), 0.8);
++  float halo = exp(-r * r / 130.0) * 0.8 + exp(-r / 14.0) * 0.16;
++  float core = exp(-r * r / 8.0) * 3.6;
++  // A fine four-point star: brightest as the beam leaves and as it lands.
++  float arm = exp(-abs(p.x) / 8.5) * exp(-p.y * p.y / 0.5) + exp(-abs(p.y) / 8.5) * exp(-p.x * p.x / 0.5);
++  float flare = 0.4 + 0.6 * max(exp(-vTime.x / 0.12), exp(-vTime.y / 0.08));
++  vec3 col = tint * halo + hot * (core + arm * 0.7 * flare);
++  col *= 1.0 - smoothstep(0.82, 1.0, length(vQ));
++  gl_FragColor = vec4(col, 1.0);
++}`;
++
+ export class RayLayer {
+-  readonly mesh: THREE.Mesh;
++  /** The ribbon and the head sprites of every ray. */
++  readonly mesh: THREE.Group;
+   readonly capacity: number;
+   private readonly geometry = new THREE.InstancedBufferGeometry();
++  private readonly headGeometry = new THREE.InstancedBufferGeometry();
+   private readonly material: THREE.ShaderMaterial;
++  private readonly headMaterial: THREE.ShaderMaterial;
+   private readonly ends: Float32Array;
+   private readonly times: Float32Array;
+   private readonly colA: Float32Array;
+@@ -168,6 +289,8 @@
+     this.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+     this.geometry.setAttribute('aSeg', new THREE.BufferAttribute(seg, 2));
+     this.geometry.setIndex(idx);
++    this.headGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
++    this.headGeometry.setIndex([0, 1, 2, 0, 2, 3]);
+     this.ends = new Float32Array(capacity * 4);
+     this.times = new Float32Array(capacity * 4);
+     this.colA = new Float32Array(capacity * 4);
+@@ -176,7 +299,9 @@
+     const mk = (arr: Float32Array, name: string): void => {
+       const b = new THREE.InstancedBufferAttribute(arr, 4);
+       b.setUsage(THREE.DynamicDrawUsage);
++      // The ribbon and the head read the same instance data.
+       this.geometry.setAttribute(name, b);
++      this.headGeometry.setAttribute(name, b);
+       this.bufs.push(b);
+     };
+     mk(this.ends, 'aEnds');
+@@ -184,19 +309,18 @@
+     mk(this.colA, 'aColA');
+     mk(this.colB, 'aColB');
+     this.geometry.instanceCount = 0;
++    this.headGeometry.instanceCount = 0;
+ 
+-    this.material = new THREE.ShaderMaterial({
+-      vertexShader: VERT,
+-      fragmentShader: FRAG,
+-      uniforms: {
+-        uPosTex: u.uPosTex,
+-        uViewport: u.uViewport,
+-        uPxScale: u.uPxScale,
+-        uProjScale: u.uProjScale,
+-        uTime: u.uTime,
+-        uCamPos: u.uCamPos,
+-        uAnchor: u.uAnchor,
+-      },
++    const uniforms = {
++      uPosTex: u.uPosTex,
++      uViewport: u.uViewport,
++      uPxScale: u.uPxScale,
++      uProjScale: u.uProjScale,
++      uTime: u.uTime,
++      uCamPos: u.uCamPos,
++      uAnchor: u.uAnchor,
++    };
++    const additive = {
+       transparent: true,
+       blending: THREE.CustomBlending,
+       blendEquation: THREE.AddEquation,
+@@ -209,16 +333,33 @@
+       depthTest: true,
+       depthWrite: false,
+       side: THREE.DoubleSide,
++    } as const;
++    this.material = new THREE.ShaderMaterial({
++      ...additive,
++      vertexShader: VERT,
++      fragmentShader: FRAG,
++      uniforms,
++      // Pulled a hair toward the camera, so a route that starts on the surface does not fight the planet's own depth.
++      polygonOffset: true,
++      polygonOffsetFactor: -2,
++      polygonOffsetUnits: -2,
+     });
+-    this.mesh = new THREE.Mesh(this.geometry, this.material);
+-    this.mesh.frustumCulled = false;
+-    this.mesh.renderOrder = renderOrder;
++    this.headMaterial = new THREE.ShaderMaterial({ ...additive, vertexShader: HEAD_VERT, fragmentShader: HEAD_FRAG, uniforms });
++    const ribbon = new THREE.Mesh(this.geometry, this.material);
++    ribbon.frustumCulled = false;
++    ribbon.renderOrder = renderOrder;
++    const head = new THREE.Mesh(this.headGeometry, this.headMaterial);
++    head.frustumCulled = false;
++    head.renderOrder = renderOrder + 0.5;
++    this.mesh = new THREE.Group();
++    this.mesh.add(ribbon, head);
+     this.mesh.visible = false;
+   }
+ 
+   /**
+-   * Adds a ray. Endpoints are node slots or `ANCHOR_BASE + k`. `trail` is reserved (the conduit is
+-   * always lit behind the head). Returns the ray index or -1 when the pool is full.
++   * Adds a ray. Endpoints are node slots or `ANCHOR_BASE + k`; `widthPx` is the tail's half width at the
++   * head, CSS px; `dur` is the head's flight and `life` how long the whole ray stays in the pool.
++   * Returns the ray index or -1 when the pool is full.
+    */
+   add(
+     a: number, b: number, kind: number, start: number, dur: number, life: number, widthPx: number,
+@@ -284,6 +425,7 @@
+       this.dirty = false;
+     }
+     this.geometry.instanceCount = this.high;
++    this.headGeometry.instanceCount = this.high;
+     this.mesh.visible = this.high > 0;
+   }
+ 
+@@ -296,6 +438,8 @@
+ 
+   dispose(): void {
+     this.geometry.dispose();
++    this.headGeometry.dispose();
+     this.material.dispose();
++    this.headMaterial.dispose();
+   }
+ }
+diff -ruN a/engine/layers/rings.ts b/engine/layers/rings.ts
+--- a/engine/layers/rings.ts	2026-09-30 23:02:46.244658738 -0400
++++ b/engine/layers/rings.ts	2026-09-30 23:34:06.179184285 -0400
+@@ -22,6 +22,8 @@
+   Select: 9,
+   /** Co-host marker: a steady 1 px ring (radius set by the start pixel size) held while a node is selected. */
+   Host: 10,
++  /** A six-point star burst that faces the camera (the landing spark). */
++  Spark: 11,
+ } as const;
+ 
+ // A positive max radius is in globe radii; a negative one is in CSS pixels, constant at any zoom
+@@ -34,6 +36,8 @@
+ uniform float uProjScale;
+ uniform float uTime;
+ uniform float uReduced;
++uniform vec3 uCamRight;
++uniform vec3 uCamUp;
+ in vec4 aRing;   // slot (negative = free), start, duration, max radius (rad, or -px)
+ in vec4 aColor;  // rgb, intensity
+ in vec4 aKind;   // kind, start radius px, seed, unused
+@@ -66,7 +70,11 @@
+   float env = 1.0;
+   float remaining = dur - age;
+   float fastAim = (kind > 5.5 && kind < 6.5 && remaining < 5.0) ? 1.0 : 0.0;
+-  if (kind > 5.5 && kind < 6.5) {
++  if (kind > 10.5) {
++    // A spark: opens fast and thins out, with a short ramp in so it never pops.
++    e = 1.0 - pow(1.0 - u, 2.4);
++    env = smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(0.15, 1.0, u));
++  } else if (kind > 5.5 && kind < 6.5) {
+     // Reticle: fades in over 400 ms, holds, fades out at the end (when the beams land it collapses).
+     e = 1.0;
+     env = smoothstep(0.0, 0.4, age) * (1.0 - smoothstep(dur - 0.45, dur, age)) * (1.0 + 0.15 * fastAim);
+@@ -109,8 +117,10 @@
+     float minPx = 6.0 * uPxScale;
+     if (Rpx < minPx) { R *= minPx / max(Rpx, 1e-3); Rpx = minPx; }
+   }
+-  float ext = (kind > 8.5 && kind < 9.5) ? 1.0 : 1.32;
++  float ext = (kind > 8.5 && kind < 9.5) || kind > 10.5 ? 1.0 : 1.32;
+   vec3 Q = normalize(B + (E * position.x + N * position.y) * R * ext) * (pr + 0.0006);
++  // A spark is a star in the picture plane, not a mark on the surface.
++  if (kind > 10.5) Q = P + (uCamRight * position.x + uCamUp * position.y) * R;
+   gl_Position = projectionMatrix * viewMatrix * vec4(Q, 1.0);
+   vUv = position.xy * ext;
+   float thick = clamp(3.0 * uPxScale / Rpx, 0.03, 0.45);
+@@ -139,13 +149,19 @@
+ void main() {
+   float q = length(vUv);
+   float k = vKind;
+-  float lim = (k > 8.5 && k < 9.5) ? 1.0 : 1.32;
++  float lim = (k > 8.5 && k < 9.5) || k > 10.5 ? 1.0 : 1.32;
+   if (q > lim) discard;
+   vec3 c = vColor.rgb;
+   float th = vP.y;
+   float u = vP.x;
+   float s = 0.0;
+-  if (k < 0.5) {                      // pulse
++  if (k > 10.5) {                     // spark: a six-point star with a hot heart
++    float ang = atan(vUv.y + 1e-5, vUv.x + 1e-5);
++    float spokes = pow(abs(cos(ang * 3.0 + 0.5236)), 28.0);
++    float arm = spokes * exp(-q * 3.2) * (1.0 - smoothstep(0.7, 1.0, q));
++    float fine = pow(abs(cos(ang * 3.0)), 70.0) * exp(-q * 5.0) * 0.45;
++    s = arm * 1.4 + fine + exp(-q * q * 26.0) * 1.3;
++  } else if (k < 0.5) {               // pulse
+     s = ringAt(q, 1.0, th) * 1.4 + exp(-q * q * 5.0) * 0.12 * (1.0 - u);
+   } else if (k < 1.5) {               // ignite: flash then ring
+     float fl = exp(-q * q * 9.0) * exp(-u * 4.5) * 2.2;
+@@ -239,6 +255,8 @@
+         uProjScale: u.uProjScale,
+         uTime: u.uTime,
+         uReduced: u.uReduced,
++        uCamRight: u.uCamRight,
++        uCamUp: u.uCamUp,
+       },
+       transparent: true,
+       blending: THREE.CustomBlending,
+diff -ruN a/engine/moon/chain.ts b/engine/moon/chain.ts
+--- a/engine/moon/chain.ts	2026-09-30 23:02:46.245663620 -0400
++++ b/engine/moon/chain.ts	2026-09-30 23:34:06.180029869 -0400
+@@ -1,15 +1,23 @@
+ // The chain: the moon leaves a small hexagon on its orbit for every block it seals, so the orbit carries
+-// the recent history of the real chain: one bead per real block, spaced by real time (the moon's angle
+-// at the moment of the seal), shrinking and fading as the block ages until it is gone. Nothing here is
+-// decoration; a bead exists because a block was sealed.
++// the recent history of the real chain: one bead per real block, placed at the moon's angle at the moment
++// of the seal. Nothing here is decoration; a bead exists because a block was sealed.
+ //
+-// The orbit itself is never drawn. Motion is implied: the moon trails a short tapering wake (a thin
+-// additive ribbon, about 28 degrees of the path, fading to nothing) and the beads fall back along the
+-// path behind it, shrinking and fading until they are gone.
++// The orbit itself is never drawn. Motion is implied by two things:
+ //
+-// Beads are flat hexagons (the symbol's own shape) drawn as billboards in Flux blue with a white flash
+-// at birth. Both draw calls are CPU-filled every frame (a dozen beads, a wake of a few dozen vertices)
+-// and never allocate.
++//   the wake   a comet's tail, not an orbit segment: it starts at the moon's trailing edge (not behind the whole
++//              mark), is brightest and widest right there and thins hard to nothing about 26 degrees back
++//              (DPR-aware, from the moon's own on-screen size). A thin white-hot core inside a Flux blue
++//              body inside a soft glow. A slow shimmer of light flows backward along it, and when a block is
++//              sealed a pulse of light runs down its length.
++//   the beads  tiny glowing hexagons, one per sealed block. Born with a white flash, they fall back
++//              behind the moon with a slight tumble, cooling from white to Flux blue and fading like
++//              embers. Never evenly spaced (each block has its own size, scatter and fall) and never a
++//              ring: at most a handful are alive at once.
++//
++// The ribbon is real screen-space geometry (the vertex shader widens it in pixels from the moon's size on
++// screen); the beads are camera-facing quads with an analytic hexagon outline. Both fade to nothing before
++// the planet's limb hides them, so nothing is cut by the depth test. Everything is CPU-filled every frame
++// (a dozen beads, a wake of a few dozen vertices) and never allocates.
+ 
+ import * as THREE from 'three';
+ import { clamp, smoothstep } from '../math';
+@@ -17,6 +25,7 @@
+ 
+ const MAX_BEADS = 24;
+ const BLUE = '#2B61D1';
++const BLUE_LIGHT = '#86A1DA';
+ 
+ export interface ChainBlock {
+   height: number;
+@@ -24,26 +33,69 @@
+   time: number;
+ }
+ 
++/** A stable 0..1 hash of a block height: each bead's own size, scatter and tumble. */
++export function beadHash(height: number, salt: number): number {
++  let x = (Math.imul(height | 0, 0x9e3779b1) ^ Math.imul(salt | 0, 0x85ebca6b)) | 0;
++  x = Math.imul(x ^ (x >>> 15), 0x2c1b3c6d);
++  x = Math.imul(x ^ (x >>> 12), 0x297a2d39);
++  x ^= x >>> 15;
++  return (x >>> 0) / 4294967296;
++}
++
++/** How far a bead of this age has fallen back behind its seal angle, radians of orbit: quick at first, settling. */
++export function beadDrag(age: number): number {
++  return 0.13 * (1 - Math.exp(-age / 42));
++}
++
++/**
++ * How far an ember has been kicked out of the moon, 0 at birth to 1 once it is clear of the body (a second and a half,
++ * decelerating). A bead born at the moon's centre would sit behind its blocks for ten seconds, a fragment of a hexagon
++ * between two pieces; this carries it out into the wake while its flash is still bright.
++ */
++export function beadKick(age: number): number {
++  const t = clamp(age / 1.5, 0, 1);
++  return 1 - (1 - t) * (1 - t) * (1 - t);
++}
++
++/** The bead's tumble in the screen plane, radians: it turns a little as it is born, then settles. */
++export function beadTumble(seed: number, age: number): number {
++  return (seed - 0.5) * 0.9 + 0.8 * (seed > 0.5 ? 1 : -1) * (1 - Math.exp(-age / 14));
++}
++
++const easeOutBack = (t: number): number => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
++
++// ---- the beads -----------------------------------------------------------------------------------------
++
+ const BEAD_VERT = /* glsl */ `
+ uniform vec3 uCamRight;
+ uniform vec3 uCamUp;
+ uniform float uSize;
+ in vec3 aPos;
+-in vec3 aFx;   // alpha, flash, age 0..1
++in vec4 aFx;     // alpha, birth flash, age 0..1, tumble (radians)
++in vec2 aSeed;   // size factor, hash
+ out vec2 vP;
+-out vec3 vFx;
++out vec4 vFx;
++out float vVis;
+ void main() {
+-  vP = position.xy;
++  float s = uSize * aSeed.x * (1.0 + 0.5 * aFx.y) * mix(1.0, 0.55, aFx.z);
++  float cr = cos(aFx.w);
++  float sr = sin(aFx.w);
++  vP = vec2(cr * position.x + sr * position.y, -sr * position.x + cr * position.y) * 1.5;
+   vFx = aFx;
+-  float s = uSize * (1.0 + 0.9 * aFx.y) * mix(1.0, 0.5, aFx.z);
+-  vec3 w = aPos + (uCamRight * position.x + uCamUp * position.y) * s;
++  vec3 w = aPos + (uCamRight * position.x + uCamUp * position.y) * s * 1.5;
++  // Behind the planet's limb the bead has faded out before the depth test would cut it.
++  vec3 D = aPos - cameraPosition;
++  float tt = clamp(-dot(cameraPosition, D) / max(dot(D, D), 1e-4), 0.0, 1.0);
++  vVis = smoothstep(1.0, 1.07, length(cameraPosition + D * tt));
+   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+ }`;
+ 
+ const BEAD_FRAG = /* glsl */ `
+ uniform vec3 uColor;
++uniform vec3 uColorHi;
+ in vec2 vP;
+-in vec3 vFx;
++in vec4 vFx;
++in float vVis;
+ // Distance in a pointy-top hexagon of circumradius 1.
+ float hexSdf(vec2 p) {
+   p = abs(p);
+@@ -51,24 +103,40 @@
+ }
+ void main() {
+   float d = hexSdf(vP);
+-  float aa = fwidth(d) * 1.2 + 1e-3;
+-  float ring = smoothstep(-0.2 - aa, -0.2, d) * (1.0 - smoothstep(-0.02, -0.02 + aa, d));
+-  float fill = (1.0 - smoothstep(-0.02, -0.02 + aa, d)) * 0.16;
+-  float core = exp(-dot(vP, vP) * 9.0) * 0.5;
+-  float a = vFx.x;
+-  vec3 col = uColor * (ring * 1.5 + fill + core * 0.6) * a;
+-  col += vec3(1.0) * (ring * 0.9 + core) * vFx.y * 1.4;
++  float px = fwidth(d) + 1e-4;                       // one pixel in glyph units
++  float age = vFx.z;
++  // The outline: a line a little over a pixel wide at any size, thinner as the bead ages.
++  float lw = max(0.1 * (1.0 - 0.45 * age), 1.35 * px);
++  float stroke = 1.0 - smoothstep(0.0, px * 1.2, abs(d + lw * 0.5) - lw * 0.5);
++  // A second, smaller hexagon inside it, and a soft core: a block within the block.
++  float d2 = hexSdf(vP * 2.1) / 2.1;
++  float inner = (1.0 - smoothstep(0.0, px * 1.2, abs(d2 + lw * 0.35) - lw * 0.3)) * 0.45;
++  float core = exp(-dot(vP, vP) * 7.0);
++  float halo = exp(-dot(vP, vP) * 2.2) * 0.18;
++  float fl = vFx.y;
++  // Hot white at birth, Flux light blue after, Flux blue as it dies.
++  vec3 hue = mix(uColorHi, uColor, smoothstep(0.1, 0.9, age));
++  vec3 col = hue * (stroke * 1.35 + inner + core * 0.55 + halo) * vFx.x;
++  col += vec3(1.0) * (stroke * 0.9 + inner * 0.5 + core * 1.2) * fl * 1.5;
++  col *= vVis;
+   gl_FragColor = vec4(col, 1.0);
+ }`;
+ 
+-// The wake: a camera-facing ribbon of constant pixel width that tapers along its length.
++// ---- the wake ------------------------------------------------------------------------------------------
++
++// A camera-facing ribbon whose width is set in pixels from the moon's size on screen, so it reads the same
++// at any distance and device pixel ratio, and thins to nothing along its length.
+ const WAKE_VERT = /* glsl */ `
+ uniform vec2 uViewport;
+ uniform float uPxScale;
++uniform float uProjScale;
++uniform float uHeadW;      // half width at the moon, world units
++uniform vec2 uWidthPx;     // clamp of the head's half width, CSS px (min, max)
+ in vec3 aPrev;
+ in vec3 aNext;
+ in vec2 aSU;   // side (-1, 1), position along the wake (0 at the moon, 1 at the tail)
+-out vec2 vSU;
++out vec3 vSU;  // side, along, energy (thin parts keep their light when widened to a pixel)
++out float vVis;
+ void main() {
+   vec4 c = projectionMatrix * viewMatrix * vec4(position, 1.0);
+   vec4 ca = projectionMatrix * viewMatrix * vec4(aNext, 1.0);
+@@ -77,31 +145,52 @@
+   float len = length(d);
+   vec2 dirS = len > 1e-4 ? d / len : vec2(0.0, 1.0);
+   vec2 perp = vec2(-dirS.y, dirS.x);
+-  float widthPx = mix(6.0, 0.8, aSU.y) * uPxScale;
++  float u = aSU.y;
++  float head = clamp(uHeadW * uProjScale / max(c.w, 1e-3), uWidthPx.x * uPxScale, uWidthPx.y * uPxScale);
++  float w = head * pow(max(1.0 - u, 0.0), 1.5);
++  float wEff = max(w, 1.6 * uPxScale);
+   gl_Position = c;
+-  gl_Position.xy += perp * aSU.x * widthPx * 2.0 / uViewport * c.w;
+-  vSU = aSU;
++  gl_Position.xy += perp * aSU.x * wEff * 2.0 / uViewport * c.w;
++  vSU = vec3(aSU, clamp(w / wEff, 0.0, 1.0));
++  // Fade out before the planet's limb would hide the ribbon.
++  vec3 D = position - cameraPosition;
++  float tt = clamp(-dot(cameraPosition, D) / max(dot(D, D), 1e-4), 0.0, 1.0);
++  vVis = smoothstep(1.0, 1.07, length(cameraPosition + D * tt));
+ }`;
+ 
+ const WAKE_FRAG = /* glsl */ `
+ uniform vec3 uColor;
++uniform vec3 uColor2;
+ uniform float uAlpha;
+-in vec2 vSU;
++uniform float uTime;
++uniform float uPulse;     // seconds since the last seal (negative: none)
++uniform float uMotion;    // 0 under reduced motion
++in vec3 vSU;
++in float vVis;
+ void main() {
+-  float side = abs(vSU.x);
++  float a = abs(vSU.x);
+   float u = vSU.y;
+-  // It emerges from behind the moon and thins out to nothing.
+-  float fade = pow(1.0 - u, 1.7) * smoothstep(0.0, 0.1, u);
+-  float core = 1.0 - smoothstep(0.0, 0.32, side);
+-  float soft = 1.0 - smoothstep(0.1, 1.0, side);
+-  vec3 col = uColor * (0.55 * core + 0.2 * soft * soft) * fade;
+-  col += vec3(1.0) * core * 0.4 * pow(1.0 - u, 3.2) * smoothstep(0.0, 0.1, u);
+-  gl_FragColor = vec4(col * uAlpha, 1.0);
++  // Across: a thin hot core, a Flux light blue body, a soft glow that dies before the ribbon's edge.
++  float core = exp(-a * a / 0.03);
++  float body = exp(-a * a / 0.14);
++  float glow = exp(-a * a / 0.6) * (1.0 - smoothstep(0.6, 1.0, a));
++  // Along: brightest at the moon's trailing edge, thinning hard to nothing; a slow shimmer of light flows backward.
++  float taper = pow(max(1.0 - u, 0.0), 2.8) * smoothstep(0.0, 0.07, u);
++  float flow = 1.0 + 0.35 * uMotion * sin(6.2831853 * (u * 1.8 - uTime * 0.5)) * (0.3 + 0.7 * u);
++  // On a seal a pulse of light runs down the wake.
++  float pu = clamp(uPulse / 0.9, 0.0, 1.0);
++  float pulse = uPulse >= 0.0 ? exp(-pow((u - pu * 0.9) / 0.1, 2.0)) * (1.0 - smoothstep(0.55, 1.0, pu)) : 0.0;
++  float k = taper * flow * vSU.z * vVis * uAlpha;
++  vec3 col = vec3(1.0) * core * (1.7 * pow(max(1.0 - u, 0.0), 2.2) + pulse * 1.3);
++  col += uColor * body * (0.5 + pulse * 0.7);
++  col += uColor2 * glow * 0.55;
++  col += vec3(1.0) * glow * pulse * 0.2;
++  gl_FragColor = vec4(col * k, 1.0);
+ }`;
+ 
+-/** Length of the wake along the orbit, radians (about 28 degrees). */
+-const WAKE_RAD = 0.49;
+-const WAKE_SEGMENTS = 40;
++/** Length of the wake along the orbit from its root at the moon's trailing edge, radians (about 26 degrees). */
++const WAKE_RAD = 0.46;
++const WAKE_SEGMENTS = 56;
+ 
+ interface Bead {
+   /** Angle on the sky orbit (world mode). */
+@@ -110,6 +199,9 @@
+   phase: number;
+   birth: number;
+   height: number;
++  /** Per-bead size factor (0.78 to 1.18) and a second hash for its scatter and tumble. */
++  sizeK: number;
++  seed: number;
+ }
+ 
+ export class MoonChain {
+@@ -118,15 +210,19 @@
+   /** False while the moon follows the camera: the chain keeps recording but is not drawn. */
+   shown = true;
+   /** Seconds a bead lives: it shrinks and fades over this long (the moon sets it from the orbit's period). */
+-  life = 210;
++  life = 168;
+   private readonly beads: Bead[] = [];
+   private readonly pos = new Float32Array(MAX_BEADS * 3);
+-  private readonly fx = new Float32Array(MAX_BEADS * 3);
++  private readonly fx = new Float32Array(MAX_BEADS * 4);
++  private readonly seedA = new Float32Array(MAX_BEADS * 2);
+   private readonly posAttr: THREE.InstancedBufferAttribute;
+   private readonly fxAttr: THREE.InstancedBufferAttribute;
++  private readonly seedAttr: THREE.InstancedBufferAttribute;
+   private readonly beadGeom = new THREE.InstancedBufferGeometry();
+   private readonly beadMat: THREE.ShaderMaterial;
+   private readonly _c = new THREE.Vector3();
++  private readonly _o = new THREE.Vector3();
++  private readonly _n = new THREE.Vector3();
+   private readonly wakeGeom = new THREE.BufferGeometry();
+   private readonly wakeMat: THREE.ShaderMaterial;
+   private readonly wakePos = new Float32Array((WAKE_SEGMENTS + 1) * 2 * 3);
+@@ -134,22 +230,31 @@
+   private readonly wakeNext = new Float32Array((WAKE_SEGMENTS + 1) * 2 * 3);
+   private readonly wakeAttrs: THREE.BufferAttribute[] = [];
+   private readonly wakeMesh: THREE.Mesh;
++  /** The newest bead's birth flash, 0..1 (for `flash`). */
++  private lastFlash = 0;
+ 
+   constructor(u: SharedUniforms) {
+     const quad = new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]);
+     this.beadGeom.setAttribute('position', new THREE.BufferAttribute(quad, 3));
+     this.beadGeom.setIndex([0, 1, 2, 0, 2, 3]);
+     this.posAttr = new THREE.InstancedBufferAttribute(this.pos, 3);
+-    this.fxAttr = new THREE.InstancedBufferAttribute(this.fx, 3);
+-    this.posAttr.setUsage(THREE.DynamicDrawUsage);
+-    this.fxAttr.setUsage(THREE.DynamicDrawUsage);
++    this.fxAttr = new THREE.InstancedBufferAttribute(this.fx, 4);
++    this.seedAttr = new THREE.InstancedBufferAttribute(this.seedA, 2);
++    for (const a of [this.posAttr, this.fxAttr, this.seedAttr]) a.setUsage(THREE.DynamicDrawUsage);
+     this.beadGeom.setAttribute('aPos', this.posAttr);
+     this.beadGeom.setAttribute('aFx', this.fxAttr);
++    this.beadGeom.setAttribute('aSeed', this.seedAttr);
+     this.beadGeom.instanceCount = 0;
+     this.beadMat = new THREE.ShaderMaterial({
+       vertexShader: BEAD_VERT,
+       fragmentShader: BEAD_FRAG,
+-      uniforms: { uCamRight: u.uCamRight, uCamUp: u.uCamUp, uSize: { value: 0.045 }, uColor: { value: new THREE.Color(BLUE) } },
++      uniforms: {
++        uCamRight: u.uCamRight,
++        uCamUp: u.uCamUp,
++        uSize: { value: 0.045 },
++        uColor: { value: new THREE.Color(BLUE) },
++        uColorHi: { value: new THREE.Color(BLUE_LIGHT) },
++      },
+       transparent: true,
+       blending: THREE.CustomBlending,
+       blendEquation: THREE.AddEquation,
+@@ -194,7 +299,19 @@
+     this.wakeMat = new THREE.ShaderMaterial({
+       vertexShader: WAKE_VERT,
+       fragmentShader: WAKE_FRAG,
+-      uniforms: { uViewport: u.uViewport, uPxScale: u.uPxScale, uColor: { value: new THREE.Color('#86a1da') }, uAlpha: { value: 1 } },
++      uniforms: {
++        uViewport: u.uViewport,
++        uPxScale: u.uPxScale,
++        uProjScale: u.uProjScale,
++        uTime: u.uTime,
++        uHeadW: { value: 0.1 },
++        uWidthPx: { value: new THREE.Vector2(2.2, 8) },
++        uColor: { value: new THREE.Color(BLUE_LIGHT) },
++        uColor2: { value: new THREE.Color(BLUE) },
++        uAlpha: { value: 1 },
++        uPulse: { value: -1 },
++        uMotion: { value: 1 },
++      },
+       transparent: true,
+       blending: THREE.CustomBlending,
+       blendEquation: THREE.AddEquation,
+@@ -224,9 +341,13 @@
+     return this.beads;
+   }
+ 
++  private make(theta: number, phase: number, birth: number, height: number): Bead {
++    return { theta, phase, birth, height, sizeK: 0.78 + 0.4 * beadHash(height, 1), seed: beadHash(height, 2) };
++  }
++
+   /** A block was sealed: drop a bead at the moon's current angles (sky orbit and companion ellipse). `now` is the engine clock in seconds. */
+   add(theta: number, phase: number, height: number, now: number): void {
+-    this.beads.push({ theta, phase, birth: now, height });
++    this.beads.push(this.make(theta, phase, now, height));
+     if (this.beads.length > MAX_BEADS) this.beads.shift();
+   }
+ 
+@@ -243,14 +364,15 @@
+   seed(blocks: readonly ChainBlock[], angleAt: (ms: number) => number, phaseAt: (ms: number) => number, nowMs: number, now: number): void {
+     this.beads.length = 0;
+     const sorted = [...blocks].sort((a, b) => a.time - b.time).slice(-MAX_BEADS);
+-    for (const b of sorted) this.beads.push({ theta: angleAt(b.time), phase: phaseAt(b.time), birth: now - (nowMs - b.time) / 1000, height: b.height });
++    for (const b of sorted) this.beads.push(this.make(angleAt(b.time), phaseAt(b.time), now - (nowMs - b.time) / 1000, b.height));
+   }
+ 
+   /**
+-   * The beads as the companion draws them (design 7.10.3): per bead the angle on the ellipse, its age
+-   * as a fraction of `lifeS` (0 fresh, 1 gone), the birth flash (1 to 0 over 1.1 s) and the radius in
+-   * CSS pixels (8.4 settling to 5.4 while fresh, shrinking to 2.8 as it ages). Returns how many were
+-   * written (at most `max`). Beads older than their life are skipped.
++   * The beads as the companion draws them (design 7.10.3), eight floats each: the angle on the ellipse
++   * (already fallen back by its drag), its age as a fraction of `lifeS` (0 fresh, 1 gone), the birth flash
++   * (1 to 0 over about 1.5 s), the radius in CSS pixels (small, settling smaller as it ages), then the
++   * tumble (radians), the scatter off the path (-1..1), the size hash and the age in seconds. Returns how
++   * many were written (at most `max`). Beads older than their life are skipped.
+    */
+   companionBeads(now: number, lifeS: number, out: Float32Array, max: number): number {
+     const B = this.beads;
+@@ -259,11 +381,17 @@
+       const age = now - B[i].birth;
+       if (age > lifeS) continue;
+       const f = age / lifeS;
+-      const fl = age < 1.1 ? 1 - age / 1.1 : 0;
+-      out[n * 4] = B[i].phase;
+-      out[n * 4 + 1] = f;
+-      out[n * 4 + 2] = fl;
+-      out[n * 4 + 3] = (5.4 + 3.0 * fl * fl) * (1 - 0.48 * smoothstep(0, 1, f));
++      const fl = Math.exp(-Math.max(age, 0) / 0.8);
++      const o = n * 8;
++      // The companion lap is shorter than the sky's: scale the fall-back to the lap's share of the orbit.
++      out[o] = B[i].phase - beadDrag(age * (210 / Math.max(lifeS, 1)));
++      out[o + 1] = f;
++      out[o + 2] = fl;
++      out[o + 3] = (5.2 + 2.6 * fl) * B[i].sizeK * (1 - 0.45 * smoothstep(0, 1, f));
++      out[o + 4] = beadTumble(B[i].seed, age);
++      out[o + 5] = (beadHash(B[i].height, 3) - 0.5) * 2;
++      out[o + 6] = B[i].seed;
++      out[o + 7] = age;
+       n++;
+     }
+     return n;
+@@ -277,10 +405,12 @@
+ 
+   /**
+    * Fills the buffers for this frame. `e1`/`e2` are the orbit's basis, `orbit` its radius, `moonTheta` the
+-   * moon's angle. `wakeA` scales the wake (it brightens when a block is sealed); `alpha` fades the whole
+-   * trail (the moon lifting into the sky, or returning to the camera).
++   * moon's angle. `wakeA` scales the wake (it brightens when a block is sealed), `pulse` is the time since
++   * the last seal in seconds (negative: none) and `motion` is 0 under reduced motion; `alpha` fades the whole
++   * trail (the moon lifting into the sky, or returning to the camera; the wake, which is attached to the mark, only
++   * shows over the last 28% of that).
+    */
+-  update(now: number, e1: THREE.Vector3, e2: THREE.Vector3, orbit: number, moonTheta: number, moonSize: number, wakeA = 1, alpha = 1): void {
++  update(now: number, e1: THREE.Vector3, e2: THREE.Vector3, orbit: number, moonTheta: number, moonSize: number, wakeA = 1, alpha = 1, pulse = -1, motion = 1): void {
+     const show = this.enabled && this.shown;
+     this.group.visible = show;
+     if (!show) {
+@@ -288,36 +418,62 @@
+       this.wakeMesh.visible = false;
+       return;
+     }
+-    this.beadMat.uniforms.uSize.value = moonSize * 0.14; // a bead is a little over a quarter of the moon's height across
++    this.beadMat.uniforms.uSize.value = moonSize * 0.078; // a bead is about a seventh of the moon's height across (a fifth at birth)
+     let nb = 0;
+     const life = this.life;
+     const B = this.beads;
+     // Drop the beads that have lived out their time.
+     while (B.length > 0 && now - B[0].birth > life) B.shift();
+-    const visOf = (age: number): number => 1 - smoothstep(0.2 * life, life, age);
++    // Never more than a handful: the freshest few carry the light, the rest are already embers.
++    const visOf = (age: number): number => 1 - smoothstep(0.12 * life, life, age);
++    let newest = 0;
++    const kickRad = (0.62 * moonSize) / orbit;
+     for (let i = 0; i < B.length; i++) {
+       const b = B[i];
+-      const age = now - b.birth;
+-      const a = visOf(age) * alpha;
+-      const flash = Math.exp(-age * 0.7) * (age < 6 ? 1 : 0) * alpha;
+-      this.point(b.theta, e1, e2, orbit, this._c);
++      const age = Math.max(0, now - b.birth);
++      const f = clamp(age / life, 0, 1);
++      // A bead is born with a pop (it grows in with a little overshoot) and a white flash that cools.
++      const appear = motion > 0 ? easeOutBack(clamp(age / 0.32, 0, 1)) : smoothstep(0, 0.3, age);
++      const a = visOf(age) * alpha * smoothstep(0, 0.12, age);
++      const flash = Math.exp(-age / 0.9) * alpha;
++      newest = Math.max(newest, flash);
++      // It falls back along the orbit, slowing down, and drifts a little off the path (an ember, not a bead on a string).
++      const th = b.theta - beadDrag(age) - kickRad * (motion > 0 ? beadKick(age) : 1);
++      this.point(th, e1, e2, orbit, this._c);
++      this._o.copy(this._c).normalize();
++      this._n.copy(e1).cross(e2).normalize();
++      const scatter = (b.seed - 0.5) * 2 * (0.1 + 0.5 * f) * moonSize * 0.3;
++      const lift = (beadHash(b.height, 3) - 0.5) * 2 * (0.1 + 0.5 * f) * moonSize * 0.3;
++      this._c.addScaledVector(this._n, scatter).addScaledVector(this._o, lift);
+       this.pos[nb * 3] = this._c.x;
+       this.pos[nb * 3 + 1] = this._c.y;
+       this.pos[nb * 3 + 2] = this._c.z;
+-      this.fx[nb * 3] = a;
+-      this.fx[nb * 3 + 1] = flash;
+-      this.fx[nb * 3 + 2] = clamp(age / life, 0, 1);
++      this.fx[nb * 4] = a;
++      this.fx[nb * 4 + 1] = flash;
++      this.fx[nb * 4 + 2] = f;
++      this.fx[nb * 4 + 3] = beadTumble(b.seed, age) * motion;
++      this.seedA[nb * 2] = b.sizeK * appear;
++      this.seedA[nb * 2 + 1] = b.seed;
+       nb++;
+     }
++    this.lastFlash = newest;
+     this.beadGeom.instanceCount = nb;
+     this.posAttr.needsUpdate = true;
+     this.fxAttr.needsUpdate = true;
++    this.seedAttr.needsUpdate = true;
+ 
+-    // The wake: a short tapering ribbon behind the moon along the orbit. It starts just behind the moon's
+-    // body and runs `WAKE_RAD` back.
+-    this.wakeMesh.visible = alpha > 0.002;
+-    this.wakeMat.uniforms.uAlpha.value = wakeA * alpha;
+-    const start = (0.5 * moonSize) / orbit;
++    // The wake: a tapering ribbon behind the moon along the orbit. It starts at the moon's body (which
++    // hides its root) and runs `WAKE_RAD` back. It belongs to the moon: while the mark is still flying in from the
++    // companion's place (or back to it) it would hang at the mark's destination, so it only shows over the last of the blend.
++    const wakeAlpha = wakeA * smoothstep(0.72, 1, alpha);
++    this.wakeMesh.visible = wakeAlpha > 0.002;
++    const wu = this.wakeMat.uniforms;
++    wu.uAlpha.value = wakeAlpha;
++    wu.uPulse.value = motion > 0 ? pulse : -1;
++    wu.uMotion.value = motion;
++    wu.uHeadW.value = moonSize * 0.07;
++    // The root sits at the moon's trailing edge: the pieces hide its first few percent, and nothing of it crosses the mark.
++    const start = (0.42 * moonSize) / orbit;
+     const P = this.wakePos;
+     for (let k = 0; k <= WAKE_SEGMENTS; k++) {
+       const th = moonTheta - start - (WAKE_RAD * k) / WAKE_SEGMENTS;
+@@ -348,7 +504,7 @@
+ 
+   /** Brightness helper for hosts (0 = no chain activity, 1 = a fresh seal). */
+   get flash(): number {
+-    return this.beads.length ? clamp(this.fx[(this.beads.length - 1) * 3 + 1], 0, 1) : 0;
++    return clamp(this.lastFlash, 0, 1);
+   }
+ 
+   dispose(): void {
+diff -ruN a/engine/moon/hud.ts b/engine/moon/hud.ts
+--- a/engine/moon/hud.ts	2026-09-30 23:02:46.245737443 -0400
++++ b/engine/moon/hud.ts	2026-09-30 23:34:06.179942975 -0400
+@@ -160,13 +160,18 @@
+ uniform vec2 uRot;
+ uniform float uPhase;
+ uniform float uPxScale;
++uniform float uTime;
++uniform float uS;          // the symbol's height, CSS px
+ uniform vec3 uEdge;
+ uniform vec3 uEdgeHi;
+ uniform float uChainA;
+-uniform float uWakeLen;   // radians of path behind the moon
++uniform float uWakeLen;    // radians of path behind the moon
+ uniform float uWakeA;
++uniform float uPulse;      // seconds since the last seal (negative: none)
++uniform float uMotion;     // 0 under reduced motion
+ uniform int uBeadN;
+-uniform vec4 uBead[24];   // phase on the ellipse, age 0..1, birth flash 0..1, radius (px)
++uniform vec4 uBead[24];    // phase on the ellipse, age 0..1, birth flash 0..1, radius (px)
++uniform vec4 uBeadB[24];   // tumble (radians), scatter off the path (-1..1), hash, age (s)
+ in vec2 vPx;
+ 
+ const float TAU = 6.2831853;
+@@ -186,48 +191,73 @@
+   float f = q.x * q.x / (a * a) + q.y * q.y / (b * b) - 1.0;
+   vec2 g = 2.0 * vec2(q.x / (a * a), q.y / (b * b));
+   float d = abs(f) / max(length(g), 1e-5);
+-  if (d > 14.0) discard;
++  if (d > 38.0) discard;
+   float th = atan(q.y / b, q.x / a);
+   vec3 col = vec3(0.0);
+ 
+-  // The wake: a short tail behind the moon along the (invisible) path. It tapers in width and fades to
+-  // nothing; its core runs white at the moon and Flux light blue behind.
++  // The wake: a comet's tail behind the moon along the (invisible) path. It starts at the symbol's trailing edge,
++  // is brightest and widest there and thins hard to nothing; a thin white-hot core inside a Flux blue body inside a
++  // soft glow, a slow shimmer flowing backward, and a pulse that runs down it when a block is sealed.
+   if (uChainA > 0.002) {
+-    float back = mod(uPhase - th, TAU);
+-    if (back < uWakeLen) {
++    float root = 0.42 * uS / (0.5 * (a + b));
++    float back = mod(uPhase - th, TAU) - root;
++    if (back > 0.0 && back < uWakeLen) {
+       float u = back / uWakeLen;
+-      // It emerges from behind the moon and thins out to nothing.
+-      float fade = pow(1.0 - u, 1.7) * smoothstep(0.0, 0.07, back);
+-      float w = mix(1.6, 0.4, u);
+-      col += uEdgeHi * 0.95 * fade * band(d, w) * uWakeA * uChainA;
+-      col += vec3(1.0) * 0.4 * pow(1.0 - u, 3.2) * smoothstep(0.0, 0.07, back) * band(d, w * 0.55) * uWakeA * uChainA;
+-      col += uEdge * 0.7 * fade * (1.0 - smoothstep(0.0, 6.0 * (1.0 - u) + 0.5, d)) * uWakeA * uChainA;
++      float head = clamp(0.07 * uS, 2.2, 8.0);
++      float hw = head * pow(max(1.0 - u, 0.0), 1.5);
++      float minW = 1.6 / uPxScale;
++      float wEff = max(hw, minW);
++      float ar = d / wEff;
++      float core = exp(-ar * ar / 0.03);
++      float body = exp(-ar * ar / 0.14);
++      float glow = exp(-ar * ar / 0.6) * (1.0 - smoothstep(0.6, 1.0, ar));
++      float taper = pow(max(1.0 - u, 0.0), 2.8) * smoothstep(0.0, 0.07, u);
++      float flow = 1.0 + 0.35 * uMotion * sin(TAU * (u * 1.8 - uTime * 0.5)) * (0.3 + 0.7 * u);
++      float pu = clamp(uPulse / 0.9, 0.0, 1.0);
++      float pulse = uPulse >= 0.0 ? exp(-pow((u - pu * 0.9) / 0.1, 2.0)) * (1.0 - smoothstep(0.55, 1.0, pu)) : 0.0;
++      float k = taper * flow * clamp(hw / wEff, 0.0, 1.0) * uWakeA * uChainA;
++      vec3 w = vec3(1.0) * core * (1.5 * pow(max(1.0 - u, 0.0), 2.2) + pulse * 1.2);
++      w += uEdgeHi * body * (0.5 + pulse * 0.7);
++      w += uEdge * glow * 0.55;
++      w += vec3(1.0) * glow * pulse * 0.2;
++      col += w * k;
+     }
+   }
+ 
+-  // The chain: a flat hexagon for every sealed block, falling back along the path behind the moon and
+-  // shrinking and fading with age.
++  // The chain: a tiny glowing hexagon for every sealed block, falling back along the path with a slight
++  // tumble, cooling from white to Flux blue and fading like an ember.
+   if (uBeadN > 0 && uChainA > 0.002) {
+     for (int i = 0; i < 24; i++) {
+       if (i >= uBeadN) break;
+       float t0 = uBead[i].x;
+       float ageF = uBead[i].y;
+-      float vis = 1.0 - smoothstep(0.2, 1.0, ageF);
+-      // The bead itself.
++      float vis = (1.0 - smoothstep(0.12, 1.0, ageF)) * smoothstep(0.0, 0.12, uBeadB[i].w);
++      float r = uBead[i].w;
+       float c0 = cos(t0) * a;
+       float s0 = sin(t0) * b;
+       vec2 c = uOrb.xy + vec2(c0 * uRot.x - s0 * uRot.y, c0 * uRot.y + s0 * uRot.x);
+-      float r = uBead[i].w;
+-      float hd = hexD(vPx - c, r);
+-      if (hd < 2.0 && vis > 0.002) {
+-        float fill = 1.0 - smoothstep(-aaw(), aaw(), hd);
+-        float edge = band(abs(hd + 0.65), 1.3);
+-        float fl = uBead[i].z;
+-        col += uEdge * 0.6 * vis * fill * uChainA;
+-        col += uEdgeHi * vis * edge * uChainA;
+-        // Born with a white flash that settles.
+-        col += vec3(1.0) * fl * (0.55 * fill + 0.6 * edge) * uChainA;
+-      }
++      // A little scatter off the path, along the path's normal (an ember, not a bead on a string).
++      vec2 gn = vec2(cos(t0) / a, sin(t0) / b);
++      gn = normalize(gn + vec2(1e-6));
++      c += vec2(gn.x * uRot.x - gn.y * uRot.y, gn.x * uRot.y + gn.y * uRot.x) * uBeadB[i].y * r * (0.15 + 0.9 * ageF);
++      vec2 dv = vPx - c;
++      if (dot(dv, dv) > r * r * 12.0 || vis < 0.002) continue;
++      float tum = uBeadB[i].x * uMotion;
++      float cr = cos(tum);
++      float sr = sin(tum);
++      vec2 pr = vec2(cr * dv.x + sr * dv.y, -sr * dv.x + cr * dv.y);
++      float hd = hexD(pr, r);
++      float lw = max(1.3 * (1.0 - 0.45 * ageF), 1.3);
++      float stroke = band(abs(hd + lw * 0.5), lw);
++      float hd2 = hexD(pr, r * 0.46);
++      float inner = band(abs(hd2 + 0.4), 0.8) * 0.45;
++      float rr = dot(dv, dv) / (r * r);
++      float core = exp(-rr * 7.0);
++      float halo = exp(-rr * 2.2) * 0.18;
++      float fl = uBead[i].z;
++      vec3 hue = mix(uEdgeHi, uEdge, smoothstep(0.1, 0.9, ageF));
++      col += hue * (stroke * 1.35 + inner + core * 0.55 + halo) * vis * uChainA;
++      col += vec3(1.0) * (stroke * 0.9 + inner * 0.5 + core * 1.2) * fl * 1.5 * vis * uChainA;
+     }
+   }
+   gl_FragColor = vec4(col, 1.0);
+@@ -262,8 +292,14 @@
+   wakeA: number;
+   /** 0..1 for the trail and the chain of beads (off in the lite tier and under reduced motion). */
+   chainA: number;
+-  /** The chain, from `MoonChain.companionBeads`: four floats per bead. */
++  /** The chain, from `MoonChain.companionBeads`: eight floats per bead. */
+   beads: Float32Array;
++  /** Engine seconds (the wake's shimmer). */
++  time: number;
++  /** Seconds since the last seal (negative: none): the pulse that runs down the wake. */
++  pulse: number;
++  /** 0 under reduced motion: no shimmer, no tumble. */
++  motion: number;
+   beadN: number;
+   /** Dashed outline alpha per piece (boot), in this mesh's piece order. */
+   outline: ArrayLike<number>;
+@@ -342,13 +378,18 @@
+         uRot: { value: new THREE.Vector2(1, 0) },
+         uPhase: { value: 0 },
+         uPxScale: { value: 1 },
++        uTime: { value: 0 },
++        uS: { value: 80 },
+         uEdge: { value: new THREE.Color('#2b61d1') },
+         uEdgeHi: { value: new THREE.Color('#86a1da') },
+         uChainA: { value: 1 },
+         uWakeLen: { value: 0.5 },
+         uWakeA: { value: 1 },
++        uPulse: { value: -1 },
++        uMotion: { value: 1 },
+         uBeadN: { value: 0 },
+         uBead: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
++        uBeadB: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
+       },
+     });
+     this.glow = new THREE.Mesh(this.geo, this.hudMat);
+@@ -422,13 +463,21 @@
+       (o.uRot.value as THREE.Vector2).set(s.orbit.cs, s.orbit.sn);
+       o.uPhase.value = ((s.phase % TAU) + TAU) % TAU;
+       o.uPxScale.value = s.pxScale;
++      o.uTime.value = s.time;
++      o.uS.value = s.s;
+       o.uChainA.value = s.chainA * s.alpha;
+       o.uWakeLen.value = s.wakeLen;
+       o.uWakeA.value = s.wakeA;
++      o.uPulse.value = s.pulse;
++      o.uMotion.value = s.motion;
+       const n = Math.min(24, s.beadN);
+       o.uBeadN.value = n;
+       const arr = o.uBead.value as THREE.Vector4[];
+-      for (let i = 0; i < n; i++) arr[i].set(s.beads[i * 4], s.beads[i * 4 + 1], s.beads[i * 4 + 2], s.beads[i * 4 + 3]);
++      const arrB = o.uBeadB.value as THREE.Vector4[];
++      for (let i = 0; i < n; i++) {
++        arr[i].set(s.beads[i * 8], s.beads[i * 8 + 1], s.beads[i * 8 + 2], s.beads[i * 8 + 3]);
++        arrB[i].set(s.beads[i * 8 + 4], s.beads[i * 8 + 5], s.beads[i * 8 + 6], s.beads[i * 8 + 7]);
++      }
+     }
+   }
+ 
+diff -ruN a/engine/moon/moon.ts b/engine/moon/moon.ts
+--- a/engine/moon/moon.ts	2026-09-30 23:02:46.245862896 -0400
++++ b/engine/moon/moon.ts	2026-09-30 23:34:06.179989993 -0400
+@@ -197,6 +197,9 @@
+ uniform float uEdge;
+ uniform float uHover;
+ uniform float uFlare[4];
++uniform float uFlareU[4];    // how far through its flare each piece is, 0..1 (negative: idle)
++uniform vec3 uArtW;          // weights of the three finishes: Marble (frosted glass), Holo (dot matrix), Neon (tube)
++uniform float uMotion;       // 0 under reduced motion: nothing animates
+ uniform vec4 uSeal;          // x = seconds since the seal (negative: none), y = strength, zw = origin (local xy)
+ uniform vec3 uOff[4];
+ uniform vec4 uPieceA[4];     // centroid xy, radius, front z
+@@ -291,11 +294,165 @@
+   return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+ }
+ 
+-// ---- world mode: dark glass with Flux blue light inside --------------------------------------
++// ---- world mode: one glass, three finishes -----------------------------------------------------
++// The sculpture in the sky is the same four blocks of glass lit by the same sun, finished three ways to
++// match the art direction: Marble is frosted glass with a rim light, Holo is a dot-matrix hologram, Neon is
++// a tube of light. Every term is a smooth function of object-space position, the sun and (slowly) time, so
++// nothing flickers; thin lines keep a minimum width in pixels, so nothing shimmers either.
++float g_inner;     // distance to the piece's outline, symbol units
++vec2 g_fromC;      // offset from the piece's centroid, in piece radii
++float g_pool;
++float g_edgeLit;
++float g_rimLine;
++float g_rimPool;
++float g_nh;
++float g_nl;
++float g_sunLit;
++float g_fres;
++float g_fl;        // the piece's flare, 0..1
++float g_fu;        // how far through the flare, 0..1 (negative: idle)
++float g_ring;      // the seal's ring of light
++float g_T;         // time, held still under reduced motion
++float g_fw;        // symbol units per pixel
++int g_pc;
++vec3 g_tone;
++vec3 g_Nl;          // the dome's normal in the moon's own frame
++vec3 g_Vl;          // toward the camera in the moon's own frame
++// A studio key light, up and to the left of the camera: the sculpture is well lit on the night side too.
++const vec3 KEY = vec3(-0.4, 0.62, 0.67);
++const vec2 KDIR = vec2(-0.542, 0.840);       // the key's direction across a face (up and to the left)
++
++float vnoise(vec2 p) {
++  vec2 i = floor(p);
++  vec2 f = fract(p);
++  f = f * f * (3.0 - 2.0 * f);
++  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
++}
++
++// The flare of a piece, crisp: its edge ignites white-hot, a band of light sweeps across the face, the face lifts a little.
++vec3 flareFront() {
++  vec3 white = vec3(1.0);
++  float e = exp(-g_inner / max(1.5, 1.3 * g_fw));
++  float soft = exp(-g_inner / 8.0);
++  vec3 c = white * (e * 3.4 + soft * 0.5) * g_fl;
++  float ph = dot(g_fromC, normalize(vec2(0.62, 0.78)));               // -1..1 across the piece
++  float at = g_fu >= 0.0 ? g_fu * 2.6 - 1.3 : -9.0;
++  c += mix(g_tone, white, 0.75) * exp(-pow((ph - at) / 0.13, 2.0)) * g_fl * 1.1;
++  c += mix(g_tone, white, 0.55) * g_fl * 0.1 * (0.4 + 0.6 * g_pool);
++  return c;
++}
++
++// Marble: frosted glass. A milky Flux-blue volume that glows where the glass is thin, soft clouds of scattered
++// light, a satin sheen of the sun, etched hexagons under the frost that wake up with the seal, and a crisp rim light.
++vec3 marbleFront(vec3 Vl, float zz) {
++  vec3 white = vec3(1.0);
++  vec3 body = mix(uBlue, g_tone, 0.45);
++  float thin = 1.0 - smoothstep(0.0, 46.0, g_inner);
++  float cloud = 0.6 * vnoise(vL.xy * 0.021 + float(g_pc) * 7.3) + 0.4 * vnoise(vL.xy * 0.047 + 11.0);
++  // Across the face: 1 at the corner nearest the key light, 0 at the far corner.
++  float gk = clamp(0.5 + 0.45 * dot(g_fromC, KDIR), 0.0, 1.0);
++  float key = clamp(dot(g_Nl, KEY), 0.0, 1.0);
++  // A milky volume: deep Flux blue in the shade, scattering the key's light toward the corner it comes from,
++  // glowing where the glass is thin.
++  vec3 f = body * (0.11 + 0.2 * g_pool + 0.52 * gk * gk) * uGlow;
++  f += mix(g_tone, white, 0.3) * thin * (0.1 + 0.24 * gk) * uGlow;
++  f += mix(g_tone, white, 0.55) * pow(key, 2.0) * 0.16 * uGlow;
++  f += mix(g_tone, white, 0.5) * (cloud - 0.5) * 0.1 * uGlow * (0.4 + 0.6 * g_pool);
++  f += white * (pow(g_nh, 12.0) * 0.03 + pow(g_nh, 60.0) * 0.12) * g_sunLit;
++  // The soft-box reflection of the key light across the dome, and a thin streak of it near the edge.
++  vec3 Rk = reflect(-g_Vl, g_Nl);
++  f += white * pow(clamp(dot(Rk, KEY), 0.0, 1.0), 16.0) * 0.55 * uGlow;
++  f += white * pow(clamp(dot(Rk, KEY), 0.0, 1.0), 90.0) * 0.9;
++  float latMask = smoothstep(3.0, 16.0, g_inner);
++  vec3 l0 = hexLayer(vL.xy - Vl.xy / zz * 12.0, 15.5, g_T);
++  vec3 l1 = hexLayer(vL.xy - Vl.xy / zz * 40.0 + vec2(7.0, 4.0), 26.0, g_T * 0.7 + 3.0);
++  float wv = 0.55 + 0.45 * pow(0.5 + 0.5 * sin(dot(vL.xy, vec2(0.021, 0.013)) - g_T * 0.9 + float(g_pc) * 1.7), 3.0);
++  f += g_tone * (l0.x * 0.1 * wv + l1.x * 0.04) * latMask * uGlow * (1.0 + g_ring * 9.0 + g_fl * 5.0);
++  f += mix(g_tone, white, 0.5) * l0.y * l0.x * 0.9 * latMask;             // a cell that lights its borders
++  // The rim light: a crisp line of light along the edge, strongest on the sun side, never dark.
++  // Glass is darker just inside its bright edge: a thin shadow that makes the rim light read crisp.
++  f *= 1.0 - 0.3 * exp(-pow((g_inner - 7.0) / 4.5, 2.0));
++  f += mix(g_tone, white, 0.88) * g_rimLine * (0.42 + 1.5 * g_edgeLit + 0.45 * uHover) * uEdge;
++  f += g_tone * g_rimPool * (0.22 + 0.7 * g_edgeLit) * 0.75 * uGlow;
++  f += white * g_ring * 0.5 * (0.3 + 0.7 * latMask);
++  // A slow reflection that sweeps the glass now and then.
++  float sw = dot(vL.xy, normalize(vec2(0.62, 0.78))) - (mod(g_T * 34.0, 900.0) - 330.0);
++  f += mix(g_tone, white, 0.6) * exp(-sw * sw / 520.0) * 0.12;
++  return f;
++}
++
++// Holo: a dot-matrix hologram. The surface is a hexagonal lattice of round dots anchored to the object (they
++// never swim), the dots grow brighter and larger toward the edge and under a slow band of light that crosses the
++// symbol, and each breathes a little on its own phase. Two lattices a factor of two apart are blended by pixel
++// size, so the pitch stays near 4.5 px at any distance without ever popping.
++vec2 dotLevel(float level, float lum) {
++  float P = 7.0 * exp2(level);
++  vec4 h = hexCoords(vL.xy / P);
++  float dd = length(h.xy);
++  float ph = hash12(h.zw + level * 17.0);
++  float breath = 0.5 + 0.5 * sin(g_T * 0.75 + ph * 6.2831853);
++  float L = clamp(lum * (0.9 + 0.2 * breath), 0.0, 1.7);
++  float rd = mix(0.1, 0.35, clamp(L, 0.0, 1.0));
++  float aa = g_fw / P * 0.9 + 0.012;
++  // The dot, and a soft glow around it that fills the gaps a little where the light is strong.
++  float dot_ = 1.0 - smoothstep(rd - aa, rd + aa, dd);
++  float glow = exp(-dd * dd * 14.0) * 0.28 * clamp(L - 0.35, 0.0, 1.0);
++  return vec2(min(dot_ + glow, 1.2), L);
++}
++vec3 holoFront() {
++  vec3 white = vec3(1.0);
++  float want = max(log2(max(g_fw * 4.4 / 7.0, 1e-4)), 0.0);
++  float l0 = floor(want);
++  float lf = want - l0;
++  float rim = exp(-g_inner / 15.0);
++  float lum = 0.3 + 0.42 * rim + 0.22 * g_nl + 0.1 * g_pool + 0.28 * pow(clamp(dot(g_Nl, KEY), 0.0, 1.0), 1.5);
++  // A broad band of light crosses the symbol every few seconds: smooth in space and in time.
++  float bp = dot(vL.xy, normalize(vec2(0.55, 0.84))) / 190.0;
++  float band = fract(g_T * 0.115 + 0.15) * 2.8 - 0.9;
++  lum += 0.62 * exp(-pow((bp - band) / 0.13, 2.0));
++  // A soft band of light climbs the symbol now and then (wide and low: never a hard line to crawl or alias).
++  float ys = mod(g_T * 38.0, 560.0) - 220.0;
++  lum += 0.3 * exp(-pow((vL.y - ys) / 26.0, 2.0));
++  lum += 0.4 * g_ring + 0.5 * g_fl;
++  vec2 a = dotLevel(l0, lum);
++  vec2 b = dotLevel(l0 + 1.0, lum);
++  float cov = mix(a.x, b.x, lf);
++  float L = mix(a.y, b.y, lf);
++  vec3 dc = mix(g_tone * 1.25, white, clamp(L * 0.85 - 0.12, 0.0, 1.0));
++  vec3 f = dc * cov * (0.3 + 0.95 * L) * uGlow;
++  f += g_tone * (0.018 + 0.03 * g_pool) * uGlow;
++  f += mix(g_tone, white, 0.85) * g_rimLine * (0.5 + 0.9 * g_edgeLit) * uEdge;
++  return f;
++}
++
++// Neon: a tube of light along every edge, white-hot at its core and Flux blue in its halo, over dark glass with
++// a faint inner light. The core is never narrower than about a pixel; the halo feeds the bloom.
++vec3 neonFront() {
++  vec3 white = vec3(1.0);
++  float breath = 1.0 + 0.07 * uMotion * sin(g_T * 0.55 + float(g_pc) * 1.9);
++  float wc = max(1.4, 1.1 * g_fw);
++  float core = exp(-pow(g_inner / wc, 2.0)) * min(1.0, 1.6 / wc);
++  float halo1 = exp(-g_inner / max(9.0, 3.0 * g_fw));
++  float halo2 = exp(-g_inner / 30.0);
++  vec3 f = g_tone * (0.02 + 0.06 * g_pool) * uGlow;
++  f += white * core * 4.2;
++  f += mix(uBlue, g_tone, 0.5) * halo1 * 2.0 + uBlue * halo2 * 0.55;
++  // A second, thinner tube inside the first, where the block is wide enough for it.
++  float i2 = abs(g_inner - 15.0);
++  f += mix(g_tone, white, 0.55) * exp(-pow(i2 / max(1.0, g_fw), 2.0)) * 0.75 * smoothstep(9.0, 19.0, g_inner);
++  f *= breath * uGlow;
++  f += white * g_ring * 0.4 * (0.3 + 0.7 * smoothstep(3.0, 16.0, g_inner));
++  f += mix(g_tone, white, 0.8) * g_rimLine * g_edgeLit * 0.4 * uEdge;
++  return f;
++}
++
+ vec3 glass(int pc, int ps, int pn, float front, float back, float sideK, float bevK) {
+   vec4 pa = uPieceA[pc];
+   vec3 tone = pc == 1 ? uBlueLight : (pc == 2 ? uBlueMid : uBlue);
+   vec3 white = vec3(1.0);
++  float wM = uArtW.x;
++  float wH = uArtW.y;
++  float wN = uArtW.z;
+ 
+   vec3 S = normalize(uSunDir);
+   vec3 V = normalize(uCamPos - vW);
+@@ -303,7 +460,7 @@
+ 
+   // A domed front face, so highlights sweep across it instead of flashing on and off.
+   vec2 fromC = (vL.xy - pa.xy) / max(pa.z, 1.0);
+-  vec3 Nl = normalize(vNL + vec3(fromC * 0.34 * front, 0.0));
++  vec3 Nl = normalize(vNL + vec3(fromC * 0.46 * front, 0.0));
+   vec3 N = normalize(uRot * Nl);
+   float ndv = max(dot(N, V), 0.0);
+   float fres = pow(1.0 - ndv, 4.0);
+@@ -323,6 +480,21 @@
+     ring = exp(-pow((dist - uSeal.x * 520.0) / 30.0, 2.0)) * uSeal.y * (1.0 - smoothstep(0.35, 1.3, uSeal.x));
+   }
+ 
++  g_pc = pc;
++  g_tone = tone;
++  g_Nl = Nl;
++  g_Vl = normalize(uCamLocal - (vL + uOff[pc]));
++  g_fromC = fromC;
++  g_pool = exp(-dot(fromC, fromC) * 2.6);
++  g_nh = nh;
++  g_nl = nl;
++  g_sunLit = sunLit;
++  g_fres = fres;
++  g_fl = fl;
++  g_fu = uFlareU[pc];
++  g_ring = ring;
++  g_T = uTime * uMotion;
++
+   if (front > 0.001) {
+     vec3 ei = edgeInfo(vL.xy, ps, pn);
+     float inner = ei.x;
+@@ -330,47 +502,51 @@
+     vec2 Ls = normalize(uSunLocal.xy + vec2(1e-4, 0.0));
+     float facing = pow(clamp(dot(ei.yz, Ls) * 0.5 + 0.5, 0.0, 1.0), 2.6);
+     float along = smoothstep(-1.1, 1.1, dot(fromC, Ls));
+-    float edgeLit = (0.05 + 0.95 * facing) * (0.35 + 0.65 * along) * (0.45 + 0.55 * sunLit);
+-    float rimLine = exp(-inner / 1.15);
+-    float rimPool = exp(-inner / 9.0);
+-
+-    // Dark glass with a blue light deep inside: parallax lattice on two planes below the surface.
++    g_inner = inner;
++    float keyFacing = pow(clamp(dot(ei.yz, normalize(KEY.xy)) * 0.5 + 0.5, 0.0, 1.0), 2.2);
++    float keyAlong = smoothstep(-1.1, 1.1, dot(fromC, normalize(KEY.xy)));
++    g_edgeLit = max((0.05 + 0.95 * facing) * (0.35 + 0.65 * along) * (0.45 + 0.55 * sunLit), (0.1 + 0.9 * keyFacing) * (0.35 + 0.65 * keyAlong) * 0.8);
++    g_rimLine = exp(-inner / max(1.15, 1.3 * g_fw));
++    g_rimPool = exp(-inner / 9.0);
+     vec3 Vl = normalize(uCamLocal - (vL + uOff[pc]));
+     float zz = max(Vl.z, 0.3);
+-    vec3 l0 = hexLayer(vL.xy - Vl.xy / zz * 12.0, 15.5, uTime);
+-    vec3 l1 = hexLayer(vL.xy - Vl.xy / zz * 40.0 + vec2(7.0, 4.0), 26.0, uTime * 0.7 + 3.0);
+-    float latMask = smoothstep(3.0, 16.0, inner);
+-    // A soft glow pooled under the glass, strongest toward the middle of each block.
+-    float pool = exp(-dot(fromC, fromC) * 2.6);
+-    vec3 f = tone * (0.05 + 0.13 * pool) * uGlow;
+-    float wv = 0.55 + 0.45 * pow(0.5 + 0.5 * sin(dot(vL.xy, vec2(0.021, 0.013)) - uTime * 0.9 + float(pc) * 1.7), 3.0);
+-    f += tone * (l0.x * 0.3 * wv + l1.x * 0.1) * latMask * uGlow * (1.0 + ring * 8.0);
+-    f += mix(tone, white, 0.5) * l0.y * l0.x * 1.4 * latMask;      // a cell that lights its borders
+-    f += tone * l0.y * smoothstep(0.0, 0.3, l0.z) * 0.22 * latMask; // and a faint fill
+-    f += tone * rimPool * (0.35 + 0.65 * edgeLit) * 0.85 * uGlow;
+-    f += mix(tone, white, 0.82) * rimLine * (0.22 + 1.5 * edgeLit + 0.45 * uHover) * uEdge;
+-    f += white * ring * 0.55 * (0.3 + 0.7 * latMask);
+-    f *= 1.0 + 2.2 * fl;
+-    f += mix(tone, white, 0.6) * fl * (0.16 + 0.5 * latMask * (l0.x + 0.4));
+-    // A slow reflection that sweeps the glass now and then.
+-    float sw = dot(vL.xy, normalize(vec2(0.62, 0.78))) - (mod(uTime * 34.0, 900.0) - 330.0);
+-    f += mix(tone, white, 0.6) * exp(-sw * sw / 520.0) * 0.16;
+-    // Sheen of the sun on the dome.
+-    f += white * pow(nh, 70.0) * 0.1 * sunLit;
+-    f += white * pow(nh, 14.0) * 0.015 * sunLit;
++    vec3 f = vec3(0.0);
++    if (wM > 0.001) f += marbleFront(Vl, zz) * wM;
++    if (wH > 0.001) f += holoFront() * wH;
++    if (wN > 0.001) f += neonFront() * wN;
++    f += flareFront();
+     col += f * front;
+   }
+   if (bevK > 0.001) {
+-    vec3 b = mix(tone, white, 0.7) * (0.05 + 1.5 * nl + 0.3 * fres + 0.3 * uHover) * uEdge;
+-    b += white * pow(nh, 40.0) * 1.8 * sunLit;
+-    b *= 1.0 + 2.4 * fl;
++    // The bevel catches the light: a bright edge in every finish; the tube's own wall in Neon.
++    // The chamfer is lit like a polished edge: bright where it faces the key light, deep blue on the far side.
++    float keyB = pow(clamp(dot(Nl, KEY), 0.0, 1.0), 1.5);
++    vec3 b = mix(tone, white, 0.8) * (0.035 + 0.14 * fres + 1.05 * keyB + 1.5 * nl + 0.3 * uHover) * uEdge * wM;
++    b += tone * 0.1 * wM;
++    b += white * pow(nh, 40.0) * 1.8 * sunLit * wM * smoothstep(0.0, 0.15, ndv);
++    b += mix(tone, white, 0.8) * (0.06 + 0.14 * fres + 0.5 * keyB + 0.5 * nl) * uEdge * wH;
++    b += mix(tone, white, 0.78) * (1.1 + 0.6 * nl) * uEdge * wN * (1.0 + 0.07 * uMotion * sin(g_T * 0.55 + float(pc) * 1.9));
++    b *= 1.0 + 3.0 * fl;
+     col += b * bevK;
+   }
+   if (sideK > 0.001) {
+     // Walls of the glass: obsidian, with the blue light leaking out along the edge and a sun glint.
+-    vec3 s = tone * (0.012 + 0.16 * fres) * uGlow;
+-    s += white * pow(nh, 60.0) * 0.8 * sunLit;
+-    s += mix(tone, white, 0.5) * fl * 0.35;
++    // Holo draws the front and back lips as thin lines of light (a wireframe), Neon as tubes.
++    float dF = vT * 2.0 * pa.w;
++    float dB = (1.0 - vT) * 2.0 * pa.w;
++    float lw = max(2.0, 1.3 * g_fw);
++    float lipF = exp(-dF / lw);
++    float lipB = exp(-dB / lw);
++    // A wall seen edge-on collapses to a sliver a pixel or less wide: its lines of light fade out before they can sparkle.
++    float graze = smoothstep(0.03, 0.26, ndv);
++    vec3 s = tone * (0.012 + 0.16 * fres) * uGlow * wM;
++    s += white * pow(nh, 60.0) * 0.8 * sunLit * wM * graze;
++    s += tone * (0.025 + 0.12 * fres) * uGlow * wH;
++    s += mix(tone, white, 0.8) * (lipF * 0.85 + lipB * 0.45) * uEdge * wH * graze;
++    s += tone * (0.03 + 0.1 * fres) * uGlow * wN;
++    s += mix(tone, white, 0.75) * (lipF * 2.2 + lipB * 1.2) * uEdge * wN * graze;
++    s += tone * exp(-dF / 10.0) * 0.5 * uGlow * wN * graze;
++    s += mix(tone, white, 0.6) * fl * 0.55 * (0.25 + 0.75 * exp(-dF / 14.0)) * graze;
+     col += s * sideK;
+   }
+   if (back > 0.001) col += tone * (0.03 + 0.2 * fres) * back;
+@@ -378,8 +554,8 @@
+   // Reflected glow of the planet (blue) and a hint of earthshine on the side that faces it.
+   vec3 R = reflect(-V, N);
+   float earth = max(dot(R, toPlanet), 0.0);
+-  col += vec3(0.16, 0.3, 0.75) * pow(earth, 5.0) * (0.25 + 0.75 * dayFace) * (0.06 + 0.55 * fres) * 0.5;
+-  col += tone * 0.04 * max(dot(N, toPlanet), 0.0) * dayFace;
++  col += vec3(0.16, 0.3, 0.75) * pow(earth, 5.0) * (0.25 + 0.75 * dayFace) * (0.06 + 0.55 * fres) * 0.5 * (wM + 0.4 * (wH + wN));
++  col += tone * 0.04 * max(dot(N, toPlanet), 0.0) * dayFace * wM;
+ 
+   col *= 1.0 + 0.2 * uHover;
+   return col;
+@@ -431,6 +607,7 @@
+ }
+ 
+ void main() {
++  g_fw = max(max(fwidth(vL.x), fwidth(vL.y)), 1e-4);
+   int pc = int(vPiece + 0.5);
+   // A piece on its way in fades by dithering (the body is opaque).
+   float vis = uVis[pc];
+@@ -492,6 +669,11 @@
+ const AX = new THREE.Vector3(1, 0, 0);
+ const AY = new THREE.Vector3(0, 1, 0);
+ const smoother = (x: number): number => x * x * x * (x * (x * 6 - 15) + 10);
++/** A piece's flare, crisp: it ignites in the first eighth, then falls away quickly (never a slow swell). u runs 0..1. */
++/** The share of a flare's run that is its ignition: about 85 ms whatever the run's length (five frames at 60 fps). */
++const flareAttack = (dur: number): number => clamp(0.085 / Math.max(dur, 0.05), 0.1, 0.35);
++/** A flare's level over its run, 0..1: it ignites with an ease-out (never a pop), then dies away slowly. */
++const flareShape = (u: number, a: number): number => (u < a ? 1 - (1 - u / a) * (1 - u / a) : Math.pow(1 - (u - a) / (1 - a), 2.2));
+ 
+ /** Where each piece arrives from (symbol units, y up), in the design's order: bar, cap, big hexagon, small hexagon. */
+ const BOOT_FROM = [
+@@ -542,7 +724,7 @@
+   /** Pressed state (design 7.10.11): scale 0.96 for 80 ms. */
+   private pressT = 0;
+   private ambientNow = false;
+-  private readonly beadBuf = new Float32Array(24 * 4);
++  private readonly beadBuf = new Float32Array(24 * 8);
+   private readonly outlineBuf = new Float32Array(4);
+   /** Boot assembly state (design 7.10.9), null when the moon is just the moon. */
+   boot: MoonBoot | null = null;
+@@ -561,11 +743,18 @@
+   private readonly haloMat: THREE.ShaderMaterial;
+   private readonly off: THREE.Vector3[] = [0, 1, 2, 3].map(() => new THREE.Vector3());
+   private readonly flareV = new Float32Array(4);
++  private readonly flareU = new Float32Array(4).fill(-1);
++  /** Weights of the three finishes (Marble, Holo, Neon), eased toward the art direction's. */
++  private readonly artW = new THREE.Vector3(1, 0, 0);
++  private readonly artT = new THREE.Vector3(1, 0, 0);
+   private readonly flareT0 = new Float32Array(4).fill(-1e9);
+   private readonly flareDur = new Float32Array(4).fill(0.34);
+   private readonly flareAmp = new Float32Array(4);
++  private readonly flareAtk = new Float32Array(4).fill(0.25);
+   private readonly vis = new Float32Array(4).fill(1);
+   private readonly kick = new Float32Array(4);
++  /** The kick as drawn: it follows `kick` with a quick attack, so a piece is pushed out over a couple of frames, never teleported. */
++  private readonly kickS = new Float32Array(4);
+   private readonly dir: THREE.Vector3[] = [];
+   private readonly amp = [40, 34, 18, 28];
+   private readonly zdir = [1, 0.6, -0.5, 0.15];
+@@ -634,6 +823,9 @@
+         uEdge: { value: 1 },
+         uHover: { value: 0 },
+         uFlare: { value: this.flareV },
++        uFlareU: { value: this.flareU },
++        uArtW: { value: this.artW },
++        uMotion: { value: 1 },
+         uSeal: { value: new THREE.Vector4(-1, 0, 0, 0) },
+         uOff: { value: this.off },
+         uPieceA: { value: pieceA },
+@@ -764,6 +956,15 @@
+     this.hud.setTokens(t);
+   }
+ 
++  /**
++   * The art direction the sculpture is finished in: Marble is frosted glass with a rim light, Holo a dot-matrix
++   * hologram, Neon a tube of light. The change eases over about a second (`snap` sets it at once).
++   */
++  setArt(art: 'marble' | 'dotmatrix' | 'neon', snap = false): void {
++    this.artT.set(art === 'marble' ? 1 : 0, art === 'dotmatrix' ? 1 : 0, art === 'neon' ? 1 : 0);
++    if (snap) this.artW.copy(this.artT);
++  }
++
+   /** The pointer went down on the moon: it dips to 0.96 for 80 ms. */
+   press(): void {
+     this.pressT = 0.08;
+@@ -819,11 +1020,16 @@
+   /** Light one piece white. `strength` 1 is a full flash; `dur` is the envelope in seconds (design: 0.34). */
+   flare(piece: number, strength = 1, dur = 0.34): void {
+     if (piece < 0 || piece > 3) return;
+-    const d = lerp(dur, Math.max(dur, 0.7), this.mixW);
++    const d = lerp(dur, Math.max(dur, 0.5), this.mixW);
+     const u = (this.now - this.flareT0[piece]) / this.flareDur[piece];
+-    const cur = u >= 0 && u <= 1 ? this.flareAmp[piece] * Math.sin(Math.PI * u) : 0;
++    const cur = u >= 0 && u <= 1 ? this.flareAmp[piece] * flareShape(u, this.flareAtk[piece]) : 0;
+     if (strength < cur && u < 0.6) return;
+-    this.flareT0[piece] = this.now;
++    // The new envelope starts from the light that is already there, so overlapping flares build on each other
++    // instead of dipping to dark first.
++    const a = flareAttack(d);
++    const r = clamp(cur / Math.max(strength, 1e-4), 0, 0.999);
++    this.flareT0[piece] = this.now - a * (1 - Math.sqrt(1 - r)) * d;
++    this.flareAtk[piece] = a;
+     this.flareDur[piece] = d;
+     this.flareAmp[piece] = strength;
+     this.kick[piece] = Math.max(this.kick[piece], strength * 0.7 * this.mixW);
+@@ -1031,6 +1237,12 @@
+     let sAvg = 0;
+     const alphaBoot = alphaK;
+     const hovSep = hov * e;
++    // A seal or a piece's own flare kicks the piece out and it settles back (`kick` decays below). The push arrives over about
++    // two frames (time constant 25 ms): a one-frame jump of ten pixels is not motion, and on the Holo dot lattice it is a flicker.
++    // The gain of 1.25 keeps the peak where the instant version had it; the hologram recoils half as much (a projection is not a
++    // body, and a dot lattice shows every pixel of a push); reduced motion has no recoil at all.
++    const kickAtk = 1 - Math.exp(-dt / 0.025);
++    const kickK = 1.25 * (1 - 0.5 * this.artW.y);
+     for (let k = 0; k < 4; k++) {
+       const u = (((time + this.lag[k] * T) / T) % 1 + 1) % 1;
+       let s = 0;
+@@ -1039,9 +1251,11 @@
+       else if (u >= 0.88) s = 1 - easeOutCubic((u - 0.88) / 0.12);
+       s = Math.max(s * breath, hovSep * 0.55);
+       sAvg += s / 4;
+-      const a = this.amp[k] * s + this.kick[k] * 9;
++      this.kickS[k] += (this.kick[k] - this.kickS[k]) * kickAtk;
++      const kv = reduced ? 0 : this.kickS[k] * kickK;
++      const a = this.amp[k] * s + kv * 9;
+       this.off[k].copy(this.dir[k]).multiplyScalar(a);
+-      this.off[k].z = this.zdir[k] * 14 * s + this.kick[k] * 4 * this.zdir[k];
++      this.off[k].z = this.zdir[k] * 14 * s + kv * 4 * this.zdir[k];
+       this.vis[k] = 1;
+       this.outlineBuf[k] = 0;
+       if (boot) {
+@@ -1066,7 +1280,9 @@
+     const kk = Math.exp(-dt / 0.22);
+     for (let k = 0; k < 4; k++) {
+       const u = (time - this.flareT0[k]) / this.flareDur[k];
+-      const v = u >= 0 && u <= 1 ? this.flareAmp[k] * Math.sin(Math.PI * u) : 0;
++      const on = u >= 0 && u <= 1;
++      const v = on ? this.flareAmp[k] * flareShape(u, this.flareAtk[k]) : 0;
++      this.flareU[k] = on ? u : -1;
+       this.flareV[k] = v;
+       this.kick[k] *= kk;
+       lt += v;
+@@ -1106,6 +1322,8 @@
+     const lit = 1 - 0.88 * this.dim;
+     bu.uGlow.value = o.glow * lit * (0.92 + 0.08 * Math.sin(time * 0.7));
+     bu.uEdge.value = 1 + 0.12 * Math.sin(time * 0.43 + 1.0);
++    bu.uMotion.value = reduced ? 0 : 1;
++    this.artW.lerp(this.artT, reduced ? 1 : 1 - Math.exp(-dt / 0.3));
+     bu.uHover.value = this.hover * e;
+     const seal = bu.uSeal.value as THREE.Vector4;
+     const big0 = this.model.pieces[Piece.Parallelogram];
+@@ -1132,6 +1350,15 @@
+       this.piecePx[k * 2 + 1] = -(this.skew.z * x + this.skew.w * y) * this.markPx;
+     }
+     anchors[4].set(this.pos.x, this.pos.y, this.pos.z, 1);
++    // Anchor 5: where the dev fund's pulse drifts to, out past the moon and away from the planet in the picture plane.
++    {
++      _a.set(0, 0, -1).applyQuaternion(cam.quaternion);
++      _v.copy(this.pos);
++      _v.addScaledVector(_a, -_v.dot(_a));
++      if (_v.lengthSq() < 1e-8) _v.set(0, 1, 0).applyQuaternion(cam.quaternion);
++      _v.normalize().multiplyScalar(this.radius * 2.6).add(this.pos);
++      anchors[5].set(_v.x, _v.y, _v.z, 1);
++    }
+ 
+     // ---- the companion's dressing ----
+     const late = this.status === 'late' || this.status === 'offline';
+@@ -1161,8 +1388,11 @@
+         piecePx: this.piecePx,
+         orbit: L.orbit,
+         phase: this.phase,
+-        wakeLen: 0.49,
+-        wakeA: 1 + 0.8 * this.flash,
++        wakeLen: 0.46,
++        wakeA: (1 + 0.5 * this.flash) * (1 - smoothstep(0, 0.3, e)), // the companion's wake lets go as the mark leaves it
++        time,
++        pulse: this.sealT,
++        motion: reduced ? 0 : 1,
+         chainA: reduced || o.lite || !o.chain ? 0 : 1,
+         beads: this.beadBuf,
+         outline: this.outlineBuf,
+@@ -1180,7 +1410,8 @@
+       const hu = this.haloMat.uniforms;
+       (hu.uCenter.value as THREE.Vector3).copy(this.pos);
+       hu.uRadius.value = this.radius * 2.3;
+-      hu.uIntensity.value = (0.11 + 0.55 * Math.min(1.5, lt * 0.5) + 0.12 * this.spread + 0.1 * this.hover) * o.glow * (1 - 0.8 * this.dim) * e;
++      const haloK = this.artW.x + 0.75 * this.artW.y + 1.4 * this.artW.z;
++      hu.uIntensity.value = (0.11 + 0.55 * Math.min(1.5, lt * 0.5) + 0.12 * this.spread + 0.1 * this.hover) * haloK * o.glow * (1 - 0.8 * this.dim) * e;
+       const su = this.seamMat.uniforms;
+       _v.copy(F).multiplyScalar(-this.model.pieces[Piece.BigHex].depth * 0.3 * this.unit).add(this.pos);
+       (su.uCenter.value as THREE.Vector3).copy(_v);
+@@ -1189,7 +1420,7 @@
+     }
+     this.chain.shown = sky;
+     // The chain of sealed blocks on the orbit (it keeps recording while the moon follows the camera).
+-    this.chain.update(time, this.e1, this.e2, o.orbit, this.theta, o.size, 1 + 0.8 * this.flash, e * alphaK);
++    this.chain.update(time, this.e1, this.e2, o.orbit, this.theta, o.size * this.scaleNow, 1 + 0.5 * this.flash, e * alphaK, this.sealT, reduced ? 0 : 1);
+     this.placed = true;
+   }
+ 
+diff -ruN a/engine/shaders/chunks.ts b/engine/shaders/chunks.ts
+--- a/engine/shaders/chunks.ts	2026-09-30 23:02:46.244395097 -0400
++++ b/engine/shaders/chunks.ts	2026-09-30 23:34:06.178980014 -0400
+@@ -123,7 +123,7 @@
+  * Block shockwaves. Up to four rings expand over the surface from a center with an ease-out-expo
+  * front (fast start, slow finish), like the design's Beat: a great-circle ring that reaches about 70
+  * degrees in 1.6 s. Nodes use `waveLift` (a +35% lift for 300 ms as the front passes); the planet
+- * bodies use `waveGlow` (a crisp 2px to 0.5px ring cooling from shock-hot to shock).
++ * bodies use `waveGlow` (a luminous front with a trailing wash, cooling from shock-hot to shock).
+  */
+ export const GLSL_WAVES = /* glsl */ `
+ uniform vec4 uWave[4];      // xyz = center (unit), w = start time (negative = inactive)
+@@ -155,8 +155,11 @@
+ export const GLSL_WAVE_GLOW = /* glsl */ `
+ uniform vec3 uShock;
+ uniform vec3 uShockHot;
+-// The front is four passes (design 6.4 I): 24, 10, 3.6 and 1.4 px at alpha .05, .12, .3 and .62, the
+-// last one white, fading as (1 - t)^1.7.
++// The front of a block's shockwave. Styled so it reads as a wave sweeping the surface, never as a line drawn on it
++// (seen from far away the design's 1.4 px white hairline looked like an orbit guide): a wide soft swell (about 40 px),
++// a 16 px shoulder, a wash that trails behind the front and dies away, and a sharp 5 px band with a hot core that
++// only the young wave has: it starts as a crisp front and ends as a soft glow. Overall it fades as (1 - t)^1.7.
++// (The design's passes, for the record: 24, 10, 3.6 and 1.4 px at alpha .05, .12, .3, .62.)
+ vec3 waveGlow(vec3 n) {
+   vec3 s = vec3(0.0);
+   for (int i = 0; i < 4; i++) {
+@@ -169,14 +172,18 @@
+     float r = uWaveP[i].x * waveEase(u);
+     float ang = acos(clamp(dot(n, uWave[i].xyz), -1.0, 1.0));
+     float px = (ang - r) / max(uWaveP[i].w, 1e-6);
+-    float g24 = exp(-px * px / 144.0);
+-    float g10 = exp(-px * px / 25.0);
+-    float g36 = exp(-px * px / 3.24);
+-    float g14 = exp(-px * px / 0.49);
+-    float trail = step(ang, r) * exp(-(r - ang) * 22.0) * 0.07;
++    float g40 = exp(-px * px / 450.0);
++    float g14 = exp(-px * px / 150.0);
++    float g5 = exp(-px * px / 14.0);
++    float g1 = exp(-px * px / 1.2);
++    // The wash behind the front: smooth across the front itself (no step), then a few degrees of fading light.
++    float bpx = -px;
++    float wash = smoothstep(-10.0, 10.0, bpx) * exp(-max(bpx, 0.0) * uWaveP[i].w * 6.0) * 0.2;
+     float fade = pow(1.0 - u, 1.7);
+-    vec3 halo = uShock * (0.05 * g24 + 0.12 * g10 + 0.3 * g36 + trail) + mix(uShock, uShockHot, 0.85) * 0.62 * g14;
+-    s += halo * uWaveP[i].z * fade * 1.7;
++    float crisp = (1.0 - u) * (1.0 - u);
++    vec3 soft = uShock * (0.1 * g40 + 0.14 * g14 + wash);
++    vec3 hard = uShock * 0.26 * g5 + mix(uShock, uShockHot, 0.85) * 0.34 * g1;
++    s += (soft + hard * crisp) * uWaveP[i].z * fade * 1.7;
+   }
+   return s;
+ }

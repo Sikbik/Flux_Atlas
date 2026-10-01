@@ -120,6 +120,16 @@ impl PaymentQueue {
         self.tier(tier).and_then(TierQueue::head)
     }
 
+    /// The queue key of `id`, when queued.
+    pub fn key(&self, id: NodeId) -> Option<QKey> {
+        self.tiers.iter().find_map(|q| q.keys.get(&id).copied())
+    }
+
+    /// True when `id` is queued in any tier.
+    pub fn contains(&self, id: NodeId) -> bool {
+        self.tiers.iter().any(|q| q.contains(id))
+    }
+
     pub fn clear(&mut self) {
         for q in &mut self.tiers {
             q.clear();
@@ -208,10 +218,14 @@ impl ClientRanks {
         }
     }
 
-    /// Nodes whose client-model rank differs from the true queue (including nodes the
-    /// clients do not rank at all); the model is reset to the truth afterwards.
+    /// Nodes whose client-model rank differs from the true queue: nodes the clients rank
+    /// elsewhere or not at all, and nodes the clients still rank that are not queued (they get
+    /// the explicit unranked signal, `rank: null`). The model is reset to the truth afterwards.
     pub fn sync(&mut self, q: &PaymentQueue) -> Vec<NodeId> {
         let mut out = Vec::new();
+        for model in &self.tiers {
+            out.extend(model.iter().filter(|id| !q.contains(**id)));
+        }
         for (i, t) in q.tiers.iter().enumerate() {
             let truth: Vec<NodeId> = t.iter().collect();
             let model = &self.tiers[i];

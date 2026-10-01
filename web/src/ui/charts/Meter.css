@@ -1,0 +1,202 @@
+/* Meter (design 5.8): one reading in a range. A 4 px track (8 px at size lg) with a rounded fill that
+   slides with `translate` (the fill is as wide as the track and is moved left, so its rounded end
+   stays crisp and animating it never touches layout). With zones the track is cut into named bands
+   by 2 px gaps, the band the reading is in lights up, and a white notch marks the reading.
+
+   Custom properties
+     --ui-meter-h        track height (set by data-size; consumers may override)
+     --ui-meter-c        the fill colour (set from `tone`)
+     --ui-meter-surface  the surface the meter sits on; the notch ring and zone gaps take its colour (default var(--ink-1))
+     --ui-meter-frac     the fill length 0..1 (set by the component)
+     --ui-meter-at       a notch position 0..1 (set by the component)
+     --ui-meter-from, --ui-meter-to   a zone's start and end 0..1 (set by the component) */
+
+.ui-meter {
+  --ui-meter-h: 4px;
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-meter[data-size="lg"] {
+  --ui-meter-h: 8px;
+}
+
+.ui-meter__head {
+  display: flex;
+  min-height: 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.ui-meter__label {
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1.3 var(--font-sans);
+}
+
+.ui-meter__value {
+  margin-inline-start: auto;
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1.3 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-meter__value[data-unknown] {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+}
+
+.ui-meter__rail {
+  position: relative;
+  height: var(--ui-meter-h);
+  container-type: inline-size;
+}
+
+/* Room for the notch, which is taller than the track. */
+.ui-meter[data-marker] .ui-meter__rail {
+  margin-block: 6px;
+}
+
+.ui-meter__track {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+}
+
+/* Unknown: an empty dashed track, never a zero-length fill. */
+.ui-meter[data-state="unknown"] .ui-meter__track {
+  background: repeating-linear-gradient(90deg, var(--ink-4) 0 3px, transparent 3px 7px);
+}
+
+.ui-meter__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-pill);
+  background: var(--ui-meter-c, var(--accent-500));
+  /* Slide so that frac * 100% of the track shows, never less than the rounded end. */
+  translate: max(calc((var(--ui-meter-frac) - 1) * 100%), calc(var(--ui-meter-h) - 100%)) 0;
+  transition: translate var(--dur-slow) var(--ease-out);
+}
+
+/* Zones ------------------------------------------------------------------------------------------ */
+
+.ui-meter__zone {
+  --ui-meter-zc: var(--accent-500);
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--ui-meter-from) * 100%);
+  width: calc((var(--ui-meter-to) - var(--ui-meter-from)) * 100%);
+  background: color-mix(in oklab, var(--ui-meter-zc) 38%, var(--ink-3));
+  transition: background var(--dur-base) var(--ease-out);
+}
+
+.ui-meter__zone:not(:last-child) {
+  width: calc((var(--ui-meter-to) - var(--ui-meter-from)) * 100% - 2px);
+}
+
+.ui-meter__zone[data-tone="ok"] {
+  --ui-meter-zc: var(--status-ok);
+}
+
+.ui-meter__zone[data-tone="warn"] {
+  --ui-meter-zc: var(--status-warn);
+}
+
+.ui-meter__zone[data-tone="crit"] {
+  --ui-meter-zc: var(--status-crit);
+}
+
+/* The zone the reading is in lights up; the others stay quiet. */
+.ui-meter__zone[data-current] {
+  background: var(--ui-meter-zc);
+}
+
+.ui-meter__zones {
+  position: relative;
+  height: 14px;
+}
+
+.ui-meter__zone-label {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 14px var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-meter__zone-label[data-current] {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+/* Notches ---------------------------------------------------------------------------------------- */
+
+/* A fixed reference (a target, a limit): a quiet line. The reading in a zoned meter is the white notch. */
+.ui-meter__marker {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 2px;
+  height: calc(var(--ui-meter-h) + 12px);
+  border-radius: var(--r-pill);
+  background: var(--text-2);
+  box-shadow: 0 0 0 2px var(--ui-meter-surface, var(--ink-1));
+  translate: calc(var(--ui-meter-at) * 100cqw - 50%) -50%;
+  transition: translate var(--dur-slow) var(--ease-out);
+}
+
+.ui-meter__marker[data-reading] {
+  width: 3px;
+  background: var(--hot);
+}
+
+/* End labels ------------------------------------------------------------------------------------- */
+
+.ui-meter__ends {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1.3 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-meter__end[data-at="mid"] {
+  text-align: center;
+}
+
+.ui-meter__end[data-at="end"] {
+  text-align: right;
+}
+
+/* Loading: the same height as the loaded meter, so nothing shifts. */
+.ui-meter .ui-meter__skeleton {
+  height: var(--ui-meter-h);
+}
+
+.ui-meter__ends-space {
+  display: block;
+  height: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-meter__fill,
+  :root:not([data-motion="full"]) .ui-meter__marker,
+  :root:not([data-motion="full"]) .ui-meter__zone {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-meter__fill,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-meter__marker,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-meter__zone {
+  transition: none;
+}

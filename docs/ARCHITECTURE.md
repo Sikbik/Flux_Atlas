@@ -32,6 +32,7 @@ crates/
   atlas-flux/              # upstream clients (FluxOS API, explorer, aggregators), raw models, parsers, failover, rate limits
   atlas-store/             # redb persistence: tables, value codecs, migrations, retention/compaction
   atlas-engine/            # ingest schedulers, reducer (single-writer state), diff→events, metrics, snapshots, time machine
+  atlas-geoip/             # local GeoIP: memory-mapped DB-IP City Lite reader, verified download + atomic install
   atlas-server/            # axum HTTP + WebSocket, pre-built bodies, search, explorer proxy cache, static web embed, CLI (bin: `atlas`)
 web/                       # React 19 + TypeScript + Vite frontend
 labs/globe/                # standalone globe/ambient renderer lab (ported into web/src/globe)
@@ -107,7 +108,7 @@ expensive payload only when that indicator moves. v1 rebuilt everything every 30
 | T1 | **ChainStream** | Insight socket.io (Engine.IO 3) `wss://explorer.runonflux.io/socket.io/?EIO=3&transport=websocket`, send `42["subscribe","inv"]`, ping `2` every 25 s. Run **two sockets at once** (main + `explorer2.runonflux.io`), dedupe by hash. Unhealthy after 90 s without a block or a ping timeout. Fallback only while no socket is healthy: poll Insight `/api/status?q=getLastBlockHash` every 2 s. **Never** poll the FluxOS gateway for liveness (30 s apicache, measured 27 s lag). | push (0.94 s median after block time) | `NewTip(hash)` |
 | T1 | **BlockDecoder** | FluxOS `GET /daemon/getblock/{hash}` (verbosity 2, ~160 ms, ~10 KB): every tx decoded, including fluxnode fields. Producer = header `collateral` (10-hex prefix + index), resolved against the local node table (Insight `/api/block/{hash}` `nodesCollateral` for the full txid if ambiguous). Payouts: classify the coinbase outputs **by amount** (Cumulus 1.0 / Nimbus 3.5 / Stratus 9.0 × reduction factor; the remainder, 0.5 + fees, goes to the dev fund `t3hPu1YDeGUCp8m7BQCnnNUmRMJBa5RadyA`). Reorg-aware: check `previousblockhash` against our tip, walk back on mismatch, fill gaps. 10-block finality window. Optional `getblockdeltas/{hash}` for transfer inputs. | per block (~30 s), ~3 upstream calls | `BlockAdded` (producer, payouts, dev fund, tx mix), `NodeHeartbeat` (confirm tx, `update_type` 1), `NodeConfirmed` (`update_type` 0 = initial confirm), `NodeStarted` (start tx, v5/v6, incl. P2SH/multisig), `NodePaid`, `NodeIpChanged` (confirm carries IP), `LargeTransfer` |
 | T1 | **PayoutAttribution** | Our own payment-queue model per tier (rank order from the node list, advanced locally on every block; the paid node moves to the back). Match each coinbase payee `(tier, address)` against the head of that tier's queue. Reconcile with `last_paid_height` from NodeReconcile. **Must be recorded at ingest time**, since `last_paid_height` is overwritten on the next payment and one address can own 180+ nodes. | per block | `NodePaid` with an exact node; drives the **"next to be paid"** predictive highlight (head of each tier queue) before the block lands |
-| T1 | **MempoolStream** | the same Insight socket, `tx` events (~23/min; ~91% are fluxnode confirms/starts with empty `vout`, ~2/min regular transfers carrying value + outputs). Push transfers immediately. Show node txs as pending check-ins, fully classified when their block lands. Optional enrichment: `/api/tx/{txid}` for node txs (≤ 0.4 req/s) to animate check-ins before inclusion. Reconcile the set every 60 s. | push | `MempoolTx` (transfer / pending node tx) |
+| T1 | **MempoolStream** | the same Insight socket, `tx` events (~23/min; ~91% are fluxnode confirms/starts with empty `vout`, ~2/min regular transfers carrying value + outputs). Push transfers immediately. Socket fluxnode txids do not resolve, so node txs come from the 20 s reconcile, fetched and classified (≤ 0.4 req/s per host) before they are streamed; see Mempool classification below. | push | `MempoolTx` (transfer / app payment; node txs from the reconcile) |
 | T1 | **Expiry watch** | derived: a node expires after **640 blocks** without a confirm; confirms are allowed every **≥ 500 blocks** | per block | `NodeAtRisk` (≥ 560 blocks since last confirm), `NodeExpired` (predicted, then confirmed by reconcile) |
 | T1 | **AppChainFeed** | app register/update payments are txs with an OP_RETURN (message hash) to the app address; seen in the decoded block → `GET /apps/permanentmessages?hash=<h>` for the exact spec + price paid | per block | `AppRegistered`, `AppUpdated` (spec diff + FLUX paid) |
 | T2 | **AppPending** | `/apps/temporarymessages` (5 s apicache, 12.8 KB br). Pending deploys appear a median ~168 s before they're mined; ~15% never get mined (show as pending, expire after 1 h) | 10 s | `AppPending` → promoted when the OP_RETURN lands, or `AppPendingExpired` |
@@ -120,7 +121,7 @@ expensive payload only when that indicator moves. v1 rebuilt everything every 30
 | T2 | **Price** | Insight `/api/markets/info` (Flux-provided; also pushed as socket `markets_info`), CoinGecko `ids=zelcash` as fallback | 60 s / push | `Price` |
 | T2 | **Supply** | FluxOS `gettxoutsetinfo` (3 s upstream; cache 10 min) + `getblockchaininfo.valuePools`; socket `info.supply` per block | per block (socket) / 10 min | `Stats` |
 | T3 | **StatsRound** | `stats.runonflux.io/fluxinfo` (1.63 MB br full; `?projection=` variants), fetched whenever `roundTime` changes (check every 5 min; rounds take ~15–18 min). Gives hardware/benchmarks, FluxOS/fluxd/bench/ArcaneOS versions, geolocation (ip-api: lat/lon, country, region, org, ASN, hosting flags), running apps and locked resources for every node. ~150 unreachable nodes come back with an `error` and **zeroed placeholders: treat them as missing, never as (0,0)** | per round | `NodeHardwareChanged`, `NodeVersionChanged`, `NodeUnreachable`/`NodeRecovered`, `NodeLocated`, `StatsRound` (freshness) |
-| T3 | **GeoResolve** | `stats.runonflux.io/fluxlocation/<ip>` (0.5 s, works for any node IP) **immediately** for every new or changed IP (so new nodes land on the globe within seconds), and for zero-geo nodes; cached 7 days per IP. Local fallback for org/country/region: Flux's own `iplocation.bin.gz` (the table FluxOS placement uses; weekly). Optional DB-IP City Lite mmdb for lat/lon (CC-BY, attribution) if configured | on event | `NodeLocated` |
+| T3 | **GeoResolve** | `stats.runonflux.io/fluxlocation/<ip>` (0.5 s, works for any node IP) **immediately** for every new or changed IP (so new nodes land on the globe within seconds), and for zero-geo nodes; cached 7 days per IP. Local fallback for org/country/region: Flux's own `iplocation.bin.gz` (the table FluxOS placement uses; weekly). **City names** (and approximate coordinates for nodes without any) from the local DB-IP City Lite database, see *Local GeoIP* below | on event | `NodeLocated` |
 | T3 | **TopologySweep** | `/flux/topology` on rotating reachable nodes (each call returns ~60 reporters' peer lists). **Rolling: one call every ~12 s**, and each result streams immediately, so the whole overlay graph refreshes about every 30 min without a batch | continuous | `PeerLinksChanged` (mesh deltas) |
 | T3 | **WatchProbe** | direct, SSRF-guarded probes of **watched** nodes only (clients' watchlists): `/flux/version` (or `/flux/uptime`) every 60 s. This gives operators near-real-time offline detection, which is otherwise impossible at network scale | 60 s per watched host | `NodeUnreachable`/`NodeRecovered` (fast path) |
 
@@ -133,9 +134,23 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 `ATLAS_BACKFILL_DAYS` / `ATLAS_BACKFILL_RPS`), extendable to 30 days.
 
 > **Implemented (B2, I1).** Deviations and precisions over the table above:
-> - **Gap jump.** The block sync fills gaps of up to 30 blocks (`max_live_gap`) live. A larger gap (after downtime)
->   jumps straight to the tip: that block is applied as **discontinuous** (no expiry/at-risk derivation across the
->   hole), and the block backfill fills the hole in the background.
+> - **Gap jump.** The block sync fills gaps of up to 30 blocks (`max_live_gap`) live. A larger gap jumps straight
+>   to the tip: that block is applied as **discontinuous** (no expiry/at-risk derivation across the hole), and the
+>   block backfill fills the hole in the background. The reconcile that follows a jump adopts the list; its
+>   differences are expected and not counted as bug signals.
+> - **Restart catch-up (B5).** Until the chain first reaches an announced tip after a restart, the block sync replays
+>   every missed block instead of jumping, up to `max_catchup_gap` (1,440 blocks, about 12 h of downtime; one
+>   `getblockhash` + one `getblock` per block). Each missed payout rotates the restored queue exactly as it rotated
+>   upstream, and clients rotate the same way from the replayed `block` messages, so no rank correction follows a
+>   restart. Catch-up blocks (older than 2 min) skip the `currentwinner` fetch and the tip-latency sample.
+> - **Deferred reconcile (B5).** A node list whose height is above the applied tip waits until the block sync
+>   reaches that height (or until no block arrived for 90 s: a stalled sync is reconciled anyway). Adopting it
+>   first would roll the model forward, and the blocks applied after it would pay and rotate the same nodes a
+>   second time: this was the "thousands of rank diffs after every restart" bug signal (the startup reconcile
+>   runs within a second of the restart, before the catch-up). Nodes that newer blocks changed are still skipped,
+>   but fields those blocks cannot know (tier, payment address, confirm height, an unknown last payment) are filled
+>   from the list. On shutdown every listed record is written with its current rank, so the restore orders nodes
+>   that share a queue key exactly.
 > - **Reorgs.** On a `previousblockhash` mismatch the sync walks back through the 10-block finality window to the
 >   fork, then the reducer deletes the orphaned blocks (store and recent ring), moves the tip to the fork, clears
 >   the expected payees, emits `reorg` (+ a feed item), and **triggers an immediate NodeRegistry reconcile**. The
@@ -146,6 +161,57 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   are removed (streamed as a `mesh` delta).
 > - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
 >   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
+> - **Mempool classification.** The socket `tx` push carries no fluxnode type, no OP_RETURN and no size. Its
+>   fluxnode pushes also carry txids that resolve nowhere (not in the daemon mempool, not in any block, and
+>   Insight's own `/api/tx` answers "Not found"; measured: 66 of 66 over 150 s), so the engine ignores them and
+>   takes node txs from the reconcile only. Socket transfers are pushed immediately (complete as pushed: kind
+>   `transfer`, `size: null` until the reconcile fills it); socket app payments are pushed as `app_message` and
+>   fetched (the OP_RETURN decides). The 20 s reconcile is cache-busted (`?nc=`: the gateway's 30 s apicache
+>   answers with the previous block's transactions, already mined), fills sizes, and txids in it that the socket
+>   never pushed are fetched, classified with the block classifier (`atlas_flux::decode::kind_of`, from the
+>   daemon or the Insight form of the tx: `node_start` / `node_confirm` / `app_message` / `transfer`, with the
+>   size) and only then streamed as new `mempool` entries. One fetch every 1.25 s, newest first, each txid
+>   once, alternating gateway `getrawtransaction/<txid>/1` and Insight `/api/tx/<txid>` (0.4 req/s per host);
+>   entries older than 2 min are dropped from the queue (mined by then, and classified by the block).
+>   What stays unknown before mining: whether an app payment registers or updates, and which app (known when the
+>   pending `temporarymessages` entry or the mined `permanentmessages` entry is matched); whether a tx is mined at
+>   all; and, for up to one reconcile plus the fetch queue (about 20-30 s), the node txs themselves, which
+>   appear once fetched rather than at broadcast.
+> - **Local GeoIP (B5).** No upstream source carries a city (stats `fluxinfo` and `fluxlocation` have none; measured
+>   0 cities over 2,654 hosts), so cities come from DB-IP "IP to City Lite" (crate `atlas-geoip`):
+>   - *Fetch:* `https://download.db-ip.com/free/dbip-city-lite-YYYY-MM.mmdb.gz` (UTC month; the previous month while
+>     the current one is not published), outbound HTTPS only, checked about 30 s after start and then daily, in
+>     the background: startup and ingest never wait for it, and without a database cities stay unknown.
+>   - *Install:* the download (about 60 MB) is decompressed to a staging file (the gzip CRC and length trailer are
+>     checked; output capped at 1 GiB), memory-mapped and checked (MaxMind DB metadata, a City database type,
+>     40 MB to 1 GiB, at least 3 of 4 probe addresses answering their known country), then renamed over
+>     `<ATLAS_DATA_DIR>/geoip/dbip-city-lite.mmdb`. The replaced file is kept as `dbip-city-lite.prev.mmdb` (a hard
+>     link, so the live path never disappears) and `dbip-city-lite.json` records the month. A failed check leaves the
+>     live database untouched; leftovers of an interrupted update are removed at the next start.
+>   - *Read:* the file is memory-mapped (`maxminddb` over `memmap2`, `MADV_RANDOM`), never read onto the heap.
+>     Measured on the 2026-09 file (127 MB): open 21 us, 2,655 node hosts looked up in 3 ms warm / 145 ms cold,
+>     heap (RssAnon) unchanged. In the server (3105, 10 min after start): RssFile 11.8 MB without GeoIP, 13.2 MB
+>     with it after a cold start, 19.1 MB 10 min after an install (the freshly written file is in the page cache,
+>     so fault-around maps neighbouring pages; +44 MB right after the install). These are clean file pages the
+>     kernel can drop. RssAnon varied 207 to 248 MB across runs with and without GeoIP (engine noise; the
+>     database adds no heap beyond the city strings, which fit inline). Restart cost: under 4 ms warm, about
+>     120 ms with a cold page cache (complete locations skip the lookup).
+>   - *Use:* a node's geo gets the DB-IP city, and the region when its source has none. Country, org and ASN are
+>     never overridden (an empty country is filled), and nothing is taken when DB-IP disagrees with the source on
+>     the country. A node without usable coordinates gets DB-IP's (city-level, approximate) with
+>     `source: local_db`, which sets the `geo_approx` flag in `nodes.bin`; it still counts as unlocated for
+>     GeoResolve, so a precise location replaces it. Enrichment runs on restore (before the first publish), on
+>     every geo update from a stats round or GeoResolve, and over all nodes when a new database is installed
+>     (one `nodes` delta, `cause: geo`). Cities reach `NodeRecord.geo.city`, `nodes.bin` LOCATIONS, snapshots
+>     (keyframes record geo with city), `NodeRef.city`, `NodeLite.city` and `NodeChange.city`.
+>   - *Config:* `ATLAS_GEOIP_AUTO` (default on) switches the download; `ATLAS_GEOIP_DB` points at an
+>     operator-managed `.mmdb` instead (auto-download off; reloaded when its modification time changes; replace
+>     it by rename, never rewrite it in place, since it is memory-mapped). With `ATLAS_INGEST=0` nothing is
+>     downloaded, but an existing database is still read.
+>   - *Attribution (CC BY 4.0):* "IP Geolocation by DB-IP" with a link to https://db-ip.com, wherever the data is
+>     shown. `/bootstrap` lists it in `attributions` while a database is loaded, or while stored nodes still carry
+>     its data (any city or `local_db` location, for example after the download was turned off), so the About view
+>     can show it.
 > - **Ingest switch.** `ATLAS_INGEST=0` (or `IngestConfig::disabled()`) runs the engine without ingest jobs: it
 >   restores, publishes and serves the stored state. Tests, fixtures and `demo_server` always run this way.
 
@@ -269,6 +335,16 @@ byte. Large blobs are **zstd**-compressed.
 > up to 10 s of history, which re-ingest recovers). Event pruning (`Store::prune_events`) keeps global events 30 d,
 > per-node events 90 d, mesh change rows 7 d. redb's page cache defaults to 1 GiB, so the server sets
 > `cache_size_bytes` (`ATLAS_DB_CACHE_MB`, default 32 MB); the hot state lives in memory anyway.
+> `MetricsRow` is schema version 2: every series is an `Option` (`None` = not recorded, never 0). Version 1 rows
+> (0 for unknown) are upgraded on read: a row with `tip_height == 0` is a backfilled `fluxhistorystats` point that
+> only knows `node_count` and the tier counts; in a live v1 row a 0 is read as unknown for the gauges that are
+> never 0 on a populated network (supply, price, hardware and locked totals, countries, providers, apps,
+> instances, mesh edges, ArcaneOS, unreachable) and for `avg_block_time_ms`.
+
+**Disk outside redb (GeoIP, B5):** `<ATLAS_DATA_DIR>/geoip/` holds the live DB-IP City Lite database (127 MB for
+2026-09) and the previous one (same size), about **255 MB** steady. A monthly update needs about **190 MB more** while
+it runs (the 60 MB download plus the 127 MB staging file), so the peak is about 445 MB. The size grows slowly
+month to month (2026-08 was 61.7 MB compressed, 2026-09 60.3 MB).
 
 A retention task runs hourly: prune `metrics_1m` older than 30 d, roll up `metrics_1h`, keep hourly
 snapshots for 30 d, then daily keyframes forever. `compact()` runs weekly. **Time machine:** state at `t` =
@@ -282,7 +358,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 
 | Method & path | Returns |
 |---|---|
-| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job |
+| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job, and `attributions` (third-party data credits the UI must show, for example `{name: "DB-IP", text: "IP Geolocation by DB-IP", url: "https://db-ip.com", license: "CC BY 4.0", license_url, scope, version}` while the GeoIP database is loaded or nodes carry its data; an empty list otherwise; typed optional for older servers) |
 | `GET /nodes.bin` | **binary columnar node snapshot** (§7), feeds the globe + tables |
 | `GET /mesh.bin` | binary P2P mesh: header + `u32 edge_count` + `u32 a[]`, `u32 b[]` (NodeIds, a<b, deduped) + `u8 flags[]` (bit0 bidirectional, bit1 cross-continent); refreshed per PeerCrawl sweep |
 | `GET /nodes/{id}/peers` | the node's peers with geo, for selection-reveal |
@@ -293,16 +369,16 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /apps` / `GET /apps/{name}` | app index / full app: normalized spec, components, instances (node ids), history |
 | `GET /apps/{name}/history` | spec versions with diffs |
 | `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates |
-| `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{t:[…], a:[…], b:[…]}`) |
-| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs |
+| `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
+| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations) |
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
-| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras [TBD research] |
+| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket transfers in real time, node txs from the 20 s reconcile, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
-| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; columns keyframes do not record, such as rank and hardware, are 0; cached 60 s per t) |
+| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; cached 60 s per t). Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |
 | `GET /ws` | WebSocket live stream (§8) |
-| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops |
+| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine) |
 
 Everything else serves the embedded web app (SPA fallback to `index.html`, immutable caching for hashed assets).
 
@@ -313,6 +389,11 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > (0 = not queued); index 0 means "unknown" in the country/org/version/location tables; `mesh.bin` uses the
 > same sectioned container (magic `FXMS`) instead of bare arrays. Golden file:
 > `crates/atlas-core/tests/golden/nodes.bin` + `nodes.expected.json`.
+> **A missing column means "not recorded"**: unknown for every row, never zeros. Producers that lack a column
+> leave it out (`encode_nodes_bin_without`; `/timeline/state` does so for `rank`, and for `last_paid`, `app_count`
+> and `flags` without a format-2 keyframe). Decoders default missing columns so old readers keep working, and
+> expose which columns were present (Rust `NodesBin::has`, web `NodesBin.present` / `hasColumn`); a reader must
+> not show a defaulted column as data.
 
 Little-endian and columnar. Every section starts on an 8-byte boundary, so the client can wrap sections as
 typed-array views with zero copying.
@@ -370,7 +451,8 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
     heartbeats: [NodeId], starts: [NodeRef], updates: [NodeId], transfers_over_threshold: [TxLite], reward }`.
     One message per block with its child events, so the client can stage the choreography.
   - `reorg { from_height, to_height, orphaned: [hash] }`
-  - `mempool { txs: [TxLite{txid, value, kind, size}] }` (coalesced per ≤ 500 ms)
+  - `mempool { txs: [TxLite{txid, value, kind, size}] }` (coalesced per ≤ 500 ms; `size` is `null` when unknown,
+    which is the case for socket pushes; a tx the socket never pushed arrives once classified)
   - `nodes { prev_seq, added: [NodeLite], removed: [id], changed: [{id, …changed fields}], cause }`
     (`cause`: reconcile | block | sweep | geo)
   - `apps { prev_seq, upserted: [AppLite], removed: [name], instances: [{app, started: [id], removed: [id]}], cause }`
@@ -396,12 +478,18 @@ every 30 s). Each tier's queue is a strict rotation, so clients maintain ranks d
 4. A node whose status leaves `confirmed` drops out of its tier queue; ranks behind it close the gap.
 5. An unranked node that receives a rank (a `changed` rank, typically a join confirmed in a block) is inserted at
    that rank; nodes at or behind it shift back. Ranks past the tier size clamp to the back.
+6. **Unranked signal.** In `nodes.changed`, an absent `rank` means "unchanged" and `rank: null` means "not queued".
+   Outside a reconcile, `rank: null` is an exit like rule 4 (the node leaves its tier queue; ranks behind it close the
+   gap). In a `cause: reconcile` delta it is authoritative like any other rank: the node becomes unranked, without
+   shifting anyone. The server sends it whenever clients still rank a node that the true queue does not hold while
+   its status stays `confirmed` (so no status exit tells them), for example a node the upstream list stops ranking.
 
 The server keeps an exact model of what clients hold (`atlas_engine::state::queue::ClientRanks`) and diffs it
 against the true queue after every tick, so clients must apply a `nodes` delta in the same order: `removed`
-(rule 2), then status exits (rule 4), then field changes, then entering ranks ascending by `(rank, id)` (rules 2
-and 5; an already ranked node is taken out at its turn, a move). In a `cause: reconcile` delta, `changed` ranks are
-authoritative and set as is, without shifting anyone. Implemented in `web/src/store/network.ts`.
+(rule 2), then status exits and `rank: null` exits (rules 4 and 6), then field changes, then entering ranks
+ascending by `(rank, id)` (rules 2 and 5; an already ranked node is taken out at its turn, a move). In a
+`cause: reconcile` delta, `changed` ranks (including `null`) are authoritative and set as is, without shifting
+anyone. Implemented in `web/src/store/network.ts`.
 Displayed ETAs are `rank × 30 s`, labelled as estimates.
 
 **Client choreographer (web).** Incoming events go into a scheduler with a visual budget (max concurrent
@@ -450,7 +538,8 @@ web/src/
   serves stored state only), `ATLAS_BACKFILL_DAYS` (7), `ATLAS_BACKFILL_RPS` (1.5), `ATLAS_DB_CACHE_MB` (32),
   `ATLAS_DISK_BUDGET_MB` (6144), `ATLAS_INTERVALS`
   (`job=duration,...` per-job interval overrides), `ATLAS_FLUX_API`, `ATLAS_EXPLORER_API`, `ATLAS_STATS_API`,
-  `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_DB` (accepted, not used yet), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
+  `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_AUTO` (`1`; DB-IP City Lite download), `ATLAS_GEOIP_DB` (path of an operator-managed `.mmdb`
+  instead of the downloaded one), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
   `ATLAS_CLIENT_RPS` / `ATLAS_CLIENT_BURST`, `ATLAS_WS_MAX_CONNECTIONS` / `ATLAS_WS_MAX_PER_IP` / `ATLAS_WS_PING`,
   `ATLAS_LOG`, `ATLAS_HEALTHCHECK_ADDR` (`127.0.0.1:3000`, for `atlas healthcheck`). The web smoke targets a
   running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).

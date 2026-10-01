@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Flux Atlas reel</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <!-- The reel: a deterministic film of the real Flux network (scripts/capture.mjs renders it frame by frame). -->
+    <div id="stage">
+      <canvas id="under"></canvas>
+      <canvas id="globe" aria-label="Flux network globe"></canvas>
+      <div id="fx"></div>
+      <div id="dim"></div>
+      <div id="overlay"></div>
+      <div id="black"></div>
+    </div>
+    <script type="module" src="/src/lab/cinema/main.ts"></script>
+  </body>
+</html>

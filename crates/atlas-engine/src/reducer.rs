@@ -17,14 +17,17 @@ use atlas_core::live::{
     AppInstancesDelta, AppsDelta, DeltaCause, FeedKind, FeedRef, LiveBody, MeshDelta,
     NextPayeesMsg, ReorgMsg,
 };
-use atlas_core::{Amount, Hash32, NodeId, NodeRecord, NodeStatus, Tier, now_ms};
+use atlas_core::{Amount, Hash32, NodeId, NodeRecord, NodeStatus, Tier, Txid, now_ms};
 use atlas_flux::models::apps::APP_PAYMENT_ADDRESS;
+use atlas_flux::models::nodes::ListedNode;
 use atlas_store::{MeshChangeRecord, MeshEdgeRecord, MeshReporter, MetricsRow, WriteBatch};
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 use crate::derive::apps as dapps;
 use crate::derive::block::{Attribution, apply_block, payee_dto};
-use crate::derive::reconcile::{apply_dos_list, apply_start_list, reconcile};
+use crate::derive::reconcile::{
+    apply_dos_list, apply_start_list, is_initial, list_height, reconcile,
+};
 use crate::derive::round::{apply_round, geo_material_change, watched_feed};
 use crate::obs::{Obs, TopologyReport};
 use crate::publish::{PublishJob, block_lite, build, build_with};
@@ -66,9 +69,11 @@ pub fn spawn_writer(
                     WriterCmd::Commit(batch) => {
                         let ops = batch.len() as u64;
                         match store.commit(batch) {
-                            Ok(_) => handle.inner.stats.with(|s| {
+                            Ok(c) => handle.inner.stats.with(|s| {
                                 s.commits += 1;
                                 s.commit_ops += ops;
+                                s.commit_seconds
+                                    .observe(crate::stats::LOCAL_BUCKETS, c.elapsed.as_secs_f64());
                             }),
                             Err(e) => {
                                 tracing::error!(error = %e, "store commit failed");
@@ -100,6 +105,18 @@ const PUBLISH_MIN_INTERVAL: Duration = Duration::from_secs(1);
 const MESH_BODY_INTERVAL: Duration = Duration::from_secs(10);
 /// Mempool additions are coalesced for this long.
 const MEMPOOL_COALESCE: Duration = Duration::from_millis(500);
+/// A node list waiting for the block sync is reconciled anyway once no block arrived for this
+/// long (the sync is stalled rather than catching up).
+const LIST_DEFER_STALL: Duration = Duration::from_secs(90);
+/// A block older than this when applied is a catch-up block (gap fill after downtime), not a
+/// fresh tip: no `currentwinner` fetch and no tip-latency sample for it.
+const CATCH_UP_AGE_MS: u64 = 120_000;
+
+/// A node list that reflects blocks the model has not applied yet.
+struct PendingList {
+    list: Vec<ListedNode>,
+    since: Instant,
+}
 
 pub struct Reducer {
     pub st: NetworkState,
@@ -132,6 +149,10 @@ pub struct Reducer {
     snapshot_after_reconcile: bool,
     next_snapshot_ms: u64,
     live_floor_saved: Option<u32>,
+    pending_list: Option<PendingList>,
+    last_block_at: Instant,
+    /// The last block applied was discontinuous: the next reconcile's differences are expected.
+    after_gap: bool,
 }
 
 impl Reducer {
@@ -182,6 +203,9 @@ impl Reducer {
             snapshot_after_reconcile: last_snapshot_ms.is_none_or(|t| now.saturating_sub(t) > hour),
             next_snapshot_ms: (now / hour + 1) * hour,
             live_floor_saved,
+            pending_list: None,
+            last_block_at: Instant::now(),
+            after_gap: false,
         }
     }
 
@@ -220,6 +244,11 @@ impl Reducer {
                             Err(_) => break,
                         }
                         n += 1;
+                    }
+                    if flush.is_some() {
+                        // Store every record with its current rank: the restore orders
+                        // nodes that share a queue key by the stored rank.
+                        self.st.nodes.persist_all_listed();
                     }
                     self.finish(tick);
                     if let Some(ack) = flush {
@@ -293,16 +322,25 @@ impl Reducer {
                     s.payouts_fallback += fallback;
                     s.payouts_unattributed += none;
                 });
-                self.stats()
-                    .tip_latency(received_ms as i64 - block.summary.time_ms as i64);
+                let catching_up = now.saturating_sub(block.summary.time_ms) > CATCH_UP_AGE_MS;
+                if !catching_up {
+                    self.stats()
+                        .tip_latency(received_ms as i64 - block.summary.time_ms as i64);
+                }
+                self.last_block_at = Instant::now();
                 if discontinuous {
                     self.st.expiry_armed = false;
+                    self.after_gap = true;
                     if let Some(c) = &self.cmds {
                         c.reconcile.notify_one();
                     }
                 }
                 if let Some(c) = &self.cmds {
-                    let _ = c.payees.try_send(block.summary.height);
+                    // `currentwinner` names the payees after the real tip: useless for a
+                    // catch-up block.
+                    if !catching_up {
+                        let _ = c.payees.try_send(block.summary.height);
+                    }
                     for p in &block.app_payments {
                         if !self.st.apps.applied.contains(&p.message_hash) {
                             let _ = c
@@ -323,6 +361,7 @@ impl Reducer {
                 );
                 self.fresh = true;
                 self.fresh().ok("block_decoder");
+                self.release_pending_list(tick);
             }
             Obs::Reorg {
                 fork_height,
@@ -330,12 +369,19 @@ impl Reducer {
                 orphaned,
             } => self.reorg(tick, fork_height, old_tip, orphaned),
             Obs::MempoolTx { tx, received_ms } => {
+                // Fluxnode txs pushed by the socket carry a txid that resolves nowhere
+                // (measured: none of 66 such pushes was in the gateway mempool, in a block or
+                // in Insight's own /api/tx). They are not mempool entries: the reconcile
+                // finds the real ones and the fetch classifies them.
+                if tx.is_node_tx() {
+                    self.stats().event("mempool_node_push_ignored");
+                    self.fresh().ok("mempool_stream");
+                    return;
+                }
                 if tx.is_coinbase_like() || self.st.mempool.contains_key(&tx.txid) {
                     return;
                 }
-                let kind = if tx.is_node_tx() {
-                    TxKind::NodeTx
-                } else if tx.outputs.iter().any(|(a, _)| a == APP_PAYMENT_ADDRESS) {
+                let kind = if tx.outputs.iter().any(|(a, _)| a == APP_PAYMENT_ADDRESS) {
                     TxKind::AppMessage
                 } else {
                     TxKind::Transfer
@@ -345,38 +391,53 @@ impl Reducer {
                     MempoolEntry {
                         kind,
                         value: tx.value_out,
-                        size: 0,
+                        size: None,
                         first_seen_ms: received_ms,
                     },
                 );
                 self.mempool_buf
-                    .push(tx_lite(tx.txid, tx.value_out, kind, 0));
+                    .push(tx_lite(tx.txid, tx.value_out, kind, None));
                 self.stats().event("mempool_tx");
-                if kind != TxKind::NodeTx {
-                    tick.event(
-                        Event::MempoolTx {
-                            txid: tx.txid,
-                            value: tx.value_out,
-                            kind,
-                            output_count: tx.outputs.len() as u16,
-                        },
-                        Some(received_ms),
-                    );
-                }
+                tick.event(
+                    Event::MempoolTx {
+                        txid: tx.txid,
+                        value: tx.value_out,
+                        kind,
+                        output_count: tx.outputs.len() as u16,
+                    },
+                    Some(received_ms),
+                );
                 self.st.summary_dirty = true;
                 tick.publish = true;
                 self.fresh().ok("mempool_stream");
             }
-            Obs::MempoolSnapshot(set) => {
+            Obs::MempoolSnapshot(sizes) => {
                 let before = self.st.mempool.len();
-                self.st
-                    .mempool
-                    .retain(|t, e| set.contains(t) || now.saturating_sub(e.first_seen_ms) < 90_000);
+                self.st.mempool.retain(|t, e| {
+                    sizes.contains_key(t) || now.saturating_sub(e.first_seen_ms) < 90_000
+                });
+                // The reconcile knows every size the socket push did not carry.
+                for (t, e) in &mut self.st.mempool {
+                    if e.size.is_none()
+                        && let Some(s) = sizes.get(t).filter(|s| **s > 0)
+                    {
+                        e.size = Some(*s);
+                        tick.publish = true;
+                    }
+                }
                 if self.st.mempool.len() != before {
                     self.st.summary_dirty = true;
                     tick.publish = true;
                 }
+                self.st.mempool_set = sizes.into_keys().collect();
             }
+            Obs::MempoolClassified {
+                txid,
+                kind,
+                value,
+                size,
+                output_count,
+            } => self.mempool_classified(tick, txid, kind, value, size, output_count),
             Obs::SocketInfo(info) => {
                 if let Some(total) = info.supply {
                     let prev = self.st.supply.clone();
@@ -409,54 +470,7 @@ impl Reducer {
                 self.fresh().ok("price");
             }
             Obs::Winners { height, winners } => self.winners(tick, height, &winners),
-            Obs::NodeList(list) => {
-                let rep = reconcile(&mut self.st, tick, &list);
-                let total = rep.total_diffs();
-                self.stats().with(|s| {
-                    s.reconciles += 1;
-                    if !rep.initial {
-                        s.reconcile_diffs += u64::from(total);
-                        for (k, v) in &rep.diffs {
-                            *s.reconcile_diff_fields.entry((*k).to_owned()).or_default() +=
-                                u64::from(*v);
-                        }
-                        if rep.rank_diffs > 0 {
-                            *s.reconcile_diff_fields
-                                .entry("rank".to_owned())
-                                .or_default() += u64::from(rep.rank_diffs);
-                        }
-                    }
-                });
-                if total > 0 && !rep.initial {
-                    tracing::warn!(
-                        list_height = rep.list_height,
-                        diffs = ?rep.diffs,
-                        rank_diffs = rep.rank_diffs,
-                        added = rep.added,
-                        removed = rep.removed,
-                        skipped_newer = rep.skipped_newer,
-                        reattributed = rep.reattributed,
-                        "reconcile found differences (bug signal)"
-                    );
-                } else {
-                    tracing::info!(
-                        list_height = rep.list_height,
-                        listed = rep.listed,
-                        added = rep.added,
-                        removed = rep.removed,
-                        initial = rep.initial,
-                        reattributed = rep.reattributed,
-                        "reconcile clean"
-                    );
-                }
-                self.request_geo_for_unlocated();
-                self.fresh = true;
-                self.fresh().ok("node_registry");
-                if self.snapshot_after_reconcile {
-                    self.snapshot_after_reconcile = false;
-                    self.snapshot(tick);
-                }
-            }
+            Obs::NodeList(list) => self.node_list(tick, list),
             Obs::NodeCount(c) => {
                 let mut local = [0u32; 3];
                 for e in self.st.nodes.listed() {
@@ -597,11 +611,139 @@ impl Reducer {
                     s.publishes += 1;
                     s.publish_last_ms = elapsed_ms;
                     s.publish_max_ms = s.publish_max_ms.max(elapsed_ms);
+                    s.publish_seconds
+                        .observe(crate::stats::LOCAL_BUCKETS, elapsed_ms as f64 / 1000.0);
                 });
+            }
+            Obs::GeoIp(g) => {
+                tracing::info!(
+                    version = ?g.version,
+                    bytes = g.db.info().bytes,
+                    "geoip: database loaded"
+                );
+                self.st.geoip = Some(g);
+                let n = crate::geoip::enrich_all(&mut self.st, Some(tick));
+                tracing::info!(nodes = n, "geoip: nodes enriched");
+                tick.publish = true;
             }
             Obs::Flush(ack) => {
                 let _ = self.writer.send(WriterCmd::Flush(ack));
             }
+        }
+    }
+
+    /// A node list arrived. A list that reflects blocks the model has not applied yet (the block
+    /// sync is still catching up, typically right after a restart) waits for them: adopting it
+    /// first would roll the model forward, and the catch-up blocks would then pay and rotate the
+    /// same nodes a second time. Every rank would differ from the model and from what clients
+    /// hold, and clients would get a correction for nearly every node.
+    fn node_list(&mut self, tick: &mut Tick, list: Vec<ListedNode>) {
+        let height = list_height(&list);
+        let tip = self.st.tip_height();
+        if self.st.tip.is_some() && height > tip && !is_initial(&self.st, &list) {
+            let since = self
+                .pending_list
+                .as_ref()
+                .map_or_else(Instant::now, |p| p.since);
+            if self.pending_list.is_none() {
+                tracing::info!(
+                    list_height = height,
+                    tip,
+                    "node list is ahead of the applied chain; reconciling once the blocks are applied"
+                );
+            }
+            self.pending_list = Some(PendingList { list, since });
+            return;
+        }
+        self.pending_list = None;
+        self.reconcile_list(tick, &list);
+    }
+
+    /// Reconciles a deferred node list once the chain reached its height, or when the block
+    /// sync has stalled (no block for [`LIST_DEFER_STALL`]): a stale model is then better
+    /// corrected than kept.
+    fn release_pending_list(&mut self, tick: &mut Tick) {
+        let Some(p) = &self.pending_list else { return };
+        let height = list_height(&p.list);
+        let caught_up = self.st.tip_height() >= height;
+        let stalled = p.since.elapsed() >= LIST_DEFER_STALL
+            && self.last_block_at.elapsed() >= LIST_DEFER_STALL;
+        if !caught_up && !stalled {
+            return;
+        }
+        let Some(p) = self.pending_list.take() else {
+            return;
+        };
+        if stalled && !caught_up {
+            tracing::warn!(
+                list_height = height,
+                tip = self.st.tip_height(),
+                "block sync stalled behind the node list; reconciling anyway"
+            );
+        }
+        self.reconcile_list(tick, &p.list);
+    }
+
+    fn reconcile_list(&mut self, tick: &mut Tick, list: &[ListedNode]) {
+        let rep = reconcile(&mut self.st, tick, list);
+        // Differences right after a chain discontinuity (a jump over a gap too large to
+        // replay) are expected: the skipped blocks were never applied.
+        let after_gap = std::mem::take(&mut self.after_gap);
+        let expected = rep.initial || after_gap;
+        let total = rep.total_diffs();
+        self.stats().with(|s| {
+            s.reconciles += 1;
+            if !expected {
+                s.reconcile_diffs += u64::from(total);
+                for (k, v) in &rep.diffs {
+                    *s.reconcile_diff_fields.entry((*k).to_owned()).or_default() += u64::from(*v);
+                }
+                if rep.rank_diffs > 0 {
+                    *s.reconcile_diff_fields
+                        .entry("rank".to_owned())
+                        .or_default() += u64::from(rep.rank_diffs);
+                }
+            }
+        });
+        if total > 0 && after_gap && !rep.initial {
+            tracing::info!(
+                list_height = rep.list_height,
+                diffs = ?rep.diffs,
+                rank_diffs = rep.rank_diffs,
+                added = rep.added,
+                removed = rep.removed,
+                "reconcile after a chain gap adopted the list (expected differences)"
+            );
+        } else if total > 0 && !expected {
+            tracing::warn!(
+                list_height = rep.list_height,
+                diffs = ?rep.diffs,
+                rank_diffs = rep.rank_diffs,
+                added = rep.added,
+                removed = rep.removed,
+                skipped_newer = rep.skipped_newer,
+                reattributed = rep.reattributed,
+                "reconcile found differences (bug signal)"
+            );
+        } else {
+            tracing::info!(
+                list_height = rep.list_height,
+                listed = rep.listed,
+                added = rep.added,
+                removed = rep.removed,
+                initial = rep.initial,
+                after_gap,
+                diffs = total,
+                reattributed = rep.reattributed,
+                "reconcile clean"
+            );
+        }
+        self.request_geo_for_unlocated();
+        self.fresh = true;
+        self.fresh().ok("node_registry");
+        if self.snapshot_after_reconcile {
+            self.snapshot_after_reconcile = false;
+            self.snapshot(tick);
         }
     }
 
@@ -740,10 +882,11 @@ impl Reducer {
         let Some(c) = &self.cmds else { return };
         let mut seen = HashSet::new();
         for e in self.st.nodes.listed() {
+            // An approximate (local GeoIP) location still asks for a precise one.
             if e.rec
                 .geo
                 .as_ref()
-                .is_some_and(atlas_core::node::Geo::has_coords)
+                .is_some_and(atlas_core::node::Geo::is_precise)
             {
                 continue;
             }
@@ -770,6 +913,8 @@ impl Reducer {
         if !geo.has_coords() {
             return;
         }
+        // Local GeoIP adds the city (and the region when missing).
+        let geo = &crate::geoip::enriched(&self.st, Some(ip), geo.clone());
         for id in self.st.nodes.on_ip(ip) {
             let changed = self
                 .st
@@ -1023,10 +1168,11 @@ impl Reducer {
             if *ts >= cutoff {
                 continue;
             }
+            // The history only carries tier counts: every other series stays unknown.
             let row = MetricsRow {
                 ts_ms: *ts,
-                tier_counts: *c,
-                node_count: c.iter().sum(),
+                tier_counts: Some(*c),
+                node_count: Some(c.iter().sum()),
                 samples: 1,
                 ..MetricsRow::default()
             };
@@ -1070,7 +1216,7 @@ impl Reducer {
                 if e.rec
                     .geo
                     .as_ref()
-                    .is_some_and(atlas_core::node::Geo::has_coords)
+                    .is_some_and(atlas_core::node::Geo::is_precise)
                 {
                     located += 1;
                 }
@@ -1217,6 +1363,72 @@ impl Reducer {
         crate::state::rank_corrections(&mut self.st, deltas)
     }
 
+    /// A fetched mempool transaction: refines what the socket said (`node_tx` becomes
+    /// `node_start` / `node_confirm`, the size becomes known), or adds a transaction the
+    /// socket never pushed (only while it is still in the last reconciled set, so a late answer
+    /// for a transaction mined meanwhile does not resurrect it).
+    fn mempool_classified(
+        &mut self,
+        tick: &mut Tick,
+        txid: Txid,
+        kind: TxKind,
+        value: Amount,
+        size: Option<u32>,
+        output_count: u16,
+    ) {
+        if kind == TxKind::Coinbase {
+            return;
+        }
+        if let Some(e) = self.st.mempool.get_mut(&txid) {
+            // The socket guessed node txs and app payments; the fetched tx decides.
+            if matches!(
+                e.kind,
+                TxKind::NodeTx | TxKind::Unknown | TxKind::AppMessage
+            ) {
+                e.kind = kind;
+            }
+            if e.size.is_none() && size.is_some() {
+                e.size = size;
+            }
+            if e.value.is_zero() && !value.is_zero() {
+                e.value = value;
+            }
+            tick.publish = true;
+            return;
+        }
+        if !self.st.mempool_set.contains(&txid) {
+            return;
+        }
+        let now = tick.now_ms;
+        self.st.mempool.insert(
+            txid,
+            MempoolEntry {
+                kind,
+                value,
+                size,
+                first_seen_ms: now,
+            },
+        );
+        self.mempool_buf.push(tx_lite(txid, value, kind, size));
+        self.stats().event("mempool_tx");
+        if !matches!(
+            kind,
+            TxKind::NodeTx | TxKind::NodeStart | TxKind::NodeConfirm
+        ) {
+            tick.event(
+                Event::MempoolTx {
+                    txid,
+                    value,
+                    kind,
+                    output_count,
+                },
+                Some(now),
+            );
+        }
+        self.st.summary_dirty = true;
+        tick.publish = true;
+    }
+
     fn flush_mempool(&mut self) {
         if self.mempool_buf.is_empty() {
             return;
@@ -1233,6 +1445,7 @@ impl Reducer {
             tick.publish = true;
         }
         dapps::expire_pending(&mut self.st, &mut tick);
+        self.release_pending_list(&mut tick);
         let before = self.st.mempool.len();
         let cutoff = tick.now_ms.saturating_sub(3_600_000);
         self.st.mempool.retain(|_, e| e.first_seen_ms >= cutoff);
@@ -1299,68 +1512,85 @@ impl Reducer {
         let mut dos = 0;
         let (mut cores, mut ram, mut storage, mut ssd) = (0u32, 0f64, 0f64, 0f64);
         let (mut lc, mut lr, mut ls) = (0f64, 0f64, 0f64);
+        // Unknown is never 0: a gauge is recorded only once its source reported for at least
+        // one node (or its job ran at least once). Otherwise it stays `None`.
+        let (mut any_node, mut any_hw, mut any_locked) = (false, false, false);
+        let (mut any_geo, mut any_arcane, mut any_reach) = (false, false, false);
         for e in self.st.nodes.listed() {
+            any_node = true;
             match e.rec.status {
                 NodeStatus::Confirmed => {
                     if e.at_risk {
                         at_risk += 1;
                     }
                     if let Some(h) = &e.rec.hw {
+                        any_hw = true;
                         cores += u32::from(h.cores);
                         ram += f64::from(h.ram_gb);
                         storage += f64::from(h.total_storage_gb);
                         ssd += f64::from(h.ssd_gb);
                     }
                     if let Some([c, r, st]) = e.locked {
+                        any_locked = true;
                         lc += c;
                         lr += r;
                         ls += st;
                     }
+                    any_geo |= e.rec.geo.is_some();
+                    any_arcane |= e.rec.arcane.is_some();
+                    any_reach |= e.rec.reachable.is_some();
                 }
                 NodeStatus::Started => started += 1,
                 NodeStatus::Dos => dos += 1,
                 _ => {}
             }
         }
+        let fr = self.fresh();
+        let mempool_known = fr.has_succeeded("mempool_stream");
+        let pending_known = fr.has_succeeded("app_pending") || !self.st.apps.pending.is_empty();
+        let mesh_known = fr.has_succeeded("topology_sweep") || self.st.mesh.edge_count() > 0;
+        let tip_known = self.st.tip.is_some();
+        let catalog = self.st.apps.catalog_loaded;
+        let placement = self.st.apps.placement_loaded;
+        let armed = self.st.expiry_armed;
         let iv = std::mem::take(&mut self.st.interval);
+        let known = |k: bool, v: u32| k.then_some(v);
         let row = MetricsRow {
             ts_ms: now - now % 60_000,
-            tip_height: self.st.tip_height(),
-            node_count: s.node_count,
-            tier_counts: [s.tiers.cumulus, s.tiers.nimbus, s.tiers.stratus],
-            host_count: s.host_count,
-            country_count: s.country_count,
-            arcane_count: s.arcane_count,
-            unreachable_count: s.unreachable_count,
-            app_count: s.app_count,
-            instance_count: s.instance_count,
-            pending_app_count: self.st.apps.pending.len() as u32,
-            total_cores: cores,
-            total_ram_gb: ram.round() as u64,
-            total_storage_gb: storage.round() as u64,
-            supply: s.supply.as_ref().map_or(Amount::ZERO, |x| x.total),
-            price_usd: s.price.as_ref().map_or(0.0, |p| p.usd),
-            mempool_size: s.mempool_size,
-            mesh_edge_count: self.st.mesh.edge_count() as u32,
-            block_count: iv.blocks,
-            tx_count: iv.txs,
-            node_tx_count: iv.node_txs,
-            fees: iv.fees,
-            payouts: iv.payouts,
-            avg_block_time_ms: if iv.block_intervals > 0 {
-                (iv.block_interval_sum_ms / u64::from(iv.block_intervals)) as u32
-            } else {
-                0
-            },
+            tip_height: self.st.tip.as_ref().map(|t| t.height),
+            node_count: known(any_node, s.node_count),
+            tier_counts: any_node.then_some([s.tiers.cumulus, s.tiers.nimbus, s.tiers.stratus]),
+            host_count: known(any_node, s.host_count),
+            country_count: known(any_geo, s.country_count),
+            arcane_count: known(any_arcane, s.arcane_count),
+            unreachable_count: known(any_reach, s.unreachable_count),
+            app_count: known(catalog, s.app_count),
+            instance_count: known(placement, s.instance_count),
+            pending_app_count: known(pending_known, self.st.apps.pending.len() as u32),
+            total_cores: known(any_hw, cores),
+            total_ram_gb: any_hw.then_some(ram.round() as u64),
+            total_storage_gb: any_hw.then_some(storage.round() as u64),
+            supply: s.supply.as_ref().map(|x| x.total),
+            price_usd: s.price.as_ref().map(|p| p.usd),
+            mempool_size: known(mempool_known, s.mempool_size),
+            mesh_edge_count: known(mesh_known, self.st.mesh.edge_count() as u32),
+            // Interval counters only mean something while the chain is followed.
+            block_count: known(tip_known, iv.blocks),
+            tx_count: known(tip_known, iv.txs),
+            node_tx_count: known(tip_known, iv.node_txs),
+            fees: tip_known.then_some(iv.fees),
+            payouts: tip_known.then_some(iv.payouts),
+            avg_block_time_ms: (iv.block_intervals > 0)
+                .then(|| (iv.block_interval_sum_ms / u64::from(iv.block_intervals)) as u32),
             samples: 1,
-            provider_count: s.provider_count,
-            at_risk_count: at_risk,
-            started_count: started,
-            dos_count: dos,
-            total_ssd_gb: ssd.round() as u64,
-            locked_cores: lc,
-            locked_ram_gb: lr,
-            locked_storage_gb: ls,
+            provider_count: known(any_geo, s.provider_count),
+            at_risk_count: known(armed, at_risk),
+            started_count: known(any_node, started),
+            dos_count: known(any_node, dos),
+            total_ssd_gb: any_hw.then_some(ssd.round() as u64),
+            locked_cores: any_locked.then_some(lc),
+            locked_ram_gb: any_locked.then_some(lr),
+            locked_storage_gb: any_locked.then_some(ls),
         };
         if self.fresh {
             let mut b = WriteBatch::new();
@@ -1483,6 +1713,8 @@ impl Reducer {
             mesh_edge_count: self.st.mesh.edge_count() as u32,
             freshness: self.handle.inner.freshness.snapshot(),
             next_payees: self.st.next_payees.iter().map(payee_dto).collect(),
+            mempool: self.st.mempool_list(),
+            attributions: crate::geoip::attributions(&self.st),
             prev: self.handle.published(),
         };
         let job = match &self.publisher {

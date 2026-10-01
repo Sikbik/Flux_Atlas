@@ -241,7 +241,7 @@ fn big_mempool(i: u64) -> LiveBody {
                 txid: Hash32(*blake3::hash(&(i * 1000 + j).to_le_bytes()).as_bytes()),
                 value: Amount::from_flux(1),
                 kind: TxKind::Transfer,
-                size: 250,
+                size: Some(250),
             })
             .collect(),
     }

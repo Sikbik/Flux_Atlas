@@ -63,6 +63,11 @@ impl ReplayRing {
         }
     }
 
+    /// Messages held, and the capacity.
+    pub(crate) fn len_cap(&self) -> (usize, usize) {
+        (self.buf.len(), self.cap)
+    }
+
     /// Messages must be pushed in strictly increasing `seq` order.
     pub(crate) fn push(&mut self, msg: Arc<LiveMsg>) {
         let n = json_len(&msg);
