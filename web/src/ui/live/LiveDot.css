@@ -1,0 +1,48 @@
+/* Live dot: a 7 px status dot; green ones carry a slow ping ring (design 8.10). */
+
+.ui-livedot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--ui-dot, 7px);
+  height: var(--ui-dot, 7px);
+  border-radius: 50%;
+  background: var(--status, var(--status-off));
+  vertical-align: middle;
+}
+
+.ui-livedot[data-status="ok"] {
+  box-shadow: var(--glow-ok);
+}
+
+.ui-livedot[data-ping]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--status, var(--status-ok));
+  opacity: 0;
+  animation: ui-ping 2.4s var(--ease-out) infinite;
+}
+
+@keyframes ui-ping {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-livedot[data-ping]::after {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-livedot[data-ping]::after {
+  animation: none;
+}
