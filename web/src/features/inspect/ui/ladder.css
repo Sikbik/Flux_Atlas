@@ -20,7 +20,7 @@
   min-width: 0;
   border-radius: var(--r-md);
   border: 1px dashed var(--line-2);
-  color: var(--text-4);
+  color: var(--text-3);
   font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
   transition:
     border-color var(--dur-fast) var(--ease-out),
@@ -29,7 +29,6 @@
 
 .ix-slot small {
   font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
-  opacity: 0.8;
 }
 
 .ix-slot[data-free] {
