@@ -14,7 +14,6 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetEngine, useHost } from '../../motion/engine';
 import type { Anim, Animate } from '../../motion/fxRunners';
-import { MODE_ATTR, ROOT_ATTR } from '../../motion/mode';
 import { useUi } from '../../store/ui';
 import { mount } from '../../ui/internal/testing';
 import { PaletteHost } from './PaletteHost';
@@ -113,8 +112,6 @@ describe('PaletteHost', () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(RECT);
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {}); // the router restores scroll; jsdom has none
     useUi.setState({ motion: 'full' });
-    document.documentElement.removeAttribute(ROOT_ATTR);
-    document.documentElement.removeAttribute(MODE_ATTR);
     driver = fakeDriver();
     await useHost((r) => new r.Fx({ animate: driver.animate }));
   });
@@ -176,7 +173,7 @@ describe('PaletteHost', () => {
   });
 
   it('closes at once when motion is off, and still gives focus back', async () => {
-    document.documentElement.setAttribute(ROOT_ATTR, 'off');
+    useUi.setState({ motion: 'off' }); // the preference, which the engine reads; the attribute is the motion root's
     const { m, launcher } = await opened();
     expect(driver.anims).toHaveLength(0);
     act(() => {
