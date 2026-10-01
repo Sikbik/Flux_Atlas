@@ -22,7 +22,8 @@ use atlas_core::ids::{Collateral, Hash32, NodeId, Outpoint};
 use atlas_core::net::NodeEndpoint;
 use atlas_core::node::{Arch, BenchStatus, Geo, GeoSource, Hardware, NodeStatus, Versions};
 use atlas_core::{Amount, NodeRecord, Tier, now_ms};
-use atlas_engine::{Engine, EngineConfig, EngineHandle, PrebuiltBody};
+use atlas_engine::timemachine::{NetworkSnapshot, SnapNode};
+use atlas_engine::{Engine, EngineConfig, EngineHandle, IngestConfig, PrebuiltBody};
 use atlas_flux::ClientsConfig;
 use atlas_flux::http::HostPolicy;
 use atlas_store::{HOUR_MS, MINUTE_MS, MetricsRow, Store, WriteBatch, meta_keys};
@@ -757,8 +758,15 @@ pub fn seed_store(store: &Store, f: &Fixture) -> anyhow::Result<()> {
             ..MetricsRow::default()
         });
     }
-    b.put_snapshot(f.now_ms - 2 * HOUR_MS, &(1u32, "keyframe"))?;
-    b.put_snapshot(f.now_ms - HOUR_MS, &(2u32, "keyframe"))?;
+    // Time-machine keyframes: the older one predates the join of the last node.
+    let snap = |nodes: &[NodeRecord], ts_ms: u64| NetworkSnapshot {
+        ts_ms,
+        tip_height: f.tip,
+        nodes: nodes.iter().map(SnapNode::from_record).collect(),
+    };
+    let older = &f.nodes[..f.nodes.len().saturating_sub(1)];
+    b.put_snapshot(f.now_ms - 2 * HOUR_MS, &snap(older, f.now_ms - 2 * HOUR_MS))?;
+    b.put_snapshot(f.now_ms - HOUR_MS, &snap(&f.nodes, f.now_ms - HOUR_MS))?;
     store.commit_durable(b).context("seeding fixture store")?;
     Ok(())
 }
@@ -821,10 +829,12 @@ pub fn offline_clients(base: Option<&str>) -> ClientsConfig {
     c
 }
 
-/// Engine settings for tests: no keepalive noise.
+/// Engine settings for tests and fixture servers: ingest disabled (never touches the network)
+/// and no keepalive noise.
 pub fn test_engine_config() -> EngineConfig {
     EngineConfig {
         ping_interval: Duration::from_secs(3600),
+        ingest: IngestConfig::disabled(),
         ..EngineConfig::default()
     }
 }
@@ -847,8 +857,19 @@ pub fn fixture_engine(
     let store = Store::open(db)?;
     seed_store(&store, &f)?;
     let engine = Engine::start(config, store, atlas_flux::Clients::new(clients)?);
+    wait_for_startup_publish(&engine, Duration::from_secs(10));
     publish(&engine, &f, false)?;
     Ok((engine, f))
+}
+
+/// Blocks until the engine's reducer installed its startup publish (built on its own threads
+/// from the restored store), so a fixture published afterwards is not overwritten by it. With
+/// ingest disabled nothing else republishes unless the state changes.
+pub fn wait_for_startup_publish(engine: &EngineHandle, timeout: Duration) {
+    let deadline = std::time::Instant::now() + timeout;
+    while engine.published().bodies.bootstrap.is_none() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(2));
+    }
 }
 
 /// The dev fund address (re-exported for tests).

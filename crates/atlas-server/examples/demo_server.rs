@@ -43,7 +43,7 @@ use atlas_core::net::NodeEndpoint;
 use atlas_core::{
     Amount, Collateral, Hash32, NodeId, NodeRecord, NodeStatus, Outpoint, Tier, now_ms,
 };
-use atlas_engine::{EngineConfig, EngineHandle};
+use atlas_engine::{EngineConfig, EngineHandle, IngestConfig};
 use atlas_server::fixtures::{self, Fixture, FixtureSpec};
 use atlas_server::views::node_ref;
 use atlas_server::{AppState, ServerConfig, router};
@@ -451,6 +451,8 @@ impl Demo {
             reward,
             fees,
             dev_fund,
+            app_payments: Vec::new(),
+            collateral_spent: Vec::new(),
         };
 
         // Fixture state first (so the next republish matches what the stream said).
@@ -987,7 +989,11 @@ async fn main() -> anyhow::Result<()> {
     let (engine, f) = fixtures::fixture_engine(
         &db,
         fixtures::offline_clients(None),
-        EngineConfig::default(),
+        // Synthetic stream only: never ingest from the real network.
+        EngineConfig {
+            ingest: IngestConfig::disabled(),
+            ..EngineConfig::default()
+        },
         FixtureSpec::MAINNET,
     )?;
     tracing::info!(

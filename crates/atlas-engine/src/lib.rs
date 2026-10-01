@@ -86,7 +86,7 @@ impl Default for BackfillConfig {
             history_stats: true,
             app_messages: true,
             block_days: 7,
-            blocks_per_second: 2.0,
+            blocks_per_second: 1.5,
         }
     }
 }

@@ -6,7 +6,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use atlas_server::config::{
-    EngineOverrides, ServeConfig, apply_upstream_rps, parse_duration, parse_intervals,
+    DEFAULT_DB_CACHE_MB, EngineOverrides, ServeConfig, apply_upstream_rps, parse_duration,
+    parse_intervals, parse_switch, socket_url_for,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -68,6 +69,18 @@ struct ServeArgs {
     /// Engine job interval overrides: `job=duration,...` (for example `ping=20s,app_placement=90s`).
     #[arg(long, env = "ATLAS_INTERVALS", value_parser = parse_intervals_arg)]
     intervals: Option<IntervalMap>,
+    /// Run the live ingest jobs. `0`/`off` serves the stored state only (fixtures, dev).
+    #[arg(long, env = "ATLAS_INGEST", default_value = "1", value_parser = parse_switch_arg)]
+    ingest: bool,
+    /// Days of blocks the bootstrap backfill fetches (0 disables).
+    #[arg(long, env = "ATLAS_BACKFILL_DAYS", default_value_t = 7)]
+    backfill_days: u32,
+    /// Block backfill requests per second (default 1.5).
+    #[arg(long, env = "ATLAS_BACKFILL_RPS")]
+    backfill_rps: Option<f64>,
+    /// redb page cache in MiB.
+    #[arg(long, env = "ATLAS_DB_CACHE_MB", default_value_t = DEFAULT_DB_CACHE_MB)]
+    db_cache_mb: usize,
     /// Live messages kept for reconnect replay.
     #[arg(long, env = "ATLAS_REPLAY_CAPACITY")]
     replay_capacity: Option<usize>,
@@ -97,6 +110,10 @@ fn parse_intervals_arg(s: &str) -> Result<IntervalMap, String> {
     parse_intervals(s)
 }
 
+fn parse_switch_arg(s: &str) -> Result<bool, String> {
+    parse_switch(s)
+}
+
 fn parse_duration_arg(s: &str) -> Result<Duration, String> {
     parse_duration(s)
 }
@@ -106,7 +123,13 @@ fn serve_config(a: ServeArgs) -> ServeConfig {
     if let Some(u) = a.flux_api {
         cfg.clients.fluxos_gateway = u;
     }
+    let mut socket_urls = Vec::new();
     if !a.explorer_api.is_empty() {
+        socket_urls = a
+            .explorer_api
+            .iter()
+            .filter_map(|b| socket_url_for(b))
+            .collect();
         cfg.clients.insight_bases = a.explorer_api;
     }
     if let Some(u) = a.stats_api {
@@ -119,7 +142,12 @@ fn serve_config(a: ServeArgs) -> ServeConfig {
         intervals: a.intervals.unwrap_or_default(),
         replay_capacity: a.replay_capacity,
         geoip_db: a.geoip_db,
+        ingest: Some(a.ingest),
+        backfill_days: Some(a.backfill_days),
+        backfill_rps: a.backfill_rps,
+        socket_urls,
     };
+    cfg.db_cache_mb = a.db_cache_mb.max(1);
     cfg.server.trust_proxy = a.trust_proxy;
     cfg.server.limits.rps = a.client_rps.max(1);
     cfg.server.limits.burst = a.client_burst.max(1);
