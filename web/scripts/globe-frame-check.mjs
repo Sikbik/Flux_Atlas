@@ -14,8 +14,10 @@
 //   pitch-rest  1.8 s after the release (rubber band and momentum settled)
 //   home        1.8 s after a middle-button double-click
 // Once, at DPR 1 (skipped with --quick): a runtime DPR change (CDP device metrics: browser zoom),
-// a resize sequence, a window opened and closed, the ambient round trip (and the mesh flow it leaves
-// behind), the home control after zoom and pitch, and a WebGL context lost and never restored.
+// a resize sequence, a window opened and closed, a page panel (search results, a dev page, not found) that reserves
+// its side like a left-floating window and, on a screen too narrow for the planet beside it, does not, the ambient
+// round trip (and the mesh flow it leaves behind), the home control after zoom and pitch, and a WebGL context lost
+// and never restored.
 //
 // Contract (framing.ts): the disc stays below the top bar, right of the dock, centred in the free
 // area, and at rest at least 32 CSS px above the rail (towers and glow included: envelope 1.1). At
@@ -79,6 +81,8 @@ const measure = (page) =>
     const top = rect('[data-region=topbar]');
     const dock = rect('[data-region=dock]');
     const rail = rect('[data-region=rail]');
+    // The page panel in the stage's left column (an empty slot is display: none and has no width).
+    const pg = rect('.shell-page');
     if (!g || !s) return { engine: false };
     const e = g.engine;
     const f = e.framing();
@@ -101,6 +105,7 @@ const measure = (page) =>
       range: e.rig.range,
       topbar: top ? top.bottom : 0,
       dockRight: dock ? dock.right : 0,
+      pageRight: pg && pg.width > 0 ? pg.right : 0,
       railTop: rail ? rail.top : innerHeight,
       links: e.links?.count ?? 0,
       path: location.pathname,
@@ -285,6 +290,54 @@ if (!flag('quick')) {
   }
   await page.waitForTimeout(600);
   await check(page, 'windows closed');
+  // A page panel stands in the stage's left column and reserves its side like a left-floating window: the planet
+  // shifts right of it while it still fits beside it (the free area begins past the panel and the planet is clear
+  // of it), and on a screen too narrow for that the panel floats over the globe and the planet stays put.
+  const goPath = async (path) => {
+    await page.evaluate((p) => {
+      history.pushState({}, '', p);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, path);
+    await page.waitForTimeout(1500);
+  };
+  const beside = (m) => [
+    ...(m.pageRight <= 0 ? ['no page panel on screen'] : []),
+    ...(m.free.x < m.pageRight - 1
+      ? [`free area ${m.free.x.toFixed(0)} starts inside the panel (right edge ${m.pageRight.toFixed(0)})`]
+      : []),
+    ...(m.cx - m.r < m.pageRight - 1
+      ? [`planet's left edge ${(m.cx - m.r).toFixed(0)} is under the panel (${m.pageRight.toFixed(0)})`]
+      : []),
+  ];
+  const stays = (m) => [
+    ...(m.pageRight <= 0 ? ['no page panel on screen'] : []),
+    ...(m.free.x > m.dockRight + 20
+      ? [`free area ${m.free.x.toFixed(0)} was moved, the planet did not fit beside the panel`]
+      : []),
+  ];
+  await goPath('/no-such-page');
+  await check(page, 'page panel (not found)', { extra: beside });
+  await goPath('/q/flux#all');
+  await check(page, 'page panel (search results)', { extra: beside });
+  await goPath('/dev/live');
+  await check(page, 'page panel (dev live)', { extra: beside });
+  await goPath('/');
+  await check(page, 'page panel closed', {
+    extra: (m) => [
+      ...(m.pageRight > 0 ? ['the panel is still up'] : []),
+      ...(m.free.x > m.dockRight + 20
+        ? [`free area ${m.free.x.toFixed(0)} still reserves the panel's side`]
+        : []),
+    ],
+  });
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.waitForTimeout(900);
+  await goPath('/q/flux#all');
+  await check(page, 'page panel floats (1000x700)', { extra: stays });
+  await goPath('/');
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.waitForTimeout(900);
+  await check(page, 'page panel left, 1600x900');
   // Ambient and back: the mesh flow must not stay on.
   await page.click('[aria-label="Ambient mode"]').catch(() => failures.push('no Ambient launcher'));
   await page.waitForTimeout(8000);
