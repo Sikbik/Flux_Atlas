@@ -12,6 +12,7 @@ import { CameraRig, rangeToFit } from './camera';
 import { Choreographer, type ChoreoHost } from './choreographer';
 import { Controls } from './controls';
 import { type EffectSink, Effects } from './effects';
+import { computeFraming, DEFAULT_FRAMING, type Framing, type FramingSpec, type Rect } from './framing';
 import { Fx } from './fx';
 import { Atmosphere } from './layers/atmosphere';
 import { BeamLayer } from './layers/beams';
@@ -207,6 +208,15 @@ export class GlobeEngine {
   /** Camera poses for the moon shots (shared by `viewMoon` and the ambient director). */
   readonly shots = new MoonShots();
   private framed = false;
+  /** Framing clearances and the optical lift (framing.ts); the moon may widen `sideRoom`. */
+  readonly framingSpec: FramingSpec = { ...DEFAULT_FRAMING };
+  private frameNow: Framing = computeFraming({
+    w: 1,
+    h: 1,
+    inset: { left: 0, right: 0, top: 0, bottom: 0 },
+    tanHalfFov: 0.3,
+    homeRange: 3.6,
+  });
   private moonView: { kind: MoonShotKind; t0: number; dur: number; at: number | null; rate: number } | null =
     null;
   private traffic: Traffic;
@@ -444,6 +454,9 @@ export class GlobeEngine {
       },
       onClick: (x, y) => this.handleClick(x, y),
       onDoubleClick: (x, y) => this.handleDoubleClick(x, y),
+      onHome: () => {
+        if (this.mode === 'explore') void this.home();
+      },
       onWake: (kind, x, y) => this.handleWake(kind, x, y),
       onInteract: () => {
         this.lastInputT = this.time;
@@ -583,6 +596,9 @@ export class GlobeEngine {
 
   setMode(mode: EngineMode, opts: AmbientOptions = {}): void {
     this.mode = mode;
+    // Explore frames the planet in the free area and pitches about its centre; the director composes with the plain rig.
+    this.rig.framedTarget = mode === 'explore' ? 1 : 0;
+    if (this.frameNo === 0) this.rig.framed = this.rig.framedTarget;
     this.controls.enabled = mode === 'explore' && (this.opts.interactive ?? true);
     this.wakeTravel = 0;
     this.wakeX = -1;
@@ -720,8 +736,11 @@ export class GlobeEngine {
     this.insetFrom = { ...this.insetNow };
     this.insetTo = { ...inset };
     this.insetT = 0;
-    this.insetDur = Math.max(0.001, ms / 1000);
+    // The first inset is where the globe starts, not somewhere it slides to.
+    this.insetDur = this.insetGiven ? Math.max(0.001, ms / 1000) : 0.001;
+    this.insetGiven = true;
   }
+  private insetGiven = false;
 
   /**
    * Puts recent blocks on the moon's orbit as a chain of hexagons, each at the moon's angle when it
@@ -2167,6 +2186,62 @@ export class GlobeEngine {
     n.bottom = a.bottom + (b.bottom - a.bottom) * e;
   }
 
+  /** The home zoom: a portrait screen (the phone) frames tighter so the globe fills the width. */
+  get homeRange(): number {
+    return this.cssW / Math.max(1, this.cssH) < 0.8 ? 2.85 : 3.6;
+  }
+
+  private applyFraming(): void {
+    const rig = this.rig;
+    const f = computeFraming(
+      {
+        w: this.cssW,
+        h: this.cssH,
+        inset: this.insetNow,
+        tanHalfFov: rig.tanHalfFovBase,
+        homeRange: this.homeRange,
+        weight: rig.framed,
+      },
+      this.framingSpec,
+    );
+    rig.setViewShift(f.shiftX, f.shiftY);
+    rig.setFit(f.fit);
+    this.frameNow = f;
+  }
+
+  /**
+   * The current framing, CSS px: the free area (the viewport minus the chrome's inset), where the
+   * planet's centre goes, the lens fit, the planet's radius at the home zoom (`homeRadius`) and its
+   * projected disc right now (`center`, `radius`: pitch and zoom included).
+   */
+  framing(): {
+    free: Rect;
+    center: { x: number; y: number };
+    radius: number;
+    homeRadius: number;
+    fit: number;
+  } {
+    const pt = this.tmpScreen;
+    this.rig.project(0, 0, 0, this.cssW, this.cssH, pt);
+    const d = Math.max(1.0002, this.rig.distance);
+    const f = this.frameNow;
+    return {
+      free: { ...f.free },
+      center: { x: pt.x, y: pt.y },
+      radius: this.rig.projScale / Math.sqrt(d * d - 1),
+      homeRadius: f.homeRadius,
+      fit: f.fit,
+    };
+  }
+
+  /** Back to the home view: north up, no pitch, the home zoom, over the current spot (eased). */
+  home(): Promise<boolean> {
+    this.director?.interrupt();
+    this.moonView = null;
+    this.rig.releaseFree(2.2);
+    return this.rig.home(this.homeRange);
+  }
+
   private updateMoonScreen(): void {
     const m = this.moon;
     const mp = this.moonPx;
@@ -2467,13 +2542,11 @@ export class GlobeEngine {
     this.shots.fovV = this.rig.fovV;
     this.shots.aspect = this.rig.aspect;
     if (this.moonView && this.moon.enabled) this.applyMoonView(this.moonView);
-    // The globe is centered in the free area of the viewport (the part docked windows leave open).
+    // The globe is framed in the free area of the viewport (the part the chrome and docked windows
+    // leave open): optically centred, and fitted with clearance at the home zoom (framing.ts).
     this.stepInset(dt);
-    {
-      const ins = this.insetNow;
-      this.rig.setViewShift((ins.left - ins.right) * 0.5, (ins.top - ins.bottom) * 0.5);
-      u.uViewShift.value.set(this.rig.shiftNdcX, this.rig.shiftNdcY);
-    }
+    this.applyFraming();
+    u.uViewShift.value.set(this.rig.shiftNdcX, this.rig.shiftNdcY);
     this.rig.update(dt, this.time);
     const cam = this.rig.camera;
     u.uCamPos.value.copy(cam.position);
