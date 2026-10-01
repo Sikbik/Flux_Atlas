@@ -28,6 +28,9 @@ pub struct GeoIpConfig {
     pub db_path: Option<PathBuf>,
     /// Directory the auto-download installs into (`None`: no download).
     pub auto_dir: Option<PathBuf>,
+    /// Map a private copy (made in this directory) instead of `db_path` itself: set for an
+    /// operator-managed file, which may be rewritten in place under a live mapping.
+    pub copy_dir: Option<PathBuf>,
     /// First check after start (the download never delays startup or ingest).
     pub first_check: Duration,
     /// Check interval (download, or modification time of an operator file).
@@ -39,6 +42,7 @@ impl Default for GeoIpConfig {
         Self {
             db_path: None,
             auto_dir: None,
+            copy_dir: None,
             first_check: Duration::from_secs(30),
             check_interval: Duration::from_secs(86_400),
         }
@@ -64,6 +68,14 @@ impl GeoIpConfig {
             ..Self::default()
         }
     }
+
+    /// An operator-managed database file, mapped through a private copy in `copy_dir`.
+    pub fn file_copied(path: PathBuf, copy_dir: PathBuf) -> Self {
+        Self {
+            copy_dir: Some(copy_dir),
+            ..Self::file(path)
+        }
+    }
 }
 
 /// The loaded database and what it is.
@@ -77,7 +89,18 @@ pub struct LoadedGeoIp {
 impl LoadedGeoIp {
     /// Opens `path` (and reads the month from the install record next to it).
     pub fn open(path: &std::path::Path) -> atlas_geoip::Result<Self> {
-        let db = GeoIpDb::open(path)?;
+        Self::open_in(path, None)
+    }
+
+    /// Opens `path`, through a private copy in `copy_dir` when given.
+    pub fn open_in(
+        path: &std::path::Path,
+        copy_dir: Option<&std::path::Path>,
+    ) -> atlas_geoip::Result<Self> {
+        let db = match copy_dir {
+            Some(dir) => GeoIpDb::open_private_copy(path, dir)?,
+            None => GeoIpDb::open(path)?,
+        };
         let version = path
             .parent()
             .and_then(atlas_geoip::install::read_state)

@@ -11,11 +11,14 @@ use atlas_store::Store;
 
 use crate::body::CachedBody;
 use crate::config::ServerConfig;
+use crate::derived::DerivedGuard;
 use crate::error::ApiError;
 use crate::explorer::Explorer;
 use crate::ledger::{AppLedger, PayoutLedger, Slot};
 use crate::live::hub::Hub;
 use crate::metrics::Metrics;
+use crate::net::ForwardStats;
+use crate::net::listener::Listener;
 use crate::views::{ViewCache, Views};
 use crate::watch::WatchHooks;
 
@@ -35,6 +38,16 @@ pub struct Inner {
     pub explorer: Explorer,
     pub metrics: Metrics,
     pub hub: Arc<Hub>,
+    /// Connection caps and counters of the HTTP listener.
+    pub listener: Arc<Listener>,
+    /// How client addresses were derived (anonymised counters).
+    pub forward: ForwardStats,
+    /// Per-client and global limits of the per-request compute routes.
+    pub derived: DerivedGuard,
+    /// Bounds the store reads running at once (each holds a blocking thread).
+    store_reads: Arc<tokio::sync::Semaphore>,
+    /// `/nodes` pages keyed by the normalized query and the publish they were built from.
+    pub nodes_cache: moka::future::Cache<String, Arc<CachedBody>>,
     /// `/metrics` series responses, keyed by the normalized request (15 s).
     pub metrics_cache: moka::future::Cache<String, Arc<CachedBody>>,
     /// `/timeline/state` reconstructions keyed by `t` (60 s).
@@ -69,6 +82,14 @@ const HOSTED_TTL: Duration = Duration::from_secs(30);
 pub const METRICS_CACHE_BYTES: u64 = 16 << 20;
 /// Byte bound of the `/timeline/state` cache (a reconstruction is about one `nodes.bin`).
 pub const TIMELINE_CACHE_BYTES: u64 = 24 << 20;
+/// Byte bound of the `/nodes` page cache.
+pub const NODES_CACHE_BYTES: u64 = 16 << 20;
+
+/// Store reads running at once. Each holds a blocking-pool thread; during a compaction they all
+/// wait on the database lock, so the bound keeps a compaction from piling up threads.
+pub const STORE_READ_CONCURRENCY: usize = 32;
+/// Longest a request waits for a store read (including its turn) before a 503.
+pub const STORE_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Cache weight of a body: the raw bytes plus room for the compressed variants it builds
 /// lazily once cached.
@@ -105,9 +126,20 @@ impl AppState {
         let ring = 4096;
         let hub = Hub::start(&engine, cfg.ws.clone(), ring);
         let explorer = Explorer::new(engine.clients().clone(), cfg.proxy, cfg.limits);
+        let listener = Listener::new(cfg.http.clone(), cfg.proxies.clone());
+        let derived = DerivedGuard::new(cfg.derived);
         let state = Self {
             inner: Arc::new(Inner {
                 hooks,
+                listener,
+                forward: ForwardStats::default(),
+                derived,
+                store_reads: Arc::new(tokio::sync::Semaphore::new(STORE_READ_CONCURRENCY)),
+                nodes_cache: moka::future::Cache::builder()
+                    .max_capacity(NODES_CACHE_BYTES)
+                    .weigher(|k: &String, v: &Arc<CachedBody>| body_weight(k.len(), v))
+                    .time_to_live(Duration::from_secs(30))
+                    .build(),
                 started: Instant::now(),
                 views: ViewCache::default(),
                 explorer,
@@ -150,6 +182,8 @@ impl AppState {
                 iv.tick().await;
                 let Some(inner) = weak.upgrade() else { break };
                 inner.explorer.guard.prune();
+                inner.derived.prune();
+                inner.hub.prune();
             }
         });
         // Build the ledgers once in the background, so the first request after a start does
@@ -175,14 +209,53 @@ impl AppState {
         self.views.get(&self.engine)
     }
 
-    /// Runs a store read on the blocking pool.
+    /// Runs a store read on the blocking pool, at most [`STORE_READ_CONCURRENCY`] at once and
+    /// within [`STORE_READ_TIMEOUT`] (503 with `Retry-After` otherwise, for example while a
+    /// compaction holds the database). A read that times out finishes in the background and
+    /// keeps its slot until then.
     pub async fn store_read<T, F>(&self, f: F) -> Result<T, ApiError>
     where
         T: Send + 'static,
         F: FnOnce(&Store) -> Result<T, ApiError> + Send + 'static,
     {
+        self.store_read_within(STORE_READ_TIMEOUT, f).await
+    }
+
+    /// [`Self::store_read`] with an explicit deadline.
+    pub async fn store_read_within<T, F>(&self, limit: Duration, f: F) -> Result<T, ApiError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Store) -> Result<T, ApiError> + Send + 'static,
+    {
         let engine = self.engine.clone();
-        tokio::task::spawn_blocking(move || f(engine.store())).await?
+        let reads = Arc::clone(&self.store_reads);
+        let run = async move {
+            let permit = reads
+                .acquire_owned()
+                .await
+                .map_err(|_| ApiError::unavailable("shutting down"))?;
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                f(engine.store())
+            })
+            .await?
+        };
+        if let Ok(r) = tokio::time::timeout(limit, run).await {
+            r
+        } else {
+            self.metrics
+                .store_timeouts
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Err(
+                ApiError::unavailable("the database is busy; try again shortly")
+                    .with_retry_after(5),
+            )
+        }
+    }
+
+    /// Store reads waiting for or holding a slot right now.
+    pub fn store_reads_in_use(&self) -> usize {
+        STORE_READ_CONCURRENCY - self.store_reads.available_permits()
     }
 
     /// Apps hosted per node, rebuilt from the store at most every 30 s. Only the first request

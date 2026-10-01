@@ -17,7 +17,7 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use serde::Deserialize;
 
-use crate::body::{cache, json_response};
+use crate::body::{CachedBody, cache, json_response};
 use crate::error::{ApiError, ApiResult};
 use crate::extract::{P, Q, check_param, offset_cursor, page_limit};
 use crate::ledger::{Earnings, PayoutLedger};
@@ -97,11 +97,26 @@ fn cmp_opt<T: Ord>(a: Option<T>, b: Option<T>, desc: bool) -> Ordering {
     }
 }
 
-fn geo_str(n: &NodeRecord, f: fn(&atlas_core::node::Geo) -> &str) -> Option<String> {
-    n.geo
-        .as_ref()
-        .map(|g| f(g).to_ascii_lowercase())
-        .filter(|s| !s.is_empty())
+/// A geo field for sorting: `None` when unknown or empty. Compared case-insensitively by
+/// [`cmp_geo`], without allocating per comparison.
+fn geo_str(n: &NodeRecord, f: fn(&atlas_core::node::Geo) -> &str) -> Option<&str> {
+    n.geo.as_ref().map(f).filter(|s| !s.is_empty())
+}
+
+/// [`cmp_opt`] for geo strings, ASCII case-insensitive.
+fn cmp_geo(left: Option<&str>, right: Option<&str>, desc: bool) -> Ordering {
+    match (left, right) {
+        (Some(l), Some(r)) => {
+            let ord = l
+                .bytes()
+                .map(|c| c.to_ascii_lowercase())
+                .cmp(r.bytes().map(|c| c.to_ascii_lowercase()));
+            if desc { ord.reverse() } else { ord }
+        }
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
 }
 
 fn compare(a: &NodeRecord, b: &NodeRecord, sort: NodeSort, desc: bool) -> Ordering {
@@ -109,12 +124,12 @@ fn compare(a: &NodeRecord, b: &NodeRecord, sort: NodeSort, desc: bool) -> Orderi
         NodeSort::Id => cmp_opt(Some(a.id), Some(b.id), desc),
         NodeSort::Rank => cmp_opt(a.rank, b.rank, desc),
         NodeSort::Tier => cmp_opt(Some(a.tier), Some(b.tier), desc),
-        NodeSort::Country => cmp_opt(
+        NodeSort::Country => cmp_geo(
             geo_str(a, |g| &g.country_code),
             geo_str(b, |g| &g.country_code),
             desc,
         ),
-        NodeSort::Org => cmp_opt(geo_str(a, |g| &g.org), geo_str(b, |g| &g.org), desc),
+        NodeSort::Org => cmp_geo(geo_str(a, |g| &g.org), geo_str(b, |g| &g.org), desc),
         NodeSort::LastPaid => cmp_opt(a.last_paid_height, b.last_paid_height, desc),
         NodeSort::LastConfirmed => cmp_opt(a.last_confirmed_height, b.last_confirmed_height, desc),
         NodeSort::Added => cmp_opt(Some(a.added_height), Some(b.added_height), desc),
@@ -151,11 +166,72 @@ pub async fn list(
     let sort = q.sort.unwrap_or_default();
     let desc = q.desc.unwrap_or(false);
     let v = s.views();
+    // Pages are cached per publish (the identity of the published state) and query; one build
+    // per key runs on the blocking pool however many requests ask for it.
+    let key = format!(
+        "{}:{}:{:p}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{desc}|{offset}|{limit}",
+        v.published.seq,
+        v.published.generated_ms,
+        std::sync::Arc::as_ptr(&v.published),
+        q.tier,
+        q.status,
+        country,
+        q.org.as_deref().map(str::trim),
+        needle,
+        sort,
+    );
+    let (tier, status) = (q.tier, q.status);
+    let body = s
+        .nodes_cache
+        .try_get_with(key, async move {
+            tokio::task::spawn_blocking(move || {
+                let page = nodes_page(
+                    &v,
+                    &NodeFilter {
+                        tier,
+                        status,
+                        country,
+                        org,
+                        needle,
+                    },
+                    sort,
+                    desc,
+                    offset,
+                    limit,
+                );
+                std::sync::Arc::new(CachedBody::json(&page))
+            })
+            .await
+            .map_err(ApiError::from)
+        })
+        .await
+        .map_err(|e| (*e).clone())?;
+    Ok(body.respond(&headers, cache::DERIVED))
+}
+
+/// The filters of a `/nodes` request.
+struct NodeFilter {
+    tier: Option<atlas_core::node::Tier>,
+    status: Option<NodeStatus>,
+    country: Option<String>,
+    org: Option<OrgFilter>,
+    needle: Option<String>,
+}
+
+fn nodes_page(
+    v: &Views,
+    f: &NodeFilter,
+    sort: NodeSort,
+    desc: bool,
+    offset: usize,
+    limit: u32,
+) -> NodesPage {
+    let (country, org, needle) = (&f.country, &f.org, &f.needle);
     let mut rows: Vec<&NodeRecord> = v
         .nodes()
         .iter()
-        .filter(|n| q.tier.is_none_or(|t| n.tier == t))
-        .filter(|n| q.status.is_none_or(|st| n.status == st))
+        .filter(|n| f.tier.is_none_or(|t| n.tier == t))
+        .filter(|n| f.status.is_none_or(|st| n.status == st))
         .filter(|n| {
             country.as_deref().is_none_or(|c| {
                 n.geo
@@ -175,12 +251,11 @@ pub async fn list(
         .map(|n| node_row(n))
         .collect();
     let end = offset + items.len();
-    let page = NodesPage {
+    NodesPage {
         items,
         total: total as u32,
         next_cursor: (end < total).then(|| end.to_string()),
-    };
-    Ok(json_response(&headers, &page, cache::DERIVED))
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

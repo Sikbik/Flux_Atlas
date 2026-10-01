@@ -302,9 +302,15 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >     (one `nodes` delta, `cause: geo`). Cities reach `NodeRecord.geo.city`, `nodes.bin` LOCATIONS, snapshots
 >     (keyframes record geo with city), `NodeRef.city`, `NodeLite.city` and `NodeChange.city`.
 >   - *Config:* `ATLAS_GEOIP_AUTO` (default on) switches the download; `ATLAS_GEOIP_DB` points at an
->     operator-managed `.mmdb` instead (auto-download off; reloaded when its modification time changes; replace
->     it by rename, never rewrite it in place, since it is memory-mapped). With `ATLAS_INGEST=0` nothing is
->     downloaded, but an existing database is still read.
+>     operator-managed `.mmdb` instead (auto-download off; reloaded when its modification time changes). The
+>     operator's file is never mapped itself: it is copied to `<data>/geoip/operator-copy.mmdb` (staged,
+>     checked, synced, renamed) and the copy is mapped, so rewriting the file in place cannot truncate a live
+>     mapping (X1 L4: that was a SIGBUS). With `ATLAS_INGEST=0` nothing is downloaded, but an existing database
+>     is still read.
+>   - *Download limits (X1 L5):* at most 3 redirects, same host only, never from `https` to `http`; only an
+>     `https` base is fetched (or a loopback test server); the `.gz` is capped at 256 MiB and the output at
+>     512 MiB; a 60 s stall timeout and a 15 min overall one; no transparent decompression; free disk space is
+>     checked before the download and before staging (with a 256 MiB reserve).
 >   - *Attribution (CC BY 4.0):* "IP Geolocation by DB-IP" with a link to https://db-ip.com, wherever the data is
 >     shown. `/bootstrap` lists it in `attributions` while a database is loaded, or while stored nodes still carry
 >     its data (any city or `local_db` location, for example after the download was turned off), so the About view
@@ -537,10 +543,10 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
 | `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket transfers in real time, node txs from the 20 s reconcile, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
-| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; cached 60 s per t). Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
+| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`). `t` is floored to 10 s within a day of now and to 60 s before that (B8, X1 M7), and that instant is what is answered: header `seq` = 0, `generated_ms` = the floored t; one reconstruction per instant however many requests arrive (cached 60 s). Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs. Earnings (B7) are address-level sums over the stored blocks' payouts, see Operator earnings below: `earned_24h`, `earned_7d`, `earned_30d` (`null` when the stored blocks do not cover the whole window), `earnings_from_height` / `earnings_from_ms` (start of the contiguous stored block history used, at most 30 days back) and `earned_covered` (the sum from there to the tip) |
 | `GET /ws` | WebSocket live stream (§8) |
-| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine) |
+| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. `/healthz` and `/readyz` are public (FluxOS and FDM may probe them). `/metrics/prometheus` is private (B8, X1 L15): it answers a loopback TCP peer, or `Authorization: Bearer <ATLAS_METRICS_TOKEN>` when that is set, and 404 to anyone else (section 11.2 says how to scrape it). Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine); the edge (section 11.2): `atlas_http_connections`, `_max`, `atlas_http_connection_peers`, `atlas_http_connection_events_total{event}`, `atlas_client_ip_source_total{source}`, `atlas_fdm_peer_requests_total{peer}` (built-in FDM balancers only), `atlas_untrusted_forwarders`, `atlas_request_timeouts_total`, `atlas_store_read_timeouts_total`, `atlas_store_reads_in_flight`, `atlas_limited_total{limit}` |
 
 Everything else serves the embedded web app (SPA fallback to `index.html`, immutable caching for hashed assets).
 
@@ -659,6 +665,13 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
   (`watch` enrolls those nodes in WatchProbe (fast offline detection) and guarantees their events are never coalesced; `watch_apps?: [name]` enables hot-app instance polling)
 - Server keeps a ring buffer of the last 2,048 messages. If `since_seq` is inside the buffer it replays;
   otherwise it sends `resync { seq }` and the client refetches `/bootstrap` + `/nodes.bin`.
+- **`sub` limits (B8, X1 L1).** A connection may send a burst of 8 `sub` messages, then one every 2 s; a
+  `sub` over the limit is not dropped but deferred, and the latest deferred one is applied when its token is
+  due (watch lists still land). Only the first `sub` of a connection replays from `since_seq`, or a later one
+  that adds topics: a later `sub` keeps the connection's receiver, so nothing is missed and nothing is sent
+  twice (a `since_seq` ahead of the server still answers `resync` with `unknown_seq`). A replay larger than
+  2 MiB is answered with `resync` (`reason: "replay_too_large"`) instead: the snapshot bodies are cheaper.
+  Handshakes are limited per client (a burst of 30, then one a second; 429 with `Retry-After`).
 - Every message carries `seq`, `observed_ms`, and (when known) `event_ms`, so clients show true latency.
 - Messages (all live-first; each maps 1:1 to something that really happened):
   - `block { height, hash, time, size, tx_count, producer?: NodeRef, payouts: [{tier, node?, address, amount}],
@@ -758,7 +771,9 @@ web/src/
   `ATLAS_DISK_BUDGET_MB` (6144), `ATLAS_INTERVALS`
   (`job=duration,...` per-job interval overrides), `ATLAS_FLUX_API`, `ATLAS_EXPLORER_API`, `ATLAS_STATS_API`,
   `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_AUTO` (`1`; DB-IP City Lite download), `ATLAS_GEOIP_DB` (path of an operator-managed `.mmdb`
-  instead of the downloaded one), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
+  instead of the downloaded one), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUSTED_PROXIES` (`fdm`; section 11.2),
+  `ATLAS_TRUST_PROXY` (legacy: trust every peer), `ATLAS_HTTP_MAX_CONNECTIONS` (8192) / `ATLAS_HTTP_MAX_PER_PEER`
+  (256), `ATLAS_METRICS_TOKEN` (none),
   `ATLAS_CLIENT_RPS` / `ATLAS_CLIENT_BURST`, `ATLAS_WS_MAX_CONNECTIONS` / `ATLAS_WS_MAX_PER_IP` / `ATLAS_WS_PING`,
   `ATLAS_LOG`, `ATLAS_HEALTHCHECK_ADDR` (`127.0.0.1:3000`, for `atlas healthcheck`). The web smoke targets a
   running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).
@@ -807,11 +822,13 @@ The spec passes no environment and no commands, so the image defaults are the pr
 `EXPOSE 3000` only, `VOLUME /app/backend/data`, and `HEALTHCHECK` running `atlas healthcheck` (a raw HTTP probe
 of `/healthz`, so the image needs no curl).
 
-**Runtime user: root.** FluxOS bind-mounts a host directory at `containerData`, created by root and not
-writable by others. Tested on a root-owned ext4 volume: as uid 65532 the server fails with `Permission denied`
-creating `atlas.redb`; as root it works. A start-as-root-then-drop scheme would need a shell or a privilege
-helper in the image; the scratch image has neither, so there is nothing to escalate with and the process only
-writes `/app/backend/data`.
+**Runtime user: root, without capabilities.** FluxOS bind-mounts a host directory at `containerData`, created
+by root and not writable by others. Tested on a root-owned ext4 volume: as uid 65532 the server fails with
+`Permission denied` creating `atlas.redb`; as root it works. The spec cannot pass `--user` or `--cap-drop`, so
+the binary drops its own privileges (B8, X1 L3; section 11.2): before the runtime starts any thread it clears
+every capability from the bounding, ambient, inheritable, permitted and effective sets and sets
+`no_new_privs`. It needs none: uid 0 owns the volume, so plain owner permissions let it write there, and port
+3000 is unprivileged. The scratch image has no shell or other binary to escalate with either.
 
 **Volume layout.** Everything lives under `/app/backend/data`: `atlas.redb` (state, cursors, history; bounded
 by `ATLAS_DISK_BUDGET_MB`, section 5.1) and `geoip/` (DB-IP City Lite, section 3.2: 127 MB live, about 255 MB
@@ -867,3 +884,126 @@ the list height are attributed from the list's `last_paid_height` (`reattribute_
 payouts exactly, 0 by fallback, 0 currentwinner mismatches; the counter's 3 unattributed are that first block's payees, counted
 when it was applied before the list arrived and named by the reattribution, and the rank check (globe ranks against the server's queue, every block) matched 39 of 39
 blocks after the first boot and 21 of 21 after the backfill.
+
+### 11.2 The edge: client addresses, limits, timeouts and hardening (B8)
+
+The X1 review (`docs/review/X1-security-correctness.md`) found that every user shared the proxy's address
+(H1), that connections had no timeouts (M1), and that per-request CPU work had no bounds (M7). This section
+is the resulting contract. Every default holds with the spec's empty environment.
+
+**How traffic arrives.** Two paths reach port 3000:
+
+- **Through FDM** (`https://atlas.app.runonflux.io`). The Flux domain manager is an HAProxy fleet in
+  `mode http`: it terminates TLS and opens a plain HTTP/1.1 connection to the node's public app port.
+  Its frontends set `option forwardfor except 127.0.0.0/8`, which appends a new `X-Forwarded-For` line
+  holding the address it saw and keeps whatever the caller sent, so only the last entry is FDM's. It sets
+  no `X-Real-IP` or `Forwarded` for ordinary apps. App backends with more than one instance use
+  `balance roundrobin` with a `FDMSERVERID` stickiness cookie (`cookie FDMSERVERID insert preserve indirect
+  nocache maxlife 8h`; HAProxy strips it before the app sees it), retry on connection failures and empty
+  responses, and time out a server after 25 s. Sources: RunOnFlux/flux-domain-manager
+  `src/services/haproxyTemplate.js` (main, 2026-09). The TCP peer of such a request is the FDM balancer.
+- **Directly** at `http://<node-ip>:33889`. FluxOS publishes the port on every host interface with no source
+  restriction (`dockerService.js` port bindings, `ufw allow`), and Docker's DNAT keeps the client's address,
+  so the TCP peer is the client and any forwarding header was written by that client.
+
+**Trust model.** The client address is the TCP peer, unless the peer is a trusted proxy; then it is the
+right-most `X-Forwarded-For` entry that is not itself a trusted proxy (a malformed entry, or a header made
+only of proxies, falls back to the peer; IPv4-mapped IPv6 is folded to IPv4). `X-Real-IP` and `Forwarded`
+are never read. The built-in trusted set (`crates/atlas-server/src/net/trust.rs`, `FDM_APP_BALANCERS`) is
+the 16 FDM app balancers' public egress addresses (production EU, Singapore and US, and staging), taken from
+FluxOS's own allow-list (`fdmAddresses` in RunOnFlux/flux `ZelBack/config/default.js`, 2026-09-25), which
+FluxOS uses for exactly this decision (`ingressCapture.js`). `ATLAS_TRUSTED_PROXIES` replaces or extends it
+(`fdm`, `none`, addresses and CIDR blocks, comma-separated: `fdm,10.0.0.0/8`). `ATLAS_TRUST_PROXY=1` keeps
+its old meaning, trust every peer; that is only safe where the port is reachable through the proxy alone,
+which is not the case on Flux. The list is maintained by hand upstream: a new FDM balancer missing from it
+makes its users share that balancer's address (the old H1 behaviour, for that balancer only) until the list is
+updated; the counters below show it. Limits key a client by its IPv4 address or the /64 of its IPv6 address.
+
+**Limits.** Per-client limits apply to the resolved client; global ones hold whatever the headers claim.
+
+| Limit | Default | Scope |
+|---|---|---|
+| Open TCP connections (upgraded WebSockets included) | 8192, lowered to fit `RLIMIT_NOFILE` minus 512 | global; closed at accept |
+| Open connections per peer | 256 | per TCP peer (IPv6 /64) that is not a trusted proxy; closed at accept |
+| WebSockets | 6000 (never above the connection cap) | global |
+| WebSockets per client | 32 (an office or carrier NAT shares one address) | per client |
+| WebSocket handshakes | burst 30, then 1/s | per client |
+| `sub` messages | burst 8, then one per 2 s (deferred, not dropped) | per connection |
+| Explorer lookups that reach upstream (cache misses) | 5/s, burst 20 | per client |
+| Explorer budget | 20/s, burst 60; 16 concurrent fetches, 10 s queue | global (503 with `Retry-After`) |
+| Compute routes (`/nodes`, `/operator/{address}`, `/metrics`, `/timeline/state`, `/search`, `/nodes/{key}/history`, `/nodes/{key}/payments`) | 15/s, burst 60 | per client (429 with `Retry-After`) |
+| Compute slots for those routes | 2 at once, 5 s queue | global (503 with `Retry-After`) |
+| Store reads | 32 at once, 10 s deadline including the wait | global (503 with `Retry-After: 5`) |
+
+A busy browser stays well inside these: the time machine fetches one state at a time, at most every 120 ms
+while dragging and every 400 ms while playing; table pages and searches are user-paced.
+
+**Timeouts.** The server runs its own HTTP/1.1 listener (`net/listener.rs`, hyper with a timer; cleartext
+HTTP/2 is not offered: browsers never use it and FDM speaks HTTP/1.1 to apps):
+
+- **Header read, 10 s.** From the moment a connection waits for a request head: it bounds both a slowly sent
+  header and the idle time of a keep-alive connection between requests. FDM retries a request on a reused
+  connection that the server closed (`retry-on conn-failure empty-response`).
+- **Write stall, 30 s.** A connection whose socket accepts no byte for this long is closed: a client that
+  stops reading its response. Upgraded WebSockets have their own 10 s write deadline.
+- **Request, 30 s.** Time to produce a response (503 with `Retry-After: 5`). The WebSocket upgrade answers at
+  once and the session runs in its own task, so live connections are not affected.
+- **Store read, 10 s** (above): a compaction holding the database cannot hang requests (X1 L2).
+- **Shutdown.** On SIGTERM the listener stops accepting, live connections get 1001 at once, idle HTTP
+  connections close, in-flight requests get 4 s, then every remaining connection is dropped; the engine flush
+  gets what is left of an 8 s budget, and the store is flushed last in every case. Docker sends SIGKILL after
+  10 s. Measured: a half-sent request held the old server 30 s past SIGTERM; now the process exits 4.2 s after
+  it.
+
+**CPU per request (X1 M7).** Compression of dynamic bodies (per-request JSON, first use of a derived body or
+static asset) runs on the blocking pool while the response streams, never on the async worker (the spec's one
+vCPU gives tokio one worker). `/timeline/state` floors `t` (section 6) and fills its cache once per instant;
+`/nodes` pages are cached per publish and query, built once on the blocking pool, and sort without
+allocating; `/metrics` aligns `from` to the step and fills its cache once per key, off the worker.
+
+**Security headers (X1 L10).** Every response carries `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`. HTML documents carry
+`Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;
+font-src 'self'; connect-src 'self' ws: wss:; media-src 'none'; object-src 'none'; worker-src 'none';
+frame-src 'none'; child-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none';
+frame-ancestors 'none'`; every other response `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`.
+The build has no inline script, no `eval`, no workers and no third-party origin; React and motion set styles
+through the CSSOM, which `style-src 'self'` allows; fonts are self-hosted. `connect-src` names `ws:`/`wss:`
+because older Safari does not match WebSocket URLs against `'self'`. Verified by loading the production build
+from the server in headless Chromium (SwiftShader WebGL) across 17 routes, from the globe to the time
+machine and the live stream: no violation, no page or console error, WebGL and the fonts loaded; a negative
+control (an injected inline script, style and frame) was reported and blocked.
+
+**Private metrics (X1 L15).** `/metrics/prometheus` answers a loopback TCP peer, or a request with
+`Authorization: Bearer <ATLAS_METRICS_TOKEN>` when that is set (compared in constant time), and 404 to anyone
+else; forwarding headers are never consulted. To read it:
+
+- inside the container, `atlas metrics` prints it (FluxOS's "execute command" on the app runs it; the image
+  has no shell);
+- or give the app `ATLAS_METRICS_TOKEN` in a spec update and scrape
+  `https://atlas.app.runonflux.io/metrics/prometheus` with `Authorization: Bearer <token>` (TLS ends at FDM).
+
+**First-deploy counters.** Without logging any address at `info`: `atlas_client_ip_source_total{source}`
+(`direct`, `direct_header_ignored`, `forwarded`, `proxy_no_header`, `proxy_bad_header`) shows whether requests
+arrive through FDM and with which header; `atlas_fdm_peer_requests_total{peer}` counts requests per built-in
+FDM balancer (public infrastructure addresses, never a user's); `atlas_untrusted_forwarders` counts the
+distinct /24 (IPv6 /48) networks of untrusted peers that sent `X-Forwarded-For`. A rising
+`direct_header_ignored` with few forwarders means a balancer is missing from the list: `ATLAS_LOG=debug`
+logs each such network's prefix once. `atlas_http_connection_events_total{event}` counts accepted,
+proxy-accepted and refused connections, write stalls, errors (header timeouts included) and drain drops.
+
+**Hardening (X1 L3).** `atlas serve` binds its socket, then, on the main thread before the runtime starts:
+
+- raises the soft `RLIMIT_NOFILE` to the hard limit (Docker's default soft limit is 1024) and fits the
+  connection caps under it;
+- clears every capability (bounding, ambient, inheritable, permitted, effective) and sets `no_new_privs`.
+  Capabilities are per thread, so doing it before any thread exists covers the whole process. If the data
+  directory holds files owned by another user (an unusual volume), `CAP_DAC_OVERRIDE` and `CAP_FOWNER` are
+  kept so they stay writable, with a warning.
+
+The startup log line `process hardened` reports the limits and the capability sets. Residual risk: the
+process is uid 0 inside the container without capabilities. A memory-safety bug in a dependency would run with
+root's file ownership (it could rewrite the image's root-owned files and the data volume, which it owns anyway)
+but without `CAP_NET_RAW`, `CAP_DAC_OVERRIDE`, `CAP_SETUID`, `CAP_SYS_CHROOT` or any other capability, could
+not gain one through `execve` (`no_new_privs`, empty bounding set), and has no shell or binary in the image to
+run. The container's seccomp profile and namespaces are FluxOS's and Docker's defaults.

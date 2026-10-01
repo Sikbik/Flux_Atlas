@@ -253,7 +253,7 @@ async fn rate_limit_is_per_client_ip_behind_trusted_proxy() {
     let mut server = ServerConfig::default();
     server.limits.rps = 1;
     server.limits.burst = 1;
-    server.trust_proxy = true;
+    server.proxies = atlas_server::config::TrustedProxies::all();
     let (e, _mock) = env_with_mock(server).await;
     let a = fixture_txid("insight_tx_regular.json");
     let b = fixture_txid("insight_tx_coinbase_pon.json");

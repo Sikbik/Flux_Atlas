@@ -465,3 +465,63 @@ async fn each_message_is_serialized_once_for_all_connections() {
         "one serialization per message, not per connection"
     );
 }
+
+/// X1 L1: `sub` cannot be used as a replay amplifier. Only the first `sub` replays; later ones
+/// keep the receiver (no duplicates, no gap); a burst over the limit is deferred, and the latest
+/// watch list still lands.
+#[tokio::test]
+async fn sub_is_rate_limited_and_replays_once() {
+    let (e, addr) = started(EnvBuilder::default()).await;
+    let base = e.engine.seq();
+    for i in 0..50 {
+        e.engine.emit(None, feed(i));
+    }
+    let mut ws = connect(addr).await;
+    next_json(&mut ws).await;
+    let n = u64::from(atlas_server::live::ws::SUB_BURST) + 12;
+    for k in 0..n {
+        send(
+            &mut ws,
+            serde_json::json!({"t": "sub", "topics": ["feed"], "since_seq": base, "watch": [k]}),
+        )
+        .await;
+    }
+    // The first sub replays the 50 messages; the rest replay nothing.
+    for want in base + 1..=base + 50 {
+        assert_eq!(next_json(&mut ws).await["seq"], want);
+    }
+    e.engine.emit(None, feed(99));
+    assert_eq!(next_json(&mut ws).await["seq"], base + 51, "no duplicates");
+    assert_eq!(e.state.hub.stats.replayed.load(Ordering::Relaxed), 50);
+    let limited = e.state.hub.stats.subs_limited.load(Ordering::Relaxed);
+    assert!(limited >= 10, "{limited}");
+    // The deferred (latest) watch list is applied when its token is due.
+    eventually("deferred sub applied", || {
+        e.hooks.calls().iter().any(
+            |c| matches!(c, WatchCall::Set { nodes, .. } if nodes == &vec![NodeId(n as u32 - 1)]),
+        )
+    })
+    .await;
+    assert_eq!(e.state.hub.stats.subs_deferred.load(Ordering::Relaxed), 1);
+}
+
+/// A replay larger than the cap is answered with a resync (the snapshots are cheaper).
+#[tokio::test]
+async fn huge_replays_become_a_resync() {
+    let (e, addr) = started(EnvBuilder::default()).await;
+    let base = e.engine.seq();
+    // About 40 KB per message: well over the 2 MiB replay cap in 100 messages.
+    for i in 0..100 {
+        e.engine.emit(None, big_mempool(i));
+    }
+    let mut ws = connect(addr).await;
+    next_json(&mut ws).await;
+    send(
+        &mut ws,
+        serde_json::json!({"t": "sub", "topics": ["mempool"], "since_seq": base}),
+    )
+    .await;
+    let m = next_json(&mut ws).await;
+    assert_eq!(m["t"], "resync");
+    assert_eq!(m["reason"], "replay_too_large");
+}

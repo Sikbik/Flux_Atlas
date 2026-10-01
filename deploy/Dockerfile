@@ -45,7 +45,9 @@ COPY --from=server /out/app /app
 
 # FluxOS bind-mounts the app volume at containerData. The host directory is owned by root and
 # not writable by other users, so the server runs as root inside the container (there is no
-# shell or other binary in the image to escalate with). See ARCHITECTURE section 11.
+# shell or other binary in the image to escalate with). At startup `atlas serve` drops every
+# capability and sets no_new_privs itself, since the spec cannot pass --cap-drop. See
+# ARCHITECTURE sections 11 and 11.2.
 USER 0:0
 WORKDIR /app
 

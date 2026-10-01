@@ -6,10 +6,14 @@
 //! - [`CachedBody`] is a body the server derives itself (analytics, fallbacks, static files):
 //!   serialized once, compressed lazily once per encoding, then shared.
 //! - [`json_response`] serializes a per-request value, hashes it for the ETag and compresses it
-//!   with fast settings when it is large enough to matter.
+//!   when it is large enough to matter.
+//!
+//! Compression never runs on an async worker (the spec's single vCPU gives tokio one): a body
+//! whose encoding is not ready yet is compressed on the blocking pool while the response
+//! streams (X1 M7).
 
 use std::io::Write as _;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use atlas_engine::{Encoding, PrebuiltBody};
 use axum::body::Body;
@@ -210,16 +214,23 @@ impl CachedBody {
         &self.etag_str
     }
 
-    /// Bytes for `enc`, compressing on first use. Falls back to identity for small bodies.
-    pub fn encoded(&self, enc: Encoding) -> (Encoding, Bytes) {
+    fn slot(&self, enc: Encoding) -> Option<&OnceLock<Option<Bytes>>> {
         if self.raw.len() < MIN_COMPRESS_BYTES {
-            return (Encoding::Identity, self.raw.clone());
+            return None;
         }
-        let slot = match enc {
-            Encoding::Identity => return (Encoding::Identity, self.raw.clone()),
-            Encoding::Brotli => &self.br,
-            Encoding::Gzip => &self.gzip,
-            Encoding::Zstd => &self.zstd,
+        match enc {
+            Encoding::Identity => None,
+            Encoding::Brotli => Some(&self.br),
+            Encoding::Gzip => Some(&self.gzip),
+            Encoding::Zstd => Some(&self.zstd),
+        }
+    }
+
+    /// Bytes for `enc`, compressing on first use (on the calling thread). Falls back to identity
+    /// for small bodies.
+    pub fn encoded(&self, enc: Encoding) -> (Encoding, Bytes) {
+        let Some(slot) = self.slot(enc) else {
+            return (Encoding::Identity, self.raw.clone());
         };
         match slot.get_or_init(|| compress(enc, &self.raw)) {
             Some(b) => (enc, b.clone()),
@@ -227,19 +238,46 @@ impl CachedBody {
         }
     }
 
-    /// Full response with negotiation and ETag handling.
-    pub fn respond(&self, headers: &HeaderMap, cache_control: &'static str) -> Response {
+    /// Full response with negotiation and ETag handling. An encoding not built yet is
+    /// compressed on the blocking pool as the body streams, never on the async worker.
+    pub fn respond(self: &Arc<Self>, headers: &HeaderMap, cache_control: &'static str) -> Response {
         if if_none_match(headers).is_some_and(|inm| etag_matches(inm, &self.etag_str)) {
             return not_modified(self.etag.clone(), cache_control);
         }
-        let (enc, bytes) = self.encoded(Encoding::negotiate(accept_encoding(headers)));
-        full(
-            bytes,
-            self.content_type.clone(),
-            enc,
-            self.etag.clone(),
-            cache_control,
-        )
+        let want = Encoding::negotiate(accept_encoding(headers));
+        let ready = self.slot(want).is_none_or(|s| s.get().is_some());
+        if ready {
+            let (enc, bytes) = self.encoded(want);
+            return full(
+                bytes,
+                self.content_type.clone(),
+                enc,
+                self.etag.clone(),
+                cache_control,
+            );
+        }
+        let me = Arc::clone(self);
+        let stream = futures_util::stream::once(async move {
+            tokio::task::spawn_blocking(move || match me.encoded(want) {
+                (got, b) if got == want => Ok(b),
+                _ => Err(std::io::Error::other("compression failed")),
+            })
+            .await
+            .map_err(std::io::Error::other)?
+        });
+        let mut r = Response::new(Body::from_stream(stream));
+        let h = r.headers_mut();
+        h.insert(header::CONTENT_TYPE, self.content_type.clone());
+        h.insert(header::ETAG, self.etag.clone());
+        h.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(cache_control),
+        );
+        h.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+        if let Some(v) = want.header_value() {
+            h.insert(header::CONTENT_ENCODING, HeaderValue::from_static(v));
+        }
+        r
     }
 }
 
@@ -251,13 +289,13 @@ pub fn to_json_vec<T: Serialize>(value: &T) -> Vec<u8> {
     })
 }
 
-/// Per-request JSON response with ETag, 304 and fast compression.
+/// Per-request JSON response with ETag, 304 and compression off the async worker.
 pub fn json_response<T: Serialize>(
     headers: &HeaderMap,
     value: &T,
     cache_control: &'static str,
 ) -> Response {
-    CachedBody::json(value).respond(headers, cache_control)
+    Arc::new(CachedBody::json(value)).respond(headers, cache_control)
 }
 
 #[cfg(test)]
@@ -300,6 +338,33 @@ mod tests {
         }
         let small = CachedBody::json(&1u8);
         assert_eq!(small.encoded(Encoding::Zstd).0, Encoding::Identity);
+    }
+
+    #[tokio::test]
+    async fn respond_compresses_off_the_worker() {
+        use http_body_util::BodyExt as _;
+        let v: Vec<u32> = (0..5000).collect();
+        let body = Arc::new(CachedBody::json(&v));
+        let mut h = HeaderMap::new();
+        h.insert(header::ACCEPT_ENCODING, HeaderValue::from_static("br"));
+        // First response: the encoding is built while the body streams.
+        assert!(body.br.get().is_none());
+        let r = body.respond(&h, cache::DERIVED);
+        assert_eq!(r.headers()[header::CONTENT_ENCODING], "br");
+        assert!(body.br.get().is_none(), "nothing compressed in the handler");
+        let bytes = r.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(decompress(Encoding::Brotli, &bytes), body.raw().to_vec());
+        // Later responses reuse it.
+        assert!(body.br.get().is_some());
+        let r = body.respond(&h, cache::DERIVED);
+        let bytes = r.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(decompress(Encoding::Brotli, &bytes), body.raw().to_vec());
+        // 304 on a matching ETag.
+        h.insert(header::IF_NONE_MATCH, body.etag().parse().unwrap());
+        assert_eq!(
+            body.respond(&h, cache::DERIVED).status(),
+            StatusCode::NOT_MODIFIED
+        );
     }
 
     #[test]

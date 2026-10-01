@@ -10,6 +10,8 @@ use atlas_engine::EngineConfig;
 use atlas_flux::ClientsConfig;
 use atlas_flux::http::HostPolicy;
 
+pub use crate::net::trust::TrustedProxies;
+
 /// Everything `atlas serve` needs.
 #[derive(Debug, Clone)]
 pub struct ServeConfig {
@@ -53,23 +55,96 @@ impl ServeConfig {
 /// Runtime knobs of the HTTP/WS layer.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    /// Use the right-most `X-Forwarded-For` entry as the client IP (set behind a reverse proxy).
-    pub trust_proxy: bool,
+    /// Peers whose `X-Forwarded-For` names the client (`ATLAS_TRUSTED_PROXIES`; default the
+    /// FDM app balancers). Every other peer is the client itself.
+    pub proxies: TrustedProxies,
+    pub http: HttpLimits,
     pub ws: WsConfig,
     pub limits: ClientLimits,
+    pub derived: DerivedLimits,
     pub proxy: ProxyTtls,
     /// Published state older than this makes `/readyz` report `degraded` (still 200).
     pub degraded_after: Duration,
+    /// Bearer token that opens `/metrics/prometheus` to non-loopback peers
+    /// (`ATLAS_METRICS_TOKEN`). Without it the exposition is served to loopback only.
+    pub metrics_token: Option<String>,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            trust_proxy: false,
+            proxies: TrustedProxies::default(),
+            http: HttpLimits::default(),
             ws: WsConfig::default(),
             limits: ClientLimits::default(),
+            derived: DerivedLimits::default(),
             proxy: ProxyTtls::default(),
             degraded_after: Duration::from_secs(600),
+            metrics_token: None,
+        }
+    }
+}
+
+/// Connection-level limits of the HTTP listener (ARCHITECTURE section 11.2).
+#[derive(Debug, Clone)]
+pub struct HttpLimits {
+    /// Open TCP connections, upgraded WebSockets included (`ATLAS_HTTP_MAX_CONNECTIONS`).
+    /// Lowered at startup to fit the file descriptor limit.
+    pub max_connections: usize,
+    /// Open connections per peer address (IPv6: per /64) for peers that are not trusted proxies
+    /// (`ATLAS_HTTP_MAX_PER_PEER`). Trusted proxies carry many users and are bounded by the
+    /// global cap only.
+    pub max_per_peer: u32,
+    /// Time to receive a complete request head, counted from when the connection starts
+    /// waiting for one: it is also the keep-alive idle timeout.
+    pub header_read_timeout: Duration,
+    /// A connection whose socket accepts no byte for this long is closed.
+    pub write_stall_timeout: Duration,
+    /// Time to produce a response (not the WebSocket session after the upgrade).
+    pub request_timeout: Duration,
+    /// On shutdown, how long in-flight requests may take before their connections are
+    /// dropped. Leaves room under Docker's 10 s stop grace for the engine flush.
+    pub drain_timeout: Duration,
+    /// Request head buffer (bounds the header size).
+    pub max_buf_bytes: usize,
+    /// Most header fields per request.
+    pub max_headers: usize,
+}
+
+impl Default for HttpLimits {
+    fn default() -> Self {
+        Self {
+            max_connections: 8192,
+            max_per_peer: 256,
+            header_read_timeout: Duration::from_secs(10),
+            write_stall_timeout: Duration::from_secs(30),
+            request_timeout: Duration::from_secs(30),
+            drain_timeout: Duration::from_secs(4),
+            max_buf_bytes: 64 * 1024,
+            max_headers: 64,
+        }
+    }
+}
+
+/// Protection of the routes that compute per request (`/nodes`, `/timeline/state`,
+/// `/metrics`, `/operator`, `/search`, node history and payments).
+#[derive(Debug, Clone, Copy)]
+pub struct DerivedLimits {
+    /// Sustained requests per second per client.
+    pub rps: u32,
+    pub burst: u32,
+    /// Such requests computing at once, across all clients; more wait up to `queue_timeout`.
+    pub concurrency: usize,
+    pub queue_timeout: Duration,
+}
+
+impl Default for DerivedLimits {
+    fn default() -> Self {
+        Self {
+            rps: 15,
+            burst: 60,
+            concurrency: 2,
+            queue_timeout: Duration::from_secs(5),
         }
     }
 }
@@ -104,8 +179,8 @@ pub struct WsConfig {
 impl Default for WsConfig {
     fn default() -> Self {
         Self {
-            max_connections: 10_000,
-            max_per_ip: 16,
+            max_connections: 6000,
+            max_per_ip: 32,
             queue: 1024,
             ping_interval: Duration::from_secs(20),
             idle_timeout: Duration::from_secs(75),
@@ -125,6 +200,10 @@ pub struct ClientLimits {
     /// Sustained upstream-reaching requests per second per client IP (cache hits are free).
     pub rps: u32,
     pub burst: u32,
+    /// Upstream-reaching requests per second across all clients: the global explorer budget,
+    /// which holds whatever the forwarding headers claim.
+    pub global_rps: u32,
+    pub global_burst: u32,
     /// Concurrent on-demand upstream fetches across all clients.
     pub upstream_concurrency: usize,
     /// How long a request may wait for an upstream slot before a 503.
@@ -136,6 +215,8 @@ impl Default for ClientLimits {
         Self {
             rps: 5,
             burst: 20,
+            global_rps: 20,
+            global_burst: 60,
             upstream_concurrency: 16,
             queue_timeout: Duration::from_secs(10),
         }
@@ -309,7 +390,10 @@ impl EngineOverrides {
     /// `<data_dir>/geoip/dbip-city-lite.mmdb`, downloaded unless `ATLAS_GEOIP_AUTO=0`.
     pub fn geoip(&self, data_dir: &std::path::Path) -> atlas_engine::geoip::GeoIpConfig {
         match &self.geoip_db {
-            Some(p) => atlas_engine::geoip::GeoIpConfig::file(p.clone()),
+            // Mapped through a private copy: the operator may rewrite the file in place.
+            Some(p) => {
+                atlas_engine::geoip::GeoIpConfig::file_copied(p.clone(), data_dir.join("geoip"))
+            }
             None => {
                 atlas_engine::geoip::GeoIpConfig::managed(data_dir, self.geoip_auto.unwrap_or(true))
             }
@@ -471,6 +555,7 @@ mod tests {
         .geoip(&data);
         assert_eq!(g.db_path, Some(PathBuf::from("/srv/city.mmdb")));
         assert_eq!(g.auto_dir, None);
+        assert_eq!(g.copy_dir, Some(managed));
     }
 
     #[test]

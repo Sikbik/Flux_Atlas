@@ -368,7 +368,7 @@ impl Engine {
         // Local GeoIP: an installed database is mapped right away (microseconds), so the first
         // publish already carries cities. Downloads happen later, in the background.
         if let Some(path) = config.geoip.db_path.as_ref().filter(|p| p.exists()) {
-            match geoip::LoadedGeoIp::open(path) {
+            match geoip::LoadedGeoIp::open_in(path, config.geoip.copy_dir.as_deref()) {
                 Ok(g) => {
                     tracing::info!(
                         path = %path.display(),

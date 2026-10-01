@@ -66,6 +66,8 @@ fn policy() -> Policy {
     Policy {
         min_bytes: 1_000,
         max_bytes: 10_000_000,
+        max_download_bytes: 10_000_000,
+        reserve_bytes: 0,
         probes: vec![
             ("81.2.69.142".parse().unwrap(), "GB"),
             ("216.160.83.56".parse().unwrap(), "US"),

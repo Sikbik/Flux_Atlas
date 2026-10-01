@@ -5,9 +5,17 @@
 //! covered by the replay (dedupe by seq); `resync` when the ring cannot cover the gap (or the
 //! client's seq is from before a restart). Protocol pings keep dead peers from lingering; a
 //! client that falls a full queue behind, or whose socket stalls a write, is closed with 4008.
+//!
+//! `sub` is rate-limited per connection (a burst of [`SUB_BURST`], then one per
+//! [`SUB_REFILL`]); a `sub` over the limit is deferred, not dropped: the latest one is applied
+//! when the next token arrives. Only the first `sub` (or one that adds topics) replays from
+//! `since_seq`: later ones keep the connection's receiver, so nothing is missed and nothing is
+//! sent twice. A replay larger than [`REPLAY_MAX_BYTES`] is answered with a `resync` instead
+//! (the snapshot bodies are cheaper than the ring), and handshakes are rate-limited per client
+//! (X1 L1).
 
 use std::sync::atomic::Ordering;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use atlas_core::NodeId;
 use atlas_core::live::{ClientMsg, LiveBody, LiveMsg, Topic};
@@ -40,6 +48,12 @@ pub mod close {
 const WRITE_BATCH: usize = 64;
 /// Malformed messages tolerated before closing.
 const MAX_BAD_MESSAGES: u32 = 8;
+/// `sub` messages a connection may send at once.
+pub const SUB_BURST: u32 = 8;
+/// One more `sub` token per this interval.
+pub const SUB_REFILL: Duration = Duration::from_secs(2);
+/// Largest replay a `sub` gets; beyond it the client is told to resync from the snapshots.
+pub const REPLAY_MAX_BYTES: usize = 2 << 20;
 
 /// `GET /ws`.
 pub async fn ws_handler(
@@ -47,6 +61,11 @@ pub async fn ws_handler(
     ClientIp(ip): ClientIp,
     upgrade: WebSocketUpgrade,
 ) -> Response {
+    if let Err(wait) = state.hub.admit_handshake(ip) {
+        return ApiError::rate_limited(wait)
+            .with_message("too many live connections opened from this address")
+            .into_response();
+    }
     let guard = match state.hub.try_register(ip) {
         Ok(g) => g,
         Err(Reject::TooManyFromIp) => {
@@ -88,9 +107,46 @@ enum Exit {
     Close(u16, &'static str),
 }
 
+/// Token bucket of `sub` messages.
+struct SubBucket {
+    tokens: f64,
+    at: Instant,
+}
+
+impl SubBucket {
+    fn new() -> Self {
+        Self {
+            tokens: f64::from(SUB_BURST),
+            at: Instant::now(),
+        }
+    }
+
+    fn refill(&mut self) {
+        let now = Instant::now();
+        let gained = now.duration_since(self.at).as_secs_f64() / SUB_REFILL.as_secs_f64();
+        self.tokens = (self.tokens + gained).min(f64::from(SUB_BURST));
+        self.at = now;
+    }
+
+    /// Takes a token, or returns when the next one is due.
+    fn take(&mut self) -> Result<(), Instant> {
+        self.refill();
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            Ok(())
+        } else {
+            let wait = (1.0 - self.tokens) * SUB_REFILL.as_secs_f64();
+            Err(self.at + Duration::from_secs_f64(wait))
+        }
+    }
+}
+
 struct Conn {
     id: u64,
     mask: u8,
+    subs: SubBucket,
+    /// A `sub` over the rate limit, applied when its token is due (the latest one wins).
+    pending: Option<(Instant, ClientMsg)>,
     rx: Option<broadcast::Receiver<Frame>>,
     /// Live frames at or below this seq were already delivered by the replay.
     dedupe_upto: u64,
@@ -99,6 +155,13 @@ struct Conn {
     bad: u32,
     sent: u64,
     bytes: u64,
+}
+
+async fn pending_due(at: Option<Instant>) {
+    match at {
+        Some(at) => tokio::time::sleep_until(at.into()).await,
+        None => std::future::pending().await,
+    }
 }
 
 async fn recv_frame(
@@ -129,6 +192,8 @@ pub async fn run(state: AppState, mut socket: WebSocket, guard: ConnGuard) {
     let mut conn = Conn {
         id: guard.id,
         mask: 0,
+        subs: SubBucket::new(),
+        pending: None,
         rx: None,
         dedupe_upto: 0,
         watch_set: false,
@@ -186,6 +251,15 @@ pub async fn run(state: AppState, mut socket: WebSocket, guard: ConnGuard) {
                         break Exit::Close(close::GOING_AWAY, "server shutting down");
                     }
                 },
+                () = pending_due(conn.pending.as_ref().map(|p| p.0)) => {
+                    if let Some((_, msg)) = conn.pending.take() {
+                        let _ = conn.subs.take();
+                        state.hub.stats.subs_deferred.fetch_add(1, Ordering::Relaxed);
+                        if let Err(e) = apply_sub(&state, &mut socket, &mut conn, msg).await {
+                            break e;
+                        }
+                    }
+                }
                 _ = ping.tick() => {
                     if conn.last_rx.elapsed() > cfg.idle_timeout {
                         state.hub.stats.idle_disconnects.fetch_add(1, Ordering::Relaxed);
@@ -339,6 +413,31 @@ async fn on_client_text(
         }
         return Ok(());
     };
+    if !matches!(msg, ClientMsg::Sub { .. }) {
+        // Pong: liveness already recorded.
+        return Ok(());
+    }
+    match conn.subs.take() {
+        Ok(()) => {
+            conn.pending = None;
+            apply_sub(state, socket, conn, msg).await
+        }
+        Err(due) => {
+            // Over the limit: keep the latest and apply it when a token is due.
+            state.hub.stats.subs_limited.fetch_add(1, Ordering::Relaxed);
+            conn.pending = Some((due, msg));
+            Ok(())
+        }
+    }
+}
+
+/// Applies a `sub`: topic filter, replay (first `sub`, or new topics), watch lists.
+async fn apply_sub(
+    state: &AppState,
+    socket: &mut WebSocket,
+    conn: &mut Conn,
+    msg: ClientMsg,
+) -> Result<(), Exit> {
     let ClientMsg::Sub {
         topics,
         since_seq,
@@ -346,17 +445,22 @@ async fn on_client_text(
         watch_apps,
     } = msg
     else {
-        // Pong: liveness already recorded.
         return Ok(());
     };
     let cfg = state.hub.config().clone();
-    conn.mask = topics_mask(&topics);
-    // Subscribe first, then replay: anything emitted in between arrives on the new receiver
-    // and is dropped by seq if the replay already covered it.
-    conn.rx = Some(state.hub.subscribe());
-    conn.dedupe_upto = 0;
-    let current = state.engine.seq();
+    let mask = topics_mask(&topics);
+    // A later `sub` that keeps the topics keeps the receiver: every frame since the first one
+    // is either delivered or queued, so there is nothing to replay.
+    let replay = conn.rx.is_none() || mask & !conn.mask != 0;
+    conn.mask = mask;
     let mut out: Vec<Utf8Bytes> = Vec::new();
+    let current = state.engine.seq();
+    if replay {
+        // Subscribe first, then replay: anything emitted in between arrives on the new
+        // receiver and is dropped by seq if the replay already covered it.
+        conn.rx = Some(state.hub.subscribe());
+        conn.dedupe_upto = 0;
+    }
     match since_seq {
         None => {}
         Some(s) if s > current => {
@@ -364,20 +468,34 @@ async fn on_client_text(
             state.hub.stats.resyncs.fetch_add(1, Ordering::Relaxed);
             out.push(resync_text(state, "unknown_seq"));
         }
+        // A later `sub` keeps its receiver: nothing to replay.
+        Some(_) if !replay => {}
         Some(s) => {
             if let Ok(msgs) = state.engine.replay_since(s) {
-                conn.dedupe_upto = msgs.last().map_or(s, |m| m.seq.max(s));
+                let mut bytes = 0usize;
                 for m in &msgs {
                     let f = state.hub.frame_for(m);
                     if !f.is_ping && f.wanted(conn.mask) {
+                        bytes += f.text.len();
+                        if bytes > REPLAY_MAX_BYTES {
+                            break;
+                        }
                         out.push(f.text);
                     }
                 }
-                state
-                    .hub
-                    .stats
-                    .replayed
-                    .fetch_add(out.len() as u64, Ordering::Relaxed);
+                if bytes > REPLAY_MAX_BYTES {
+                    // Cheaper to refetch the snapshots than to stream this much history.
+                    out.clear();
+                    state.hub.stats.resyncs.fetch_add(1, Ordering::Relaxed);
+                    out.push(resync_text(state, "replay_too_large"));
+                } else {
+                    conn.dedupe_upto = msgs.last().map_or(s, |m| m.seq.max(s));
+                    state
+                        .hub
+                        .stats
+                        .replayed
+                        .fetch_add(out.len() as u64, Ordering::Relaxed);
+                }
             } else {
                 state.hub.stats.resyncs.fetch_add(1, Ordering::Relaxed);
                 out.push(resync_text(state, "replay_gap"));

@@ -23,6 +23,11 @@ pub struct Policy {
     pub min_bytes: u64,
     /// Largest accepted uncompressed size (also bounds the gzip expansion).
     pub max_bytes: u64,
+    /// Largest accepted download (the compressed file).
+    pub max_download_bytes: u64,
+    /// Free space that must remain on the volume after a download or decompression (the
+    /// database and the rest of the volume share it).
+    pub reserve_bytes: u64,
     /// Addresses whose country is stable, with that country.
     pub probes: Vec<(IpAddr, &'static str)>,
     /// How many probes must answer with the expected country.
@@ -30,8 +35,8 @@ pub struct Policy {
 }
 
 impl Policy {
-    /// DB-IP City Lite: about 127 MB uncompressed (2026-09), so anything under 40 MB or over
-    /// 1 GiB is not a complete file.
+    /// DB-IP City Lite: about 60 MB compressed and 127 MB uncompressed (2026-09), so a download
+    /// over 256 MiB, or an output under 40 MB or over 512 MiB, is not the file we asked for.
     pub fn dbip_city_lite() -> Self {
         let ip = |s: &str| s.parse::<IpAddr>().ok();
         let probes = [
@@ -45,7 +50,9 @@ impl Policy {
         .collect();
         Self {
             min_bytes: 40_000_000,
-            max_bytes: 1 << 30,
+            max_bytes: 512 << 20,
+            max_download_bytes: 256 << 20,
+            reserve_bytes: 256 << 20,
             probes,
             min_probe_hits: 3,
         }
@@ -79,6 +86,42 @@ pub fn cleanup(dir: &Path) {
             let _ = fs::remove_file(e.path());
         }
     }
+}
+
+/// Free bytes available to this process on the filesystem holding `dir`, if known.
+pub fn free_bytes(dir: &Path) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        let st = rustix::fs::statvfs(dir).ok()?;
+        Some(st.f_bavail.saturating_mul(st.f_frsize))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        None
+    }
+}
+
+/// Fails unless `need` bytes fit on the volume of `dir` with `reserve` left over. Unknown free
+/// space passes (the size caps still apply).
+pub fn ensure_space(dir: &Path, need: u64, reserve: u64, what: &str) -> Result<()> {
+    match free_bytes(dir) {
+        Some(free) if free < need.saturating_add(reserve) => Err(GeoIpError::Rejected(format!(
+            "not enough disk space for {what}: {need} bytes needed plus a {reserve} byte reserve, \
+             {free} free"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// The uncompressed length a gzip file announces in its trailer (ISIZE, modulo 2^32).
+pub fn gzip_announced_len(src: &Path) -> Option<u64> {
+    use std::io::{Seek, SeekFrom};
+    let mut f = File::open(src).ok()?;
+    f.seek(SeekFrom::End(-4)).ok()?;
+    let mut b = [0u8; 4];
+    f.read_exact(&mut b).ok()?;
+    Some(u64::from(u32::from_le_bytes(b)))
 }
 
 /// Decompresses `src` (gzip) into `dst`. Reading to the end checks the gzip trailer (CRC-32 and
@@ -161,6 +204,15 @@ pub fn install_gz(
 ) -> Result<Installed> {
     fs::create_dir_all(dir)?;
     let staging = dir.join(format!(".staging-{month}.mmdb"));
+    // The trailer's length is only a hint (an attacker controls it, and it wraps at 4 GiB);
+    // the decompression cap below is the bound.
+    let announced = gzip_announced_len(gz).unwrap_or(policy.max_bytes);
+    ensure_space(
+        dir,
+        announced.min(policy.max_bytes),
+        policy.reserve_bytes,
+        "the decompressed GeoIP database",
+    )?;
     let result = (|| {
         let bytes = gunzip(gz, &staging, policy.max_bytes)?;
         let build_epoch = {
@@ -235,6 +287,8 @@ mod tests {
         Policy {
             min_bytes: 1_000,
             max_bytes: 10_000_000,
+            max_download_bytes: 10_000_000,
+            reserve_bytes: 0,
             probes: vec![
                 ("81.2.69.142".parse().unwrap(), "GB"),
                 ("89.160.20.128".parse().unwrap(), "SE"),

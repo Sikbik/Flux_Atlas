@@ -14,6 +14,7 @@
 
 pub mod body;
 pub mod config;
+pub mod derived;
 pub mod error;
 pub mod explorer;
 pub mod extract;
@@ -21,6 +22,7 @@ pub mod fixtures;
 pub mod ledger;
 pub mod live;
 pub mod metrics;
+pub mod net;
 pub mod proxy;
 pub mod routes;
 pub mod search;
@@ -41,13 +43,70 @@ pub use routes::router;
 pub use state::AppState;
 pub use watch::WatchHooks;
 
-/// Opens the store, starts the engine and serves until SIGINT or SIGTERM. Shutdown closes live
-/// connections with 1001 before the engine and store stop.
-///
-/// The process opens exactly one listening socket, `cfg.bind` (TCP; default `0.0.0.0:3000`),
-/// and serves everything on it: the web app, `/api/v1/*`, `/ws`, `/healthz`, `/readyz` and
-/// `/metrics/prometheus`. Upstream traffic (FluxOS API, Insight sockets, stats) is outbound
-/// only. See ARCHITECTURE section 11.
+/// File descriptors kept free of connections: the store, GeoIP files, upstream sockets.
+const FD_RESERVE: u64 = 512;
+
+/// Everything `atlas serve` does: create the data directory, bind the one listening socket,
+/// harden the process (raise `RLIMIT_NOFILE`, drop capabilities, `no_new_privs`; this must
+/// run before the runtime starts its threads), then run the server until SIGINT or SIGTERM.
+pub fn run(mut cfg: ServeConfig) -> anyhow::Result<()> {
+    std::fs::create_dir_all(&cfg.data_dir)
+        .with_context(|| format!("creating data dir {}", cfg.data_dir.display()))?;
+    let std_listener =
+        std::net::TcpListener::bind(cfg.bind).with_context(|| format!("binding {}", cfg.bind))?;
+    std_listener
+        .set_nonblocking(true)
+        .context("listener non-blocking")?;
+    let h = net::harden::harden(&cfg.data_dir);
+    for e in &h.errors {
+        tracing::warn!(error = %e, "hardening step failed");
+    }
+    if let Some(why) = &h.kept_reason {
+        tracing::warn!(
+            reason = %why,
+            kept = ?net::harden::cap_names(h.caps_kept),
+            "data directory holds files of another user; keeping the capabilities to write them"
+        );
+    }
+    tracing::info!(
+        nofile_before = h.nofile_before,
+        nofile = h.nofile_after,
+        caps_before = ?net::harden::cap_names(h.caps_before),
+        caps_kept = ?net::harden::cap_names(h.caps_kept),
+        bounding_dropped = h.bounding_dropped,
+        no_new_privs = h.no_new_privs,
+        "process hardened"
+    );
+    fit_to_fd_limit(&mut cfg.server, h.nofile_after);
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("building the runtime")?
+        .block_on(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).context("listener")?;
+            serve_on(cfg, listener, shutdown_signal()).await
+        })
+}
+
+/// Lowers the connection caps so open sockets can never exhaust file descriptors.
+pub fn fit_to_fd_limit(server: &mut ServerConfig, nofile: Option<u64>) {
+    let Some(n) = nofile else { return };
+    let room = usize::try_from(n.saturating_sub(FD_RESERVE).max(64)).unwrap_or(usize::MAX);
+    if server.http.max_connections > room {
+        tracing::warn!(
+            nofile = n,
+            from = server.http.max_connections,
+            to = room,
+            "connection cap lowered to fit the file descriptor limit"
+        );
+        server.http.max_connections = room;
+    }
+    if server.ws.max_connections > server.http.max_connections {
+        server.ws.max_connections = server.http.max_connections;
+    }
+}
+
+/// Binds `cfg.bind` and serves (no hardening; [`run`] is the production entry point).
 pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(cfg.bind)
         .await
@@ -55,8 +114,18 @@ pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
     serve_on(cfg, listener, shutdown_signal()).await
 }
 
-/// [`serve`] on an already bound listener, until `shutdown` resolves (tests bind an ephemeral
-/// port and pass their own shutdown future). `cfg.bind` is ignored.
+/// Opens the store, starts the engine and serves on an already bound listener until
+/// `shutdown` resolves (tests bind an ephemeral port and pass their own shutdown future).
+/// `cfg.bind` is ignored.
+///
+/// The process opens exactly one listening socket (TCP; default `0.0.0.0:3000`) and serves
+/// everything on it: the web app, `/api/v1/*`, `/ws`, `/healthz`, `/readyz` and
+/// `/metrics/prometheus`. Upstream traffic (FluxOS API, Insight sockets, stats) is outbound
+/// only. See ARCHITECTURE section 11.
+///
+/// Shutdown fits Docker's 10 s stop grace: live connections are closed (1001) at once, HTTP
+/// requests get [`config::HttpLimits::drain_timeout`], then the engine flush gets what is left
+/// of [`SHUTDOWN_BUDGET`], and the store is flushed last in every case.
 pub async fn serve_on(
     cfg: ServeConfig,
     listener: tokio::net::TcpListener,
@@ -97,28 +166,54 @@ pub async fn serve_on(
     let state = AppState::new(engine.clone(), cfg.server.clone());
     let app = router(state.clone());
     let addr = listener.local_addr().context("listener address")?;
-    tracing::info!(%addr, data = %cfg.data_dir.display(), "listening");
+    tracing::info!(
+        %addr,
+        data = %cfg.data_dir.display(),
+        trusted_proxies = %net::describe(&cfg.server.proxies),
+        max_connections = cfg.server.http.max_connections,
+        max_per_peer = cfg.server.http.max_per_peer,
+        ws_max = cfg.server.ws.max_connections,
+        metrics = if cfg.server.metrics_token.is_some() { "loopback or token" } else { "loopback only" },
+        "listening"
+    );
     let st = state.clone();
-    axum::serve(
+    let signalled = std::sync::Arc::new(std::sync::OnceLock::<Instant>::new());
+    let sig = std::sync::Arc::clone(&signalled);
+    let conns = std::sync::Arc::clone(&state.listener);
+    net::listener::serve(
+        conns,
         listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
+        app,
+        async move {
+            shutdown.await;
+            let _ = sig.set(Instant::now());
+        },
+        move || st.begin_shutdown(),
     )
-    .with_graceful_shutdown(async move {
-        shutdown.await;
-        st.begin_shutdown();
-    })
-    .await?;
-    // Upgraded WebSocket connections are not tracked by the HTTP server: wait for them to send
-    // their close frames.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while state.hub.connections() > 0 && Instant::now() < deadline {
+    .await;
+    let started = signalled.get().copied().unwrap_or_else(Instant::now);
+    // Upgraded WebSocket connections are owned by the hub: wait briefly for their close frames.
+    let ws_deadline = Instant::now() + Duration::from_secs(1);
+    while state.hub.connections() > 0 && Instant::now() < ws_deadline {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    engine.shutdown().await;
+    let left = SHUTDOWN_BUDGET
+        .saturating_sub(started.elapsed())
+        .max(Duration::from_millis(500));
+    if tokio::time::timeout(left, engine.shutdown()).await.is_err() {
+        tracing::warn!(
+            budget_ms = left.as_millis() as u64,
+            "engine shutdown did not finish in time; flushing the store anyway"
+        );
+    }
     store.flush().context("final store flush")?;
-    tracing::info!("stopped");
+    tracing::info!(ms = started.elapsed().as_millis() as u64, "stopped");
     Ok(())
 }
+
+/// Time from the shutdown signal to the start of the final store flush. Docker sends SIGKILL
+/// 10 s after SIGTERM; the flush itself takes well under a second.
+pub const SHUTDOWN_BUDGET: Duration = Duration::from_secs(8);
 
 async fn shutdown_signal() {
     let ctrl_c = async {
@@ -142,23 +237,50 @@ async fn shutdown_signal() {
     tracing::info!("shutdown requested");
 }
 
-/// Container health probe: `GET /healthz` over plain HTTP/1.1 on `addr`. Succeeds on a 200 status.
-/// Uses a raw socket so the image needs no curl.
-pub async fn healthcheck(addr: SocketAddr, timeout: Duration) -> anyhow::Result<()> {
+/// `GET path` over plain HTTP/1.1 with a raw socket (the image has no curl); the raw response.
+async fn raw_get(
+    addr: SocketAddr,
+    path: &str,
+    timeout: Duration,
+    max: u64,
+) -> anyhow::Result<Vec<u8>> {
     let probe = async {
         let mut s = tokio::net::TcpStream::connect(addr).await?;
         s.write_all(
-            format!("GET /healthz HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n")
-                .as_bytes(),
+            format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes(),
         )
         .await?;
         let mut buf = Vec::with_capacity(512);
-        s.take(64 * 1024).read_to_end(&mut buf).await?;
+        s.take(max).read_to_end(&mut buf).await?;
         anyhow::Ok(buf)
     };
-    let buf = tokio::time::timeout(timeout, probe)
+    tokio::time::timeout(timeout, probe)
         .await
-        .context("healthcheck timed out")??;
+        .with_context(|| format!("GET {path} timed out"))?
+}
+
+/// The Prometheus exposition of the server on `addr` (loopback: `atlas metrics`).
+pub async fn scrape_metrics(addr: SocketAddr, timeout: Duration) -> anyhow::Result<String> {
+    let buf = raw_get(addr, "/metrics/prometheus", timeout, 32 << 20).await?;
+    let text = String::from_utf8_lossy(&buf);
+    let (head, body) = text
+        .split_once("\r\n\r\n")
+        .context("malformed HTTP response")?;
+    let status = head.split_whitespace().nth(1).unwrap_or("");
+    anyhow::ensure!(
+        status == "200",
+        "metrics: status line {:?}",
+        head.lines().next().unwrap_or("")
+    );
+    Ok(body.to_owned())
+}
+
+/// Container health probe: `GET /healthz` over plain HTTP/1.1 on `addr`. Succeeds on a 200 status.
+/// Uses a raw socket so the image needs no curl.
+pub async fn healthcheck(addr: SocketAddr, timeout: Duration) -> anyhow::Result<()> {
+    let buf = raw_get(addr, "/healthz", timeout, 64 * 1024)
+        .await
+        .context("healthcheck failed")?;
     let head = String::from_utf8_lossy(&buf[..buf.len().min(64)]);
     let status = head.split_whitespace().nth(1).unwrap_or("");
     anyhow::ensure!(
