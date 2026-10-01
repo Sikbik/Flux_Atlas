@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use atlas_core::api::{AppEconomyDay, AppEconomyDto, AppSpend};
 use atlas_core::app::app_expire_height;
+use atlas_core::emission::PON_ACTIVATION_HEIGHT;
 use atlas_core::event::AppMessageKind;
 use atlas_core::{Amount, NodeId, Tier};
 use atlas_store::Store;
@@ -341,15 +342,9 @@ impl AppLedger {
         let last30 = window(WINDOW_30D);
         let registrations = last30.iter().filter(|m| m.register).count() as u32;
 
-        // Day rows: block times estimated back from the tip at 30 s per block.
-        let time_of = |h: u32| tip_ms.saturating_sub(u64::from(tip.saturating_sub(h)) * BLOCK_MS);
-        let height_at = |t: u64| {
-            if t >= tip_ms {
-                tip
-            } else {
-                tip.saturating_sub(((tip_ms - t) / BLOCK_MS) as u32 + 1)
-            }
-        };
+        // Day rows: block times estimated back from the tip (see `est_time`).
+        let time_of = |h: u32| est_time(h, tip, tip_ms);
+        let height_at = |t: u64| est_height(t, tip, tip_ms);
         let today = now_ms.max(tip_ms) / DAY_MS * DAY_MS;
         let first_day = today.saturating_sub(u64::from(days.max(1) - 1) * DAY_MS);
         let mut rows: Vec<AppEconomyDay> = (0..u64::from(days.max(1)))
@@ -431,6 +426,33 @@ impl AppLedger {
     }
 }
 
+/// Milliseconds per block before the PoN fork.
+const POW_BLOCK_MS: u64 = 120_000;
+
+/// Estimated time of block `h` counted back from the tip: 30 s per block down to the PoN fork,
+/// 2 minutes per block before it.
+pub fn est_time(h: u32, tip: u32, tip_ms: u64) -> u64 {
+    let fork = PON_ACTIVATION_HEIGHT.min(tip);
+    if h >= fork {
+        return tip_ms.saturating_sub(u64::from(tip.saturating_sub(h)) * BLOCK_MS);
+    }
+    let fork_ms = tip_ms.saturating_sub(u64::from(tip - fork) * BLOCK_MS);
+    fork_ms.saturating_sub(u64::from(fork - h) * POW_BLOCK_MS)
+}
+
+/// The last height whose estimated time ([`est_time`]) is at or before `t`.
+pub fn est_height(t: u64, tip: u32, tip_ms: u64) -> u32 {
+    if t >= tip_ms {
+        return tip;
+    }
+    let fork = PON_ACTIVATION_HEIGHT.min(tip);
+    let fork_ms = est_time(fork, tip, tip_ms);
+    if t >= fork_ms {
+        return tip - ((tip_ms - t).div_ceil(BLOCK_MS)) as u32;
+    }
+    fork.saturating_sub(((fork_ms - t).div_ceil(POW_BLOCK_MS)) as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use atlas_core::Hash32;
@@ -476,6 +498,32 @@ mod tests {
             address: address.into(),
             amount: Amount::from_flux(flux),
             node: node.map(NodeId),
+        }
+    }
+
+    #[test]
+    fn block_time_estimates_cross_the_fork() {
+        let (tip, tip_ms) = (3_000_000u32, 1_790_000_000_000u64);
+        assert_eq!(est_time(tip, tip, tip_ms), tip_ms);
+        assert_eq!(est_time(tip - 2_880, tip, tip_ms), tip_ms - DAY_MS);
+        let fork_ms = tip_ms - u64::from(tip - PON_ACTIVATION_HEIGHT) * 30_000;
+        assert_eq!(est_time(PON_ACTIVATION_HEIGHT, tip, tip_ms), fork_ms);
+        assert_eq!(
+            est_time(PON_ACTIVATION_HEIGHT - 720, tip, tip_ms),
+            fork_ms - DAY_MS
+        );
+        for h in [
+            tip,
+            tip - 1,
+            tip - 2_880,
+            PON_ACTIVATION_HEIGHT + 1,
+            PON_ACTIVATION_HEIGHT,
+            1_900_000,
+        ] {
+            let t = est_time(h, tip, tip_ms);
+            assert_eq!(est_height(t, tip, tip_ms), h);
+            assert_eq!(est_height(t + 1, tip, tip_ms), h);
+            assert!(est_height(t - 1, tip, tip_ms) < h);
         }
     }
 
