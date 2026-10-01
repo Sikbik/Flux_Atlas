@@ -85,11 +85,14 @@
   --tm-ink: #fff;
   --tm-axis-h: 14px;
   --tm-chip-w: 74px;
+  /* The right cluster is as wide in live ("Live" and close) as in the archive ("Return to live" and
+     close), so the curve does not change width, and jump, the moment it is first touched. */
+  --tm-right-w: 184px;
   position: absolute;
   inset: auto 0 0 0;
   height: var(--timeline-h-open);
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(var(--tm-right-w), auto);
   align-items: center;
   gap: var(--space-8);
   padding: 0 var(--space-7) 0 var(--space-6);
@@ -157,6 +160,7 @@
 .tm-strip__right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-4);
 }
 
@@ -361,10 +365,15 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
   white-space: nowrap;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
 .tm-tick[data-major] .tm-tick__label {
   color: var(--text-2);
+}
+
+.tm-tick__label[data-covered] {
+  opacity: 0;
 }
 
 /* Hover: a hairline and a small reading ("2026-10-01 03:12 UTC  6,712 nodes") that follow the pointer. */

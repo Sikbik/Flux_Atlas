@@ -3,7 +3,7 @@
 // written straight to a custom property (`--tm-p`) so dragging and playing never re-render React per
 // frame; only the labels do, at a calm rate.
 
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { formatInt } from '../../../lib/format';
 import { timeTicks } from '../../analytics/viz/scale';
 import { useWidth } from '../../explorer/hooks/useDom';
@@ -14,6 +14,9 @@ import { ageLong, ageShort, formatInstantMinutes, fractionOf, instantAt } from '
 
 /** Within this many pixels of the right end, a pointer means "live". */
 const LIVE_EDGE_PX = 6;
+
+/** In live, an axis label this close to the right end gives way to the handle that rests there. */
+const HANDLE_CLEAR_PX = 30;
 
 export interface ScrubberProps {
   tm: TimeMachine;
@@ -58,6 +61,16 @@ export function Scrubber({ tm, state, start, end, curve, curveLoading, ready }: 
   }, [tm, paint]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a mode change, a new range or the clock moves the handle without the playhead moving
   useLayoutEffect(paint, [paint, state.mode, state.flying, from, end]);
+
+  // The browser moves focus off the handle (to the page) when the mouse goes down on the curve. Keep it
+  // on the handle so the keys work right after a click or a drag.
+  useEffect(() => {
+    const plot = plotRef.current;
+    if (!plot) return;
+    const keepFocus = (e: MouseEvent) => e.preventDefault();
+    plot.addEventListener('mousedown', keepFocus);
+    return () => plot.removeEventListener('mousedown', keepFocus);
+  }, []);
 
   // ---- the picture ------------------------------------------------------------------------------
 
@@ -239,17 +252,24 @@ export function Scrubber({ tm, state, start, end, curve, curveLoading, ready }: 
             </svg>
           </figure>
           <div className="tm-grid" aria-hidden="true">
-            {ticks.map((tk) => (
-              <span
-                key={tk.t}
-                className="tm-tick"
-                data-major={tk.major || undefined}
-                style={{ left: `${fractionOf(tk.t, from, end) * 100}%` }}
-              >
-                <i className="tm-tick__line" />
-                <b className="tm-tick__label">{tk.label}</b>
-              </span>
-            ))}
+            {ticks.map((tk) => {
+              const at = fractionOf(tk.t, from, end);
+              // At rest the handle sits on the right end: a label that close would be under its knob.
+              const covered = live && (1 - at) * width < HANDLE_CLEAR_PX;
+              return (
+                <span
+                  key={tk.t}
+                  className="tm-tick"
+                  data-major={tk.major || undefined}
+                  style={{ left: `${at * 100}%` }}
+                >
+                  <i className="tm-tick__line" />
+                  <b className="tm-tick__label" data-covered={covered || undefined}>
+                    {tk.label}
+                  </b>
+                </span>
+              );
+            })}
           </div>
           <div ref={hoverRef} className="tm-hover" aria-hidden="true">
             <i className="tm-hover__line" />
