@@ -1,0 +1,514 @@
+/* /dev/motion: the gallery for the Flux interaction language. The controls here are stand-ins that
+   follow the kit spec (design 8.9) so the effects are judged on realistic surfaces; they are not the
+   kit. Real controls join the language with data-fx attributes only. Token-driven throughout. */
+
+.fxg {
+  position: fixed;
+  z-index: var(--z-window);
+  left: calc(var(--dock-w) + var(--space-8));
+  right: var(--space-8);
+  top: calc(var(--topbar-h) + var(--space-6));
+  bottom: calc(var(--statusbar-h) + var(--space-6));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  color: var(--text-1);
+  background: var(--slab-bg);
+  background-image: var(--slab-spill);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-window);
+  overflow: hidden;
+}
+
+.fxg-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  padding: var(--space-5) var(--space-7);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.fxg-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+  margin: 0;
+}
+
+.fxg-sub {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.fxg-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.fxg-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-7);
+  display: grid;
+  gap: var(--space-7);
+  align-content: start;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+}
+
+.fxg-body[data-compare] {
+  grid-template-columns: 1fr;
+}
+
+.fxg-sec {
+  display: grid;
+  gap: var(--space-5);
+  align-content: start;
+  min-width: 0;
+}
+
+.fxg-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.fxg-sec h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+}
+
+.fxg-sec-note {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.fxg-cols {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: 1fr;
+}
+
+.fxg-body[data-compare] .fxg-cols {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fxg-frame {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  padding: var(--space-6);
+  background: var(--ink-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-lg);
+  min-width: 0;
+}
+
+.fxg-frame-label {
+  font-family: var(--font-display);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.fxg-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.fxg-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.fxg-dense {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-md);
+}
+
+.fxg-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+}
+
+.fxg-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+}
+
+.fxg-hint kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  padding: 1px 5px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: var(--r-xs);
+  background: var(--ink-2);
+  color: var(--text-2);
+}
+
+.fxg-dock {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 56px;
+  padding-block: var(--space-4);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+}
+
+.fxg-launch {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.fxg-launch:hover,
+.fxg-launch[data-open] {
+  background: var(--ink-3);
+  color: var(--text-1);
+}
+
+.fxg-tabs {
+  position: relative;
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.fxg-tab {
+  height: 34px;
+  padding: 0 var(--space-5);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.fxg-tab:hover,
+.fxg-tab[aria-selected="true"] {
+  color: var(--text-1);
+}
+
+.fxg-pane {
+  min-height: 44px;
+  padding-top: var(--space-4);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+/* A dense list: rows only get their hover ink and the fresh wash. */
+.fxg-list {
+  display: grid;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.fxg-list-row {
+  display: grid;
+  grid-template-columns: 1fr 88px 88px;
+  align-items: center;
+  gap: var(--space-4);
+  height: 34px;
+  padding-inline: var(--space-5);
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.fxg-list-row:last-child {
+  border-bottom: 0;
+}
+
+.fxg-list-row:nth-child(even) {
+  background: var(--ink-0);
+}
+
+.fxg-list-row:hover {
+  background: var(--ink-2);
+}
+
+.fxg-list-row .mono,
+.fxg-list-row .num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: right;
+  color: var(--text-1);
+}
+
+.fxg-list .fxg-list-head,
+.fxg-list .fxg-list-head:hover {
+  color: var(--text-3);
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: var(--fw-semibold);
+  background: transparent;
+}
+
+/* A stage that stands in for the globe behind windows. */
+.fxg-stage {
+  position: relative;
+  height: 300px;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-1);
+  background:
+    radial-gradient(120% 90% at 78% 8%, rgb(43 97 209 / 0.34), transparent 58%),
+    radial-gradient(90% 70% at 10% 110%, rgb(79 122 212 / 0.18), transparent 60%), var(--globe-ocean, #000214);
+}
+
+.fxg-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--pattern-hex);
+  background-size: var(--pattern-hex-size);
+  mask-image: radial-gradient(70% 70% at 80% 10%, #000, transparent);
+  opacity: 0.8;
+}
+
+.fxg-stage > .fxg-dock {
+  position: absolute;
+  left: var(--space-5);
+  top: var(--space-5);
+}
+
+.fxg-win-wrap {
+  position: absolute;
+  left: 92px;
+  top: 18px;
+  width: 330px;
+  height: 264px;
+}
+
+.fxg-win-shadow {
+  width: 100%;
+  height: 100%;
+  filter: var(--drop-window);
+}
+
+.fxg-win {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--slab-bg-solid);
+  background-image: var(--slab-spill);
+  border-radius: var(--r-xl);
+  clip-path: var(--clip-chamfer-md);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  overflow: hidden;
+}
+
+.fxg-win-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--window-titlebar-h);
+  padding-inline: var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--line-1);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+}
+
+.fxg-win-title span {
+  flex: 1;
+}
+
+.fxg-win-body {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.fxg-toast-wrap {
+  position: absolute;
+  right: var(--space-5);
+  top: var(--space-5);
+  width: 250px;
+}
+
+.fxg-toast {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  padding: var(--space-5);
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+}
+
+.fxg-toast-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent-300);
+}
+
+.fxg-toast strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 13px;
+}
+
+.fxg-toast span {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* The live rail: the block rail and the tip counter, fed by the real network. */
+.fxg-live {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.fxg-tip {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.fxg-tip-value {
+  font-family: var(--font-display);
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.fxg-rail {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  overflow: hidden;
+  background: linear-gradient(to top, var(--ink-0), transparent);
+  border-top: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+}
+
+.fxg-card {
+  position: relative;
+  flex: none;
+  display: grid;
+  gap: var(--space-1);
+  width: 132px;
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: var(--ink-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+}
+
+.fxg-card strong {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.fxg-meter {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+}
+
+.fxg-seg {
+  display: inline-flex;
+  min-width: 0;
+  margin: 0;
+  padding: 3px;
+  gap: 2px;
+  background: var(--ink-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-pill);
+}
+
+.fxg-seg button {
+  height: 26px;
+  padding: 0 var(--space-5);
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: var(--fw-medium);
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+}
+
+.fxg-seg button[aria-pressed="true"] {
+  color: var(--text-1);
+  background: var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line-3);
+}
+
+.fxg-seg button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (max-width: 900px) {
+  .fxg-body {
+    grid-template-columns: 1fr;
+  }
+
+  .fxg-body[data-compare] .fxg-cols {
+    grid-template-columns: 1fr;
+  }
+}

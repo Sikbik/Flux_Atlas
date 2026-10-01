@@ -301,6 +301,12 @@ const devLiveRoute = createRoute({
   component: lazyRouteComponent(() => import('../features/dev/LiveInspector'), 'LiveInspector'),
 });
 
+const devMotionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/dev/motion',
+  component: lazyRouteComponent(() => import('../motion/gallery/MotionGallery'), 'MotionGallery'),
+});
+
 const devKitRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/dev/kit',
@@ -332,6 +338,7 @@ export const routeTree = rootRoute.addChildren([
   settingsRoute,
   qRoute,
   devLiveRoute,
+  devMotionRoute,
   devKitRoute,
 ]);
 
