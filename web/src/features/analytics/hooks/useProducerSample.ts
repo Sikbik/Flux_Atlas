@@ -52,7 +52,7 @@ export function useProducerSample(target: number = SAMPLE_TARGET): ProducerSampl
           // The newest page changes with every block; anything older is immutable.
           staleTime: cursor === null ? 20_000 : Number.POSITIVE_INFINITY,
         });
-        for (const b of page.items) out.push({ height: b.height, producer: b.producer });
+        for (const b of page.items) out.push({ height: b.height, timeMs: b.time_ms, producer: b.producer });
         if (cancelled) return;
         setFetched([...out]);
         if (page.next_before === null || page.items.length === 0) break;
@@ -74,7 +74,7 @@ export function useProducerSample(target: number = SAMPLE_TARGET): ProducerSampl
     () =>
       mergeSample(
         fetched,
-        live.map((b) => ({ height: b.height, producer: b.producer })),
+        live.map((b) => ({ height: b.height, timeMs: b.timeMs, producer: b.producer })),
         target,
       ),
     [fetched, live, target],

@@ -264,11 +264,61 @@
   box-shadow: 0 0 0 2px var(--ink-1);
 }
 
-.an-fair[data-verdict="above"] .an-fair__dot,
+.an-fair[data-verdict="above"] .an-fair__dot {
+  box-shadow:
+    0 0 0 2px var(--ink-1),
+    0 0 0 4px var(--accent-300);
+}
+
 .an-fair[data-verdict="below"] .an-fair__dot {
   box-shadow:
     0 0 0 2px var(--ink-1),
     0 0 0 4px var(--status-warn);
+}
+
+/* A change of sample size dims the figures until the new ones are in. */
+.an-fairness {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.an-fairness[data-stale] {
+  opacity: 0.6;
+}
+
+/* The rule in plain words, and the one thing offered as a guess. */
+.an-rule {
+  max-width: 72ch;
+  margin: 0 0 var(--space-5);
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.an-rule:last-child {
+  margin-bottom: 0;
+}
+
+.an-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--accent-400);
+  text-decoration: none;
+}
+
+.an-source a:hover {
+  color: var(--accent-300);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.an-hypothesis {
+  padding-left: var(--space-5);
+  border-left: 2px dashed var(--line-2);
+}
+
+.an-hypothesis b {
+  color: var(--text-1);
+  font-weight: var(--fw-semibold);
 }
 
 .an-fair__scale {
