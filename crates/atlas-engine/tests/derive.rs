@@ -546,6 +546,50 @@ fn first_boot_block_before_the_list_is_attributed_by_the_reconcile() {
 }
 
 #[test]
+fn stats_round_location_gets_the_local_geoip_city() {
+    let mut st = common::seeded();
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../atlas-geoip/tests/fixtures/GeoIP2-City-Test.mmdb");
+    st.geoip = Some(atlas_engine::geoip::LoadedGeoIp::open(&fixture).unwrap());
+    let id = st.nodes.listed().next().unwrap().rec.id;
+    st.nodes
+        .set_endpoint(id, Some("81.2.69.142:16127".parse().unwrap()));
+    let outpoint = st.nodes.rec(id).unwrap().outpoint;
+    let reported = Geo {
+        lat: 51.5,
+        lon: -0.12,
+        country_code: "GB".into(),
+        country: "United Kingdom".into(),
+        org: "Andrews & Arnold Ltd".into(),
+        asn: Some(20_712),
+        source: atlas_core::node::GeoSource::NodeReported,
+        ..Geo::default()
+    };
+    let row = RoundNode {
+        outpoint,
+        reachable: true,
+        geo: Some(reported),
+        ..RoundNode::default()
+    };
+    let mut tick = Tick::new(NOW);
+    apply_round(&mut st, &mut tick, NOW, std::slice::from_ref(&row));
+    let g = st.nodes.rec(id).unwrap().geo.clone().unwrap();
+    assert_eq!(g.city, "London");
+    assert_eq!(g.region, "England");
+    assert_eq!(g.org, "Andrews & Arnold Ltd", "org from the source");
+    assert_eq!((g.lat, g.lon), (51.5, -0.12), "coordinates from the source");
+    assert_eq!(g.source, atlas_core::node::GeoSource::NodeReported);
+    // The same report again changes nothing (the enriched city is kept).
+    let mut tick = Tick::new(NOW);
+    let rep = apply_round(&mut st, &mut tick, NOW, &[row]);
+    assert_eq!(rep.located, 0);
+    assert_eq!(
+        st.nodes.rec(id).unwrap().geo.as_ref().unwrap().city,
+        "London"
+    );
+}
+
+#[test]
 fn stats_round_diff_ignores_zero_placeholders() {
     let rows: Vec<atlas_flux::models::stats::StatsNodeRow> =
         common::envelope("flux/stats_fluxinfo.json");

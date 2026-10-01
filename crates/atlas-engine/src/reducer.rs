@@ -614,6 +614,17 @@ impl Reducer {
                         .observe(crate::stats::LOCAL_BUCKETS, elapsed_ms as f64 / 1000.0);
                 });
             }
+            Obs::GeoIp(g) => {
+                tracing::info!(
+                    version = ?g.version,
+                    bytes = g.db.info().bytes,
+                    "geoip: database loaded"
+                );
+                self.st.geoip = Some(g);
+                let n = crate::geoip::enrich_all(&mut self.st, Some(tick));
+                tracing::info!(nodes = n, "geoip: nodes enriched");
+                tick.publish = true;
+            }
             Obs::Flush(ack) => {
                 let _ = self.writer.send(WriterCmd::Flush(ack));
             }
@@ -870,10 +881,11 @@ impl Reducer {
         let Some(c) = &self.cmds else { return };
         let mut seen = HashSet::new();
         for e in self.st.nodes.listed() {
+            // An approximate (local GeoIP) location still asks for a precise one.
             if e.rec
                 .geo
                 .as_ref()
-                .is_some_and(atlas_core::node::Geo::has_coords)
+                .is_some_and(atlas_core::node::Geo::is_precise)
             {
                 continue;
             }
@@ -900,6 +912,8 @@ impl Reducer {
         if !geo.has_coords() {
             return;
         }
+        // Local GeoIP adds the city (and the region when missing).
+        let geo = &crate::geoip::enriched(&self.st, Some(ip), geo.clone());
         for id in self.st.nodes.on_ip(ip) {
             let changed = self
                 .st
@@ -1201,7 +1215,7 @@ impl Reducer {
                 if e.rec
                     .geo
                     .as_ref()
-                    .is_some_and(atlas_core::node::Geo::has_coords)
+                    .is_some_and(atlas_core::node::Geo::is_precise)
                 {
                     located += 1;
                 }
@@ -1695,6 +1709,12 @@ impl Reducer {
             freshness: self.handle.inner.freshness.snapshot(),
             next_payees: self.st.next_payees.iter().map(payee_dto).collect(),
             mempool: self.st.mempool_list(),
+            attributions: self
+                .st
+                .geoip
+                .iter()
+                .map(crate::geoip::LoadedGeoIp::attribution)
+                .collect(),
             prev: self.handle.published(),
         };
         let job = match &self.publisher {

@@ -128,6 +128,8 @@ pub enum Obs {
     PublishDone {
         elapsed_ms: u64,
     },
+    /// A (new) local GeoIP database is ready.
+    GeoIp(crate::geoip::LoadedGeoIp),
     /// Flush the store and acknowledge (shutdown).
     Flush(oneshot::Sender<()>),
 }

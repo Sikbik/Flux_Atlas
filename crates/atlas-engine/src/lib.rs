@@ -15,6 +15,7 @@
 pub mod body;
 pub mod derive;
 pub mod freshness;
+pub mod geoip;
 mod jobs;
 pub mod obs;
 pub mod publish;
@@ -207,6 +208,8 @@ pub struct EngineConfig {
     pub ping_interval: Duration,
     /// Ingest jobs.
     pub ingest: IngestConfig,
+    /// Local GeoIP (DB-IP City Lite).
+    pub geoip: geoip::GeoIpConfig,
 }
 
 impl Default for EngineConfig {
@@ -218,6 +221,7 @@ impl Default for EngineConfig {
             broadcast_capacity: 1024,
             ping_interval: Duration::from_secs(20),
             ingest: IngestConfig::default(),
+            geoip: geoip::GeoIpConfig::default(),
         }
     }
 }
@@ -250,6 +254,8 @@ pub struct Published {
     pub mesh_edge_count: u32,
     /// The engine mempool, classified, as `(tx, first_seen_ms)`, newest first.
     pub mempool: Arc<[(TxLite, u64)]>,
+    /// Third-party data credits to show (bootstrap `attributions`).
+    pub attributions: Arc<[atlas_core::api::DataAttribution]>,
 }
 
 impl Published {
@@ -278,6 +284,12 @@ impl Published {
             next_payees: Arc::from(Vec::new()),
             mesh_edge_count: st.mesh.edge_count() as u32,
             mempool: st.mempool_list().into(),
+            attributions: st
+                .geoip
+                .iter()
+                .map(geoip::LoadedGeoIp::attribution)
+                .collect::<Vec<_>>()
+                .into(),
         }
     }
 }
@@ -330,6 +342,28 @@ impl Engine {
         };
         let mut st = restore(&store);
         st.large_transfer = config.ingest.large_transfer;
+        // Local GeoIP: an installed database is mapped right away (microseconds), so the first
+        // publish already carries cities. Downloads happen later, in the background.
+        if let Some(path) = config.geoip.db_path.as_ref().filter(|p| p.exists()) {
+            match geoip::LoadedGeoIp::open(path) {
+                Ok(g) => {
+                    tracing::info!(
+                        path = %path.display(),
+                        version = ?g.version,
+                        bytes = g.db.info().bytes,
+                        "geoip: database mapped"
+                    );
+                    st.geoip = Some(g);
+                    let n = geoip::enrich_all(&mut st, None);
+                    if n > 0 {
+                        tracing::info!(nodes = n, "geoip: restored nodes enriched");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, path = %path.display(), "geoip: cannot open the database");
+                }
+            }
+        }
         let first_ingest = store
             .meta_u64(atlas_store::meta_keys::FIRST_INGEST_MS)
             .ok()
@@ -405,6 +439,8 @@ impl Engine {
                 watch_rx,
             );
             tasks.extend(jobs::spawn_all(&ctx, rx, recent));
+            let geo = handle.inner.config.geoip.clone();
+            tasks.push(tokio::spawn(jobs::geoip::run(ctx.for_job("geoip_db"), geo)));
         }
         handle
             .inner

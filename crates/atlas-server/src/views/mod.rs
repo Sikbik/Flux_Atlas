@@ -376,6 +376,7 @@ pub fn node_ref(n: &NodeRecord) -> NodeRef {
         lat: g.map(|g| g.lat),
         lon: g.map(|g| g.lon),
         country_code: n.geo.as_ref().and_then(|g| non_empty(&g.country_code)),
+        city: n.geo.as_ref().and_then(|g| non_empty(g.city.trim())),
     }
 }
 
@@ -499,6 +500,7 @@ pub fn bootstrap_dto(v: &Views) -> BootstrapDto {
         blocks: p.blocks.iter().take(30).cloned().collect(),
         apps: p.apps.to_vec(),
         freshness: Vec::new(),
+        attributions: Some(p.attributions.to_vec()),
     }
 }
 

@@ -27,7 +27,8 @@ Every `serve` flag has an environment variable. Flags win over the environment.
 | `ATLAS_EXPLORER_API` | `--explorer-api` | `explorer.runonflux.io`, `explorer2.runonflux.io`, `explorer.flux.zelcore.io` | Insight bases, primary first (comma-separated). When set, the tip sockets follow them (`wss://<host>/socket.io/...`); by default they are the two runonflux explorers. |
 | `ATLAS_STATS_API` | `--stats-api` | `https://stats.runonflux.io` | Stats service (rounds, geo lookups, history). |
 | `ATLAS_UPSTREAM_RPS` | `--upstream-rps` | per host (gateway 4, stats 2) | Caps every upstream host policy at this rate. |
-| `ATLAS_GEOIP_DB` | `--geoip-db` | none | Local GeoIP .mmdb. Accepted but not used yet: the engine has no local reader (logged as unapplied). |
+| `ATLAS_GEOIP_AUTO` | `--geoip-auto` | `1` | Download DB-IP "IP to City Lite" (CC BY 4.0, about 60 MB compressed, 127 MB installed) into `<data-dir>/geoip/` in the background (checked about 30 s after start, then daily; the previous month while the current one is not published), verify it and swap it in atomically. Gives nodes their city names, and approximate coordinates when no source locates them. `0` turns the download off (an installed file is still used). |
+| `ATLAS_GEOIP_DB` | `--geoip-db` | none | Operator-managed City `.mmdb` used instead of the downloaded file (the download is then off). It is memory-mapped: replace it by rename, never rewrite it in place; a changed file is reloaded within a day. |
 | `ATLAS_REPLAY_CAPACITY` | `--replay-capacity` | `4096` | Live messages kept for `since_seq` replay (min 16). |
 | `ATLAS_TRUST_PROXY` | `--trust-proxy` | `false` | Use the right-most `X-Forwarded-For` as the client IP. |
 | `ATLAS_CLIENT_RPS` | `--client-rps` | `5` | Upstream-reaching requests per second per client IP (cache hits are free). |
@@ -75,3 +76,12 @@ Unknown keys are logged as unapplied at startup.
 - Web smoke against any running server: `ATLAS_E2E_SERVER=http://127.0.0.1:3100 ATLAS_WEB_PORT=4273
   npm run e2e` (in `web/`).
 - Release build with the embedded app: `(cd web && npm run build) && cargo build --release -p atlas-server`.
+
+## Third-party data
+
+- **DB-IP "IP to City Lite"** (city names, approximate locations), licensed
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The licence requires the credit
+  "IP Geolocation by DB-IP" with a link to https://db-ip.com wherever the data is shown. While a
+  database is loaded, `/api/v1/bootstrap` lists it in `attributions` (text, link, licence,
+  dataset month) for the About view. The database is downloaded at run time and never shipped in
+  the image or the repository.

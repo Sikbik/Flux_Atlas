@@ -46,6 +46,7 @@ fn job(nodes: Arc<[NodeRecord]>, apps: usize, prev: Arc<Published>) -> PublishJo
         freshness: Vec::new(),
         next_payees: Vec::new(),
         mempool: Vec::new(),
+        attributions: Vec::new(),
         prev,
     }
 }
@@ -91,6 +92,7 @@ fn empty_prev() -> Arc<Published> {
         next_payees: Arc::from(Vec::new()),
         mesh_edge_count: 0,
         mempool: Arc::from(Vec::new()),
+        attributions: Arc::from(Vec::new()),
     })
 }
 

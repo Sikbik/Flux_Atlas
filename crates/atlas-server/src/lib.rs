@@ -58,6 +58,7 @@ pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
         atlas_flux::Clients::new(cfg.clients.clone()).context("building upstream clients")?;
     let mut engine_cfg = cfg.engine.clone();
     let unapplied = cfg.engine_overrides.apply(&mut engine_cfg);
+    engine_cfg.geoip = cfg.engine_overrides.geoip(&cfg.data_dir);
     if !unapplied.is_empty() {
         tracing::warn!(
             ?unapplied,
@@ -69,6 +70,8 @@ pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
         backfill_days = engine_cfg.ingest.backfill.block_days,
         backfill_rps = engine_cfg.ingest.backfill.blocks_per_second,
         db_cache_mb = cfg.db_cache_mb,
+        geoip_db = ?engine_cfg.geoip.db_path,
+        geoip_auto = engine_cfg.geoip.auto_dir.is_some(),
         "engine configuration"
     );
     let engine = Engine::start(engine_cfg, store.clone(), clients);

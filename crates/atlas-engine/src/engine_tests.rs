@@ -893,3 +893,128 @@ async fn restart_after_downtime_replays_blocks_without_rank_corrections() {
     );
     eng.shutdown().await;
 }
+
+fn geoip_fixture() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../atlas-geoip/tests/fixtures/GeoIP2-City-Test.mmdb")
+}
+
+/// Two confirmed nodes on test-database addresses: London with a reported location (no city),
+/// Linkoping without any location.
+fn seed_geo_nodes(store: &Store) {
+    let mut b = WriteBatch::new();
+    for (i, ip, geo) in [
+        (0u32, "81.2.69.142", Some(test_geo(51.5, -0.1, "GB"))),
+        (1, "89.160.20.128", None),
+    ] {
+        let op = Outpoint::new(h(70_000 + i), 0);
+        b.intern_node(op, NodeId(i));
+        b.put_node(NodeRecord {
+            id: NodeId(i),
+            outpoint: op,
+            endpoint: Some(NodeEndpoint::new(ip.parse().unwrap(), 16127)),
+            tier: Tier::Cumulus,
+            status: NodeStatus::Confirmed,
+            geo,
+            ..NodeRecord::default()
+        });
+    }
+    store.commit(b).unwrap();
+}
+
+fn cities(eng: &EngineHandle) -> Vec<(String, atlas_core::node::GeoSource)> {
+    eng.published()
+        .nodes
+        .iter()
+        .map(|r| {
+            let g = r.geo.clone().unwrap_or_default();
+            (g.city.to_string(), g.source)
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn geoip_database_at_start_enriches_before_the_first_publish() {
+    use atlas_core::node::GeoSource;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("a.redb")).unwrap();
+    seed_geo_nodes(&store);
+    let clients = Clients::new(ClientsConfig::default()).unwrap();
+    let cfg = EngineConfig {
+        ping_interval: Duration::from_secs(3600),
+        ingest: IngestConfig::disabled(),
+        geoip: crate::geoip::GeoIpConfig::file(geoip_fixture()),
+        ..EngineConfig::default()
+    };
+    let eng = Engine::start(cfg, store, clients);
+    // The very first published state already has the cities.
+    assert_eq!(
+        cities(&eng),
+        vec![
+            ("London".to_owned(), GeoSource::StatsLookup),
+            ("Linköping".to_owned(), GeoSource::LocalDb)
+        ]
+    );
+    let p = eng.published();
+    assert_eq!(p.attributions.len(), 1);
+    assert_eq!(p.attributions[0].text, "IP Geolocation by DB-IP");
+    assert_eq!(p.attributions[0].url, "https://db-ip.com");
+    until("bodies", || eng.published().bodies.bootstrap.is_some()).await;
+    let boot: atlas_core::api::BootstrapDto =
+        serde_json::from_slice(&eng.published().bodies.bootstrap.as_ref().unwrap().raw).unwrap();
+    assert_eq!(boot.attributions.unwrap()[0].license, "CC BY 4.0");
+    let bin = atlas_core::codec::nodes_bin::decode_nodes_bin(
+        &eng.published().bodies.nodes_bin.as_ref().unwrap().raw,
+    )
+    .unwrap();
+    let names: Vec<&str> = bin
+        .loc
+        .iter()
+        .map(|l| bin.locations[*l as usize].city.as_str())
+        .collect();
+    assert_eq!(names, vec!["London", "Linköping"]);
+    assert_eq!(
+        bin.node_flags[0] & atlas_core::codec::nodes_bin::flags::GEO_APPROX,
+        0
+    );
+    assert_ne!(
+        bin.node_flags[1] & atlas_core::codec::nodes_bin::flags::GEO_APPROX,
+        0
+    );
+    eng.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn geoip_database_loaded_later_streams_a_geo_delta() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("a.redb")).unwrap();
+    seed_geo_nodes(&store);
+    let eng = start(store);
+    assert!(eng.published().attributions.is_empty());
+    assert!(cities(&eng).iter().all(|(c, _)| c.is_empty()));
+    let mut rx = eng.subscribe();
+    let g = crate::geoip::LoadedGeoIp::open(&geoip_fixture()).unwrap();
+    inject(&eng, Obs::GeoIp(g)).await;
+    until("cities published", || {
+        cities(&eng).iter().all(|(c, _)| !c.is_empty())
+    })
+    .await;
+    assert_eq!(eng.published().attributions.len(), 1);
+    let mut delta_cities = Vec::new();
+    until("geo delta", || {
+        while let Ok(m) = rx.try_recv() {
+            if let LiveBody::Nodes(d) = &m.body {
+                assert_eq!(d.cause, atlas_core::live::DeltaCause::Geo);
+                delta_cities.extend(d.changed.iter().filter_map(|c| c.city.clone()));
+            }
+        }
+        delta_cities.len() == 2
+    })
+    .await;
+    delta_cities.sort();
+    assert_eq!(
+        delta_cities,
+        vec!["Linköping".to_owned(), "London".to_owned()]
+    );
+    eng.shutdown().await;
+}

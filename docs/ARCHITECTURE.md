@@ -32,6 +32,7 @@ crates/
   atlas-flux/              # upstream clients (FluxOS API, explorer, aggregators), raw models, parsers, failover, rate limits
   atlas-store/             # redb persistence: tables, value codecs, migrations, retention/compaction
   atlas-engine/            # ingest schedulers, reducer (single-writer state), diff→events, metrics, snapshots, time machine
+  atlas-geoip/             # local GeoIP: memory-mapped DB-IP City Lite reader, verified download + atomic install
   atlas-server/            # axum HTTP + WebSocket, pre-built bodies, search, explorer proxy cache, static web embed, CLI (bin: `atlas`)
 web/                       # React 19 + TypeScript + Vite frontend
 labs/globe/                # standalone globe/ambient renderer lab (ported into web/src/globe)
@@ -120,7 +121,7 @@ expensive payload only when that indicator moves. v1 rebuilt everything every 30
 | T2 | **Price** | Insight `/api/markets/info` (Flux-provided; also pushed as socket `markets_info`), CoinGecko `ids=zelcash` as fallback | 60 s / push | `Price` |
 | T2 | **Supply** | FluxOS `gettxoutsetinfo` (3 s upstream; cache 10 min) + `getblockchaininfo.valuePools`; socket `info.supply` per block | per block (socket) / 10 min | `Stats` |
 | T3 | **StatsRound** | `stats.runonflux.io/fluxinfo` (1.63 MB br full; `?projection=` variants), fetched whenever `roundTime` changes (check every 5 min; rounds take ~15–18 min). Gives hardware/benchmarks, FluxOS/fluxd/bench/ArcaneOS versions, geolocation (ip-api: lat/lon, country, region, org, ASN, hosting flags), running apps and locked resources for every node. ~150 unreachable nodes come back with an `error` and **zeroed placeholders: treat them as missing, never as (0,0)** | per round | `NodeHardwareChanged`, `NodeVersionChanged`, `NodeUnreachable`/`NodeRecovered`, `NodeLocated`, `StatsRound` (freshness) |
-| T3 | **GeoResolve** | `stats.runonflux.io/fluxlocation/<ip>` (0.5 s, works for any node IP) **immediately** for every new or changed IP (so new nodes land on the globe within seconds), and for zero-geo nodes; cached 7 days per IP. Local fallback for org/country/region: Flux's own `iplocation.bin.gz` (the table FluxOS placement uses; weekly). Optional DB-IP City Lite mmdb for lat/lon (CC-BY, attribution) if configured | on event | `NodeLocated` |
+| T3 | **GeoResolve** | `stats.runonflux.io/fluxlocation/<ip>` (0.5 s, works for any node IP) **immediately** for every new or changed IP (so new nodes land on the globe within seconds), and for zero-geo nodes; cached 7 days per IP. Local fallback for org/country/region: Flux's own `iplocation.bin.gz` (the table FluxOS placement uses; weekly). **City names** (and approximate coordinates for nodes without any) from the local DB-IP City Lite database, see *Local GeoIP* below | on event | `NodeLocated` |
 | T3 | **TopologySweep** | `/flux/topology` on rotating reachable nodes (each call returns ~60 reporters' peer lists). **Rolling: one call every ~12 s**, and each result streams immediately, so the whole overlay graph refreshes about every 30 min without a batch | continuous | `PeerLinksChanged` (mesh deltas) |
 | T3 | **WatchProbe** | direct, SSRF-guarded probes of **watched** nodes only (clients' watchlists): `/flux/version` (or `/flux/uptime`) every 60 s. This gives operators near-real-time offline detection, which is otherwise impossible at network scale | 60 s per watched host | `NodeUnreachable`/`NodeRecovered` (fast path) |
 
@@ -176,6 +177,35 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   pending `temporarymessages` entry or the mined `permanentmessages` entry is matched); whether a tx is mined at
 >   all; and, for up to one reconcile plus the fetch queue (about 20-30 s), the node txs themselves, which
 >   appear once fetched rather than at broadcast.
+> - **Local GeoIP (B5).** No upstream source carries a city (stats `fluxinfo` and `fluxlocation` have none; measured
+>   0 cities over 2,654 hosts), so cities come from DB-IP "IP to City Lite" (crate `atlas-geoip`):
+>   - *Fetch:* `https://download.db-ip.com/free/dbip-city-lite-YYYY-MM.mmdb.gz` (UTC month; the previous month while
+>     the current one is not published), outbound HTTPS only, checked about 30 s after start and then daily, in
+>     the background: startup and ingest never wait for it, and without a database cities stay unknown.
+>   - *Install:* the download (about 60 MB) is decompressed to a staging file (the gzip CRC and length trailer are
+>     checked; output capped at 1 GiB), memory-mapped and checked (MaxMind DB metadata, a City database type,
+>     40 MB to 1 GiB, at least 3 of 4 probe addresses answering their known country), then renamed over
+>     `<ATLAS_DATA_DIR>/geoip/dbip-city-lite.mmdb`. The replaced file is kept as `dbip-city-lite.prev.mmdb` (a hard
+>     link, so the live path never disappears) and `dbip-city-lite.json` records the month. A failed check leaves the
+>     live database untouched; leftovers of an interrupted update are removed at the next start.
+>   - *Read:* the file is memory-mapped (`maxminddb` over `memmap2`, `MADV_RANDOM`), never read onto the heap.
+>     Measured on the 2026-09 file (127 MB): open 21 us, 2,655 node hosts looked up in 3 ms warm / 145 ms cold,
+>     heap (RssAnon) unchanged, mapped file pages (RssFile) +10 MB cold, up to +39 MB when the file is already in
+>     the page cache (clean pages the kernel can drop).
+>   - *Use:* a node's geo gets the DB-IP city, and the region when its source has none. Country, org and ASN are
+>     never overridden (an empty country is filled), and nothing is taken when DB-IP disagrees with the source on
+>     the country. A node without usable coordinates gets DB-IP's (city-level, approximate) with
+>     `source: local_db`, which sets the `geo_approx` flag in `nodes.bin`; it still counts as unlocated for
+>     GeoResolve, so a precise location replaces it. Enrichment runs on restore (before the first publish), on
+>     every geo update from a stats round or GeoResolve, and over all nodes when a new database is installed
+>     (one `nodes` delta, `cause: geo`). Cities reach `NodeRecord.geo.city`, `nodes.bin` LOCATIONS, snapshots
+>     (keyframes record geo with city), `NodeRef.city`, `NodeLite.city` and `NodeChange.city`.
+>   - *Config:* `ATLAS_GEOIP_AUTO` (default on) switches the download; `ATLAS_GEOIP_DB` points at an
+>     operator-managed `.mmdb` instead (auto-download off; reloaded when its modification time changes; replace
+>     it by rename, never rewrite it in place, since it is memory-mapped). With `ATLAS_INGEST=0` nothing is
+>     downloaded, but an existing database is still read.
+>   - *Attribution (CC BY 4.0):* "IP Geolocation by DB-IP" with a link to https://db-ip.com, wherever the data is
+>     shown. `/bootstrap` lists it in `attributions` while a database is loaded, so the About view can show it.
 > - **Ingest switch.** `ATLAS_INGEST=0` (or `IngestConfig::disabled()`) runs the engine without ingest jobs: it
 >   restores, publishes and serves the stored state. Tests, fixtures and `demo_server` always run this way.
 
@@ -305,6 +335,11 @@ byte. Large blobs are **zstd**-compressed.
 > never 0 on a populated network (supply, price, hardware and locked totals, countries, providers, apps,
 > instances, mesh edges, ArcaneOS, unreachable) and for `avg_block_time_ms`.
 
+**Disk outside redb (GeoIP, B5):** `<ATLAS_DATA_DIR>/geoip/` holds the live DB-IP City Lite database (127 MB for
+2026-09) and the previous one (same size), about **255 MB** steady. A monthly update needs about **190 MB more** while
+it runs (the 60 MB download plus the 127 MB staging file), so the peak is about 445 MB. The size grows slowly
+month to month (2026-08 was 61.7 MB compressed, 2026-09 60.3 MB).
+
 A retention task runs hourly: prune `metrics_1m` older than 30 d, roll up `metrics_1h`, keep hourly
 snapshots for 30 d, then daily keyframes forever. `compact()` runs weekly. **Time machine:** state at `t` =
 nearest snapshot ≤ `t` + replay of `events` in (snapshot_ts, t]. Target < 50 ms per reconstruction; cache
@@ -317,7 +352,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 
 | Method & path | Returns |
 |---|---|
-| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job |
+| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job, and `attributions` (third-party data credits the UI must show, for example `{name: "DB-IP", text: "IP Geolocation by DB-IP", url: "https://db-ip.com", license: "CC BY 4.0", license_url, scope, version}` while the GeoIP database is loaded; an empty list otherwise; typed optional for older servers) |
 | `GET /nodes.bin` | **binary columnar node snapshot** (§7), feeds the globe + tables |
 | `GET /mesh.bin` | binary P2P mesh: header + `u32 edge_count` + `u32 a[]`, `u32 b[]` (NodeIds, a<b, deduped) + `u8 flags[]` (bit0 bidirectional, bit1 cross-continent); refreshed per PeerCrawl sweep |
 | `GET /nodes/{id}/peers` | the node's peers with geo, for selection-reveal |
@@ -496,7 +531,8 @@ web/src/
   `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`), `ATLAS_INGEST` (`1`; `0` serves stored state only),
   `ATLAS_BACKFILL_DAYS` (7), `ATLAS_BACKFILL_RPS` (1.5), `ATLAS_DB_CACHE_MB` (32), `ATLAS_INTERVALS`
   (`job=duration,...` per-job interval overrides), `ATLAS_FLUX_API`, `ATLAS_EXPLORER_API`, `ATLAS_STATS_API`,
-  `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_DB` (accepted, not used yet), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
+  `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_AUTO` (`1`; DB-IP City Lite download), `ATLAS_GEOIP_DB` (path of an operator-managed `.mmdb`
+  instead of the downloaded one), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
   `ATLAS_CLIENT_RPS` / `ATLAS_CLIENT_BURST`, `ATLAS_WS_MAX_CONNECTIONS` / `ATLAS_WS_MAX_PER_IP` / `ATLAS_WS_PING`,
   `ATLAS_LOG`. The web smoke targets a running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).
 - Gates. Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. Web: `tsc --noEmit`,

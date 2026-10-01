@@ -60,9 +60,13 @@ struct ServeArgs {
     /// stats.runonflux.io base URL.
     #[arg(long, env = "ATLAS_STATS_API")]
     stats_api: Option<String>,
-    /// Optional local GeoIP database (.mmdb).
+    /// Operator-managed GeoIP City database (.mmdb) used instead of the downloaded DB-IP City
+    /// Lite file (turns the download off).
     #[arg(long, env = "ATLAS_GEOIP_DB")]
     geoip_db: Option<PathBuf>,
+    /// Download DB-IP City Lite (CC BY 4.0) into `<data-dir>/geoip` and keep it current.
+    #[arg(long, env = "ATLAS_GEOIP_AUTO", default_value = "1", value_parser = parse_switch_arg)]
+    geoip_auto: bool,
     /// Requests per second allowed to each upstream host.
     #[arg(long, env = "ATLAS_UPSTREAM_RPS")]
     upstream_rps: Option<u32>,
@@ -142,6 +146,7 @@ fn serve_config(a: ServeArgs) -> ServeConfig {
         intervals: a.intervals.unwrap_or_default(),
         replay_capacity: a.replay_capacity,
         geoip_db: a.geoip_db,
+        geoip_auto: Some(a.geoip_auto),
         ingest: Some(a.ingest),
         backfill_days: Some(a.backfill_days),
         backfill_rps: a.backfill_rps,

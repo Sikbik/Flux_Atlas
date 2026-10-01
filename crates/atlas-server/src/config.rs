@@ -188,8 +188,11 @@ pub struct EngineOverrides {
     /// Per-job interval overrides by job name (see [`INTERVAL_KEYS`]).
     pub intervals: BTreeMap<String, Duration>,
     pub replay_capacity: Option<usize>,
-    /// Optional local GeoIP database (.mmdb).
+    /// Operator-managed GeoIP database (`ATLAS_GEOIP_DB`, a City `.mmdb`) used instead of the
+    /// downloaded DB-IP City Lite file (the download is then off).
     pub geoip_db: Option<PathBuf>,
+    /// Download DB-IP City Lite into `<data>/geoip` (`ATLAS_GEOIP_AUTO`, default on).
+    pub geoip_auto: Option<bool>,
     /// Run the ingest jobs (`ATLAS_INGEST`). `Some(false)` serves the stored state only.
     pub ingest: Option<bool>,
     /// Days of blocks the bootstrap backfill fetches (`ATLAS_BACKFILL_DAYS`, 0 disables).
@@ -279,12 +282,18 @@ impl EngineOverrides {
         if !self.socket_urls.is_empty() {
             ing.socket.urls.clone_from(&self.socket_urls);
         }
-        if self.geoip_db.is_some() {
-            // The engine has no local GeoIP reader yet: geo comes from stats rounds and
-            // `fluxlocation` lookups.
-            unapplied.push("geoip_db".to_owned());
-        }
         unapplied
+    }
+
+    /// Local GeoIP settings: the operator's file when `ATLAS_GEOIP_DB` is set, else the managed
+    /// `<data_dir>/geoip/dbip-city-lite.mmdb`, downloaded unless `ATLAS_GEOIP_AUTO=0`.
+    pub fn geoip(&self, data_dir: &std::path::Path) -> atlas_engine::geoip::GeoIpConfig {
+        match &self.geoip_db {
+            Some(p) => atlas_engine::geoip::GeoIpConfig::file(p.clone()),
+            None => {
+                atlas_engine::geoip::GeoIpConfig::managed(data_dir, self.geoip_auto.unwrap_or(true))
+            }
+        }
     }
 }
 
@@ -409,6 +418,33 @@ mod tests {
         assert_eq!(cfg.ingest.backfill.block_days, 2);
         assert!((cfg.ingest.backfill.blocks_per_second - DEFAULT_BACKFILL_RPS).abs() < 1e-9);
         assert_eq!(left, vec!["bogus".to_owned()]);
+    }
+
+    #[test]
+    fn geoip_settings() {
+        let data = PathBuf::from("/data");
+        let managed = PathBuf::from("/data/geoip");
+        // Default: the managed file, downloaded.
+        let g = EngineOverrides::default().geoip(&data);
+        assert_eq!(g.db_path, Some(managed.join("dbip-city-lite.mmdb")));
+        assert_eq!(g.auto_dir, Some(managed.clone()));
+        // ATLAS_GEOIP_AUTO=0: the managed file if present, never downloaded.
+        let g = EngineOverrides {
+            geoip_auto: Some(false),
+            ..EngineOverrides::default()
+        }
+        .geoip(&data);
+        assert_eq!(g.db_path, Some(managed.join("dbip-city-lite.mmdb")));
+        assert_eq!(g.auto_dir, None);
+        // ATLAS_GEOIP_DB: the operator's file, no download.
+        let g = EngineOverrides {
+            geoip_db: Some(PathBuf::from("/srv/city.mmdb")),
+            geoip_auto: Some(true),
+            ..EngineOverrides::default()
+        }
+        .geoip(&data);
+        assert_eq!(g.db_path, Some(PathBuf::from("/srv/city.mmdb")));
+        assert_eq!(g.auto_dir, None);
     }
 
     #[test]

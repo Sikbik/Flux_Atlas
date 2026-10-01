@@ -11,4 +11,8 @@ export type NodeLite = { id: NodeId, outpoint: Outpoint, endpoint: string | null
 /**
  * Same bit layout as the `nodes.bin` flags column.
  */
-flags: number, };
+flags: number, 
+/**
+ * City name, when known (local GeoIP).
+ */
+city?: string, };
