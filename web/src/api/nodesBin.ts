@@ -14,7 +14,10 @@ import {
   columnView,
   DType,
   noteUnknown,
+  ORIGIN_KIND,
   readContainer,
+  readOrigin,
+  type SnapshotOrigin,
   StringTable,
   stringSection,
 } from './bin/container';
@@ -41,11 +44,15 @@ export const NodeSection = {
   RamGb: 14,
   SsdGb: 15,
   Version: 16,
+  /** Collateral outpoint per row (struct, 36 bytes each): the stable node key. */
+  Outpoints: 17,
   Ips: 32,
   Countries: 33,
   Orgs: 34,
   Versions: 35,
   Locations: 36,
+  /** Which server built the file (struct, 16 bytes). */
+  Origin: ORIGIN_KIND,
 } as const;
 
 const KNOWN = new Set<number>(Object.values(NodeSection));
@@ -68,11 +75,13 @@ const EXPECTED_DTYPE: Record<number, number> = {
   [NodeSection.RamGb]: DType.U16,
   [NodeSection.SsdGb]: DType.U32,
   [NodeSection.Version]: DType.U16,
+  [NodeSection.Outpoints]: DType.Struct,
   [NodeSection.Ips]: DType.Strings,
   [NodeSection.Countries]: DType.Strings,
   [NodeSection.Orgs]: DType.Strings,
   [NodeSection.Versions]: DType.Strings,
   [NodeSection.Locations]: DType.Struct,
+  [NodeSection.Origin]: DType.Struct,
 };
 
 /** Section kinds actually readable from `c`: unknown kinds, and known kinds with their dtype. */
@@ -184,6 +193,57 @@ export class Locations {
   }
 }
 
+const OUTPOINT_BYTES = 36;
+const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+
+/**
+ * OUTPOINTS: the collateral outpoint (`txid:vout`) per row, read through a zero-copy view of the
+ * 36-byte records. Strings are built on first access per row and cached. Without the section
+ * every row reads as `''` (unknown).
+ */
+export class Outpoints {
+  readonly length: number;
+  private readonly bytes: Uint8Array;
+  private readonly dv: DataView | null;
+  private readonly cache: (string | undefined)[];
+
+  constructor(n: number, bytes: Uint8Array) {
+    this.length = n;
+    this.bytes = bytes;
+    this.dv = bytes.byteLength > 0 ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength) : null;
+    this.cache = new Array(n);
+  }
+
+  static empty(n: number): Outpoints {
+    return new Outpoints(n, new Uint8Array(0));
+  }
+
+  static read(buffer: ArrayBuffer, offset: number, byteLen: number, count: number): Outpoints {
+    if (byteLen !== count * OUTPOINT_BYTES) {
+      throw new BinFormatError(`OUTPOINTS: ${byteLen} bytes, expected ${count * OUTPOINT_BYTES}`);
+    }
+    return new Outpoints(count, new Uint8Array(buffer, offset, byteLen));
+  }
+
+  /** True when the file carried outpoints. */
+  get known(): boolean {
+    return this.dv !== null;
+  }
+
+  /** `txid:vout` of row `i`, or `''` when unknown. */
+  get(i: number): string {
+    if (!this.dv || i < 0 || i >= this.length) return '';
+    const hit = this.cache[i];
+    if (hit !== undefined) return hit;
+    const at = i * OUTPOINT_BYTES;
+    let hex = '';
+    for (let k = 0; k < 32; k++) hex += HEX[this.bytes[at + k]!];
+    const s = `${hex}:${this.dv.getUint32(at + 32, true)}`;
+    this.cache[i] = s;
+    return s;
+  }
+}
+
 export interface NodesBin {
   seq: number;
   generatedMs: number;
@@ -218,6 +278,10 @@ export interface NodesBin {
   orgs: StringTable;
   versions: StringTable;
   locations: Locations;
+  /** Collateral outpoint per row (the stable key); every row `''` when the file has none. */
+  outpoints: Outpoints;
+  /** The server that built the file, or null when the file has no ORIGIN (older servers). */
+  origin: SnapshotOrigin | null;
   /** Section kinds present in the file that were skipped. */
   unknownSections: number[];
   /**
@@ -252,6 +316,12 @@ export function decodeNodesBin(input: ArrayBuffer | ArrayBufferView): NodesBin {
       ? Locations.read(c.buffer, locSection.offset, locSection.byteLen)
       : Locations.empty();
 
+  const opSection = c.sections.get(NodeSection.Outpoints);
+  const outpoints =
+    opSection && opSection.dtype === DType.Struct
+      ? Outpoints.read(c.buffer, opSection.offset, opSection.byteLen, n)
+      : Outpoints.empty(n);
+
   const ips = stringSection(c, NodeSection.Ips) ?? StringTable.empty(n);
   if (ips.length !== n) throw new BinFormatError(`nodes.bin: ips has ${ips.length} entries, expected ${n}`);
 
@@ -281,6 +351,8 @@ export function decodeNodesBin(input: ArrayBuffer | ArrayBufferView): NodesBin {
     orgs: stringSection(c, NodeSection.Orgs) ?? StringTable.empty(1),
     versions: stringSection(c, NodeSection.Versions) ?? StringTable.empty(1),
     locations,
+    outpoints,
+    origin: readOrigin(c),
     unknownSections: c.unknownKinds,
     present: presentKinds(c),
   };

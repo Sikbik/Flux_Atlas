@@ -267,6 +267,7 @@ describe('store -> engine', () => {
       a: new Uint32Array([0, 1]),
       b: new Uint32Array([1, 2]),
       flags: new Uint8Array(2),
+      origin: null,
       unknownSections: [],
     };
     store.loadMesh(mesh);

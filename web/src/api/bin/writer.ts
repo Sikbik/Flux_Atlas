@@ -1,7 +1,7 @@
 // Minimal encoder for the sectioned container, used by tests (synthetic files, unknown-section
 // tolerance, mesh fixtures) and benchmarks. The server's encoder is authoritative; this mirrors it.
 
-import { DType, HEADER_BYTES, SECTION_ENTRY_BYTES } from './container';
+import { DType, HEADER_BYTES, ORIGIN_KIND, SECTION_ENTRY_BYTES, type SnapshotOrigin } from './container';
 
 export interface SectionSpec {
   kind: number;
@@ -32,6 +32,32 @@ export function stringTableBytes(strings: readonly string[]): Uint8Array {
     off += p.length;
   });
   dv.setUint32(4 + strings.length * 4, off, true);
+  return out;
+}
+
+/** An ORIGIN section (kind 48): u64 started_ms, u64 instance. */
+export function originSection(o: SnapshotOrigin): SectionSpec {
+  const bytes = new Uint8Array(16);
+  const dv = new DataView(bytes.buffer);
+  dv.setBigUint64(0, BigInt(o.startedMs), true);
+  dv.setBigUint64(8, BigInt(`0x${o.instance || '0'}`), true);
+  return { kind: ORIGIN_KIND, dtype: DType.Struct, bytes };
+}
+
+/** A deterministic synthetic outpoint for node `id` (tests): a 64-digit txid and vout 0. */
+export function syntheticOutpoint(id: number): string {
+  return `${id.toString(16).padStart(64, 'a')}:0`;
+}
+
+/** An OUTPOINTS section body (kind 17): 36 bytes per row, txid bytes in display order + u32 vout. */
+export function outpointsBytes(outpoints: readonly string[]): Uint8Array {
+  const out = new Uint8Array(outpoints.length * 36);
+  const dv = new DataView(out.buffer);
+  outpoints.forEach((op, i) => {
+    const [txid = '', vout = '0'] = op.split(':');
+    for (let k = 0; k < 32; k++) out[i * 36 + k] = Number.parseInt(txid.slice(k * 2, k * 2 + 2), 16) || 0;
+    dv.setUint32(i * 36 + 32, Number(vout), true);
+  });
   return out;
 }
 
@@ -109,6 +135,8 @@ export interface SyntheticNode {
   rank?: number;
   lastPaid?: number;
   ip?: string;
+  /** `txid:vout`; with `withOutpoints`, rows without one get `syntheticOutpoint(id)`. */
+  outpoint?: string;
 }
 
 /** Builds a nodes.bin with every standard column for `nodes`, plus optional extra sections. */
@@ -122,9 +150,14 @@ export function encodeSyntheticNodesBin(
     versions?: string[];
     locations?: LocationSpec[];
     extra?: SectionSpec[];
+    /** Writes an ORIGIN section. */
+    origin?: SnapshotOrigin;
+    /** Writes OUTPOINTS (also implied when any node has an `outpoint`). */
+    withOutpoints?: boolean;
   } = {},
 ): ArrayBuffer {
   const n = nodes.length;
+  const withOutpoints = opts.withOutpoints ?? nodes.some((x) => x.outpoint !== undefined);
   const col = <T extends ArrayBufferView>(make: (n: number) => T, fill: (a: T, i: number) => void) => {
     const a = make(n);
     for (let i = 0; i < n; i++) fill(a, i);
@@ -238,6 +271,16 @@ export function encodeSyntheticNodesBin(
         opts.locations ?? [{ lat: Number.NaN, lon: Number.NaN, country: 0, nodeCount: 0, city: '' }],
       ),
     },
+    ...(withOutpoints
+      ? [
+          {
+            kind: 17,
+            dtype: DType.Struct,
+            bytes: outpointsBytes(nodes.map((x) => x.outpoint ?? syntheticOutpoint(x.id))),
+          },
+        ]
+      : []),
+    ...(opts.origin ? [originSection(opts.origin)] : []),
     ...(opts.extra ?? []),
   ];
   return encodeContainer(
@@ -250,7 +293,13 @@ export function encodeSyntheticNodesBin(
 /** Builds a mesh.bin from edge triples. */
 export function encodeMeshBin(
   edges: readonly [number, number, number][],
-  opts: { seq?: number; generatedMs?: number; extra?: SectionSpec[]; withFlags?: boolean } = {},
+  opts: {
+    seq?: number;
+    generatedMs?: number;
+    extra?: SectionSpec[];
+    withFlags?: boolean;
+    origin?: SnapshotOrigin;
+  } = {},
 ): ArrayBuffer {
   const a = Uint32Array.from(edges.map((e) => e[0]));
   const b = Uint32Array.from(edges.map((e) => e[1]));
@@ -260,6 +309,7 @@ export function encodeMeshBin(
     { kind: 2, dtype: DType.U32, bytes: bytesOf(b) },
   ];
   if (opts.withFlags !== false) sections.push({ kind: 3, dtype: DType.U8, bytes: bytesOf(f) });
+  if (opts.origin) sections.push(originSection(opts.origin));
   sections.push(...(opts.extra ?? []));
   return encodeContainer(
     'FXMS',

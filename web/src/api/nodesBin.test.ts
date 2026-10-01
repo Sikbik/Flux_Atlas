@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BinFormatError, DType } from './bin/container';
-import { bytesOf, encodeContainer, encodeSyntheticNodesBin, stringTableBytes } from './bin/writer';
+import {
+  bytesOf,
+  encodeContainer,
+  encodeSyntheticNodesBin,
+  originSection,
+  outpointsBytes,
+  stringTableBytes,
+  syntheticOutpoint,
+} from './bin/writer';
 import { decodeNodesBin, hasColumn, NodeSection, splitCountry } from './nodesBin';
 
 // Golden files written by the Rust test `golden_nodes_bin` (crates/atlas-core/tests).
@@ -43,8 +51,26 @@ describe('nodes.bin golden fixture', () => {
         ssd_gb: d.ssdGb[i],
         version: d.version[i],
         ip: d.ips.get(i),
+        outpoint: d.outpoints.get(i),
       }).toEqual(row);
     });
+  });
+
+  it('matches the origin', () => {
+    expect(d.origin).toEqual({ startedMs: expected.origin.started_ms, instance: expected.origin.instance });
+  });
+
+  it('reads every outpoint as txid:vout', () => {
+    expect(d.outpoints.known).toBe(true);
+    expect(d.outpoints.length).toBe(d.count);
+    const seen = new Set<string>();
+    for (let i = 0; i < d.count; i++) {
+      const op = d.outpoints.get(i);
+      expect(op).toMatch(/^[0-9a-f]{64}:\d+$/);
+      seen.add(op);
+    }
+    expect(seen.size).toBe(d.count);
+    expect(d.outpoints.get(d.count)).toBe('');
   });
 
   it('matches the string tables', () => {
@@ -186,6 +212,40 @@ describe('nodes.bin evolution rules', () => {
     expect(() => decodeNodesBin(v2)).toThrow(/version 2/);
     expect(() => decodeNodesBin(good.slice(0, 20))).toThrow(BinFormatError);
     expect(() => decodeNodesBin(good.slice(0, good.byteLength - 16))).toThrow(BinFormatError);
+  });
+
+  it('tolerates files without ORIGIN and OUTPOINTS (older servers)', () => {
+    const d = decodeNodesBin(encodeSyntheticNodesBin(nodes, opts));
+    expect(d.origin).toBeNull();
+    expect(d.outpoints.known).toBe(false);
+    expect(d.outpoints.get(0)).toBe('');
+    expect(hasColumn(d, NodeSection.Outpoints)).toBe(false);
+  });
+
+  it('round-trips ORIGIN and OUTPOINTS', () => {
+    const origin = { startedMs: 1_790_000_000_123, instance: 'fedcba9876543210' };
+    const op = `${'0f'.repeat(32)}:7`;
+    const d = decodeNodesBin(
+      encodeSyntheticNodesBin([{ ...nodes[0]!, outpoint: op }, nodes[1]!], { ...opts, origin }),
+    );
+    expect(d.origin).toEqual(origin);
+    expect(d.outpoints.get(0)).toBe(op);
+    expect(d.outpoints.get(1)).toBe(syntheticOutpoint(9));
+    expect(d.unknownSections).toEqual([]);
+  });
+
+  it('zero-pads a small instance id to 16 hex digits', () => {
+    const origin = { startedMs: 5, instance: '00000000000000ff' };
+    const d = decodeNodesBin(encodeSyntheticNodesBin(nodes, { ...opts, extra: [originSection(origin)] }));
+    expect(d.origin?.instance).toBe('00000000000000ff');
+  });
+
+  it('rejects an OUTPOINTS section of the wrong length', () => {
+    const buf = encodeContainer('FXAT', { seq: 1, generatedMs: 1, count: 2 }, [
+      { kind: 1, dtype: DType.U32, bytes: bytesOf(new Uint32Array([1, 2])) },
+      { kind: 17, dtype: DType.Struct, bytes: outpointsBytes([syntheticOutpoint(1)]) },
+    ]);
+    expect(() => decodeNodesBin(buf)).toThrow(/OUTPOINTS/);
   });
 
   it('requires the ids column', () => {

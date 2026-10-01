@@ -1,7 +1,16 @@
 // Decoder for `GET /api/v1/mesh.bin` (magic FXMS, version 1): undirected P2P edges, deduplicated,
 // `a < b`, sorted by (a, b). Same sectioned container as nodes.bin.
 
-import { BinFormatError, columnView, DType, noteUnknown, readContainer } from './bin/container';
+import {
+  BinFormatError,
+  columnView,
+  DType,
+  noteUnknown,
+  ORIGIN_KIND,
+  readContainer,
+  readOrigin,
+  type SnapshotOrigin,
+} from './bin/container';
 
 export const MESH_MAGIC = 'FXMS';
 
@@ -9,6 +18,8 @@ export const MeshSection = {
   A: 1,
   B: 2,
   Flags: 3,
+  /** Which server built the file (struct, 16 bytes). */
+  Origin: ORIGIN_KIND,
 } as const;
 
 const KNOWN = new Set<number>(Object.values(MeshSection));
@@ -28,6 +39,8 @@ export interface MeshBin {
   /** NodeId of the higher endpoint. */
   b: Uint32Array;
   flags: Uint8Array;
+  /** The server that built the file, or null when the file has no ORIGIN (older servers). */
+  origin: SnapshotOrigin | null;
   unknownSections: number[];
 }
 
@@ -45,6 +58,7 @@ export function decodeMeshBin(input: ArrayBuffer | ArrayBufferView): MeshBin {
     a,
     b,
     flags: columnView(c, MeshSection.Flags, DType.U8, Uint8Array) ?? new Uint8Array(c.header.count),
+    origin: readOrigin(c),
     unknownSections: c.unknownKinds,
   };
 }
