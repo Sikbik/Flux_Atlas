@@ -3,7 +3,6 @@
 // blocks without a check-in, and expires at 640. A start transaction that is never confirmed expires
 // after 240 blocks.
 
-import type { NodeStatus } from '../../../api/generated/NodeStatus';
 import { BLOCK_MS } from '../../../lib/format';
 
 export const CHECKIN = {
@@ -75,36 +74,6 @@ export function checkinGauge(since: number | null, blockMs = BLOCK_MS): CheckinG
     blocksToExpiry: toExpiry,
     msToExpiry: toExpiry * blockMs,
   };
-}
-
-/** Zone boundaries of the gauge as fractions of the 640-block track. */
-export const GAUGE_ZONES = {
-  due: CHECKIN.due / CHECKIN.expire,
-  atRisk: CHECKIN.atRisk / CHECKIN.expire,
-} as const;
-
-export type LifeStage = 'started' | 'joined' | 'heartbeat' | 'atRisk' | 'expired' | 'dos' | 'unknown';
-
-/** Where a node is on the lifecycle stepper. */
-export function lifeStage(status: NodeStatus | null | undefined, since: number | null): LifeStage {
-  switch (status) {
-    case 'started':
-      return 'started';
-    case 'dos':
-      return 'dos';
-    case 'expired':
-    case 'departed':
-      return 'expired';
-    case 'confirmed':
-    case 'offline': {
-      const e = expiryState(since);
-      if (e === 'expired') return 'expired';
-      if (e === 'atRisk') return 'atRisk';
-      return 'heartbeat';
-    }
-    default:
-      return 'unknown';
-  }
 }
 
 /** Blocks left before a started (unconfirmed) node's start transaction expires. */

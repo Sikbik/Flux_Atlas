@@ -201,8 +201,6 @@ export function tierMix(nodes: readonly FleetNode[]): TierMix {
  */
 export type FleetState = 'ok' | 'risk' | 'down' | 'pending' | 'gone';
 
-export const FLEET_STATES: readonly FleetState[] = ['ok', 'risk', 'down', 'pending', 'gone'];
-
 export function fleetState(n: FleetNode): FleetState {
   if (!n.present || n.status === 'departed') return 'gone';
   if (n.status === 'expired') return 'gone';
@@ -538,20 +536,6 @@ export function hardwareMix(nodes: readonly FleetNode[]): HardwareMix {
 }
 
 // ---- earnings ---------------------------------------------------------------------------------------
-
-/** Sum of `amount` strings (FLUX decimals) of payments newer than `sinceMs`, in FLUX as a number. */
-export function sumSince(
-  payments: readonly { time_ms: number; amount: string }[],
-  sinceMs: number,
-  toFlux: (amount: string) => number | null,
-): number {
-  let sum = 0;
-  for (const p of payments) {
-    if (p.time_ms < sinceMs) continue;
-    sum += toFlux(p.amount) ?? 0;
-  }
-  return sum;
-}
 
 /**
  * The place line of a fleet: its biggest countries, and how many nodes sit on how many hosts. A fleet of one

@@ -74,11 +74,6 @@ export function earningsFromTotals(o: {
   return { h24, d7, d30 };
 }
 
-/** The window's label for a tile: names the window, and says "since first ingest" when it is cut short. */
-export function windowLabel(name: string, w: EarnedWindow): string {
-  return w.complete || w.flux === null ? name : `${name}, since first ingest`;
-}
-
 export interface EarnTile {
   label: string;
   window: EarnedWindow;

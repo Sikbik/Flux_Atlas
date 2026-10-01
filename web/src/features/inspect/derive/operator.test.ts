@@ -19,7 +19,6 @@ import {
   stateCounts,
   stragglers,
   summarizeFleet,
-  sumSince,
   tierMix,
   versionCounts,
 } from './operator';
@@ -217,23 +216,6 @@ describe('versions and hardware', () => {
     expect(mix.groups[0]).toMatchObject({ count: 2, cores: 16 });
     expect(mix.totals).toEqual({ cores: 40, ramGb: 160, ssdGb: 2200 });
     expect(mix.unknown).toBe(1);
-  });
-});
-
-describe('sumSince', () => {
-  it('adds the payments inside the window', () => {
-    const parse = (s: string) => Number(s);
-    expect(
-      sumSince(
-        [
-          { time_ms: 100, amount: '9' },
-          { time_ms: 50, amount: '9' },
-          { time_ms: 200, amount: '3.5' },
-        ],
-        100,
-        parse,
-      ),
-    ).toBe(12.5);
   });
 });
 

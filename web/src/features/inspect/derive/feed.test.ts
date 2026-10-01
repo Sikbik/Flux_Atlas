@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FeedItem } from '../../../api/generated/FeedItem';
-import { describeFeedItem, nodeRefs } from './feed';
+import { describeFeedItem } from './feed';
 
 const item = (
   kind: FeedItem['kind'],
@@ -54,17 +54,5 @@ describe('describeFeedItem', () => {
   it('falls back to a plain label and never throws on unknown kinds', () => {
     expect(describeFeedItem(item('version_milestone')).text).toBe('version milestone');
     expect(describeFeedItem(item('node_unreachable')).icon).toBe('offline');
-  });
-
-  it('lists referenced nodes', () => {
-    expect(
-      nodeRefs(
-        item('node_joined', {}, [
-          { kind: 'node', id: 4 },
-          { kind: 'block', height: 1 },
-          { kind: 'node', id: 9 },
-        ]),
-      ),
-    ).toEqual([4, 9]);
   });
 });

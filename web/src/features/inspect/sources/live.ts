@@ -3,7 +3,7 @@
 // views re-render only when the facts they show change.
 
 import type { NodeStatus } from '../../../api/generated/NodeStatus';
-import { STATUS_CODES, TIER_CODES } from '../../../api/nodesBin';
+import { STATUS_CODES } from '../../../api/nodesBin';
 import { useNetwork, useRuntime, useTip } from '../../../app/context';
 import { fluxToNumber } from '../../../lib/format';
 import { useNow } from '../../../lib/useClock';
@@ -200,7 +200,3 @@ export function useTipAnchor(): { tip: number | null; anchorMs: number | null } 
   const tip = useTip();
   return { tip: tip?.height ?? null, anchorMs: clock.lastBlockInfo?.anchorMs ?? tip?.time_ms ?? null };
 }
-
-/** Tier name for a wire code (re-exported for views that read raw columns). */
-export const tierNameOf = (code: number): QueueTier | 'unknown' => TIER_NAMES[code] ?? 'unknown';
-export { TIER_CODES };

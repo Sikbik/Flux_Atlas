@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { earningsFromPayments, earningsFromTotals, earningTiles, windowLabel } from './earnings';
+import { earningsFromPayments, earningsFromTotals, earningTiles } from './earnings';
 
 const DAY = 86_400_000;
 const NOW = 100 * DAY;
@@ -59,16 +59,6 @@ describe('earningsFromTotals', () => {
   it('does not invent a week from nothing', () => {
     expect(earningsFromTotals({ h24: null, d30: null, nowMs: NOW, firstMs: 0 }).d7.flux).toBeNull();
     expect(earningsFromTotals({ h24: 1, d30: 9, nowMs: NOW, firstMs: null }).d7.flux).toBeNull();
-  });
-});
-
-describe('windowLabel', () => {
-  it('adds the ledger note only to a cut window', () => {
-    expect(windowLabel('30 days', { flux: 1, complete: true, estimate: false })).toBe('30 days');
-    expect(windowLabel('30 days', { flux: 1, complete: false, estimate: false })).toBe(
-      '30 days, since first ingest',
-    );
-    expect(windowLabel('30 days', { flux: null, complete: false, estimate: false })).toBe('30 days');
   });
 });
 

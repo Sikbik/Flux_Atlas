@@ -1,14 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  blocksSinceConfirm,
-  CHECKIN,
-  checkinGauge,
-  expiryState,
-  GAUGE_ZONES,
-  isAtRisk,
-  lifeStage,
-  startBlocksLeft,
-} from './expiry';
+import { blocksSinceConfirm, checkinGauge, expiryState, isAtRisk, startBlocksLeft } from './expiry';
 
 describe('check-in arithmetic', () => {
   it('counts blocks since the last check-in and treats 0 as unknown', () => {
@@ -49,23 +40,6 @@ describe('check-in arithmetic', () => {
     expect(late.blocksToExpiry).toBe(40);
     expect(checkinGauge(900).fraction).toBe(1);
     expect(checkinGauge(null).blocksToExpiry).toBeNull();
-    expect(GAUGE_ZONES.due).toBeCloseTo(500 / 640, 6);
-    expect(GAUGE_ZONES.atRisk).toBeCloseTo(CHECKIN.atRisk / CHECKIN.expire, 6);
-  });
-});
-
-describe('lifeStage', () => {
-  it('places each status on the stepper', () => {
-    expect(lifeStage('started', null)).toBe('started');
-    expect(lifeStage('dos', 10)).toBe('dos');
-    expect(lifeStage('confirmed', 100)).toBe('heartbeat');
-    expect(lifeStage('confirmed', null)).toBe('heartbeat');
-    expect(lifeStage('confirmed', 580)).toBe('atRisk');
-    expect(lifeStage('confirmed', 700)).toBe('expired');
-    expect(lifeStage('expired', null)).toBe('expired');
-    expect(lifeStage('departed', null)).toBe('expired');
-    expect(lifeStage('unknown', 5)).toBe('unknown');
-    expect(lifeStage(null, 5)).toBe('unknown');
   });
 });
 

@@ -103,8 +103,3 @@ export function describeFeedItem(item: FeedItem): FeedLine {
       return line(item.kind.replaceAll('_', ' '), 'muted', 'info');
   }
 }
-
-/** The node ids a feed item references, in order. */
-export function nodeRefs(item: FeedItem): number[] {
-  return item.refs.filter((r): r is Extract<FeedRef, { kind: 'node' }> => r.kind === 'node').map((r) => r.id);
-}
