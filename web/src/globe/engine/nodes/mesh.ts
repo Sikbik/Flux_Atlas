@@ -27,6 +27,8 @@ export class MeshStore {
   high = 0;
   live = 0;
   private free: number[] = [];
+  /** Edges added since the last resolve. They resolve alone unless the whole store is dirty. */
+  private pending: number[] = [];
   private readonly map = new Map<number, number>();
 
   // CSR adjacency by slot (grow-only buffers, rebuilt in place)
@@ -73,6 +75,7 @@ export class MeshStore {
     this.alive.fill(0);
     this.link.fill(-1);
     this.linkStart.fill(0);
+    this.pending.length = 0;
     this.adjDirty = true;
     this.resolveDirty = true;
     this.version++;
@@ -97,7 +100,12 @@ export class MeshStore {
     this.map.set(k, e);
     this.live++;
     this.adjDirty = true;
-    this.resolveDirty = true;
+    // Only the new edge needs its slots. Marking the whole store dirty here made every streamed link a
+    // full pass: a topology sweep (about 450 links into 134,000 edges every 12 s) froze the page for a second.
+    if (!this.resolveDirty) {
+      if (this.pending.length < 4096) this.pending.push(e);
+      else this.resolveDirty = true;
+    }
     this.version++;
     return e;
   }
@@ -147,15 +155,21 @@ export class MeshStore {
 
   /** Re-resolve endpoint slots from the node store. Edges with a missing endpoint are skipped at use. */
   resolve(nodes: NodeStore): void {
-    if (!this.resolveDirty) return;
-    for (let e = 0; e < this.high; e++) {
-      if (!this.alive[e]) continue;
-      const a = nodes.idToSlot.get(this.ida[e]!);
-      const b = nodes.idToSlot.get(this.idb[e]!);
-      this.sa[e] = a === undefined ? 0xffffffff : a;
-      this.sb[e] = b === undefined ? 0xffffffff : b;
+    if (this.resolveDirty) {
+      for (let e = 0; e < this.high; e++) this.resolveEdge(e, nodes);
+      this.resolveDirty = false;
+    } else {
+      for (let i = 0; i < this.pending.length; i++) this.resolveEdge(this.pending[i]!, nodes);
     }
-    this.resolveDirty = false;
+    this.pending.length = 0;
+  }
+
+  private resolveEdge(e: number, nodes: NodeStore): void {
+    if (!this.alive[e]) return;
+    const a = nodes.idToSlot.get(this.ida[e]!);
+    const b = nodes.idToSlot.get(this.idb[e]!);
+    this.sa[e] = a === undefined ? 0xffffffff : a;
+    this.sb[e] = b === undefined ? 0xffffffff : b;
   }
 
   /**

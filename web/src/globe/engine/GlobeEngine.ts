@@ -1174,10 +1174,15 @@ export class GlobeEngine {
       for (let i = 0; i < Math.min(delta.removeA.length, delta.removeB.length); i++)
         this.removeLinkInternal(delta.removeA[i]!, delta.removeB[i]!, !this.hidden);
     if (delta.addA && delta.addB) {
+      let selectionGained = false;
       for (let i = 0; i < Math.min(delta.addA.length, delta.addB.length); i++) {
-        const e = this.addLinkInternal(delta.addA[i]!, delta.addB[i]!, !this.hidden);
-        if (e >= 0 && !this.hidden) this.showLink(e);
+        const e = this.addLinkInternal(delta.addA[i]!, delta.addB[i]!, !this.hidden, false);
+        if (e < 0) continue;
+        if (!this.hidden) this.showLink(e);
+        if (this.touchesSelection(e)) selectionGained = true;
       }
+      // One reveal per sweep: each rebuilds the adjacency and redraws the selection's arcs.
+      if (selectionGained) this.revealPeers(this.selectedSlot);
     }
   }
 
@@ -1202,19 +1207,19 @@ export class GlobeEngine {
   }
   meshMode: 'off' | 'selection' | 'flow' = 'flow';
 
-  private addLinkInternal(a: number, b: number, _animate: boolean): number {
+  private addLinkInternal(a: number, b: number, _animate: boolean, reveal = true): number {
     const m = this.mesh;
     const e = m.add(a, b);
     if (e < 0) return -1;
-    m.resolveDirty = true;
-    m.resolve(this.nodes);
-    const sa = m.sa[e];
-    const sb = m.sb[e];
-    if (sa === 0xffffffff || sb === 0xffffffff) return e;
+    m.resolve(this.nodes); // just this edge, unless the node slots changed since the last resolve
     // A new link on the selection shows up immediately among its peers.
-    if (this.selectedSlot >= 0 && (sa === this.selectedSlot || sb === this.selectedSlot))
-      this.revealPeers(this.selectedSlot);
+    if (reveal && this.touchesSelection(e)) this.revealPeers(this.selectedSlot);
     return e;
+  }
+
+  private touchesSelection(e: number): boolean {
+    const sel = this.selectedSlot;
+    return sel >= 0 && (this.mesh.sa[e] === sel || this.mesh.sb[e] === sel);
   }
 
   /** Draws a freshly added link: fade-in, plus a bright packet so the eye sees the handshake. */
