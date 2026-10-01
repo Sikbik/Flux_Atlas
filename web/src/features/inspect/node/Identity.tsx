@@ -1,25 +1,10 @@
-import { Blocks } from 'lucide-react';
 import { useNetwork } from '../../../app/context';
-import {
-  formatFlux,
-  formatInt,
-  formatUtcDateTime,
-  middleTruncate,
-  shortCollateral,
-} from '../../../lib/format';
-import { AddressLink, Block, BlockLink, CopyButton, Kv, KvRow, OperatorLink } from '../ui';
+import { formatUtcDateTime } from '../../../lib/format';
+import { Amount, EntityLink, Hash, Height, KeyValue, type KeyValueItem } from '../../../ui';
 import { useNodeCtx } from './context';
+import { SubHead } from './SubHead';
 
-function Copyable({ text, value, label }: { text: string; value: string; label: string }) {
-  return (
-    <>
-      <span className="ix-trunc" title={value}>
-        {text}
-      </span>
-      <CopyButton value={value} label={label} />
-    </>
-  );
-}
+const block = (h: number | null | undefined, none = 'Unknown') => (h ? <Height value={h} /> : none);
 
 /** Collateral, keys, addresses and the heights that define the node's history. */
 export function IdentityBody() {
@@ -28,93 +13,67 @@ export function IdentityBody() {
 
   const lastConfirmed = Math.max(live?.lastConfirmed ?? 0, node?.last_confirmed_height ?? 0);
   const lastPaid = Math.max(live?.lastPaid ?? 0, node?.last_paid_height ?? 0);
-  const block = (h: number | null | undefined) =>
-    h ? (
-      <BlockLink height={h} className="ix-mono">
-        {formatInt(h)}
-      </BlockLink>
-    ) : (
-      'Unknown'
-    );
+
+  const keys: KeyValueItem[] = [
+    { label: 'Collateral', value: collateral ? <Amount value={collateral} decimals={0} /> : null },
+    {
+      label: 'Outpoint',
+      value: node ? (
+        <Hash value={node.outpoint} head={8} tail={6} copy="always" what="collateral outpoint" />
+      ) : null,
+    },
+    { label: 'Endpoint', value: endpoint || null, mono: true, copy: true },
+    {
+      label: 'Payment address',
+      value: node?.payment_address ? (
+        <EntityLink kind="operator" value={node.payment_address} copy="always" />
+      ) : null,
+      note: node?.payment_address ? (
+        <EntityLink kind="address" value={node.payment_address}>
+          Open in the explorer
+        </EntityLink>
+      ) : undefined,
+    },
+    {
+      label: 'ZelID',
+      value: node?.zelid ? <Hash value={node.zelid} head={8} tail={5} copy="always" what="ZelID" /> : null,
+    },
+    {
+      label: 'Public key',
+      value: node?.pubkey ? (
+        <Hash value={node.pubkey} head={8} tail={6} copy="always" what="public key" />
+      ) : null,
+    },
+  ];
+
+  const heights: KeyValueItem[] = [
+    { label: 'Added', value: block(node?.added_height) },
+    { label: 'Confirmed', value: block(node?.confirmed_height) },
+    { label: 'Last check-in', value: block(lastConfirmed) },
+    { label: 'Last paid', value: block(lastPaid, 'Not paid yet') },
+    { label: 'Active since', value: node?.active_since_ms ? formatUtcDateTime(node.active_since_ms) : null },
+    {
+      label: 'Port mapping',
+      value:
+        node?.upnp === null || node?.upnp === undefined
+          ? null
+          : `${node.upnp ? 'UPnP' : 'Direct'}${node.static_ip != null ? (node.static_ip ? ', static IP' : ', dynamic IP') : ''}`,
+    },
+    ...(node?.ui_url
+      ? [{ label: 'FluxOS panel', value: 'Open in a new tab', href: node.ui_url } satisfies KeyValueItem]
+      : []),
+  ];
 
   return (
-    <>
-      <Block title="Keys and addresses">
-        <Kv>
-          <KvRow label="Collateral">{collateral ? formatFlux(collateral, { decimals: 0 }) : 'Unknown'}</KvRow>
-          <KvRow label="Outpoint">
-            {node ? (
-              <Copyable
-                text={shortCollateral(node.outpoint)}
-                value={node.outpoint}
-                label="Copy the collateral outpoint"
-              />
-            ) : (
-              'Unknown'
-            )}
-          </KvRow>
-          <KvRow label="Endpoint">
-            {endpoint ? (
-              <Copyable text={endpoint} value={endpoint} label="Copy the IP and port" />
-            ) : (
-              'Unknown'
-            )}
-          </KvRow>
-          <KvRow label="Payment address">
-            {node?.payment_address ? (
-              <>
-                <OperatorLink addr={node.payment_address} className="ix-trunc" title="Open the operator view">
-                  {middleTruncate(node.payment_address, 8, 5)}
-                </OperatorLink>
-                <AddressLink
-                  addr={node.payment_address}
-                  className="ix-copy"
-                  title="Open the address in the explorer"
-                  aria-label="Open the address in the explorer"
-                >
-                  <Blocks size={13} strokeWidth={1.75} aria-hidden="true" />
-                </AddressLink>
-                <CopyButton value={node.payment_address} label="Copy the payment address" />
-              </>
-            ) : (
-              'Unknown'
-            )}
-          </KvRow>
-          <KvRow label="ZelID">
-            {node?.zelid ? (
-              <Copyable text={middleTruncate(node.zelid, 8, 5)} value={node.zelid} label="Copy the ZelID" />
-            ) : (
-              'Unknown'
-            )}
-          </KvRow>
-          <KvRow label="Public key">
-            {node?.pubkey ? (
-              <Copyable
-                text={middleTruncate(node.pubkey, 8, 6)}
-                value={node.pubkey}
-                label="Copy the public key"
-              />
-            ) : (
-              'Unknown'
-            )}
-          </KvRow>
-        </Kv>
-      </Block>
-      <Block title="Heights and dates">
-        <Kv>
-          <KvRow label="Added">block {block(node?.added_height)}</KvRow>
-          <KvRow label="Confirmed">block {block(node?.confirmed_height)}</KvRow>
-          <KvRow label="Last check-in">{lastConfirmed ? <>block {block(lastConfirmed)}</> : 'Unknown'}</KvRow>
-          <KvRow label="Last paid">{lastPaid ? <>block {block(lastPaid)}</> : 'Not paid yet'}</KvRow>
-          <KvRow label="Active since">
-            {node?.active_since_ms ? formatUtcDateTime(node.active_since_ms) : 'Unknown'}
-          </KvRow>
-          <KvRow label="Port mapping" sans>
-            {node?.upnp === null || node?.upnp === undefined ? 'Unknown' : node.upnp ? 'UPnP' : 'Direct'}
-            {node?.static_ip != null ? (node.static_ip ? ', static IP' : ', dynamic IP') : ''}
-          </KvRow>
-        </Kv>
-      </Block>
-    </>
+    <div className="ix-stack ix-stack-lg">
+      <div>
+        <SubHead title="Keys and addresses" />
+        <KeyValue items={keys} />
+      </div>
+      <div>
+        <SubHead title="Heights and dates" />
+        <KeyValue items={heights} />
+      </div>
+    </div>
   );
 }

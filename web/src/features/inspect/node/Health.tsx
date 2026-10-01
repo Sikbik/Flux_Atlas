@@ -1,162 +1,26 @@
-import { Activity, Check, Network, OctagonX, TriangleAlert } from 'lucide-react';
-import { type CSSProperties, useMemo } from 'react';
+import { Network } from 'lucide-react';
+import { useMemo } from 'react';
 import type { NodeHistoryDto } from '../../../api/generated/NodeHistoryDto';
 import { useNodeHistory } from '../../../api/queries';
-import { useRuntime, useTip } from '../../../app/context';
-import {
-  formatAgo,
-  formatInt,
-  formatPercent,
-  formatUtcDateTime,
-  middleTruncate,
-  parseEndpoint,
-} from '../../../lib/format';
+import { useRuntime } from '../../../app/context';
+import { formatAgo, formatInt, formatPercent, formatUtcDateTime } from '../../../lib/format';
+import { Meter, Skeleton, Timeline, type TimelineItem } from '../../../ui';
 import { spanText } from '../derive/eta';
-import { CHECKIN, checkinGauge, GAUGE_ZONES, lifeStage } from '../derive/expiry';
+import { CHECKIN, checkinGauge } from '../derive/expiry';
 import { heartbeatTicks, ipHistory, uptimeCells } from '../derive/uptime';
-import { useFirstIngestMs, useHostRows } from '../sources/hooks';
-import { LADDER_PORTS, useHostLive } from '../sources/host';
-import {
-  Block,
-  Digits,
-  HostLadder,
-  HostLink,
-  NodeLink,
-  OperatorLink,
-  Sk,
-  type Step,
-  Stepper,
-  tierLabel,
-} from '../ui';
+import { useFirstIngestMs } from '../sources/hooks';
+import { useSince } from './checkin';
 import { useNodeCtx } from './context';
+import { SubHead } from './SubHead';
 
 const DAY_MS = 86_400_000;
 
-// ---- host ladder ------------------------------------------------------------------------------------
-
-/** The host's eight UPnP ports with the node on each, and who is paid. */
-export function HostBlock() {
-  const { ip, id } = useNodeCtx();
-  const { live, other } = useHostLive(ip);
-  const { rows } = useHostRows(ip);
-  if (!ip) return null;
-
-  const used = live.length;
-  const addresses = new Set(rows.map((r) => r.payment_address).filter(Boolean));
-  const single = addresses.size === 1 ? [...addresses][0]! : null;
-
-  return (
-    <Block
-      title={`Host ${ip}`}
-      icon={<Network size={14} strokeWidth={1.75} />}
-      aside={`${used} of ${LADDER_PORTS.length} ports in use`}
-    >
-      <HostLadder ip={ip} selectedId={id} />
-      {other.length ? (
-        <p className="ix-cap">
-          Also on{' '}
-          {other.map((n, i) => (
-            <span key={n.id}>
-              {i ? ', ' : ''}
-              <NodeLink nodeKey={n.endpoint || n.id} className="ix-mono">
-                :{parseEndpoint(n.endpoint)?.port ?? '?'}
-              </NodeLink>{' '}
-              ({tierLabel(n.tier)})
-            </span>
-          ))}
-          .
-        </p>
-      ) : null}
-      <p className="ix-cap">
-        {used <= 1 ? (
-          'One node on this host.'
-        ) : single ? (
-          <>
-            All {used} nodes pay <span className="ix-mono">{middleTruncate(single, 6, 4)}</span>. One host,
-            one point of failure. <OperatorLink addr={single}>View operator</OperatorLink>
-          </>
-        ) : addresses.size > 1 ? (
-          <>
-            {used} nodes on this host, paid to {addresses.size} addresses.{' '}
-            <HostLink ip={ip}>Open the host</HostLink>
-          </>
-        ) : (
-          `${used} nodes on this host.`
-        )}
-      </p>
-    </Block>
-  );
-}
-
-// ---- lifecycle --------------------------------------------------------------------------------------
-
-const STATIONS = ['started', 'joined', 'heartbeat', 'atRisk', 'expired'] as const;
-type Station = (typeof STATIONS)[number];
-
-const STAGE_INDEX: Record<string, number> = {
-  started: 0,
-  joined: 1,
-  heartbeat: 2,
-  atRisk: 3,
-  expired: 4,
-  dos: 2,
-  unknown: -1,
-};
-
-export function useSince(): number | null {
-  const { node, live } = useNodeCtx();
-  const tip = useTip();
-  const lastConfirmed = Math.max(live?.lastConfirmed ?? 0, node?.last_confirmed_height ?? 0);
-  return lastConfirmed && tip ? Math.max(0, tip.height - lastConfirmed) : null;
-}
-
-function LifecycleStepper() {
-  const { node, live } = useNodeCtx();
-  const since = useSince();
-  const status = live?.status ?? node?.status ?? 'unknown';
-  const stage = lifeStage(status, since);
-  const at = STAGE_INDEX[stage] ?? -1;
-
-  const meta: Record<Station, { label: string; sub: string; icon: typeof Check }> = {
-    started: {
-      label: 'Started',
-      sub: node?.added_height ? formatInt(node.added_height) : 'Unknown',
-      icon: Check,
-    },
-    joined: {
-      label: 'Joined',
-      sub: node?.confirmed_height
-        ? formatInt(node.confirmed_height)
-        : status === 'started'
-          ? 'waiting'
-          : 'Unknown',
-      icon: Check,
-    },
-    heartbeat: { label: 'Heartbeat', sub: 'every ~4.2 h', icon: Activity },
-    atRisk: { label: 'At risk', sub: `${CHECKIN.atRisk} blocks`, icon: TriangleAlert },
-    expired: { label: 'Expired', sub: `${CHECKIN.expire} blocks`, icon: OctagonX },
-  };
-
-  const steps: Step[] = STATIONS.map((s) => {
-    const m = meta[s];
-    return {
-      key: s,
-      label: m.label,
-      sub: m.sub,
-      icon: m.icon,
-      tone: s === 'atRisk' ? 'warn' : s === 'expired' ? 'crit' : undefined,
-    };
-  });
-  return <Stepper steps={steps} at={at} label="Node lifecycle" />;
-}
-
-function Gauge() {
+/** The check-in gauge: blocks since the last check-in against the three bands that decide the node's fate. */
+function CheckinGauge() {
   const { node, live, detail } = useNodeCtx();
   const since = useSince();
   const g = checkinGauge(since);
   const status = live?.status ?? node?.status ?? 'unknown';
-  const tone =
-    g.state === 'atRisk' ? 'warn' : g.state === 'expired' ? 'crit' : g.state === 'due' ? 'accent' : undefined;
 
   if (status === 'started') {
     return (
@@ -177,42 +41,28 @@ function Gauge() {
             ? `A check-in is due now; the node expires in ${formatInt(g.blocksToExpiry ?? 0)} blocks (${spanText(g.msToExpiry ?? 0)}) without one.`
             : `Next check-in due in ${formatInt(g.blocksToDue ?? 0)} blocks (${spanText((g.blocksToDue ?? 0) * 30_000)}). Expires after ${CHECKIN.expire} blocks without one.`;
   return (
-    <div className="ix-gauge-wrap">
-      <div className="ix-gauge-head">
-        <span className="ix-dim">Last check-in</span>
-        <span className="ix-mono">
-          {since === null ? (
-            'Unknown'
-          ) : (
-            <>
-              <b>
-                <Digits value={formatInt(since)} />
-              </b>{' '}
-              blocks ago <span className="ix-dim">({spanText(since * 30_000)})</span>
-            </>
-          )}
-        </span>
-      </div>
-      {/* biome-ignore lint/a11y/useSemanticElements: a styled gauge; a native meter cannot take the zones and the moving marker */}
-      <div
-        className="ix-gauge"
-        role="meter"
-        aria-label="Blocks since the last check-in"
-        aria-valuemin={0}
-        aria-valuemax={CHECKIN.expire}
-        aria-valuenow={since ?? undefined}
-        style={{ '--ix-at': g.fraction } as CSSProperties}
-        data-state={g.state}
+    <div className="ix-stack">
+      <Meter
+        label="Last check-in"
+        showLabel
+        showValue
+        value={since}
+        min={0}
+        max={CHECKIN.expire}
+        size="lg"
+        zones={[
+          { from: 0, to: CHECKIN.due, tone: 'ok', label: 'On time' },
+          { from: CHECKIN.due, to: CHECKIN.atRisk, tone: 'accent', label: 'Due' },
+          { from: CHECKIN.atRisk, to: CHECKIN.expire, tone: 'warn', label: 'At risk' },
+        ]}
+        startLabel="0"
+        endLabel={`${CHECKIN.expire} expires`}
+        format={(v) => `${formatInt(Math.round(v))} blocks ago (${spanText(v * 30_000)})`}
+      />
+      <p
+        className="ix-cap"
+        data-tone={g.state === 'atRisk' ? 'warn' : g.state === 'expired' ? 'crit' : undefined}
       >
-        <span className="ix-gauge-mk" hidden={since === null} />
-      </div>
-      <div className="ix-gauge-l" aria-hidden="true">
-        <span style={{ left: '0%' }}>0</span>
-        <span style={{ left: `${GAUGE_ZONES.due * 100}%` }}>{CHECKIN.due} due</span>
-        <span style={{ left: `${GAUGE_ZONES.atRisk * 100}%` }}>{CHECKIN.atRisk}</span>
-        <span style={{ left: '100%' }}>{CHECKIN.expire}</span>
-      </div>
-      <p className="ix-cap" data-tone={tone}>
         {note}
         {detail?.expires_in_blocks != null && since === null
           ? ` The server counts ${formatInt(detail.expires_in_blocks)} blocks to expiry.`
@@ -222,7 +72,8 @@ function Gauge() {
   );
 }
 
-function Strips({ hist }: { hist: { data: NodeHistoryDto | undefined; isPending: boolean } }) {
+/** The heartbeat strip, the 90-day uptime cells and the IP history. */
+function History({ hist }: { hist: { data: NodeHistoryDto | undefined; isPending: boolean } }) {
   const { node, detail } = useNodeCtx();
   const first = useFirstIngestMs();
   const { clock } = useRuntime();
@@ -250,97 +101,108 @@ function Strips({ hist }: { hist: { data: NodeHistoryDto | undefined; isPending:
     () => ipHistory([...(q.data?.events ?? []), ...(detail?.recent_events ?? [])]),
     [q.data, detail],
   );
+  const ipItems = useMemo<TimelineItem[]>(
+    () =>
+      ips.slice(0, 5).map((c) => ({
+        id: `${c.tsMs}:${c.to}`,
+        time: c.tsMs,
+        icon: Network,
+        tone: 'warn',
+        title: (
+          <span className="ui-mono">
+            {c.from ? `${c.from} to ${c.to ?? 'unknown'}` : `First seen at ${c.to ?? 'unknown'}`}
+          </span>
+        ),
+      })),
+    [ips],
+  );
   const observedDays = cells ? cells.filter((c) => c.fraction !== null).length : 0;
 
   return (
     <>
-      <div className="ix-sub-h">
-        <span>Check-ins, last 24 h</span>
-        <span className="ix-dim">{ticks.length ? `${ticks.length} seen` : 'none seen yet'}</span>
+      <div>
+        <SubHead
+          title="Check-ins, last 24 h"
+          note={ticks.length ? `${ticks.length} seen` : 'none seen yet'}
+        />
+        <div className="ix-beats" role="img" aria-label={`${ticks.length} check-ins in the last 24 hours`}>
+          {q.isPending ? (
+            <Skeleton h={14} />
+          ) : (
+            <>
+              <span className="ix-beats-track" />
+              {ticks.map((t) => (
+                <i
+                  key={t.tsMs}
+                  style={{
+                    left: `${Math.max(0, Math.min(1, (t.tsMs - (now - DAY_MS)) / DAY_MS)) * 100}%`,
+                  }}
+                  title={`Check-in${t.height ? ` at block ${formatInt(t.height)}` : ''}, ${formatAgo(now - t.tsMs)}`}
+                />
+              ))}
+              <span className="ix-beats-now" />
+            </>
+          )}
+        </div>
       </div>
-      <div className="ix-beats" role="img" aria-label={`${ticks.length} check-ins in the last 24 hours`}>
-        {q.isPending ? (
-          <Sk h={14} />
-        ) : (
-          <>
-            <span className="ix-beats-track" />
-            {ticks.map((t) => (
+      <div>
+        <SubHead
+          title="Uptime, 90 days"
+          note={
+            q.data
+              ? `${formatPercent(q.data.uptime_pct / 100)} over ${observedDays > 0 ? `${observedDays} d observed` : 'no observed days'}`
+              : undefined
+          }
+        />
+        {cells ? (
+          <div
+            className="ix-uptime"
+            role="img"
+            aria-label={`Uptime per day for 90 days, ${formatPercent((q.data?.uptime_pct ?? 0) / 100)} of the observed time`}
+          >
+            {cells.map((c) => (
               <i
-                key={t.tsMs}
-                style={{ left: `${Math.max(0, Math.min(1, (t.tsMs - (now - DAY_MS)) / DAY_MS)) * 100}%` }}
-                title={`Check-in${t.height ? ` at block ${formatInt(t.height)}` : ''}, ${formatAgo(now - t.tsMs)}`}
+                key={c.dayMs}
+                data-state={
+                  c.fraction === null ? 'none' : c.fraction >= 0.995 ? 'up' : c.fraction > 0 ? 'part' : 'down'
+                }
+                style={
+                  c.fraction !== null && c.fraction > 0 && c.fraction < 0.995
+                    ? { opacity: 0.45 + c.fraction * 0.5 }
+                    : undefined
+                }
+                title={`${new Date(c.dayMs).toISOString().slice(0, 10)}: ${c.fraction === null ? 'not observed' : formatPercent(c.fraction)}`}
               />
             ))}
-            <span className="ix-beats-now" />
-          </>
+          </div>
+        ) : (
+          <Skeleton h={16} />
+        )}
+        <p className="ix-cap">
+          {first
+            ? `Atlas has watched since ${formatUtcDateTime(first)}. Earlier days are blank, not down.`
+            : 'History starts at our first ingest.'}
+        </p>
+      </div>
+      <div>
+        <SubHead
+          title="IP history"
+          note={ips.length ? `${ips.length} change${ips.length === 1 ? '' : 's'}` : 'no changes seen'}
+        />
+        {ips.length ? (
+          <Timeline items={ipItems} timeMode="absolute" label="IP address changes" />
+        ) : (
+          <p className="ix-cap">
+            The address has not changed since we started watching{node?.endpoint ? ` (${node.endpoint})` : ''}
+            .
+          </p>
         )}
       </div>
-      <div className="ix-sub-h">
-        <span>Uptime, 90 days</span>
-        <span className="ix-dim ix-mono">
-          {q.data
-            ? `${formatPercent(q.data.uptime_pct / 100)} over ${observedDays > 0 ? `${observedDays} d observed` : 'no observed days'}`
-            : ''}
-        </span>
-      </div>
-      {cells ? (
-        <div
-          className="ix-uptime"
-          role="img"
-          aria-label={`Uptime per day for 90 days, ${formatPercent((q.data?.uptime_pct ?? 0) / 100)} of the observed time`}
-        >
-          {cells.map((c) => (
-            <i
-              key={c.dayMs}
-              data-state={
-                c.fraction === null ? 'none' : c.fraction >= 0.995 ? 'up' : c.fraction > 0 ? 'part' : 'down'
-              }
-              style={
-                c.fraction !== null && c.fraction > 0 && c.fraction < 0.995
-                  ? { opacity: 0.45 + c.fraction * 0.5 }
-                  : undefined
-              }
-              title={`${new Date(c.dayMs).toISOString().slice(0, 10)}: ${c.fraction === null ? 'not observed' : formatPercent(c.fraction)}`}
-            />
-          ))}
-        </div>
-      ) : (
-        <Sk h={16} />
-      )}
-      <p className="ix-cap">
-        {first
-          ? `Atlas has watched since ${formatUtcDateTime(first)}. Earlier days are blank, not down.`
-          : 'History starts at our first ingest.'}
-      </p>
-      <div className="ix-sub-h">
-        <span>IP history</span>
-        <span className="ix-dim">
-          {ips.length ? `${ips.length} change${ips.length === 1 ? '' : 's'}` : 'no changes seen'}
-        </span>
-      </div>
-      {ips.length ? (
-        <ul className="ix-iplist">
-          {ips.slice(0, 5).map((c) => (
-            <li key={`${c.tsMs}:${c.to}`}>
-              <time className="ix-dim ix-mono" dateTime={new Date(c.tsMs).toISOString()}>
-                {formatUtcDateTime(c.tsMs)}
-              </time>
-              <span className="ix-mono">
-                {c.from ? `${c.from} to ${c.to ?? 'unknown'}` : `first seen at ${c.to ?? 'unknown'}`}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="ix-cap">
-          The address has not changed since we started watching{node?.endpoint ? ` (${node.endpoint})` : ''}.
-        </p>
-      )}
     </>
   );
 }
 
-/** Lifecycle, check-in gauge, heartbeat timeline, uptime and IP history. */
+/** The check-in gauge, the heartbeat and uptime strips, and the IP history. */
 export function HealthBody() {
   const { apiKey } = useNodeCtx();
   const { clock } = useRuntime();
@@ -348,10 +210,9 @@ export function HealthBody() {
   const from = Math.floor(clock.now() / DAY_MS) * DAY_MS - 89 * DAY_MS;
   const hist = useNodeHistory(apiKey, { from });
   return (
-    <>
-      <LifecycleStepper />
-      <Gauge />
-      <Strips hist={hist} />
-    </>
+    <div className="ix-stack ix-stack-lg">
+      <CheckinGauge />
+      <History hist={hist} />
+    </div>
   );
 }

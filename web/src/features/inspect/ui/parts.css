@@ -57,6 +57,66 @@
   text-wrap: pretty;
 }
 
+.ix-cap[data-tone="warn"] {
+  color: var(--status-warn);
+}
+
+.ix-cap[data-tone="crit"] {
+  color: var(--status-crit);
+}
+
+/* Stacked blocks inside a fold: one gap, or a wider one between sub-sections. */
+.ix-stack {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ix-stack-lg {
+  gap: var(--space-8);
+}
+
+/* The head of a loading view, before its title is known. */
+.ix-skel-head {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+/* A quiet heading inside a fold: a title at the left, a short note at the right. */
+.ix-sub-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  color: var(--text-2);
+  font: var(--fw-semibold) var(--fs-xs) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.ix-sub-h > span:first-child {
+  color: var(--text-1);
+}
+
+.ix-sub-h > .ix-dim {
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  letter-spacing: 0;
+}
+
+/* Chips and links that wrap in a row. */
+.ix-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ix-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
 /* ---- callout ------------------------------------------------------------------------------------ */
 
 .ix-callout {
