@@ -44,6 +44,7 @@ export function TimeMachineView({ t, speed }: { t?: string | undefined; speed?: 
   }, [archive]);
 
   useExitCopies(host, animate);
+  useSheetHeight(host);
 
   return (
     <>
@@ -66,6 +67,35 @@ export function TimeMachineView({ t, speed }: { t?: string | undefined; speed?: 
       )}
     </>
   );
+}
+
+/**
+ * On a phone the strip is a sheet resting on the tab bar. Its height goes to the shell as `--tm-sheet-h`
+ * (in px, only while the sheet is up), the way the phone header writes `--phone-top`, so whatever else
+ * rests above the tab bar, such as the toasts, can clear it.
+ */
+function useSheetHeight(host: HTMLElement) {
+  useLayoutEffect(() => {
+    const strip = host.querySelector<HTMLElement>(':scope > .tm-strip:not([data-ghost])');
+    if (!strip) return;
+    const write = () => {
+      if (host.dataset.layout === 'phone') {
+        host.style.setProperty('--tm-sheet-h', `${Math.round(strip.getBoundingClientRect().height)}px`);
+      } else {
+        host.style.removeProperty('--tm-sheet-h');
+      }
+    };
+    write();
+    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(write);
+    watch?.observe(strip);
+    // A turned or resized screen can change the layout without changing the strip's size.
+    window.addEventListener('resize', write);
+    return () => {
+      watch?.disconnect();
+      window.removeEventListener('resize', write);
+      host.style.removeProperty('--tm-sheet-h');
+    };
+  }, [host]);
 }
 
 /** A polite live region, read once per change. */

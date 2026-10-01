@@ -717,7 +717,9 @@
 
 .shell[data-layout="phone"] .tm-chip {
   left: 50%;
-  top: calc(var(--topbar-h) + var(--space-4));
+  /* Under the phone header, which writes its bottom edge to the shell as --phone-top (it is three rows:
+     brand, search and the aim chips); the top bar's height alone before that exists. */
+  top: calc(var(--phone-top, var(--topbar-h)) + var(--space-4));
   max-width: calc(100vw - var(--space-6));
   width: max-content;
   flex-direction: column;
