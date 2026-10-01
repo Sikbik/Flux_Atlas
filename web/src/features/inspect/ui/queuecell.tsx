@@ -1,13 +1,9 @@
 import { formatInt } from '../../../lib/format';
-import { etaClock } from '../derive/eta';
+import { etaShort } from '../derive/eta';
 import { estimatePayment, positionOf } from '../derive/queue';
 import { useChainClock, useQueues } from '../sources/live';
 
-/** Compact text for a countdown: `12h 44m`, `3m 05s`, `28s`. */
-export function etaShort(ms: number): string {
-  const c = etaClock(ms);
-  return c.b !== undefined ? `${c.a}${c.aUnit} ${c.b}${c.bUnit}` : `${c.a}${c.aUnit}`;
-}
+export { etaShort };
 
 /**
  * A node's place in its payment queue as two short lines: `#1,527` and the estimated time to payment.

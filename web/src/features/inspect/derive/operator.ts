@@ -3,6 +3,7 @@
 // (concentration risk, version stragglers, hardware mix, apps hosted). Everything here is a pure
 // function of its inputs, so the views stay thin and the numbers stay testable.
 
+import type { NodeDto } from '../../../api/generated/NodeDto';
 import type { NodeRow } from '../../../api/generated/NodeRow';
 import type { NodeStatus } from '../../../api/generated/NodeStatus';
 import { STATUS_CODES } from '../../../api/nodesBin';
@@ -102,8 +103,8 @@ export function buildFleet(
       appCount: known ? t.appCount[i]! : r.app_count,
       country: known ? t.countryCode(i) : (r.country_code ?? ''),
       org: known ? t.orgName(i) : (r.org ?? ''),
-      lat: r.lat,
-      lon: r.lon,
+      lat: known && Number.isFinite(t.lat[i]) ? (t.lat[i] as number) : r.lat,
+      lon: known && Number.isFinite(t.lon[i]) ? (t.lon[i] as number) : r.lon,
       perDay: payout !== undefined && size > 0 ? fluxPerDay(payout, size) : null,
       paymentAddress: r.payment_address || null,
       present: known,
@@ -144,8 +145,50 @@ export function buildWatchFleet(
   q: QueueSnapshot,
   tip: number | null,
   payouts: TierPayouts,
+  /** What the server said about some of the nodes (fills what the live table does not carry). */
+  rows?: ReadonlyMap<number, NodeRow>,
 ): FleetNode[] {
-  return buildFleet(ids.map(stubRow), t, q, tip, payouts);
+  return buildFleet(
+    ids.map((id) => rows?.get(id) ?? stubRow(id)),
+    t,
+    q,
+    tip,
+    payouts,
+  );
+}
+
+/** The roster row of a node from its detail record, so a watchlist knows what an operator roster knows. */
+export function rowFromDetail(n: NodeDto): NodeRow {
+  return {
+    id: n.id,
+    outpoint: n.outpoint,
+    endpoint: n.endpoint,
+    tier: n.tier,
+    status: n.status,
+    rank: n.rank,
+    payment_address: n.payment_address,
+    country_code: n.geo?.country_code ?? null,
+    country: n.geo?.country ?? null,
+    org: n.geo?.org ?? null,
+    lat: n.geo?.lat ?? null,
+    lon: n.geo?.lon ?? null,
+    app_count: n.app_count,
+    added_height: n.added_height,
+    last_paid_height: n.last_paid_height,
+    last_confirmed_height: n.last_confirmed_height,
+    flux_os: n.versions.flux_os,
+    arcane: n.arcane,
+    reachable: n.reachable,
+  };
+}
+
+export type TierMix = Record<QueueTier, number>;
+
+/** How many nodes of each tier a fleet has (nodes of an unknown tier are not counted). */
+export function tierMix(nodes: readonly FleetNode[]): TierMix {
+  const out: TierMix = { cumulus: 0, nimbus: 0, stratus: 0 };
+  for (const n of nodes) if (n.tier !== 'unknown') out[n.tier]++;
+  return out;
 }
 
 // ---- health -----------------------------------------------------------------------------------------

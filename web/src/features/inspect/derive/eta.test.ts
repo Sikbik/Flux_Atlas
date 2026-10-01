@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { etaClock, etaParts, spanText } from './eta';
+import { etaClock, etaParts, etaShort, spanText } from './eta';
 
 describe('etaParts', () => {
   it('counts seconds under 90 s, minutes under an hour, hours under two days', () => {
@@ -38,5 +38,14 @@ describe('etaParts', () => {
     expect(spanText(8 * 60_000)).toBe('8 min');
     expect(spanText(3.2 * 3_600_000)).toBe('3.2 h');
     expect(spanText(2 * 86_400_000)).toBe('2d');
+  });
+});
+
+describe('etaShort', () => {
+  it('writes the countdown on one line with no spaces inside a figure', () => {
+    expect(etaShort(28_000)).toBe('28s');
+    expect(etaShort(125_000)).toBe('2m 05s');
+    expect(etaShort(46_800_000 + 54 * 60_000)).toBe('13h 54m');
+    expect(etaShort(30 * 3_600_000)).toBe('1d 06h');
   });
 });

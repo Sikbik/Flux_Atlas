@@ -64,6 +64,12 @@ export function etaClock(ms: number): EtaClock {
   return { a: String(s), aUnit: 's', phrase: `in ${s} s` };
 }
 
+/** Compact text for a countdown: `12h 44m`, `3m 05s`, `28s`. */
+export function etaShort(ms: number): string {
+  const c = etaClock(ms);
+  return c.b !== undefined ? `${c.a}${c.aUnit} ${c.b}${c.bUnit}` : `${c.a}${c.aUnit}`;
+}
+
 /** `8 min`, `3.2 h`, `2d 3h`: a span without the leading "in" (ages, durations). */
 export function spanText(ms: number): string {
   const p = etaParts(ms);

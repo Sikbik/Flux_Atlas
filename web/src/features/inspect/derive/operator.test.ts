@@ -13,11 +13,13 @@ import {
   fleetState,
   flyRangeFor,
   hardwareMix,
+  rowFromDetail,
   sortByNextPayout,
   stateCounts,
   stragglers,
   summarizeFleet,
   sumSince,
+  tierMix,
   versionCounts,
 } from './operator';
 import { buildQueues } from './queue';
@@ -333,5 +335,71 @@ describe('fleetCentroid', () => {
     expect(flyRangeFor(0)).toBe(0.5);
     expect(flyRangeFor(0.3)).toBeGreaterThan(flyRangeFor(0.1));
     expect(flyRangeFor(Math.PI)).toBe(3.4);
+  });
+});
+
+describe('tierMix', () => {
+  it('counts the nodes of each tier and skips unknown ones', () => {
+    expect(tierMix([node(1), node(2, { tier: 'nimbus' }), node(3), node(4, { tier: 'unknown' })])).toEqual({
+      cumulus: 0,
+      nimbus: 1,
+      stratus: 2,
+    });
+  });
+});
+
+describe('rowFromDetail', () => {
+  const detail = {
+    id: 7,
+    outpoint: 'abc:0',
+    endpoint: '10.0.0.7:16127',
+    tier: 'nimbus',
+    status: 'confirmed',
+    rank: 3,
+    payment_address: 't1X',
+    app_count: 2,
+    added_height: 10,
+    last_paid_height: 90,
+    last_confirmed_height: 95,
+    arcane: true,
+    reachable: false,
+    geo: { lat: 60.1, lon: 24.9, country_code: 'FI', country: 'Finland', org: 'Hetzner' },
+    versions: { flux_os: '8.20.0' },
+  } as unknown as Parameters<typeof rowFromDetail>[0];
+
+  it('carries what a roster row carries', () => {
+    expect(rowFromDetail(detail)).toMatchObject({
+      id: 7,
+      endpoint: '10.0.0.7:16127',
+      tier: 'nimbus',
+      country_code: 'FI',
+      org: 'Hetzner',
+      lat: 60.1,
+      flux_os: '8.20.0',
+      last_confirmed_height: 95,
+      reachable: false,
+    });
+  });
+
+  it('leaves the place unknown when the node has no geo', () => {
+    expect(rowFromDetail({ ...detail, geo: null })).toMatchObject({ lat: null, lon: null, org: null });
+  });
+
+  it('lets a watchlist keep what the server said about a node the table does not know', () => {
+    const t = tableOf([{ id: 1, tier: 3, rank: 1, ip: '10.0.0.1:16127' }]);
+    const q = buildQueues(t);
+    const rows = new Map([[7, rowFromDetail(detail)]]);
+    const [n] = buildWatchFleet([7], t, q, 1_000, {}, rows);
+    expect(n).toMatchObject({ present: false, endpoint: '10.0.0.7:16127', lat: 60.1, reachable: false });
+  });
+});
+
+describe('buildFleet places', () => {
+  it('prefers the live table place over the roster row', () => {
+    const t = tableOf([{ id: 1, tier: 3, rank: 1, ip: '10.0.0.1:16127', lat: 12.5, lon: 34.5 }]);
+    const q = buildQueues(t);
+    const [n] = buildFleet([row(1, { lat: 60, lon: 25 })], t, q, 1_000, {});
+    expect(n!.lat).toBeCloseTo(12.5, 4);
+    expect(n!.lon).toBeCloseTo(34.5, 4);
   });
 });
