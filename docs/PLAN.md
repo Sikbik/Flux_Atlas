@@ -53,6 +53,21 @@ called out in the hand-back.
 ## Phase 5 — Ship
 `deploy/Dockerfile`, `deploy/flux_app_spec.json`, README, removal of v1 dirs, final review, and hand-off.
 
+**Deployment target: the live Flux app `atlas`.** v2 ships as an update of this app and must conform to its spec.
+- Spec facts (v8 at height 2,988,596; owner `196GJWyLxzAw3MirTT7Bqs2iGpUQio29GH`):
+  - 2 instances, served at https://atlas.app.runonflux.io.
+  - One component, `atlas`, with image `littlestache/flux-atlas:latest`.
+- Ports: public port 33889 maps to container port **3000**.
+  - The server binds `0.0.0.0:3000`, which is already the default.
+  - It serves the SPA, the API and the WebSocket on that one port.
+- Persistent data lives at **`/app/backend/data`** (the spec's containerData).
+  - The spec passes no environment variables and no commands, so every image default must work as is.
+  - The image therefore sets `ATLAS_DATA_DIR=/app/backend/data`.
+  - FluxOS mounts that volume, so the user the image runs as must be able to write to it.
+- Budget per instance: 1 CPU, 2,500 MB RAM, 10 GB disk.
+  - Server RSS, the redb cache and history retention must fit inside it.
+- Re-read the live spec before deploying: `GET https://api.runonflux.io/apps/appspecifications/atlas`.
+
 ## Team conventions
 - **Clean-room rewrite: no v1 code is carried over** (no snippets, formulas, layouts, styles, or structure).
   v1 is only a reference for purpose and network/API facts. Every brief restates this.
