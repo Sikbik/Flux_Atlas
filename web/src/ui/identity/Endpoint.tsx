@@ -45,7 +45,12 @@ export function Endpoint({
   const wrapped = copy || className || style;
   const inner = wrapped ? undefined : ref;
   const body = link ? (
-    <EntityLink kind={ep.port === null ? 'host' : 'node'} value={full} ref={inner as Ref<HTMLAnchorElement>}>
+    <EntityLink
+      kind={ep.port === null ? 'host' : 'node'}
+      value={full}
+      mono
+      ref={inner as Ref<HTMLAnchorElement>}
+    >
       {text}
     </EntityLink>
   ) : (

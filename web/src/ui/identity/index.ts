@@ -10,3 +10,4 @@ export { splitHash, splitTrailingZeros } from './hashParts';
 export { RelativeTime, type RelativeTimeProps } from './RelativeTime';
 export { formatUtcStamp } from './time';
 export { isUnknownValue, Unknown, type UnknownProps } from './Unknown';
+export { useEntityLinkProps } from './useEntityLinkProps';

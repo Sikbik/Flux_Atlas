@@ -234,6 +234,29 @@ describe('EntityLink', () => {
     }
   });
 
+  it('keeps an endpoint link in Plex Mono and lets the caller opt a custom label into mono', () => {
+    const ep = mount(<Endpoint value="65.109.26.93:16147" />);
+    expect(ep.container.querySelector('a')?.hasAttribute('data-mono')).toBe(true);
+    ep.unmount();
+    const custom = mount(
+      <EntityLink kind="block" value="1" mono>
+        #1
+      </EntityLink>,
+    );
+    expect(custom.container.querySelector('a')?.hasAttribute('data-mono')).toBe(true);
+    custom.unmount();
+  });
+
+  it('sets text the caller supplies in the interface font, even for an id kind', () => {
+    const m = mount(
+      <EntityLink kind="node" value="65.109.26.93:16147">
+        Open node
+      </EntityLink>,
+    );
+    expect(m.container.querySelector('a')?.hasAttribute('data-mono')).toBe(false);
+    m.unmount();
+  });
+
   it('sets ids in Plex Mono and names in the interface font', () => {
     const m = mount(
       <>

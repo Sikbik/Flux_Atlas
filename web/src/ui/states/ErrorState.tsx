@@ -51,6 +51,7 @@ export function ErrorState({
       framed={framed}
       compact={compact}
       className={className}
+      data-code={info.code ?? undefined}
       {...rest}
       action={
         showRetry ? (
@@ -61,12 +62,6 @@ export function ErrorState({
       }
     >
       {children ?? info.text}
-      {info.code && children === undefined ? (
-        <>
-          {' '}
-          <code>{info.code}</code>
-        </>
-      ) : null}
     </EmptyState>
   );
 }
