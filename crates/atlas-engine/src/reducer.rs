@@ -55,50 +55,94 @@ pub struct JobCmds {
 pub enum WriterCmd {
     Commit(WriteBatch),
     Flush(oneshot::Sender<()>),
+    /// An injected fault: the writer panics (tests of the supervision).
+    #[cfg(any(test, feature = "fault-injection"))]
+    Panic,
 }
 
-/// Spawns the store writer thread.
-pub fn spawn_writer(
-    store: atlas_store::Store,
-    handle: EngineHandle,
-) -> std::sync::mpsc::Sender<WriterCmd> {
-    let (tx, rx) = std::sync::mpsc::channel::<WriterCmd>();
+/// Batches the store writer may have queued before the reducer waits for it (backpressure).
+/// A tick produces at most one batch, so this is several seconds of ingest even while blocks
+/// and a reconcile arrive together; a writer slower than that for long (a compaction holds the
+/// database) makes the reducer wait instead of queuing without bound.
+pub const WRITER_QUEUE: usize = 256;
+
+/// The reducer's end of the store writer channel (bounded, with backpressure).
+pub type WriterTx = std::sync::mpsc::SyncSender<WriterCmd>;
+
+/// Spawns the store writer thread. It is supervised: a panic, or a stop while the engine is not
+/// shutting down, marks the engine dead (section 3.4); its commit failures are counted and
+/// reported by `/readyz` and Prometheus.
+pub fn spawn_writer(store: atlas_store::Store, handle: &EngineHandle) -> WriterTx {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<WriterCmd>(WRITER_QUEUE);
+    let h = handle.clone();
     let spawned = std::thread::Builder::new()
         .name("atlas-store-writer".to_owned())
         .spawn(move || {
-            while let Ok(cmd) = rx.recv() {
-                match cmd {
-                    WriterCmd::Commit(batch) => {
-                        let ops = batch.len() as u64;
-                        match store.commit(batch) {
-                            Ok(c) => handle.inner.stats.with(|s| {
-                                s.commits += 1;
-                                s.commit_ops += ops;
-                                s.commit_seconds
-                                    .observe(crate::stats::LOCAL_BUCKETS, c.elapsed.as_secs_f64());
-                            }),
-                            Err(e) => {
-                                tracing::error!(error = %e, "store commit failed");
-                                handle.inner.stats.with(|s| s.commit_errors += 1);
-                            }
-                        }
-                    }
-                    WriterCmd::Flush(ack) => {
-                        if let Err(e) = store.flush() {
-                            tracing::error!(error = %e, "store flush failed");
-                        }
-                        let _ = ack.send(());
-                    }
-                }
-            }
+            let handle = h;
+            let live = handle.live();
+            crate::liveness::supervise_worker(live, "store writer", || {
+                writer_loop(&store, &handle, &rx);
+            });
+            // The channel closes when the reducer stops (or dies): flush what was committed.
             if let Err(e) = store.flush() {
                 tracing::warn!(error = %e, "final store flush failed");
             }
         });
     if let Err(e) = spawned {
-        tracing::error!(error = %e, "could not spawn the store writer thread");
+        handle
+            .live()
+            .fatal(format!("could not spawn the store writer thread: {e}"));
     }
     tx
+}
+
+fn writer_loop(
+    store: &atlas_store::Store,
+    handle: &EngineHandle,
+    rx: &std::sync::mpsc::Receiver<WriterCmd>,
+) {
+    let live = handle.live();
+    while let Ok(cmd) = rx.recv() {
+        live.writer_queue
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        match cmd {
+            WriterCmd::Commit(batch) => {
+                let ops = batch.len() as u64;
+                live.writer_busy(true);
+                let r = store.commit(batch);
+                live.writer_busy(false);
+                match r {
+                    Ok(c) => {
+                        live.commit_ok();
+                        handle.inner.stats.with(|s| {
+                            s.commits += 1;
+                            s.commit_ops += ops;
+                            s.commit_seconds
+                                .observe(crate::stats::LOCAL_BUCKETS, c.elapsed.as_secs_f64());
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, ops, "store commit failed; the batch is lost");
+                        live.commit_failed(&e);
+                        handle.inner.stats.with(|s| s.commit_errors += 1);
+                    }
+                }
+            }
+            WriterCmd::Flush(ack) => {
+                live.writer_busy(true);
+                if let Err(e) = store.flush() {
+                    tracing::error!(error = %e, "store flush failed");
+                    live.commit_failed(&e);
+                }
+                live.writer_busy(false);
+                let _ = ack.send(());
+                // Only shutdown flushes: the reducer stops after it.
+                live.begin_stop();
+            }
+            #[cfg(any(test, feature = "fault-injection"))]
+            WriterCmd::Panic => panic!("injected store writer panic"),
+        }
+    }
 }
 
 /// Minimum time between coalesced publishes.
@@ -123,7 +167,7 @@ struct PendingList {
 pub struct Reducer {
     pub st: NetworkState,
     handle: EngineHandle,
-    writer: std::sync::mpsc::Sender<WriterCmd>,
+    writer: WriterTx,
     publisher: Option<std::sync::mpsc::Sender<PublishJob>>,
     cmds: Option<JobCmds>,
     obs_tx: mpsc::Sender<Obs>,
@@ -164,7 +208,7 @@ impl Reducer {
     pub fn new(
         st: NetworkState,
         handle: EngineHandle,
-        writer: std::sync::mpsc::Sender<WriterCmd>,
+        writer: WriterTx,
         cmds: Option<JobCmds>,
         obs_tx: mpsc::Sender<Obs>,
         watch_rx: watch::Receiver<WatchSet>,
@@ -231,6 +275,7 @@ impl Reducer {
 
         self.maybe_publish();
         loop {
+            self.handle.live().reducer_beat();
             tokio::select! {
                 obs = rx.recv() => {
                     let Some(obs) = obs else { break };
@@ -259,7 +304,7 @@ impl Reducer {
                     if let Some(ack) = flush {
                         // Only shutdown flushes: persist everything, then stop.
                         self.flush_mempool();
-                        let _ = self.writer.send(WriterCmd::Flush(ack));
+                        self.send_writer(WriterCmd::Flush(ack));
                         break;
                     }
                     self.maybe_publish();
@@ -272,6 +317,38 @@ impl Reducer {
                 _ = minute_iv.tick() => self.metrics_minute(),
                 _ = housekeeping_iv.tick() => self.housekeeping(),
             }
+        }
+    }
+
+    /// Sends a command to the store writer. When its queue is full the reducer waits
+    /// (backpressure, counted) rather than queuing without bound; the watchdog then applies the
+    /// writer's stall limit, not the reducer's.
+    fn send_writer(&self, cmd: WriterCmd) {
+        use std::sync::atomic::Ordering;
+        let live = self.handle.live();
+        let cmd = match self.writer.try_send(cmd) {
+            Ok(()) => {
+                live.writer_queue.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+            Err(std::sync::mpsc::TrySendError::Full(cmd)) => cmd,
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                live.fatal("store writer channel closed");
+                return;
+            }
+        };
+        let started = Instant::now();
+        live.writer_backpressure.fetch_add(1, Ordering::Relaxed);
+        live.reducer_waiting(true);
+        let sent = self.writer.send(cmd);
+        live.reducer_waiting(false);
+        live.writer_backpressure_ms
+            .fetch_add(started.elapsed().as_millis() as u64, Ordering::Relaxed);
+        match sent {
+            Ok(()) => {
+                live.writer_queue.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(_) => live.fatal("store writer channel closed"),
         }
     }
 
@@ -646,8 +723,15 @@ impl Reducer {
                 tick.publish = true;
             }
             Obs::Flush(ack) => {
-                let _ = self.writer.send(WriterCmd::Flush(ack));
+                self.send_writer(WriterCmd::Flush(ack));
             }
+            #[cfg(any(test, feature = "fault-injection"))]
+            Obs::Fault(f) => match f {
+                crate::Fault::ReducerPanic => panic!("injected reducer panic"),
+                crate::Fault::WriterPanic => self.send_writer(WriterCmd::Panic),
+                crate::Fault::ReducerStall(d) => std::thread::sleep(d),
+                crate::Fault::JobPanic => {}
+            },
         }
     }
 
@@ -1373,9 +1457,7 @@ impl Reducer {
                 .set_meta_u64(atlas_store::meta_keys::FIRST_INGEST_MS, now);
         }
         if !tick.batch.is_empty() {
-            let _ = self
-                .writer
-                .send(WriterCmd::Commit(std::mem::take(&mut tick.batch)));
+            self.send_writer(WriterCmd::Commit(std::mem::take(&mut tick.batch)));
         }
         if tick.publish_now {
             self.publish_pending = true;
@@ -1624,7 +1706,7 @@ impl Reducer {
         if self.fresh {
             let mut b = WriteBatch::new();
             b.put_metrics_1m(row);
-            let _ = self.writer.send(WriterCmd::Commit(b));
+            self.send_writer(WriterCmd::Commit(b));
         }
     }
 
@@ -1757,8 +1839,10 @@ impl Reducer {
         let handle = self.handle.clone();
         let tx = self.obs_tx.clone();
         tokio::task::spawn_blocking(move || {
+            handle.live().publish_busy(true);
             let (p, t) = build(job);
             handle.install(p);
+            handle.live().publish_busy(false);
             let _ = tx.blocking_send(Obs::PublishDone {
                 elapsed_ms: t.total_ms,
             });
@@ -1777,25 +1861,30 @@ fn spawn_publisher(
     let spawned = std::thread::Builder::new()
         .name("atlas-publisher".to_owned())
         .spawn(move || {
-            let mesh = match crate::publish::MeshWorker::spawn() {
-                Ok(w) => Some(w),
-                Err(e) => {
-                    tracing::warn!(error = %e, "mesh body worker unavailable; building inline");
-                    None
+            let live = std::sync::Arc::clone(&handle.inner.live);
+            crate::liveness::supervise_worker(&live, "publisher", || {
+                let mesh = match crate::publish::MeshWorker::spawn(Some(handle.clone())) {
+                    Ok(w) => Some(w),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "mesh body worker unavailable; building inline");
+                        None
+                    }
+                };
+                while let Ok(job) = rx.recv() {
+                    live.publish_busy(true);
+                    let (p, t) = build_with(job, mesh.as_ref());
+                    handle.install(p);
+                    live.publish_busy(false);
+                    if obs_tx
+                        .blocking_send(Obs::PublishDone {
+                            elapsed_ms: t.total_ms,
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
-            };
-            while let Ok(job) = rx.recv() {
-                let (p, t) = build_with(job, mesh.as_ref());
-                handle.install(p);
-                if obs_tx
-                    .blocking_send(Obs::PublishDone {
-                        elapsed_ms: t.total_ms,
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-            }
+            });
         });
     match spawned {
         Ok(_) => Some(tx),

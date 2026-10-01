@@ -203,7 +203,13 @@ fn main() -> ExitCode {
                 .enable_all()
                 .build()
                 .map_err(anyhow::Error::from)
-                .and_then(|rt| rt.block_on(atlas_server::serve(cfg)))
+                .and_then(|rt| {
+                    let r = rt.block_on(atlas_server::serve(cfg));
+                    // Do not wait forever for blocking tasks (a wedged store read after the
+                    // engine died): the process must exit to be restarted.
+                    rt.shutdown_timeout(Duration::from_secs(5));
+                    r
+                })
         }
         Cmd::Healthcheck { addr, timeout_s } => tokio::runtime::Builder::new_current_thread()
             .enable_all()

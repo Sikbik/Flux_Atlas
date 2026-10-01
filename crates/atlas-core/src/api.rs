@@ -1002,11 +1002,17 @@ impl ApiErrorDto {
 /// `GET /healthz` and `/readyz`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct HealthDto {
-    /// `ok`, `starting` or `degraded`.
+    /// `ok`, `starting`, `degraded` (nothing published for a while; still healthy),
+    /// `store_failing` (store commits fail; not ready) or `dead` (a supervised engine part
+    /// panicked, stopped or stalled; unhealthy, the process exits and is restarted).
     pub status: String,
     pub seq: u64,
     pub uptime_s: u64,
     pub tip_height: Option<u32>,
+    /// Why the status is `dead` or `store_failing`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reason: Option<String>,
 }
 
 #[cfg(test)]

@@ -142,18 +142,29 @@ pub struct MeshWorker {
 }
 
 impl MeshWorker {
-    pub fn spawn() -> std::io::Result<Self> {
+    /// Spawns the worker; with an engine handle it is supervised (a panic marks the engine
+    /// dead, section 3.4).
+    pub fn spawn(engine: Option<crate::EngineHandle>) -> std::io::Result<Self> {
         let (tx, req_rx) = std::sync::mpsc::channel::<MeshReq>();
         let (resp_tx, rx) = std::sync::mpsc::channel::<MeshResp>();
         std::thread::Builder::new()
             .name("atlas-mesh-body".to_owned())
             .spawn(move || {
-                while let Ok((seq, ms, origin, edges)) = req_rx.recv() {
-                    let out = mesh_body(seq, ms, origin, &edges);
-                    drop(edges);
-                    if resp_tx.send(out).is_err() {
-                        break;
+                let work = || {
+                    while let Ok((seq, ms, origin, edges)) = req_rx.recv() {
+                        let out = mesh_body(seq, ms, origin, &edges);
+                        drop(edges);
+                        if resp_tx.send(out).is_err() {
+                            break;
+                        }
                     }
+                };
+                match &engine {
+                    Some(h) => {
+                        let live = h.live();
+                        crate::liveness::supervise_worker(live, "mesh body worker", work);
+                    }
+                    None => work(),
                 }
             })?;
         Ok(Self { tx, rx })

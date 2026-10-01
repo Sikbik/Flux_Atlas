@@ -26,6 +26,10 @@ brotli.workspace = true
 flate2.workspace = true
 zstd.workspace = true
 
+[features]
+# `EngineHandle::inject_fault` for tests of the supervision (section 3.4). Never in production.
+fault-injection = []
+
 [dev-dependencies]
 tempfile.workspace = true
 redb.workspace = true

@@ -333,6 +333,38 @@ them, but they can't be located.
 - Apps: name (case-insensitive, stored lowercase + display name).
 - Blocks: height (u32) + hash.
 
+### 3.4 Liveness and the store writer (B9)
+
+A panic ends only its own thread or task, and WebSocket pings keep flowing, so before B9 a dead reducer,
+store writer or job left the server serving frozen data while `/healthz` stayed green. Now
+(`atlas_engine::liveness`):
+
+- **Supervised parts.** The reducer thread (a panic, or a stop while the engine is not shutting down), the
+  store writer, the publisher and the mesh body worker (a panic; they end normally only when the reducer
+  dropped their channel), and every ingest job task plus the ping and watchdog tasks (a panic; jobs that end
+  on purpose, a finished backfill for example, are only logged).
+- **Watchdog** (every 5 s): the reducer must turn its loop within 90 s (it ticks every 250 ms); one store
+  commit may run 30 min (a compaction holds the database; this catches a wedged writer, not a slow disk); one
+  publish may run 5 min. While the reducer waits on writer backpressure the writer's limit applies, not the
+  reducer's.
+- **Dead means restart.** The first failure marks the engine dead: `/healthz` and `/readyz` answer 503
+  `{status: "dead", reason}` (so `atlas healthcheck` fails), `atlas_engine_alive` drops to 0, and the server
+  shuts down as on SIGTERM (a 10 s bounded final flush, a 5 s bound on blocking tasks) and exits with status
+  1. Docker's or FluxOS's restart policy then restarts it on the persisted state (startup serves the stored
+  state within a second). A healthcheck alone restarts nothing under plain Docker, hence the exit.
+- **Unwind, not abort.** `panic = "abort"` would also end the process on a panic inside one HTTP request (a
+  dependency bug on a crafted input), letting a single request crash-loop the public server. With unwind
+  such a panic ends only that request's task, and the state-owning parts escalate through supervision.
+- **Store writer (L7).** The reducer-to-writer channel is bounded (256 batches, one per tick at most). When
+  it is full the reducer waits (`atlas_store_writer_backpressure_total` / `_seconds_total`) instead of queuing
+  without bound behind a compaction. A failed commit is logged with its size and counted
+  (`atlas_store_commit_errors_total`, `atlas_store_commit_fail_streak`); 3 failures in a row make `/readyz`
+  answer 503 `store_failing` with the error (live data stays correct in memory, so `/healthz` stays 200: a
+  restart would not fix a full disk). `atlas_store_writer_queue` shows the depth.
+- **Tests** inject faults through the `fault-injection` feature of `atlas-engine` (test builds only):
+  `atlas-server` `dead_engine_fails_health` panics the reducer, the store writer and a job in turn and checks
+  `/healthz`, `/readyz`, the healthcheck and the metric.
+
 ## 4. Domain model (atlas-core) — sketch, finalize from research
 
 ```rust

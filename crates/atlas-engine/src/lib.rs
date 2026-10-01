@@ -17,6 +17,7 @@ pub mod derive;
 pub mod freshness;
 pub mod geoip;
 mod jobs;
+pub mod liveness;
 pub mod obs;
 pub mod publish;
 pub mod reducer;
@@ -44,9 +45,10 @@ use atlas_flux::insight_socket::SocketConfig;
 use atlas_flux::models::daemon::DaemonBlock;
 use atlas_store::{DiskBudget, HistoryRetention, RetentionPolicy, Store};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-use tokio::task::JoinHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 
 pub use body::{Encoding, PrebuiltBodies, PrebuiltBody};
+pub use liveness::LivenessReport;
 pub use replay::Resync;
 pub use stats::{CallCount, EngineStats, StorageStatus, Upstream};
 
@@ -351,7 +353,10 @@ struct Inner {
     /// Publishing is serialized: seq assignment, ring push and broadcast happen under this lock so
     /// the ring and the channel see the same order.
     ring: std::sync::Mutex<replay::ReplayRing>,
-    tasks: std::sync::Mutex<Vec<JoinHandle<()>>>,
+    /// Supervised tasks (aborted on shutdown).
+    tasks: std::sync::Mutex<Vec<AbortHandle>>,
+    /// Liveness of the supervised parts (section 3.4).
+    live: Arc<liveness::Liveness>,
     stats: stats::StatsCell,
     freshness: freshness::Freshness,
     watches: std::sync::Mutex<Watches>,
@@ -422,6 +427,7 @@ impl Engine {
             seq: AtomicU64::new(0),
             ring: std::sync::Mutex::new(replay::ReplayRing::new(config.replay_capacity)),
             tasks: std::sync::Mutex::new(Vec::new()),
+            live: Arc::new(liveness::Liveness::default()),
             stats: stats::StatsCell::default(),
             freshness: freshness::Freshness::default(),
             watches: std::sync::Mutex::new(HashMap::new()),
@@ -436,7 +442,7 @@ impl Engine {
             tx,
         });
         let handle = EngineHandle { inner };
-        let writer = reducer::spawn_writer(store, handle.clone());
+        let writer = reducer::spawn_writer(store, &handle);
         let ingest = handle.inner.config.ingest.clone();
         let (cmds, cmd_rx) = if ingest.enabled {
             let (c, r) = jobs::commands();
@@ -458,22 +464,32 @@ impl Engine {
         );
         // The reducer runs on its own thread (a current-thread runtime): it owns the state and
         // its allocations then stay in one allocator heap instead of migrating across the
-        // worker pool, which keeps RSS flat. It stops after the shutdown flush.
+        // worker pool, which keeps RSS flat. It stops after the shutdown flush. It is
+        // supervised: a panic or an unexpected stop marks the engine dead (section 3.4).
+        let live = Arc::clone(&handle.inner.live);
         let spawned = std::thread::Builder::new()
             .name("atlas-reducer".to_owned())
             .spawn(move || {
-                match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(rt) => rt.block_on(red.run(obs_rx)),
-                    Err(e) => tracing::error!(error = %e, "reducer runtime failed to start"),
-                }
+                liveness::supervise_thread(&live, "reducer", || {
+                    match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => rt.block_on(red.run(obs_rx)),
+                        Err(e) => tracing::error!(error = %e, "reducer runtime failed to start"),
+                    }
+                });
             });
         if let Err(e) = spawned {
-            tracing::error!(error = %e, "could not spawn the reducer thread");
+            handle
+                .inner
+                .live
+                .fatal(format!("could not spawn the reducer thread: {e}"));
         }
-        let mut tasks = vec![tokio::spawn(ping_loop(handle.clone()))];
+        let mut tasks = vec![
+            handle.supervise("ping", ping_loop(handle.clone())),
+            handle.supervise("watchdog", watchdog(handle.clone())),
+        ];
         if let Some(rx) = cmd_rx {
             let ctx = jobs::JobCtx::new(
                 clients,
@@ -483,9 +499,12 @@ impl Engine {
                 shutdown_rx,
                 watch_rx,
             );
-            tasks.extend(jobs::spawn_all(&ctx, rx, recent));
+            for (name, job) in jobs::spawn_all(&ctx, rx, recent) {
+                tasks.push(handle.watch_task(name, job));
+            }
             let geo = handle.inner.config.geoip.clone();
-            tasks.push(tokio::spawn(jobs::geoip::run(ctx.for_job("geoip_db"), geo)));
+            tasks
+                .push(handle.supervise("geoip_db", jobs::geoip::run(ctx.for_job("geoip_db"), geo)));
         }
         handle
             .inner
@@ -495,6 +514,36 @@ impl Engine {
             .extend(tasks);
         handle
     }
+}
+
+/// How often the watchdog checks the supervised parts.
+const WATCHDOG_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Marks the engine dead when the reducer, the store writer or the publisher stalls.
+async fn watchdog(h: EngineHandle) {
+    let mut iv = tokio::time::interval(WATCHDOG_INTERVAL);
+    iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        iv.tick().await;
+        if h.inner.live.stopping() {
+            return;
+        }
+        h.inner.live.check(now_ms());
+    }
+}
+
+/// A fault to inject (tests of the supervision, section 3.4).
+#[cfg(any(test, feature = "fault-injection"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fault {
+    /// The reducer panics while applying an observation.
+    ReducerPanic,
+    /// The store writer panics on its next command.
+    WriterPanic,
+    /// A supervised job task panics.
+    JobPanic,
+    /// The reducer thread blocks for this long (a stall).
+    ReducerStall(Duration),
 }
 
 /// The binary-snapshot origin of a server.
@@ -818,9 +867,81 @@ impl EngineHandle {
             .len_cap()
     }
 
+    /// Spawns a supervised task: a panic marks the engine dead (section 3.4).
+    fn supervise(
+        &self,
+        name: &'static str,
+        fut: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> AbortHandle {
+        self.watch_task(name, tokio::spawn(fut))
+    }
+
+    /// Supervises a spawned task: a panic marks the engine dead; a normal end is logged (some
+    /// jobs finish on purpose, for example a completed backfill or a disabled download).
+    fn watch_task(&self, name: &'static str, task: JoinHandle<()>) -> AbortHandle {
+        let abort = task.abort_handle();
+        let live = Arc::clone(&self.inner.live);
+        tokio::spawn(async move {
+            match task.await {
+                Ok(()) => {
+                    if !live.stopping() {
+                        tracing::info!(task = name, "engine task finished");
+                    }
+                }
+                Err(e) if e.is_panic() => {
+                    let msg = liveness::panic_message(e.into_panic().as_ref());
+                    live.fatal(format!("task {name} panicked: {msg}"));
+                }
+                Err(_) => {}
+            }
+        });
+        abort
+    }
+
+    /// Liveness of the engine's supervised parts (health endpoints, metrics).
+    pub fn liveness(&self) -> LivenessReport {
+        self.inner.live.report()
+    }
+
+    /// Resolves with the reason once the engine is dead (a supervised part panicked, stopped
+    /// or stalled). The server then shuts down and exits non-zero, so it is restarted.
+    pub async fn died(&self) -> String {
+        self.inner.live.died().await
+    }
+
+    pub(crate) fn live(&self) -> &liveness::Liveness {
+        &self.inner.live
+    }
+
+    /// Injects a fault (tests of the supervision).
+    #[cfg(any(test, feature = "fault-injection"))]
+    pub async fn inject_fault(&self, fault: Fault) {
+        if fault == Fault::JobPanic {
+            let a = self.supervise("fault_injection", async {
+                panic!("injected job panic");
+            });
+            self.inner
+                .tasks
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(a);
+            return;
+        }
+        let tx = self
+            .inner
+            .obs_tx
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(tx) = tx {
+            let _ = tx.send(Obs::Fault(fault)).await;
+        }
+    }
+
     /// Stops the ingest jobs, flushes the store durably, then stops the reducer. The handle
     /// stays readable.
     pub async fn shutdown(&self) {
+        self.inner.live.begin_stop();
         let _ = self.inner.shutdown_tx.send(true);
         let obs = self
             .inner
@@ -834,7 +955,7 @@ impl EngineHandle {
                 let _ = tokio::time::timeout(Duration::from_secs(10), done).await;
             }
         }
-        let tasks: Vec<JoinHandle<()>> = self
+        let tasks: Vec<AbortHandle> = self
             .inner
             .tasks
             .lock()
