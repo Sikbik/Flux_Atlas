@@ -30,9 +30,11 @@ chrome steps back on that attribute alone, in CSS (`frame.css`): the Pulse folds
 archive view", the rail's blocks fade out under a label, and what is paused leaves the key and the reading order
 (`visibility`), while the veil still takes the pointer so nothing falls through to the globe.
 
-**The palette.** It is open while the URL carries `?q=`, even empty. The launchers open it on a kind's prefix
-(`PALETTE_SEED` in `launchers.tsx`: `app `, `operator `), and a prefix is only a prefix with its trailing space,
-which is why the `q` validator (`text` in `app/search.ts`) keeps the end of what it is given.
+**The palette.** It is open while the URL carries `?q=`, even empty. The launchers that need a subject open it on
+a kind's prefix (`PALETTE_SEED` in `launchers.tsx`: `node `, `app `), and a prefix is only a prefix with its trailing
+space, which is why the `q` validator (`text` in `app/search.ts`) keeps the end of what it is given. The Operator
+launcher needs no subject: it opens the watchlist (`/operator/watchlist`, `WATCHLIST` in `launchers.tsx`), or raises
+an operator window that is already open.
 
 **The globe's inset.** `globeInset` (`wm/machine.ts`) gives the workspace edges plus the windows: docked windows
 always reserve their side, a maximized window reserves nothing, and a floating window reserves its side only

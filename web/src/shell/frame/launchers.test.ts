@@ -29,8 +29,7 @@ describe('the launchers that need a subject', () => {
     const e = env();
     e.run('apps');
     e.run('nodes');
-    e.run('operator');
-    expect(e.palette.mock.calls).toEqual([['app '], ['node '], ['operator ']]);
+    expect(e.palette.mock.calls).toEqual([['app '], ['node ']]);
   });
 
   it('raise the window instead when one is open', () => {
@@ -41,7 +40,29 @@ describe('the launchers that need a subject', () => {
   });
 
   it('seed only the kinds that need a subject', () => {
-    expect(Object.keys(PALETTE_SEED).sort()).toEqual(['apps', 'nodes', 'operator']);
+    expect(Object.keys(PALETTE_SEED).sort()).toEqual(['apps', 'nodes']);
     for (const seed of Object.values(PALETTE_SEED)) expect(seed).toMatch(/^[a-z]+ $/);
+  });
+});
+
+describe('the Operator launcher', () => {
+  it('opens the watchlist, not the palette', () => {
+    const e = env();
+    e.run('operator');
+    expect(e.open).toHaveBeenCalledWith({ type: 'operator', key: 'watchlist' });
+    expect(e.palette).not.toHaveBeenCalled();
+  });
+
+  it('raises an operator window that is already open, whatever it shows', () => {
+    const e = env({ id: 'operator:abc', type: 'operator', key: 'abc', binding: 'primary' });
+    e.run('operator');
+    expect(e.focus).toHaveBeenCalledWith('operator:abc');
+    expect(e.open).not.toHaveBeenCalled();
+  });
+
+  it('brings an operator window that rides in ?w= to the front by opening it', () => {
+    const e = env({ id: 'operator:abc', type: 'operator', key: 'abc', binding: 'extra' });
+    e.run('operator');
+    expect(e.open).toHaveBeenCalledWith({ type: 'operator', key: 'abc' });
   });
 });
