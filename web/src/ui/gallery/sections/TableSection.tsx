@@ -545,12 +545,14 @@ export function TableSection() {
           caption="A compact state panel inside the table area; the header stays, so the columns are still explained."
           flush
         >
-          <DataTable
-            aria-label="Empty example"
-            rows={[]}
-            columns={inspectorColumns.slice(0, 3)}
-            rowKey={nodeKey}
-          />
+          <div className="kg-tbl-frame">
+            <DataTable
+              aria-label="Empty example"
+              rows={[]}
+              columns={inspectorColumns.slice(0, 3)}
+              rowKey={nodeKey}
+            />
+          </div>
         </Specimen>
 
         <Specimen
@@ -574,15 +576,17 @@ export function TableSection() {
           caption="Same contract on a different kind: each row opens its block."
           flush
         >
-          <DataTable
-            aria-label="Blocks, rows link to the block window"
-            rows={linkBlocks}
-            columns={blockLinkColumns}
-            rowKey={blockKey}
-            rowLink={(b) => ({ kind: 'block', value: String(b.height) })}
-            maxHeight={440}
-            loading={ring.length === 0}
-          />
+          <div className="kg-tbl-frame">
+            <DataTable
+              aria-label="Blocks, rows link to the block window"
+              rows={linkBlocks}
+              columns={blockLinkColumns}
+              rowKey={blockKey}
+              rowLink={(b) => ({ kind: 'block', value: String(b.height) })}
+              maxHeight={440}
+              loading={ring.length === 0}
+            />
+          </div>
         </Specimen>
       </SpecGrid>
     </GallerySection>
