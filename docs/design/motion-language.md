@@ -511,7 +511,7 @@ Each is captured in `full`, and the ones that matter in `reduced` and `off` (`--
 | `toast` | 0 to 440 every 40 | scale from 0.97 and fade on the toast itself, one comet along its top edge |
 | `block` | 0, 60, 120, 200, 300, 420, 560, 700, 860, 1000 | the rail's streak, the new card circled once, the number settling; still by 1 s |
 | `pulse-p1` | 0, 200, 600, 1000, then 1100 to 1800 | the payment row waits: nothing on it at 1000 ms. Then one streak along its top edge, inside the row, 1100 to 1640 ms |
-| `palette` | 0 to 420 every 40 | the panel powers on from the middle of its top edge; the line under the chosen kind stays in place |
+| `palette`, `palette-kind` | 0 to 420 every 40, 0 to 480 every 40 | the panel powers on from the middle of its top edge and the line under the chosen kind is already in place; on Tab the next chip is chosen at once and the line stretches to it, leading edge first, and lands centred under it |
 | `phone-tab` | 0 to 480 every 40 | the line on the bar's top edge stretches to the new tab |
 | `phone-sheet-open`, `phone-sheet-close` | 0 to 480 every 40, 0 to 240 every 30 | the sheet unfolds from its foot with a comet along its top; it slides down and fades |
 

@@ -335,6 +335,23 @@ const scenarios = [
     clip: async (page, view) => union([await rectOf(page, '.pal-slot')], 30, view),
   },
   {
+    name: 'palette-kind',
+    note: 'the command palette: Tab moves the chosen kind chip, and the line under the chips stretches to it',
+    view: DESKTOP,
+    times: range(480, 40),
+    cols: 3,
+    tile: 880,
+    setup: async (page) => {
+      await page.keyboard.press('Control+k');
+      await page.waitForSelector('.pal-kinds');
+      await page.waitForTimeout(900);
+    },
+    pre: async () => {},
+    act: (page) => page.keyboard.press('Tab'),
+    waitFor: '.pal-kind:nth-child(2)[data-selected]',
+    clip: async (page, view) => union([await rectOf(page, '.pal-kinds')], 22, view),
+  },
+  {
     name: 'phone-tab',
     note: 'phone: a tap on a tab moves the line to it',
     view: PHONE,
