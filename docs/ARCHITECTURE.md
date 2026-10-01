@@ -412,12 +412,18 @@ every 30 s). Each tier's queue is a strict rotation, so clients maintain ranks d
 4. A node whose status leaves `confirmed` drops out of its tier queue; ranks behind it close the gap.
 5. An unranked node that receives a rank (a `changed` rank, typically a join confirmed in a block) is inserted at
    that rank; nodes at or behind it shift back. Ranks past the tier size clamp to the back.
+6. **Unranked signal.** In `nodes.changed`, an absent `rank` means "unchanged" and `rank: null` means "not queued".
+   Outside a reconcile, `rank: null` is an exit like rule 4 (the node leaves its tier queue; ranks behind it close the
+   gap). In a `cause: reconcile` delta it is authoritative like any other rank: the node becomes unranked, without
+   shifting anyone. The server sends it whenever clients still rank a node that the true queue does not hold while
+   its status stays `confirmed` (so no status exit tells them), for example a node the upstream list stops ranking.
 
 The server keeps an exact model of what clients hold (`atlas_engine::state::queue::ClientRanks`) and diffs it
 against the true queue after every tick, so clients must apply a `nodes` delta in the same order: `removed`
-(rule 2), then status exits (rule 4), then field changes, then entering ranks ascending by `(rank, id)` (rules 2
-and 5; an already ranked node is taken out at its turn, a move). In a `cause: reconcile` delta, `changed` ranks are
-authoritative and set as is, without shifting anyone. Implemented in `web/src/store/network.ts`.
+(rule 2), then status exits and `rank: null` exits (rules 4 and 6), then field changes, then entering ranks
+ascending by `(rank, id)` (rules 2 and 5; an already ranked node is taken out at its turn, a move). In a
+`cause: reconcile` delta, `changed` ranks (including `null`) are authoritative and set as is, without shifting
+anyone. Implemented in `web/src/store/network.ts`.
 Displayed ETAs are `rank × 30 s`, labelled as estimates.
 
 **Client choreographer (web).** Incoming events go into a scheduler with a visual budget (max concurrent

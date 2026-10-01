@@ -452,7 +452,8 @@ pub fn node_change(r: &NodeRecord, m: u16, tip: u32, now_ms: u64) -> NodeChange 
         c.org = Some(b.org).filter(|s| !s.is_empty());
     }
     if m & mask::RANK != 0 {
-        c.rank = r.rank;
+        // `null` when the node is not queued: the explicit unranked signal.
+        c.rank = Some(r.rank);
     }
     if m & mask::PAID != 0 {
         c.last_paid_height = r.last_paid_height;
@@ -691,11 +692,12 @@ pub fn rank_corrections(
             cr.remove(*id);
         }
         for (id, m) in &b.changed {
-            if m & mask::STATUS != 0
-                && nodes
-                    .rec(*id)
-                    .is_some_and(|r| r.status != NodeStatus::Confirmed)
-            {
+            let exits = nodes.rec(*id).is_some_and(|r| {
+                // Rule 4 (status leaves confirmed), or an explicit `rank: null` (unranked).
+                (m & mask::STATUS != 0 && r.status != NodeStatus::Confirmed)
+                    || (m & mask::RANK != 0 && r.rank.is_none())
+            });
+            if exits {
                 cr.remove(*id);
             }
         }

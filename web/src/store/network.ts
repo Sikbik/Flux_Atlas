@@ -645,12 +645,14 @@ export class NetworkStore {
    * its `cause: reconcile` corrections make the ranks exact again:
    *
    * 1. `removed` nodes leave their tier queue; ranks behind them move up (the gap closes).
-   * 2. A node whose status leaves `confirmed` leaves its tier queue the same way.
+   * 2. A node whose status leaves `confirmed`, or whose `changed` rank is `null` (the explicit
+   *    unranked signal) outside a reconcile, leaves its tier queue the same way.
    * 3. Field changes apply.
    * 4. Entering ranks, ascending by (rank, id): `added` nodes, and `changed` ranks outside a
    *    reconcile, are inserted at their rank (clamped to the tier size); nodes at or behind it
    *    shift back. A node already ranked is taken out first, at its turn (a move).
-   * 5. In a `cause: reconcile` delta, `changed` ranks are authoritative and set as is.
+   * 5. In a `cause: reconcile` delta, `changed` ranks are authoritative and set as is; `null`
+   *    unranks the node without shifting anyone.
    */
   private applyNodes(d: NodesDelta, seq: number): void {
     const t = this.nodes;
@@ -671,7 +673,9 @@ export class NetworkStore {
       }
     }
     for (const c of d.changed) {
-      if (c.status === undefined || c.status === 'confirmed') continue;
+      const statusExit = c.status !== undefined && c.status !== 'confirmed';
+      const unranked = c.rank === null && !authoritative;
+      if (!statusExit && !unranked) continue;
       const i = t.indexOf(c.id);
       if (i >= 0) this.leaveQueue(i, nc);
     }
@@ -693,7 +697,8 @@ export class NetworkStore {
     for (const c of d.changed) {
       let change: NodeChange = c;
       if (c.rank !== undefined && !authoritative) {
-        entering.push({ id: c.id, rank: c.rank });
+        // A rank enters below; `null` already left the queue above.
+        if (c.rank !== null) entering.push({ id: c.id, rank: c.rank });
         const { rank: _rank, ...rest } = c;
         change = rest;
       }
