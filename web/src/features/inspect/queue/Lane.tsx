@@ -7,10 +7,11 @@ import { Check, Coins } from 'lucide-react';
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { useRuntime } from '../../../app/context';
 import { BLOCK_MS, formatInt, middleTruncate, parseEndpoint } from '../../../lib/format';
+import { tierLabel } from '../../../ui';
+import { etaShort } from '../derive/eta';
 import type { QueueTier } from '../derive/queue';
 import { readNodeLive } from '../sources/live';
 import type { Payee, PhaseLoop } from '../sources/queueFeed';
-import { etaShort, tierLabel } from '../ui';
 
 interface TileModel {
   i: number;
@@ -38,6 +39,9 @@ export interface LaneProps {
 }
 
 const PAID_TILES = 2;
+
+/** Below this slot pitch a tile has no room for the port beside the time, and the time matters more. */
+const TIGHT_BELOW = 124;
 
 export function Lane({
   tier,
@@ -121,7 +125,7 @@ export function Lane({
   };
 
   return (
-    <div className="ix-lane" data-tier={tier} style={lane}>
+    <div className="ix-lane" data-tier={tier} data-tight={S < TIGHT_BELOW || undefined} style={lane}>
       <div className="ix-lane-view" ref={view}>
         <div className="ix-lane-gate" aria-hidden="true" />
         <div className="ix-lane-clip">

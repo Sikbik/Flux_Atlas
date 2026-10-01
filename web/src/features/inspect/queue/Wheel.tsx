@@ -6,6 +6,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useRuntime } from '../../../app/context';
 import { formatInt } from '../../../lib/format';
+import { cx as cn, tierLabel } from '../../../ui';
 import type { QueueTier } from '../derive/queue';
 import {
   angleOf,
@@ -19,7 +20,7 @@ import {
 } from '../derive/wheel';
 import { readNodeLive } from '../sources/live';
 import type { PhaseLoop } from '../sources/queueFeed';
-import { cx as cn, fitCanvas, readVar, tierLabel, withAlpha } from '../ui';
+import { fitCanvas, readVar, withAlpha } from '../ui/canvas';
 
 /** Risk flags per queue position: 0 fine, 1 at risk (warn), 2 past expiry or offline (crit). */
 export type RiskFlags = Uint8Array;
@@ -32,15 +33,14 @@ interface Palette {
   track: string;
 }
 
-const FALLBACK = { cumulus: '#36d3ff', nimbus: '#c77dff', stratus: '#ffc857' } as const;
-
+/** The colours the rings are drawn in, read from the design tokens on the wheel's own element. */
 function readPalette(el: Element, tier: QueueTier): Palette {
   return {
-    tier: readVar(el, `--tier-${tier}`, FALLBACK[tier]),
-    hot: readVar(el, '--hot', '#aec6ff'),
-    warn: readVar(el, '--status-warn', '#ff9a3d'),
-    crit: readVar(el, '--status-crit', '#ff5470'),
-    track: 'rgb(255 255 255 / 0.07)',
+    tier: readVar(el, `--tier-${tier}`, 'white'),
+    hot: readVar(el, '--hot', 'white'),
+    warn: readVar(el, '--status-warn', 'white'),
+    crit: readVar(el, '--status-crit', 'white'),
+    track: readVar(el, '--line-2', 'transparent'),
   };
 }
 
@@ -298,6 +298,7 @@ export function Wheel({
   const [side, setSide] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
   const palette = useRef<Palette | null>(null);
+  const paletteKey = useRef('');
   const state = useRef<LiveState>({ n: size, selected, hover: null, blockAt: 0, animated: loop.animated });
   const lastTip = useRef<number | null>(tip);
 
@@ -334,7 +335,11 @@ export function Wheel({
     if (!cv || !el || side <= 0) return;
     const ctx = fitCanvas(cv, side, side);
     if (!ctx) return;
-    palette.current = readPalette(el, tier);
+    // The colours come from the design tokens: read once per tier and size, not at every block.
+    if (!palette.current || paletteKey.current !== `${tier}:${side}`) {
+      palette.current = readPalette(el, tier);
+      paletteKey.current = `${tier}:${side}`;
+    }
     drawBase(ctx, geometry(side), palette.current, size, risk);
   }, [ids, size, risk, side, tier]);
 
@@ -378,6 +383,8 @@ export function Wheel({
   const tipAngle = hover !== null ? slotAngle(hover, size, loop.phase()) : 0;
   const tipX = g.cx + Math.sin(tipAngle) * ((g.ri + g.ro) / 2);
   const tipY = g.cy - Math.cos(tipAngle) * ((g.ri + g.ro) / 2);
+  // The card opens inward near a side, so it never runs past the ring's box.
+  const tipAlign = tipX < side * 0.3 ? 'start' : tipX > side * 0.7 ? 'end' : 'center';
 
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the ring is a pointer shortcut; search and the belt tiles select the same nodes from the keyboard
@@ -403,10 +410,7 @@ export function Wheel({
       <canvas ref={live} aria-hidden="true" tabIndex={-1} />
       <div className="ix-wheel-mid">{children}</div>
       {hover !== null && hoverNode ? (
-        <div
-          className="ix-wheel-tip"
-          style={{ left: tipX, top: tipY, '--ix-flip': tipX > side / 2 ? 1 : 0 } as React.CSSProperties}
-        >
+        <div className="ix-wheel-tip" data-align={tipAlign} style={{ left: tipX, top: tipY }}>
           <b className="ix-mono">#{formatInt(hover + 1)}</b>
           <span className="ix-mono">{hoverNode.endpoint}</span>
           <small>{etaFor(hover)}</small>
