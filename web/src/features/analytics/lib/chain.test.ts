@@ -6,9 +6,9 @@ import {
   chainFrame,
   chainModel,
   countAbove,
-  difficultyChange,
   difficultyDomain,
   difficultySummary,
+  difficultyVsMedian,
   formatBlockTime,
   formatBucketTime,
   formatDifficulty,
@@ -389,21 +389,29 @@ describe('paceVsTarget', () => {
   });
 });
 
-describe('difficultyChange', () => {
-  it('is the percent from the first reading to the last', () => {
-    expect(difficultyChange([null, 0.4, 0.5, null, 0.44])).toBeCloseTo(10, 9);
-    expect(difficultyChange([0.5, 0.4])).toBeCloseTo(-20, 9);
+describe('difficultyVsMedian', () => {
+  it('is how far the latest is from the median of the end values, and what the median is', () => {
+    // The median of 0.4, 0.5 and 0.44 is 0.44; 0.484 is a tenth above it.
+    const above = difficultyVsMedian(0.484, [null, 0.4, 0.5, null, 0.44]);
+    expect(above?.median).toBeCloseTo(0.44, 9);
+    expect(above?.change).toBeCloseTo(10, 9);
+    expect(difficultyVsMedian(0.33, [0.3, 0.4, 0.5])?.change).toBeCloseTo(-17.5, 9);
   });
-  it('is null without two readings or a first reading of zero', () => {
-    expect(difficultyChange([null, 0.4, null])).toBeNull();
-    expect(difficultyChange([null, null])).toBeNull();
-    expect(difficultyChange([0, 0.4])).toBeNull();
+  it('is null with fewer than three buckets to take a median of, or with no latest difficulty', () => {
+    expect(difficultyVsMedian(0.4, [0.4, 0.5])).toBeNull();
+    expect(difficultyVsMedian(0.4, [null, 0.4, null, 0.5])).toBeNull();
+    expect(difficultyVsMedian(null, [0.3, 0.4, 0.5])).toBeNull();
+    expect(difficultyVsMedian(undefined, [0.3, 0.4, 0.5])).toBeNull();
+    expect(difficultyVsMedian(0, [0.3, 0.4, 0.5])).toBeNull();
   });
-  it('is null for a move of ten times or more either way: that is a different regime, not a percentage', () => {
-    expect(difficultyChange([22_211, 0.13])).toBeNull();
-    expect(difficultyChange([0.0029, 0.13])).toBeNull();
-    expect(difficultyChange([0.02, 0.13])).toBeCloseTo(550, 9);
-    expect(difficultyChange([0.13, 0.02])).toBeCloseTo(-84.615, 2);
+  it('is null for a median of zero', () => {
+    expect(difficultyVsMedian(0.4, [0, 0, 0])).toBeNull();
+  });
+  it('is null for a latest ten times the median or more either way: that is not a percentage', () => {
+    expect(difficultyVsMedian(5, [0.3, 0.4, 0.5])).toBeNull();
+    expect(difficultyVsMedian(0.03, [0.3, 0.4, 0.5])).toBeNull();
+    // Just under ten times is still a percentage.
+    expect(difficultyVsMedian(3.9, [0.3, 0.4, 0.5])?.change).toBeCloseTo(875, 6);
   });
 });
 

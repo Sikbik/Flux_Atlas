@@ -76,6 +76,15 @@ describe('the two charts', () => {
     m.unmount();
   });
 
+  it('say what they show in a sentence a screen reader finds without moving a slider', () => {
+    const model = chainModel(dto());
+    const m = mount(<Pair model={model} />);
+    const [a, b] = [...m.container.querySelectorAll('figure')];
+    expect(a?.querySelector('p.ui-sr-only')?.textContent).toBe(model.summary.difficulty);
+    expect(b?.querySelector('p.ui-sr-only')?.textContent).toBe(model.summary.blockTime);
+    m.unmount();
+  });
+
   it('read with the arrow keys: the first press lands on the newest bucket, and all four facts are read out', () => {
     const m = mount(<Pair model={chainModel(dto())} />);
     const [a] = sliders(m.container);

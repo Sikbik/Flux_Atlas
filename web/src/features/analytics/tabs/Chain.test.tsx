@@ -141,10 +141,10 @@ describe('the Chain tab', () => {
     expect(tile(c, 'Average block time').caption).toBe('Target 30 s');
     expect(tile(c, 'Average block time').delta).toContain('vs target');
     expect(tile(c, 'Latest difficulty').value).toBe('0.359');
-    expect(tile(c, 'Latest difficulty').caption).toBe('At the newest block');
-    // From the first end value (0.350) to the last (0.359).
-    expect(tile(c, 'Latest difficulty').delta).toContain('+2.6%');
-    expect(tile(c, 'Latest difficulty').delta).toContain('7 days');
+    expect(tile(c, 'Latest difficulty').caption).toBe('Median 0.355 over 7 days');
+    // 0.359 against the median of the end values, 0.355.
+    expect(tile(c, 'Latest difficulty').delta).toContain('+1.1%');
+    expect(tile(c, 'Latest difficulty').delta).toContain('vs median');
     expect(c.querySelector('[data-stale]')).toBeNull();
     expect(c.textContent).not.toContain('Indexing chain history');
   });
@@ -298,11 +298,12 @@ describe('the Chain tab', () => {
     expect(c.querySelector('figure')?.getAttribute('aria-label')).toBe('Difficulty over the last 7 days');
   });
 
-  it('puts a difficulty that moved ten times over on a log scale, and gives no percentage for it', async () => {
+  it('puts a difficulty that moved ten times over on a log scale, and gives no percentage against its median', async () => {
+    // Half the week at 22,211, half at 0.13: the median is between the two, and the latest is nowhere near it.
     const wide = chainPoints().map((p, i) => ({
       ...p,
-      difficulty: i === 0 ? 22_211 : 0.13,
-      difficulty_mean: i === 0 ? 22_211 : 0.12,
+      difficulty: i < 5 ? 22_211 : 0.13,
+      difficulty_mean: i < 5 ? 22_211 : 0.12,
     }));
     serve(() => ({ body: week({ points: wide, latest_difficulty: 0.1306 }) }));
     const c = open();
@@ -310,9 +311,16 @@ describe('the Chain tab', () => {
     expect(c.querySelector('[data-chart="difficulty"] .cp-note')?.textContent).toBe('Log scale');
     const t = tile(c, 'Latest difficulty');
     expect(t.value).toBe('0.131');
-    // From 22,211 to 0.13 is not a percent.
     expect(t.delta).toBe('');
     expect(t.caption).toBe('At the newest block');
+  });
+
+  it('has no median to compare with from fewer than three buckets', async () => {
+    serve(() => ({ body: week({ points: chainPoints().slice(0, 2) }) }));
+    const c = open();
+    await until(() => figures(c).length === 2, 'the charts');
+    expect(tile(c, 'Latest difficulty').delta).toBe('');
+    expect(tile(c, 'Latest difficulty').caption).toBe('At the newest block');
   });
 
   it('quotes no change in difficulty across the change of rules, and marks it on both charts', async () => {

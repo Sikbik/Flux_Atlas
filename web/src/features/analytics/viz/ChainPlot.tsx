@@ -254,6 +254,8 @@ export function ChainPlot({
 
   return (
     <figure className="vz-fig cp-fig" aria-label={title} data-chart={kind}>
+      {/* What the chart shows, in a sentence, for a screen reader reading through the page (the slider says it again when focused). */}
+      <p className="ui-sr-only">{summary}</p>
       <div className="vz-chart cp-chart" ref={wrapRef} style={{ height }}>
         {geo ? (
           <>

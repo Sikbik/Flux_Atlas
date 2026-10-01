@@ -27,7 +27,7 @@ import { CHAIN_REFRESH_MS, useChainHistory } from '../hooks/useChainHistory';
 import {
   CHAIN_WINDOWS,
   chainModel,
-  difficultyChange,
+  difficultyVsMedian,
   formatDifficulty,
   indexingPercent,
   indexingText,
@@ -101,8 +101,9 @@ function ChainBody({ dto, asked, stale }: { dto: ChainHistoryDto; asked: ChainWi
   const text = WINDOW_TEXT[model.window];
   const indexing = indexingText(dto.coverage) !== null;
   const pace = paceVsTarget(dto.avg_block_time_s, model.story.expected);
-  // Across a change of rules (Proof of Node) difficulty is a different quantity, so there is no change to quote.
-  const change = model.changes.length > 0 ? null : difficultyChange(model.frame.difficulty);
+  // Across a change of rules (Proof of Node) difficulty is a different quantity, so there is no median to quote.
+  const typical =
+    model.changes.length > 0 ? null : difficultyVsMedian(dto.latest_difficulty, model.frame.difficulty);
   const empty = model.frame.t.length === 0;
 
   return (
@@ -146,11 +147,15 @@ function ChainBody({ dto, asked, stale }: { dto: ChainHistoryDto; asked: ChainWi
             label="Latest difficulty"
             value={dto.latest_difficulty === null ? null : formatDifficulty(dto.latest_difficulty)}
             delta={
-              change === null ? undefined : (
-                <Delta kind="percent" decimals={1} value={change} period={text.period} />
+              typical === null ? undefined : (
+                <Delta kind="percent" decimals={1} value={typical.change} period="vs median" />
               )
             }
-            caption="At the newest block"
+            caption={
+              typical === null
+                ? 'At the newest block'
+                : `Median ${formatDifficulty(typical.median)} over ${text.period}`
+            }
           />
         </div>
       </div>

@@ -310,21 +310,31 @@ export function targetStory(
 /** A move of this many times, up or down, is not a percentage: it is a different regime. */
 const BIG_MOVE = 10;
 
+/** Where the latest difficulty sits against the window's typical one. */
+export interface DifficultyVsMedian {
+  /** The median of the buckets' end values. */
+  median: number;
+  /** How far the latest is above (positive) or below the median, in percent. */
+  change: number;
+}
+
 /**
- * How much the difficulty moved from the first reading of the window to the last, in percent, or null:
- * with fewer than two readings, or a move of ten times or more either way (a percentage of that says
- * nothing, and the chart's own scale shows it).
+ * The latest difficulty against the window's median, for a series that swings as Proof of Node's does
+ * (the first bucket against the last would be one swing against another). Null with fewer than three
+ * buckets to take a median of, or a latest ten times the median or more either way: a percentage of that
+ * says nothing, and the chart's own scale shows it.
  */
-export function difficultyChange(values: readonly (number | null)[]): number | null {
-  const a = firstKnown(values);
-  const b = lastKnown(values);
-  if (a < 0 || a === b) return null;
-  const first = values[a]!;
-  const last = values[b]!;
-  if (first <= 0) return null;
-  const ratio = last / first;
+export function difficultyVsMedian(
+  latest: number | null | undefined,
+  ends: readonly (number | null)[],
+): DifficultyVsMedian | null {
+  if (!finite(latest) || latest <= 0) return null;
+  if (ends.filter(finite).length < 3) return null;
+  const median = percentile(ends, 0.5);
+  if (median === null || median <= 0) return null;
+  const ratio = latest / median;
   if (ratio >= BIG_MOVE || ratio <= 1 / BIG_MOVE) return null;
-  return (ratio - 1) * 100;
+  return { median, change: (ratio - 1) * 100 };
 }
 
 /** How far the average is from what it should be, in percent (positive: slower than the target). */
