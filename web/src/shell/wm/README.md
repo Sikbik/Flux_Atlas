@@ -182,11 +182,11 @@ white) or `data-tier` (a node window wears its tier). Tests and tethers find win
 
 | Behaviour | How |
 |---|---|
-| Open | the wrapper scales from 0.96 and fades in (`wm-open`, `--dur-slow`); reduced motion fades only |
-| Focus | the hot rim cross-fades in over the quiet one, and one flare crosses the top edge (900 ms, `wm-flare`); an event on arrival, never a loop (the motion language drops the 9 s sweep). Reduced motion and off: no flare |
+| Open | the motion language's Power-on on the wrapper (see below): a circle of light out of the dock launcher that stands for the type, 420 and 480 ms; a phone sheet unfolds from its foot (panel variant, 260 ms) with one comet along its top edge. Reduced: a 160 ms cross-fade. Off: instant |
+| Focus | the hot rim cross-fades in over the quiet one, and one flare crosses the top edge (900 ms, `wm-flare`) while `data-flare` is set: an event on a window that is already open takes the focus, never a loop (the motion language drops the 9 s sweep) and never on a window that is opening (Power-on has its own light). Reduced motion and off: no flare |
 | Drag | `scale(1.006)` and a deeper shadow; the snap zone previews as `.wm-drop-zone` |
 | Move to a new rectangle (maximise, dock, float, snap) | one FLIP of transform from the old rectangle, 340 ms, never while dragging, resizing or when the viewport changed |
-| Close | a ghost (a copy of the frame, inert, `aria-hidden`, without the identity attributes) fades and shrinks in place, 200 ms |
+| Close | a ghost (a copy of the frame, inert, `aria-hidden`, without the identity attributes) plays Power-off in place: the circle closes back into the launcher while it scales to 0.96 and fades, 180 ms; a phone sheet slides down 56 px and fades, 200 ms |
 | Minimise | the ghost flies to the window's `.wm-dot` in the dock, 300 ms |
 | Retarget (node to node) | the body fades in with a 6 px rise, 320 ms; the frame stays |
 | Body | thin scrollbar; fades over its last 30 px only while there is more to read (`data-more`) |
@@ -202,27 +202,34 @@ z-index: moving a frame's element in the document would cancel a click that is h
 controls. Pressing a control on an unfocused extra window raises it but does not make it the path's
 window, so Close and Minimise act on the window you pressed them on.
 
-### Ready for the motion language's Power-on
+### The motion language's Power-on
 
-`web/src/motion` reveals a window with a `<PowerOn>` wrapper (a circle of light that opens from the launcher,
-a shorter exit, the window kept mounted until `onExited`). The frame is built to take it:
+`web/src/motion` opens and closes a window (`docs/design/motion-language.md`, 3.5):
 
-- **The wrapper is clean.** `.wm-window` has no `filter`, `clip-path`, `mask` or `box-shadow`, in every
-  placement (the phone sheet's shadow and radius live on `.wm-shadow` too), so the aperture's clip can sit on
-  it or on a wrapper around it. The chamfer mask is on `.wm-slab` and the drop shadow on `.wm-shadow`, both
-  inside.
-- **Geometry in one place.** The `left`, `top`, `width`, `height` and `zIndex` of a window are one inline
-  `style` object in `WindowFrame` (and in `PhoneSheet`). To wrap: move that object to the `PowerOn` wrapper,
-  give `.wm-window` `position: relative` and a full-size box, and keep every state attribute where it is (the
-  title bar, the rim and the tethers read them from `.wm-window`).
-- **The origin** is the dock button `[data-launcher="<id>"]`, where `<id>` is `launcherOf(win.type)`
-  (`shell/frame/dock.ts`: a node or a host opens from `nodes`, the explorer types from `explorer`, the queue from
-  `queue`, ...), or the node marker for an inspector.
-- **What goes when it lands:** the `wm-open` entrance (`animation` on `.wm-window`, and its `wm-fade` and
-  `wm-sheet-in` variants) and the exit ghost in `ghost.ts`; a leaving window then stays rendered with
-  `open={false}` until `onExited` instead of being copied.
+- **Open.** `Frame` calls `powerOn(rootRef.current, { origin, variant })` in a layout effect when it mounts. The
+  element it reveals is the window's own `section.wm-window`, which has no `filter`, `clip-path`, `mask` or
+  `box-shadow` of its own in any placement (the chamfer mask is on `.wm-slab`, the drop shadow on `.wm-shadow`), so
+  the aperture's circle clip is safe on it. Geometry stays in the one inline `style` object. Nothing plays if the
+  runners have not loaded or motion is off: the window is simply there. A press on the window ends its entrance
+  (a sheet is dragged by transform, which the entrance would fight).
+- **Origin** (`origin.ts`, `windowOrigin(type, phone)`). The dock button `[data-launcher="<id>"]`, where `<id>` is
+  `launcherOf(type)` (`shell/frame/dock.ts`: a node or a host opens from `nodes`, the explorer types from
+  `explorer`, the queue from `queue`, ...), read when the window opens and when it closes; on a phone the middle
+  of the sheet's foot (`SHEET_FOOT` in `sheet.ts`). The engine holds a far origin to 48 px outside the window, so
+  the first frame already shows the window and it never slides.
+- **Close.** The ghost in `ghost.ts` plays `powerOff` toward the same origin, and is removed when it ends (at once
+  when there is nothing to play). It is a snapshot: a clone restarts every CSS animation inside it (an entrance
+  would replay over content that was already there, the About page's hex drift would run again), so they are
+  cancelled before the exit starts. The exit is on the ghost on purpose, not on the live frame kept mounted: a closed
+  window is gone from the manager's state and a route-bound window's body is the router's outlet, which empties
+  the moment the route changes, so there is nothing left for the real frame to show. A minimise still flies to its
+  dot; a sheet that was flicked away leaves no ghost.
+- **A restored window** (the dot in the dock) opens from its launcher like any other, not from the dot, which is
+  gone in the same commit.
+- **What went:** the `wm-open`, `wm-sheet-in` and `wm-fade` keyframes. The reduced and off rules keep the
+  transition and the drag lift.
 - **Dense zones.** The title bar is `data-fx-density="dense"`: its controls (minimise, maximise, close) get no
-  light, the window opening and closing is their answer.
+  light; the window opening and closing is their answer.
 
 ### Telling the frame about a window: `useWindowMeta`
 
@@ -266,7 +273,5 @@ nothing else is in the sheet, and opening a window closes it. The globe's inset 
 
 ### Not built
 
-The aperture open (a clip-path circle out of the clicked launcher or marker, 6.4 A) and the pop-out are not
-here: the open is a plain scale and fade, which the motion layer can replace by attaching to the state
-attributes above. The moon does not park as a 24 px symbol in the header's Beat mini when a sheet is tall or full
-(7.10.6): that needs the engine.
+The pop-out is not here. The moon does not park as a 24 px symbol in the header's Beat mini when a sheet is tall or
+full (7.10.6): that needs the engine.
