@@ -1,0 +1,289 @@
+/* Supply: the cap gauge, the cut card, the schedule table. */
+
+.ex-sg {
+  margin: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ex-sg__track {
+  position: relative;
+  height: 14px;
+  margin-top: var(--space-7);
+  border-radius: var(--r-pill);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--line-2) calc(10% - 1px) 10%),
+    var(--ink-2);
+}
+
+.ex-sg__fill {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: var(--r-pill);
+  transform-origin: left center;
+  transform: translateX(calc(var(--x, 0) * 100%)) scaleX(var(--w, 0));
+  transition: transform var(--dur-slower) var(--ease-out-expo);
+}
+
+.ex-sg__fill[data-kind="transparent"] {
+  background: linear-gradient(90deg, var(--accent-700), var(--accent-500));
+  box-shadow: 0 0 18px -2px color-mix(in oklab, var(--accent-600) 70%, transparent);
+}
+
+.ex-sg__fill[data-kind="shielded"] {
+  background: var(--viz-3);
+  border-radius: 2px;
+}
+
+.ex-sg__mark {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: calc(var(--p, 0) * 100%);
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--hot);
+  box-shadow: 0 0 10px var(--hot-glow);
+  transition: left var(--dur-slower) var(--ease-out-expo);
+}
+
+.ex-sg__mark span {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-sans);
+  white-space: nowrap;
+}
+
+.ex-sg__scale {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+.ex-sg__now {
+  color: var(--text-2);
+}
+
+.ex-sg__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ex-sg__legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: var(--space-3);
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+.ex-sg__legend i[data-kind="transparent"] {
+  background: var(--accent-500);
+}
+
+.ex-sg__legend i[data-kind="shielded"] {
+  background: var(--viz-3);
+}
+
+.ex-sg__legend i[data-kind="mark"] {
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--hot);
+}
+
+/* ---- the cut card ------------------------------------------------------------------------------- */
+
+.ex-cut {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-7);
+  border-radius: var(--r-lg);
+  background: var(--ex-card);
+  box-shadow:
+    inset 0 0 0 1px var(--line-1),
+    var(--shadow-inset-hi);
+  clip-path: var(--clip-chamfer-sm);
+}
+
+@container ex (min-width: 700px) {
+  .ex-cut {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-8);
+  }
+}
+
+.ex-cut__count {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.ex-cut__blocks {
+  font: var(--fw-semibold) var(--fs-4xl) / var(--lh-tight) var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-cut__unit {
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.ex-cut__eta {
+  margin-top: var(--space-3);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ex-cut__eta strong {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+}
+
+.ex-cut__progress {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ex-cut__ends {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+.ex-cut__tiers {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: var(--space-3) var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@container ex (max-width: 699px) {
+  .ex-cut__tiers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.ex-cut__tiers li {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-md);
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.ex-cut__tier {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-sans);
+}
+
+.ex-cut__change {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.ex-cut__change i {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-sans);
+}
+
+.ex-cut__change b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+/* ---- schedule table ---------------------------------------------------------------------------- */
+
+.ex-tablewrap {
+  margin-inline: calc(var(--ex-pad) * -1);
+  padding-inline: var(--ex-pad);
+  overflow-x: auto;
+}
+
+.ex-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-table th,
+.ex-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line-1);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ex-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--ink-0);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1.2 var(--font-sans);
+}
+
+.ex-table th:first-child,
+.ex-table td:first-child {
+  text-align: left;
+}
+
+.ex-table tbody th {
+  color: var(--text-3);
+  font-weight: var(--fw-medium);
+}
+
+.ex-table tbody tr[data-past] {
+  color: var(--text-3);
+}
+
+.ex-table tbody tr[data-next] {
+  background: var(--accent-soft);
+  color: var(--text-1);
+}
+
+.ex-table tbody tr:hover {
+  background: var(--ink-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ex-sg__fill,
+  :root:not([data-motion="full"]) .ex-sg__mark {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-sg__fill,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-sg__mark {
+  transition: none;
+}
