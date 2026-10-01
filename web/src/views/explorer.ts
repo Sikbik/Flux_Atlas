@@ -3,8 +3,6 @@
 
 import { lazy } from 'react';
 
-export { TimeMachineView } from '../app/placeholders/views';
-
 export const AnalyticsView = lazy(() =>
   import('../features/analytics/views/AnalyticsView').then((m) => ({ default: m.AnalyticsView })),
 );
@@ -26,4 +24,9 @@ export const SupplyView = lazy(() =>
 );
 export const RichListView = lazy(() =>
   import('../features/explorer/views/RichListView').then((m) => ({ default: m.RichListView })),
+);
+
+/** The time machine (`/time`): not a window; it opens the shell's timeline strip. */
+export const TimeMachineView = lazy(() =>
+  import('../features/timemachine/TimeMachineView').then((m) => ({ default: m.TimeMachineView })),
 );

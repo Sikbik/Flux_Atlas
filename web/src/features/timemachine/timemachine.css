@@ -1,0 +1,720 @@
+/* The time machine: the archive grade, the open timeline strip with its scrubber, and the chip that
+   says what is on screen. Tokens only; the cool desaturated accent of the archive is `--accent-time`.
+
+   Local custom properties (all set here or by the strip, none global):
+     --tm-p       the playhead's place on the strip, 0 to 1 (written by the scrubber every frame)
+     --tm-hx      the pointer's x on the strip while hovering, in px
+     --tm-ink     the white-hot colour of the handle and its glow
+     --tm-axis-h  the height of the tick-label row under the curve
+     --tm-chip-w  half the width reserved for the handle's time chip, so it never leaves the strip */
+
+/* The shell's own strip is 22 px and grows to 76 while this view is open. The height token is
+   registered so the growth can be animated (360 ms), and so can the handle's flight home. */
+@property --timeline-h {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 22px;
+}
+
+@property --tm-p {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+:root {
+  transition: --timeline-h var(--dur-slow) var(--ease-out-expo);
+}
+
+/* ---- the grade ---------------------------------------------------------------------------------
+   Between the globe and the interface: 35% desaturated toward the archive tint, scanlines at a 2 px
+   period, a vignette. It reads as "this is the past". It never blocks the pointer. */
+
+.tm-grade {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-globe) + 1);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 600ms var(--ease-out);
+  backdrop-filter: saturate(calc(1 - var(--globe-archive-amount))) contrast(1.03);
+  background:
+    repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.035) 0 1px, transparent 1px 2px),
+    radial-gradient(ellipse 120% 100% at 50% 46%, transparent 52%, rgb(4 6 10 / 0.34) 100%),
+    color-mix(in srgb, var(--globe-archive-tint) 7%, transparent);
+}
+
+.tm-grade[data-on] {
+  opacity: 1;
+}
+
+.tm-grade[data-ghost][data-on] {
+  animation: tm-grade-out 600ms var(--ease-out) forwards;
+}
+
+@keyframes tm-grade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---- the strip ---------------------------------------------------------------------------------- */
+
+.tm-strip {
+  container: tm-strip / inline-size;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--statusbar-h) + var(--rail-h));
+  height: var(--timeline-h);
+  z-index: calc(var(--z-rail) + 1);
+  overflow: hidden;
+  pointer-events: auto;
+  color: var(--text-1);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-filter);
+  border-top: 1px solid var(--line-2);
+  box-shadow: 0 -1px 0 color-mix(in srgb, var(--accent-time) 22%, transparent);
+}
+
+/* The body keeps its full height and is anchored to the bottom, so growing the strip reveals it. */
+.tm-strip__body {
+  --tm-ink: #fff;
+  --tm-axis-h: 14px;
+  --tm-chip-w: 74px;
+  position: absolute;
+  inset: auto 0 0 0;
+  height: var(--timeline-h-open);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 0 var(--space-7) 0 var(--space-6);
+  animation: tm-strip-in var(--dur-slow) var(--ease-out-expo) 120ms both;
+}
+
+@keyframes tm-strip-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tm-strip[data-ghost] .tm-strip__body {
+  animation: tm-strip-out var(--dur-base) var(--ease-in) forwards;
+}
+
+@keyframes tm-strip-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.tm-strip__left {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.tm-since {
+  margin: 0;
+  padding-left: var(--space-2);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.tm-strip__track {
+  position: relative;
+  min-width: 0;
+}
+
+.tm-strip__note {
+  position: absolute;
+  inset: 0;
+  /* a note about missing history is for the wait that lasts: it does not flash up while data loads */
+  animation: tm-fade var(--dur-base) var(--ease-out) 700ms both;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.tm-strip__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* ---- transport ---------------------------------------------------------------------------------- */
+
+.tm-transport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.tm-transport__play.ui-button {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 50%;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--accent-time) 16%, var(--ink-2));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-time) 50%, transparent),
+    0 0 18px -4px color-mix(in srgb, var(--accent-time) 40%, transparent);
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+
+.tm-transport__play.ui-button[data-playing] {
+  background: color-mix(in srgb, var(--accent-time) 30%, var(--ink-2));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-time) 80%, transparent),
+    0 0 22px -2px color-mix(in srgb, var(--accent-time) 60%, transparent);
+}
+
+.tm-speed--cycle {
+  display: none;
+  min-width: 52px;
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-family: var(--font-mono);
+}
+
+/* ---- the scrubber ------------------------------------------------------------------------------- */
+
+.tm-scrub {
+  position: relative;
+  height: 66px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+/* The curve's scale: its lowest and highest counts, each at the height the line reaches. */
+.tm-yaxis {
+  position: relative;
+  margin: 22px 0 var(--tm-axis-h, 14px);
+}
+
+.tm-yaxis span {
+  position: absolute;
+  right: var(--space-4);
+  transform: translateY(-50%);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.tm-scrub__main {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 22px minmax(0, 1fr);
+}
+
+.tm-scrub:not([data-ready]) {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* "Return to live": the handle, the lit curve and the time chip all follow --tm-p, so they travel
+   together; the registered property lets the browser animate the one number. */
+.tm-scrub[data-flying] {
+  transition: --tm-p var(--dur-spring-soft) var(--ease-out-expo);
+}
+
+.tm-plot {
+  grid-row: 2;
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tm-scrub[data-dragging] .tm-plot {
+  cursor: grabbing;
+}
+
+.tm-curve {
+  position: absolute;
+  inset: 0 0 var(--tm-axis-h, 14px) 0;
+  margin: 0;
+}
+
+.tm-curve__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.tm-curve__line {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.tm-curve__layer--dim .tm-curve__line {
+  stroke: color-mix(in srgb, var(--accent-time) 40%, transparent);
+}
+
+.tm-curve__layer--dim .tm-curve__area {
+  fill: color-mix(in srgb, var(--accent-time) 7%, transparent);
+}
+
+/* The lit curve is the stretch already travelled: from the start of the history to the handle. */
+.tm-curve__layer--lit {
+  clip-path: inset(0 calc((1 - var(--tm-p)) * 100%) 0 0);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent-time) 55%, transparent));
+}
+
+.tm-curve__layer--lit .tm-curve__line {
+  stroke: var(--accent-time);
+}
+
+.tm-curve__layer--lit .tm-curve__area {
+  fill: color-mix(in srgb, var(--accent-time) 16%, transparent);
+}
+
+.tm-scrub[data-mode="live"] .tm-curve__layer--lit {
+  opacity: 0.6;
+}
+
+.tm-curve[data-state="loading"] {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent-time) 8%, transparent),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: tm-shimmer 1600ms linear infinite;
+}
+
+@keyframes tm-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+/* Day and hour ticks: a hairline and a mono label, midnight a little stronger. */
+.tm-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tm-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+}
+
+.tm-tick__line {
+  position: absolute;
+  top: 0;
+  bottom: var(--tm-axis-h, 14px);
+  width: 1px;
+  background: var(--line-1);
+}
+
+.tm-tick[data-major] .tm-tick__line {
+  background: var(--line-2);
+}
+
+.tm-tick__label {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.tm-tick[data-major] .tm-tick__label {
+  color: var(--text-2);
+}
+
+/* Hover: a hairline and a small reading ("2026-10-01 03:12 UTC  6,712 nodes") that follow the pointer. */
+.tm-hover {
+  position: absolute;
+  inset: 0 0 var(--tm-axis-h, 14px) 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.tm-hover[data-on] {
+  opacity: 1;
+}
+
+.tm-hover__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--tm-hx, 0);
+  width: 1px;
+  background: rgb(255 255 255 / 0.28);
+}
+
+.tm-hover__tip {
+  position: absolute;
+  top: 3px;
+  left: clamp(94px, var(--tm-hx, 0px), calc(100% - 94px));
+  transform: translateX(-50%);
+  padding: 2px var(--space-4);
+  border-radius: var(--r-pill);
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  font: var(--fw-regular) var(--fs-2xs) / 1.4 var(--font-mono);
+  color: var(--text-2);
+  white-space: pre;
+}
+
+/* The handle: a white-hot hairline down to the axis with a knob where it lands. */
+.tm-handle {
+  position: absolute;
+  top: -2px;
+  bottom: 0;
+  left: calc(var(--tm-p) * 100%);
+  width: 30px;
+  margin-left: -15px;
+  outline: none;
+  cursor: ew-resize;
+}
+
+.tm-handle__line {
+  position: absolute;
+  top: 2px;
+  bottom: calc(var(--tm-axis-h, 14px) - 2px);
+  left: 50%;
+  width: 1px;
+  margin-left: -0.5px;
+  background: linear-gradient(to bottom, transparent, var(--tm-ink) 24%);
+  box-shadow: 0 0 10px rgb(255 255 255 / 0.5);
+}
+
+.tm-handle__knob {
+  position: absolute;
+  bottom: calc(var(--tm-axis-h, 14px) - 7px);
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: var(--tm-ink);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-time) 45%, transparent),
+    0 0 16px rgb(255 255 255 / 0.55);
+  transition:
+    transform var(--dur-base) var(--ease-beat),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.tm-plot:hover .tm-handle__knob,
+.tm-scrub[data-dragging] .tm-handle__knob {
+  transform: scale(1.18);
+}
+
+.tm-scrub[data-playing] .tm-handle__knob {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-time) 60%, transparent),
+    0 0 20px rgb(255 255 255 / 0.7);
+}
+
+.tm-handle:focus-visible .tm-handle__knob {
+  box-shadow:
+    0 0 0 2px var(--ink-0),
+    0 0 0 4px var(--accent-400),
+    0 0 16px rgb(255 255 255 / 0.55);
+}
+
+/* The chip that rides the handle. */
+.tm-handle-chip {
+  position: absolute;
+  top: 0;
+  left: clamp(var(--tm-chip-w), calc(var(--tm-p) * 100%), calc(100% - var(--tm-chip-w)));
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 20px;
+  padding: 0 var(--space-5);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink-2) 86%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-time) 40%, transparent);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tm-handle-chip__ago {
+  color: var(--text-3);
+}
+
+.tm-handle-chip[data-mode="live"] {
+  --tm-chip-w: 36px;
+  color: var(--text-2);
+}
+
+.tm-handle-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-ok, var(--accent-300));
+  box-shadow: 0 0 8px var(--status-ok, var(--accent-300));
+}
+
+/* ---- the chip at the top of the globe ----------------------------------------------------------- */
+
+.tm-chip {
+  position: fixed;
+  top: calc(var(--topbar-h) + var(--space-5));
+  left: calc(50% + var(--dock-w) / 2);
+  transform: translateX(-50%);
+  z-index: calc(var(--z-dock) + 6);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: calc(100vw - var(--dock-w) - var(--space-9));
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6);
+  border-radius: var(--r-pill);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid color-mix(in srgb, var(--accent-time) 36%, var(--glass-border));
+  box-shadow: var(--shadow-pop);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  pointer-events: auto;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out-expo);
+}
+
+.tm-chip[data-mode="off"] {
+  opacity: 0;
+  transform: translate(-50%, -8px);
+  pointer-events: none;
+}
+
+.tm-chip[data-mode="error"] {
+  border-color: color-mix(in srgb, var(--status-warn) 50%, var(--glass-border));
+}
+
+.tm-chip__icon {
+  flex: none;
+  color: var(--accent-time);
+}
+
+.tm-chip[data-mode="error"] .tm-chip__icon {
+  color: var(--status-warn);
+}
+
+.tm-chip > * {
+  animation: tm-fade var(--dur-base) var(--ease-out) both;
+}
+
+/* The chip reads as one line on a wide screen; its two rows stack on a phone. */
+.tm-chip__row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.tm-chip__row + .tm-chip__row::before {
+  content: "";
+  width: 1px;
+  height: 12px;
+  background: var(--line-2);
+}
+
+.tm-chip[data-ghost] {
+  animation: tm-chip-out var(--dur-fast) var(--ease-in) forwards;
+}
+
+.tm-chip[data-ghost] > * {
+  animation: none;
+}
+
+@keyframes tm-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tm-chip-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+
+.tm-chip__title {
+  font: var(--fw-semibold) var(--fs-xs) / 1 var(--font-display);
+  letter-spacing: 0.02em;
+  color: var(--text-1);
+}
+
+.tm-chip__fact {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-2);
+}
+
+.tm-chip__fact::before {
+  content: "";
+  width: 1px;
+  height: 12px;
+  margin-right: var(--space-4);
+  background: var(--line-2);
+}
+
+.tm-chip__title + .tm-chip__fact::before,
+.tm-chip__row > .tm-chip__fact:first-child::before {
+  display: none;
+}
+
+.tm-facts {
+  padding: var(--space-5);
+}
+
+.tm-facts__note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.tm-facts__note strong {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+/* ---- narrower strips ---------------------------------------------------------------------------- */
+
+@container tm-strip (max-width: 980px) {
+  .tm-speed--segments {
+    display: none;
+  }
+
+  .tm-speed--cycle {
+    display: inline-flex;
+  }
+
+  .tm-strip__body {
+    gap: var(--space-6);
+  }
+}
+
+@container tm-strip (max-width: 700px) {
+  .tm-since {
+    display: none;
+  }
+}
+
+/* ---- phone: the strip is a sheet above the tab bar ---------------------------------------------- */
+
+.shell[data-layout="phone"] .tm-strip {
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  height: auto;
+  overflow: visible;
+}
+
+.shell[data-layout="phone"] .tm-strip__body {
+  position: static;
+  height: auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "track track"
+    "left close"
+    "cta cta";
+  gap: var(--space-4) var(--space-5);
+  padding: var(--space-5) var(--space-5) var(--space-5);
+}
+
+.shell[data-layout="phone"] .tm-strip__track {
+  grid-area: track;
+}
+
+.shell[data-layout="phone"] .tm-strip__left {
+  grid-area: left;
+}
+
+/* The right cluster dissolves so its two controls take their own places in the sheet. */
+.shell[data-layout="phone"] .tm-strip__right {
+  display: contents;
+}
+
+.shell[data-layout="phone"] .tm-close {
+  grid-area: close;
+}
+
+.shell[data-layout="phone"] .tm-return {
+  grid-area: cta;
+  width: 100%;
+  justify-content: center;
+}
+
+.shell[data-layout="phone"] .tm-live-state,
+.shell[data-layout="phone"] .tm-since {
+  display: none;
+}
+
+.shell[data-layout="phone"] .tm-chip {
+  left: 50%;
+  top: calc(var(--topbar-h) + var(--space-4));
+  max-width: calc(100vw - var(--space-6));
+  width: max-content;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-radius: var(--r-xl);
+  padding: var(--space-4) var(--space-5);
+}
+
+.shell[data-layout="phone"] .tm-chip[data-mode="hint"],
+.shell[data-layout="phone"] .tm-chip[data-mode="error"] {
+  white-space: normal;
+  text-align: center;
+}
+
+.shell[data-layout="phone"] .tm-chip__row + .tm-chip__row::before {
+  display: none;
+}
