@@ -13,36 +13,14 @@ import { track } from '../achievements/events';
 import { asAmbientEngine } from '../ambient/engineAccess';
 import { enterAmbient } from '../ambient/enter';
 import { startIdleWatch } from '../ambient/idle';
+import { syncLayerAttribute, syncPerfAttribute } from './documentAttributes';
 import { bare, hasMod, isTypingTarget } from './keys';
 import { PaletteHost, preloadPalette } from './PaletteHost';
 import { closePaletteViaHost, markOpenedByKey } from './paletteBridge';
 import { openPalette, paletteTextFromSearch } from './paletteUrl';
 import './layer.css';
 
-/**
- * Mirrors the stored preferences onto <html>, where the stylesheets read them: `data-motion` (tokens.css
- * understands `full` and `reduced`; `off` also sets `data-motion-off` for the surfaces that go fully
- * still) and `data-perf`. Runs at import time, before the first paint, and again on every change.
- */
-export function syncDocumentAttributes(): void {
-  if (typeof document === 'undefined') return;
-  const { motion, perf } = useUi.getState();
-  const el = document.documentElement;
-  const set = (name: string, v: string | null) =>
-    v === null ? el.removeAttribute(name) : el.setAttribute(name, v);
-  set('data-motion', motion === 'system' ? null : motion === 'full' ? 'full' : 'reduced');
-  set('data-motion-off', motion === 'off' ? '' : null);
-  set('data-perf', perf === 'high' || perf === 'lite' ? perf : null);
-}
-
-syncDocumentAttributes();
-
-/** The place-labels layer is the one the engine does not bind: `l=-labels` is applied here. */
-function syncLayerAttribute(l: unknown): void {
-  const off = typeof l === 'string' && l.split(',').includes('-labels');
-  if (off) document.documentElement.setAttribute('data-layer-labels', 'off');
-  else document.documentElement.removeAttribute('data-layer-labels');
-}
+syncPerfAttribute();
 
 type IdleCallback = (cb: () => void, opts?: { timeout: number }) => number;
 const whenIdle = (cb: () => void, timeout = 3000): void => {
@@ -57,7 +35,7 @@ export function CommandLayer() {
   const handles = useGlobeHandles();
   const labels = useRouterState({ select: (s) => (s.location.search as Record<string, unknown>).l });
 
-  useEffect(() => useUi.subscribe(syncDocumentAttributes), []);
+  useEffect(() => useUi.subscribe(syncPerfAttribute), []);
   useEffect(() => syncLayerAttribute(labels), [labels]);
 
   // The idle watch (ambient entry) runs while the shell is mounted.

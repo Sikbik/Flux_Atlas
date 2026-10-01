@@ -569,13 +569,13 @@
   }
 }
 
-:root[data-motion="reduced"] .ab-hero-lattice i,
-:root[data-motion="reduced"] .ab-anat-card::before,
-:root[data-motion="reduced"] .ab [data-pending] {
+:root:is([data-motion="reduced"], [data-motion="off"]) .ab-hero-lattice i,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ab-anat-card::before,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ab [data-pending] {
   animation: none;
 }
 
-:root[data-motion="reduced"] .ab-ring-arc {
+:root:is([data-motion="reduced"], [data-motion="off"]) .ab-ring-arc {
   transition: none;
 }
 

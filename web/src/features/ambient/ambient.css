@@ -267,9 +267,9 @@
   }
 }
 
-:root[data-motion-off] .amb,
-:root[data-motion-off] .amb-cap,
-:root[data-motion-off] .amb-row {
+:root[data-motion="off"] .amb,
+:root[data-motion="off"] .amb-cap,
+:root[data-motion="off"] .amb-row {
   animation: none;
   transition: none;
 }
