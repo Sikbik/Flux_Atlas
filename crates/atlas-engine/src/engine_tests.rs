@@ -989,7 +989,7 @@ async fn geoip_database_loaded_later_streams_a_geo_delta() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("a.redb")).unwrap();
     seed_geo_nodes(&store);
-    let eng = start(store);
+    let eng = start(store.clone());
     assert!(eng.published().attributions.is_empty());
     assert!(cities(&eng).iter().all(|(c, _)| c.is_empty()));
     let mut rx = eng.subscribe();
@@ -1016,5 +1016,14 @@ async fn geoip_database_loaded_later_streams_a_geo_delta() {
         delta_cities,
         vec!["Linköping".to_owned(), "London".to_owned()]
     );
+    eng.shutdown().await;
+    drop(eng);
+    // Restarted without the database: the stored cities still came from DB-IP, so the credit
+    // stays (without a version).
+    let eng = start(store);
+    let p = eng.published();
+    assert_eq!(p.attributions.len(), 1);
+    assert_eq!(p.attributions[0].version, None);
+    assert!(cities(&eng).iter().all(|(c, _)| !c.is_empty()));
     eng.shutdown().await;
 }

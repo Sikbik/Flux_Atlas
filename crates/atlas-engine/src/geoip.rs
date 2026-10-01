@@ -94,15 +94,39 @@ impl LoadedGeoIp {
 
     /// The licence credit to show while this database is in use.
     pub fn attribution(&self) -> DataAttribution {
-        DataAttribution {
-            name: "DB-IP".to_owned(),
-            text: atlas_geoip::ATTRIBUTION_TEXT.to_owned(),
-            url: atlas_geoip::ATTRIBUTION_URL.to_owned(),
-            license: atlas_geoip::LICENSE.to_owned(),
-            license_url: atlas_geoip::LICENSE_URL.to_owned(),
-            scope: "City names and approximate node locations".to_owned(),
-            version: self.version.clone(),
-        }
+        dbip_attribution(self.version.clone())
+    }
+}
+
+fn dbip_attribution(version: Option<String>) -> DataAttribution {
+    DataAttribution {
+        name: "DB-IP".to_owned(),
+        text: atlas_geoip::ATTRIBUTION_TEXT.to_owned(),
+        url: atlas_geoip::ATTRIBUTION_URL.to_owned(),
+        license: atlas_geoip::LICENSE.to_owned(),
+        license_url: atlas_geoip::LICENSE_URL.to_owned(),
+        scope: "City names and approximate node locations".to_owned(),
+        version,
+    }
+}
+
+/// Data credits for the published state: DB-IP while its database is loaded, and also while
+/// stored nodes still carry data it supplied (no other source provides cities or `local_db`
+/// locations), for example after the download was turned off.
+pub fn attributions(st: &NetworkState) -> Vec<DataAttribution> {
+    if let Some(g) = &st.geoip {
+        return vec![g.attribution()];
+    }
+    let uses_dbip = st.nodes.listed().any(|e| {
+        e.rec
+            .geo
+            .as_ref()
+            .is_some_and(|g| !g.city.is_empty() || g.source == GeoSource::LocalDb)
+    });
+    if uses_dbip {
+        vec![dbip_attribution(None)]
+    } else {
+        Vec::new()
     }
 }
 
@@ -115,6 +139,18 @@ fn fill(dst: &mut CompactString, src: &str) {
 /// The enriched location of a node on `ip` whose current location is `geo`, or `None` when the
 /// database adds nothing.
 pub fn enrich(db: &GeoIpDb, ip: IpAddr, geo: Option<&Geo>) -> Option<Geo> {
+    // A precise location that already has every field the database could fill: skip the lookup
+    // (restarts re-check every node, and cold lookups fault pages of the file in).
+    if geo.is_some_and(|g| {
+        g.is_precise()
+            && !g.city.is_empty()
+            && !g.region.is_empty()
+            && !g.country_code.is_empty()
+            && !g.country.is_empty()
+            && !g.continent_code.is_empty()
+    }) {
+        return None;
+    }
     let hit = db.lookup(ip)?;
     let cur = geo.cloned().unwrap_or_default();
     if !cur.country_code.is_empty()

@@ -1709,12 +1709,7 @@ impl Reducer {
             freshness: self.handle.inner.freshness.snapshot(),
             next_payees: self.st.next_payees.iter().map(payee_dto).collect(),
             mempool: self.st.mempool_list(),
-            attributions: self
-                .st
-                .geoip
-                .iter()
-                .map(crate::geoip::LoadedGeoIp::attribution)
-                .collect(),
+            attributions: crate::geoip::attributions(&self.st),
             prev: self.handle.published(),
         };
         let job = match &self.publisher {

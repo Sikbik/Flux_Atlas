@@ -284,12 +284,7 @@ impl Published {
             next_payees: Arc::from(Vec::new()),
             mesh_edge_count: st.mesh.edge_count() as u32,
             mempool: st.mempool_list().into(),
-            attributions: st
-                .geoip
-                .iter()
-                .map(geoip::LoadedGeoIp::attribution)
-                .collect::<Vec<_>>()
-                .into(),
+            attributions: geoip::attributions(st).into(),
         }
     }
 }

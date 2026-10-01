@@ -205,7 +205,9 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >     it by rename, never rewrite it in place, since it is memory-mapped). With `ATLAS_INGEST=0` nothing is
 >     downloaded, but an existing database is still read.
 >   - *Attribution (CC BY 4.0):* "IP Geolocation by DB-IP" with a link to https://db-ip.com, wherever the data is
->     shown. `/bootstrap` lists it in `attributions` while a database is loaded, so the About view can show it.
+>     shown. `/bootstrap` lists it in `attributions` while a database is loaded, or while stored nodes still carry
+>     its data (any city or `local_db` location, for example after the download was turned off), so the About view
+>     can show it.
 > - **Ingest switch.** `ATLAS_INGEST=0` (or `IngestConfig::disabled()`) runs the engine without ingest jobs: it
 >   restores, publishes and serves the stored state. Tests, fixtures and `demo_server` always run this way.
 
@@ -352,7 +354,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 
 | Method & path | Returns |
 |---|---|
-| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job, and `attributions` (third-party data credits the UI must show, for example `{name: "DB-IP", text: "IP Geolocation by DB-IP", url: "https://db-ip.com", license: "CC BY 4.0", license_url, scope, version}` while the GeoIP database is loaded; an empty list otherwise; typed optional for older servers) |
+| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job, and `attributions` (third-party data credits the UI must show, for example `{name: "DB-IP", text: "IP Geolocation by DB-IP", url: "https://db-ip.com", license: "CC BY 4.0", license_url, scope, version}` while the GeoIP database is loaded or nodes carry its data; an empty list otherwise; typed optional for older servers) |
 | `GET /nodes.bin` | **binary columnar node snapshot** (§7), feeds the globe + tables |
 | `GET /mesh.bin` | binary P2P mesh: header + `u32 edge_count` + `u32 a[]`, `u32 b[]` (NodeIds, a<b, deduped) + `u8 flags[]` (bit0 bidirectional, bit1 cross-continent); refreshed per PeerCrawl sweep |
 | `GET /nodes/{id}/peers` | the node's peers with geo, for selection-reveal |

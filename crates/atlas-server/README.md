@@ -82,6 +82,7 @@ Unknown keys are logged as unapplied at startup.
 - **DB-IP "IP to City Lite"** (city names, approximate locations), licensed
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The licence requires the credit
   "IP Geolocation by DB-IP" with a link to https://db-ip.com wherever the data is shown. While a
-  database is loaded, `/api/v1/bootstrap` lists it in `attributions` (text, link, licence,
+  database is loaded (or stored nodes still carry its data), `/api/v1/bootstrap` lists it in
+  `attributions` (text, link, licence,
   dataset month) for the About view. The database is downloaded at run time and never shipped in
   the image or the repository.
