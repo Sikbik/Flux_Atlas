@@ -28,9 +28,10 @@ export function BlockClock() {
   return (
     <Chip size="lg" className="ix-q-clock" role="timer" data-late={late || undefined}>
       <LiveDot status={late ? 'warn' : 'ok'} ping={false} size={7} />
-      <span>{late ? 'Block late by' : 'Next block in'}</span>
-      <AnimatedNumber value={secs} roll={false} font="mono" />
-      <span>s</span>
+      {/* One run of text, so the chip's gap sits between the dot and the words, not inside the sentence. */}
+      <span>
+        {late ? 'Block late by' : 'Next block in'} <AnimatedNumber value={secs} roll={false} font="mono" /> s
+      </span>
     </Chip>
   );
 }
