@@ -187,7 +187,7 @@ test('the WebSocket goes live and a block arrives', { timeout: blockWaitMs + 60_
 test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: skipExternal }, async () => {
   const routes = [
     ['/', null],
-    ['/node/1', /^Node 5\.0\.0\.1:/],
+    ['/node/1', { role: 'heading', name: /^Node 5\.0\.0\.1:/ }],
     ['/host/5.0.0.1', 'Host 5.0.0.1'],
     ['/app/kadenanode', 'App kadenanode'],
     ['/app/kadenanode/history/2', 'Revision 2'],
