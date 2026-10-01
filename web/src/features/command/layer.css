@@ -1,0 +1,163 @@
+/* The command layer's eager styles (F2b). Everything here must be small: it ships in the shell chunk.
+   The palette's own look lives in palette/palette.css and loads with the palette. */
+
+/* ---- The palette layer: scrim and the stand-in panel shown while the palette chunk loads ------------ */
+
+.pal-layer {
+  --pal-w: min(660px, calc(100vw - 32px));
+  --pal-top: 13vh;
+  --pal-r: 20px;
+  /* The panel's exit is the motion language's Power-on exit; the scrim fades out with it. */
+  --pal-exit: var(--fx-dur-power-off, 180ms);
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-palette);
+}
+
+/* Closing: the panel is on its way out, so the layer no longer takes pointer events (a second click on the
+   scrim would close twice, and whatever is underneath is the user's again at once). */
+.pal-layer[data-phase="closing"] {
+  pointer-events: none;
+}
+
+.pal-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.42);
+  -webkit-backdrop-filter: blur(var(--pal-scrim-blur, 3px));
+  backdrop-filter: blur(var(--pal-scrim-blur, 3px));
+  animation: pal-scrim-in var(--dur-base) var(--ease-out) both;
+}
+
+.pal-layer[data-phase="closing"] .pal-scrim {
+  animation: pal-scrim-out var(--pal-exit) var(--ease-in) both;
+}
+
+@keyframes pal-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pal-scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Lite performance: no blur behind the scrim (tokens.css drops the glass blur the same way). */
+:root[data-perf="lite"] .pal-layer {
+  --pal-scrim-blur: 0px;
+}
+
+/* The slot holds the panel's place and size, and it is what the motion language's Power-on (panel variant)
+   scales, fades and runs its light along: one entrance for the stand-in and the real panel alike. The
+   radius only tells that light where the corners are; nothing here clips. */
+.pal-slot {
+  position: absolute;
+  top: var(--pal-top);
+  left: calc((100% - var(--pal-w)) / 2);
+  width: var(--pal-w);
+  border-radius: var(--pal-r);
+}
+
+/* The stand-in has the final panel's size and a live input, so keystrokes typed before the chunk
+   arrives are kept and the real panel replaces it without moving. */
+.pal-stand {
+  position: relative;
+  border-radius: var(--pal-r);
+  overflow: hidden;
+  background:
+    radial-gradient(130% 120px at 50% -34px, rgb(79 122 212 / 0.22), transparent 72%),
+    linear-gradient(180deg, rgb(20 20 38 / 0.94), rgb(8 10 15 / 0.96));
+  box-shadow:
+    var(--shadow-pop),
+    0 40px 100px -30px rgb(0 0 0 / 0.9);
+}
+
+.pal-stand::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--rim-hot);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+.pal-stand-in {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 58px;
+  padding: 0 18px;
+  color: var(--accent-400);
+}
+
+.pal-stand-in input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text-1);
+  caret-color: var(--accent-400);
+  font: var(--fw-regular) 17px / 1.2 var(--font-sans);
+}
+
+.pal-stand-in input::placeholder {
+  color: var(--text-3);
+}
+
+.pal-stand-body {
+  height: 168px;
+  border-top: 1px solid var(--line-1);
+}
+
+@media (max-width: 719px) {
+  .pal-layer {
+    --pal-r: 18px;
+  }
+
+  .pal-stand-in input {
+    font-size: 16px;
+  }
+}
+
+/* ---- Ambient dissolve: the chrome fades out before /ambient and back in after ----------------------- */
+
+html[data-ambient-phase="out"] .shell:not([data-ambient]) > * {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-ambient-out) var(--ease-in-out);
+}
+
+html[data-ambient-phase="hold"] .shell:not([data-ambient]) > * {
+  opacity: 0;
+}
+
+html[data-ambient-phase="run"] .shell:not([data-ambient]) > * {
+  transition: opacity var(--dur-ambient-in) var(--ease-out);
+}
+
+/* ---- Layers the globe's own code does not read ------------------------------------------------------ */
+
+/* `l=-labels` hides the place labels (the engine binds only the mesh tokens). */
+html[data-layer-labels="off"] .globe-places {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Motion off (Settings): the scrim just appears. The panel's own entrance belongs to Power-on, which is
+   instant in this mode. */
+:root[data-motion="off"] .pal-scrim {
+  animation: none;
+}

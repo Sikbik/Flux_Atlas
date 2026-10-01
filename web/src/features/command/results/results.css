@@ -1,0 +1,95 @@
+/* The search results page (F2b). It sits in the shell's page slot, so it only owns its panel. */
+
+.res-panel {
+  position: relative;
+  container-type: inline-size;
+  width: min(700px, calc(100vw - var(--dock-w) - var(--space-12, 48px)));
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(120% 140px at 50% -40px, rgb(79 122 212 / 0.16), transparent 70%), var(--slab-bg-solid);
+  box-shadow: var(--shadow-window);
+  color: var(--text-2);
+}
+
+/* Close sits in the panel's top corner, on the header's kind row, at every width (the kit's actions slot
+   would drop it onto a row of its own when the panel is narrow). The inset follows the header's margin. */
+.res-close {
+  position: absolute;
+  z-index: 1;
+  top: var(--space-5);
+  right: var(--space-6);
+}
+
+.res-q {
+  color: var(--accent-200);
+}
+
+/* The one editorial line of the page: what the search found, set in the accent face. */
+.res-sum {
+  color: var(--text-3);
+  font: italic var(--fw-regular) var(--fs-md) / 1.4 var(--font-accent);
+}
+
+/* The refine field and the kind tabs sit under the kit's view header, on its side margins; the list's
+   rows carry 12 px of their own, so the body gives up that much and the icon tiles line up with the
+   field's edge. The margins fold with the panel's width, as the header's do. */
+.res-tools {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6) 0;
+}
+
+.res-body {
+  min-height: 140px;
+  padding: var(--space-3) calc(var(--space-6) - 12px) var(--space-5);
+}
+
+@container (min-width: 600px) {
+  .res-close {
+    right: var(--space-8);
+  }
+
+  .res-tools {
+    padding-inline: var(--space-8);
+  }
+
+  .res-body {
+    padding-inline: calc(var(--space-8) - 12px);
+  }
+}
+
+@container (max-width: 399px) {
+  .res-close {
+    right: var(--space-5);
+  }
+
+  .res-tools {
+    padding-inline: var(--space-5);
+  }
+
+  .res-body {
+    padding-inline: 0;
+  }
+}
+
+.res-group {
+  margin: 0;
+}
+
+.res-group .pal-gh {
+  margin: 0;
+}
+
+.res-more {
+  margin: 4px 12px 8px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* On a phone the page slot is the full width less its margins (the shell's phone layout, under 720 px). */
+@media (max-width: 719px) {
+  .res-panel {
+    width: calc(100vw - 2 * var(--space-5));
+  }
+}

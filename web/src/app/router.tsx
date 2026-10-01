@@ -278,12 +278,16 @@ const settingsRoute = createRoute({
   component: SettingsView,
 });
 
-/** `/q/:text`: resolves an ambiguous string with the search API and redirects to the best hit. */
+/**
+ * `/q/:text`: resolves an ambiguous string with the search API and redirects to the best hit. The
+ * `#all` form (the palette's "See all results") skips the redirect and lists every hit.
+ */
 const qRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/q/$text',
-  loader: async ({ params, context }) => {
+  loader: async ({ params, context, location }) => {
     const res = await context.queryClient.ensureQueryData(queries.search(params.text));
+    if (location.hash.replace(/^#/, '') === 'all') return res;
     const best = res.hits[0];
     const target = best ? routeForHit(best) : null;
     if (target) throw redirect({ ...target, replace: true } as Parameters<typeof redirect>[0]);

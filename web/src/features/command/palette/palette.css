@@ -1,0 +1,469 @@
+/* Command palette (F2b). Loaded with the palette chunk; the layer and the scrim live in ../layer.css so
+   they exist before this file does. Local custom properties are prefixed --pal-. */
+
+.pal-layer {
+  --pal-list-max: min(432px, calc(100dvh - var(--pal-top) - 176px));
+}
+
+/* The panel sits in the layer's slot (layer.css), which carries its place and its Power-on entrance and
+   exit: the panel itself does not move. */
+.pal-panel {
+  position: relative;
+  border-radius: var(--pal-r);
+  overflow: hidden;
+  isolation: isolate;
+  color: var(--text-2);
+  background:
+    radial-gradient(130% 120px at 50% -34px, rgb(79 122 212 / 0.22), transparent 72%),
+    linear-gradient(180deg, rgb(20 20 38 / 0.94), rgb(8 10 15 / 0.96));
+  box-shadow:
+    var(--shadow-pop),
+    0 40px 100px -30px rgb(0 0 0 / 0.9);
+}
+
+/* The hot rim: a hairline gradient border. */
+.pal-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--rim-hot);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+/* ---- Input row ------------------------------------------------------------------------------- */
+
+.pal-in {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 58px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.pal-in::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-400), transparent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/* The field's focus is a state, drawn at full width: the panel's entrance is the one thing that moves. */
+.pal-in:focus-within::after {
+  opacity: 0.85;
+}
+
+.pal-glass {
+  flex: none;
+  color: var(--accent-400);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.pal-panel[data-has-text] .pal-glass {
+  color: var(--accent-300);
+}
+
+.pal-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.pal-input,
+.pal-ghost {
+  font: var(--fw-regular) 17px / 1.2 var(--font-sans);
+  letter-spacing: 0;
+}
+
+.pal-input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text-1);
+  caret-color: var(--accent-400);
+}
+
+.pal-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.pal-input::placeholder {
+  color: var(--text-3);
+}
+
+.pal-ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: pre;
+  color: var(--text-4);
+  pointer-events: none;
+}
+
+.pal-ghost > span {
+  visibility: hidden;
+}
+
+.pal-esc {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.pal-esc:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 3px;
+}
+
+/* A hairline of light that sweeps under the field while the server is answering. */
+.pal-sweep {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  top: 57px;
+  height: 2px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+.pal-sweep[data-on] {
+  opacity: 1;
+}
+
+.pal-sweep::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, var(--accent-400), var(--accent-200), transparent);
+  transform: translateX(-100%);
+}
+
+/* Only while a search is out: nothing loops at rest. */
+.pal-sweep[data-on]::before {
+  animation: pal-sweep 1.15s var(--ease-in-out) infinite;
+}
+
+@keyframes pal-sweep {
+  to {
+    transform: translateX(270%);
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .pal-sweep::before {
+  animation: none;
+  width: 100%;
+  opacity: 0.5;
+}
+
+/* ---- Kind chips and the prefix usage line ------------------------------------------------------ */
+
+/* Underline tabs, like the kit's: the chosen kind is the one the motion language's TabIndicator lines
+   (the strip is its host, so it is positioned and the line sits on its bottom edge). */
+.pal-kinds {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pal-kinds::-webkit-scrollbar {
+  display: none;
+}
+
+/* Chips out of sight on a narrow card: the strip fades toward them (KindStrip sets data-fade). */
+.pal-kinds[data-fade="end"] {
+  --pal-fade: 28px;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--pal-fade)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--pal-fade)), transparent);
+}
+
+.pal-kinds[data-fade="start"] {
+  --pal-fade: 28px;
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - var(--pal-fade)), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - var(--pal-fade)), transparent);
+}
+
+.pal-kinds[data-fade="both"] {
+  --pal-fade: 28px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--pal-fade),
+    #000 calc(100% - var(--pal-fade)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--pal-fade),
+    #000 calc(100% - var(--pal-fade)),
+    transparent
+  );
+}
+
+.pal-kind {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-3);
+  font: var(--fw-semibold) 12.5px / 1 var(--font-display);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+/* Hover is light, not a box (the kit's tabs do the same): a faint ellipse rising from the baseline. */
+@media (hover: hover) {
+  .pal-kind:hover {
+    color: var(--text-1);
+    background: radial-gradient(
+      70% 100% at 50% 100%,
+      color-mix(in oklab, var(--text-1) 9%, transparent),
+      transparent 78%
+    );
+  }
+}
+
+.pal-kind[data-selected] {
+  color: var(--text-1);
+}
+
+.pal-kind:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 2px;
+}
+
+.pal-kind i {
+  font: var(--fw-medium) 10.5px / 1 var(--font-mono);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.pal-kind[data-selected] i {
+  color: var(--accent-200);
+  opacity: 1;
+}
+
+.pal-usage {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 18px 4px;
+  min-height: 38px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.pal-usage code {
+  font: var(--fw-medium) 12px / 1.2 var(--font-mono);
+  color: var(--accent-200);
+  white-space: nowrap;
+}
+
+.pal-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 14px 0;
+  padding: 8px 12px;
+  border: 1px solid rgb(255 154 61 / 0.35);
+  border-radius: var(--r-md);
+  background: var(--status-warn-soft);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.pal-banner[data-tone="info"] {
+  border-color: var(--line-blue);
+  background: var(--status-pending-soft);
+}
+
+/* ---- The list -------------------------------------------------------------------------------- */
+
+.pal-list {
+  position: relative;
+  max-height: var(--pal-list-max);
+  height: var(--pal-list-h, auto);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+}
+
+.pal-list[data-ready] {
+  transition: height var(--dur-base) var(--ease-out);
+}
+
+.pal-list[data-fade-bottom]:not([data-fade-top]) {
+  -webkit-mask: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  mask: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+
+.pal-list[data-fade-top]:not([data-fade-bottom]) {
+  -webkit-mask: linear-gradient(to bottom, transparent, #000 22px);
+  mask: linear-gradient(to bottom, transparent, #000 22px);
+}
+
+.pal-list[data-fade-top][data-fade-bottom] {
+  -webkit-mask: linear-gradient(to bottom, transparent, #000 22px, #000 calc(100% - 28px), transparent);
+  mask: linear-gradient(to bottom, transparent, #000 22px, #000 calc(100% - 28px), transparent);
+}
+
+.pal-sizer {
+  position: relative;
+  padding: 4px 8px 14px;
+}
+
+/* The one highlight: it glides to the active row instead of the row repainting. */
+.pal-hl {
+  position: absolute;
+  z-index: 0;
+  left: 8px;
+  right: 8px;
+  top: 0;
+  height: var(--pal-row-h);
+  border-radius: 12px;
+  background: var(--pal-hl);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    height var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.pal-hl::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent-400);
+  box-shadow: 0 0 10px var(--accent-500);
+}
+
+.pal-foot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line-1);
+  background: rgb(255 255 255 / 0.02);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.pal-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.pal-hint .ui-kbd:last-of-type {
+  margin-right: 2px;
+}
+
+.pal-r {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pal-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Narrow and touch -------------------------------------------------------------------------- */
+
+@media (max-width: 719px) {
+  .pal-input,
+  .pal-ghost {
+    font-size: 16px;
+  }
+
+  .pal-foot {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .pal-foot {
+    display: none;
+  }
+
+  .pal-kind {
+    height: 36px;
+  }
+}
+
+/* Motion off: nothing travels, nothing loops. */
+:root[data-motion="off"] .pal-hl,
+:root[data-motion="off"] .pal-list {
+  transition: none;
+}
+
+@media (forced-colors: active) {
+  .pal-panel {
+    border: 1px solid CanvasText;
+  }
+
+  .pal-hl {
+    background: Highlight;
+    opacity: 0.3;
+  }
+}
