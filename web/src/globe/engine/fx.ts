@@ -4,18 +4,14 @@
 import * as THREE from 'three';
 import type { Activity } from './activity';
 import type { CameraRig } from './camera';
-import { BeamEase, BeamKind, type BeamLayer } from './layers/beams';
 import { ANCHOR_BASE, RayKind, type RayLayer } from './layers/rays';
 import { type RibbonLayer, RibbonStyle } from './layers/ribbons';
-import type { RingLayer } from './layers/rings';
+import { RingKind, type RingLayer } from './layers/rings';
 import { NO_CLUSTER, type NodeStore } from './nodes/store';
 import type { SharedUniforms } from './uniforms';
 
 const _c = new THREE.Color();
 const _tint = new THREE.Color('#92ADE5');
-const _rgb = { r: 0, g: 0, b: 0 };
-/** Handles at or above this refer to screen-space beams, below it to world-space rays. */
-const BEAM_HANDLE = 100000;
 
 export interface FxTargets {
   store: NodeStore;
@@ -24,7 +20,6 @@ export interface FxTargets {
   packets: RibbonLayer;
   links: RibbonLayer;
   rays: RayLayer;
-  beams: BeamLayer;
   u: SharedUniforms;
   rig: CameraRig;
   activity?: Activity;
@@ -56,9 +51,6 @@ export class Fx {
   horizonCos = 0.3;
   readonly camDir = new THREE.Vector3(0, 0, 1);
   reduced = false;
-  /** True while the moon follows the camera: the relay draws screen-space beams; in the sky it draws world-space rays. */
-  companion = true;
-  private readonly cb = new Float32Array(9);
   private waveIdx = 0;
   private readonly waveT = new Float32Array(4).fill(-1);
   private readonly waveDur = new Float32Array(4).fill(1.6);
@@ -171,6 +163,31 @@ export class Fx {
     delay = 0,
   ): number {
     return this.t.rings.add(slot, kind, this.time + delay, dur, -px1, c.r, c.g, c.b, intensity, seed, px0);
+  }
+
+  /** A camera-facing six-point spark that opens from `px0` to `px1` CSS pixels (the landing spark). */
+  sparkPx(
+    slot: number,
+    c: THREE.Color,
+    px0: number,
+    px1: number,
+    dur: number,
+    intensity: number,
+    delay = 0,
+  ): number {
+    return this.t.rings.add(
+      slot,
+      RingKind.Spark,
+      this.time + delay,
+      dur,
+      -px1,
+      c.r,
+      c.g,
+      c.b,
+      intensity,
+      0,
+      px0,
+    );
   }
 
   ringAt(
@@ -363,9 +380,10 @@ export class Fx {
   }
 
   /**
-   * A beam between two endpoints (node slots or moon anchors): a bright head flies from A to B over
-   * `dur` seconds and leaves the conduit lit behind it until `life`. The color runs from `a` at the
-   * start to `b` at the end.
+   * A beam between two endpoints (node slots or moon anchors): a white-hot head flies from A to B over
+   * `dur` seconds, dragging a tail that thins to nothing over a faint hairline of the route, until `life`.
+   * The color runs from `a` at the start to `b` at the end. `kind` is a `RayKind` (add `RayKind.Still` for
+   * reduced motion: no flight, the end of the route is lit at once).
    */
   ray(
     slotA: number,
@@ -377,11 +395,12 @@ export class Fx {
     widthPx: number,
     intensity: number,
     delay = 0,
+    kind: number = RayKind.Beam,
   ): number {
     return this.t.rays.add(
       slotA,
       slotB,
-      RayKind.Beam,
+      kind,
       this.time + delay,
       dur,
       life,
@@ -431,125 +450,95 @@ export class Fx {
   }
 
   // ---- the moon relay (design 6.4 I, 7.10.5) --------------------------------------------------
-
-  /** Writes a color's display-referred sRGB triple into `cb`, mixed toward white by `white`. */
-  private put(c: THREE.Color, o: number, white = 0): void {
-    c.getRGB(_rgb, THREE.SRGBColorSpace);
-    this.cb[o] = _rgb.r + (1 - _rgb.r) * white;
-    this.cb[o + 1] = _rgb.g + (1 - _rgb.g) * white;
-    this.cb[o + 2] = _rgb.b + (1 - _rgb.b) * white;
-  }
+  // The moon is a real object on its orbit, so every relay beam is a world-space ray (layers/rays.ts):
+  // it leaves the planet like a space elevator, arcs round it along the shell to the moon's direction and
+  // arrives along the moon's own radial line, whatever the pose. When the moon is behind the planet the
+  // beam goes over the limb and the planet hides the rest of it.
 
   /**
-   * The uplink: a lifted arc from the producer up to the moon. A white head with a Blue Wave trail
-   * (30% of the path) flies for `travel` seconds, ease-in-out, bulging 22% away from the planet.
+   * The uplink: a streak from the producer to the moon's current place. A white-hot head with a Blue Wave
+   * tail flies for `travel` seconds, ease-in-out, and arrives exactly when the moon receives the block.
+   * Reduced motion: no flight, the end of the route is lit at once instead.
    */
   uplink(producer: number, delay: number, travel: number): void {
-    const red = this.reduced;
-    if (this.companion) {
-      this.put(this.t.u.uShock.value, 0);
-      this.put(this.t.u.uShock.value, 3, 0.4);
-      this.cb[6] = this.cb[7] = this.cb[8] = 1;
-      this.t.beams.add(
+    this.color('block', _c);
+    if (this.reduced) {
+      this.ray(
         producer,
-        ANCHOR_BASE + 4,
-        BeamKind.Beam,
-        this.time + delay,
-        red ? 0.38 : travel,
-        (red ? 0.38 : travel) + (red ? 0.5 : 0.52),
-        red ? BeamEase.Static : BeamEase.InOut,
-        0.22,
-        0.1,
-        0,
-        0.3,
-        0,
-        red ? 6 : 13,
-        red ? 3 : 5.8,
-        red ? 1.4 : 2.6,
-        1,
-        this.cb,
+        this.moonAnchor(4),
+        _c,
+        _tint,
+        0.38,
+        0.9,
+        2.8,
+        1.3,
+        delay,
+        RayKind.Beam + RayKind.Still,
       );
       return;
     }
-    this.color('block', _c);
-    this.ray(producer, this.moonAnchor(0), _c, _tint, travel + 0.3, travel + 2.0, 2.8, 1.6, delay);
+    this.ray(producer, this.moonAnchor(4), _c, _tint, travel, travel + 1.2, 3.2, 1.9, delay);
   }
 
   /**
    * A downlink: from a moon piece to a payee, in the tier color (tier, 22% toward white, 60% toward
-   * white). It leaves the moon fast and settles onto the node (ease-out-cubic), bulging 16%.
+   * white). It leaves the moon fast and settles onto the node (ease-out, a fifth of the way at constant
+   * speed so it lands moving), arriving in `travel`.
    */
   downlink(piece: number, slot: number, tier: THREE.Color, delay: number, travel: number): void {
-    const red = this.reduced;
-    if (this.companion) {
-      this.put(tier, 0);
-      this.put(tier, 3, 0.22);
-      this.put(tier, 6, 0.6);
-      this.t.beams.add(
-        ANCHOR_BASE + piece,
+    this.color('shockHot', _c);
+    if (this.reduced) {
+      this.ray(
+        this.moonAnchor(piece),
         slot,
-        BeamKind.Beam,
-        this.time + delay,
-        red ? 0.42 : travel,
-        (red ? 0.42 : travel) + 0.6,
-        red ? BeamEase.Static : BeamEase.OutCubic,
-        0.16,
-        0,
-        0.025,
-        0.28,
-        0,
-        red ? 6 : 12,
-        red ? 3 : 5.4,
-        red ? 1.4 : 2.3,
-        1,
-        this.cb,
+        _c,
+        tier,
+        0.42,
+        0.95,
+        2.3,
+        1.4,
+        delay,
+        RayKind.Down + RayKind.Still,
       );
       return;
     }
-    this.color('shockHot', _c);
-    this.ray(this.moonAnchor(piece), slot, _c, tier, travel, travel + 1.4, 2.3, 1.8, delay);
+    this.ray(this.moonAnchor(piece), slot, _c, tier, travel, travel + 1.1, 2.3, 1.8, delay, RayKind.Down);
+  }
+
+  /**
+   * The dev-fund pulse: the fourth coinbase output leaves the slanted bar and drifts out into space, away
+   * from the planet, to where no node is. A slow white streak with a light-blue tail (the tier colors
+   * belong to the payees), so it reads as something different from a payout.
+   */
+  devPulse(): void {
+    const red = this.reduced;
+    const travel = red ? 0.42 : 1.0;
+    _c.set('#ffffff');
+    this.ray(
+      this.moonAnchor(0),
+      this.moonAnchor(5),
+      _c,
+      _tint,
+      travel,
+      travel + 0.9,
+      2.0,
+      red ? 1.0 : 1.3,
+      0,
+      RayKind.Drift + (red ? RayKind.Still : 0),
+    );
   }
 
   /**
    * The moon's pre-aim: a faint dotted line from a piece to a payee who is known one block ahead.
-   * It brightens from 12% to 42% over the last 5 s before `etaAt` (engine seconds). Returns a handle
-   * for `endGuide`, or -1.
+   * Returns a handle for `endGuide`, or -1.
    */
-  aimGuide(piece: number, slot: number, tier: THREE.Color, life: number, etaAt: number): number {
-    if (this.companion) {
-      this.put(tier, 0);
-      this.put(tier, 3);
-      this.put(tier, 6);
-      const i = this.t.beams.add(
-        ANCHOR_BASE + piece,
-        slot,
-        BeamKind.Guide,
-        this.time,
-        1,
-        life,
-        BeamEase.InOut,
-        0.14,
-        0,
-        0,
-        0,
-        etaAt,
-        1,
-        1,
-        1,
-        1,
-        this.cb,
-      );
-      return i < 0 ? -1 : i + BEAM_HANDLE;
-    }
+  aimGuide(piece: number, slot: number, tier: THREE.Color, life: number, _etaAt: number): number {
     this.color('shockHot', _c);
     return this.guide(this.moonAnchor(piece), slot, _c, tier, 1.6, life, 1.2, 0.34 * this.aimAlpha());
   }
 
   endGuide(handle: number, start: number, fade = 0.5): void {
-    if (handle >= BEAM_HANDLE) {
-      const i = handle - BEAM_HANDLE;
-      if (this.t.beams.isActive(i, start)) this.t.beams.fadeOut(i, this.time, fade);
-    } else if (handle >= 0) this.endRay(handle, start, fade);
+    if (handle >= 0) this.endRay(handle, start, fade);
   }
 
   // ---- global -----------------------------------------------------------------------------

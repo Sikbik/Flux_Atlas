@@ -1,16 +1,16 @@
 // The moon's screen-space dressing (design 7.10.3): the glow, the block clock (a hexagon that fills
 // over the block interval), the receive rings, the hover circle, the white bloom behind a firing
-// piece, the dashed outlines of the pieces still on their way during the boot, and the moon's trail: a
-// short tapering wake behind it and the chain of sealed blocks falling back along the path (a bead per
-// block, shrinking and fading with age). The path itself is never drawn: motion is implied, not outlined.
-// Two additive quads, no geometry to speak of:
-// everything is a distance field evaluated in CSS pixels, so the lines keep their designed widths
-// at any size or device pixel ratio.
+// piece, and the dashed outlines of the pieces still on their way during the boot. One additive quad,
+// no geometry to speak of: everything is a distance field evaluated in CSS pixels, so the lines keep
+// their designed widths at any size or device pixel ratio. The quad follows the moon's projected
+// centre and size, and each pixel of it asks the planet (planetVisPx) whether the moon's plane is
+// behind the disc there, so the glow and the ring are cut by the limb exactly as the body is. The
+// moon's trail (the wake and the chain of beads) is world-space geometry and lives in chain.ts.
 
 import * as THREE from 'three';
-import { TAU } from '../math';
 import type { GlobeTokens } from '../tokens';
-import type { Orbit } from './placement';
+import type { SharedUniforms } from '../uniforms';
+import { PLANET_VIS_GLSL, PLANET_VIS_PLANE_GLSL } from './occlusion';
 
 const QUAD_VERT = /* glsl */ `
 uniform vec2 uCenter;
@@ -25,10 +25,13 @@ void main() {
 
 const HUD_FRAG = /* glsl */ `
 precision highp float;
+${PLANET_VIS_GLSL}
+${PLANET_VIS_PLANE_GLSL}
+uniform vec2 uCss;
+uniform float uOcc;           // 0 in front of everything (the boot), 1 hidden by the planet like any world object
 uniform vec2 uCenter;
 uniform float uS;
 uniform float uK;
-uniform float uPxScale;
 uniform vec3 uGlowCol;
 uniform vec3 uRingCol;
 uniform float uGlowA;
@@ -45,7 +48,6 @@ uniform vec2 uPoly[32];       // the four outlines, in symbol units
 uniform float uPolyCum[32];   // arc length up to each vertex, symbol units
 uniform vec2 uPieceB[4];      // first vertex, vertex count
 uniform float uOut[4];        // dashed outline alpha (boot: a piece that has not landed yet)
-uniform vec4 uSkew;
 in vec2 vPx;
 
 const float PI = 3.14159265;
@@ -70,7 +72,7 @@ float haloGrad(float t) {
 }
 float easeOutExpo(float t) { return t >= 1.0 ? 1.0 : 1.0 - pow(2.0, -10.0 * t); }
 
-vec2 symPx(vec2 v) { return vec2(uSkew.x * v.x + uSkew.y * v.y, -(uSkew.z * v.x + uSkew.w * v.y)) * uK; }
+vec2 symPx(vec2 v) { return vec2(v.x, -v.y) * uK; }
 
 vec2 hexVert(int k, float rho) {
   float a = (-90.0 + 60.0 * float(k)) * 0.01745329;
@@ -81,6 +83,9 @@ void main() {
   vec2 p = vPx - uCenter;
   float r = length(p);
   vec3 col = vec3(0.0);
+  // The planet hides what is behind its disc: this plane is the moon's, facing the camera.
+  float vis = mix(1.0, planetVisPx(vPx, uCss), uOcc);
+  if (vis < 0.002) discard;
 
   if (uLite < 0.5) {
     // Glow: a Blue Wave sprite 3.3 heights wide; on a flash a white halo 2 heights wide joins it.
@@ -151,86 +156,7 @@ void main() {
   // Hover: a white hairline circle of radius 0.86 heights.
   col += vec3(1.0) * 0.5 * uHover * band(abs(r - 0.86 * uS), 1.0);
 
-  gl_FragColor = vec4(col, 1.0);
-}`;
-
-const ORBIT_FRAG = /* glsl */ `
-precision highp float;
-uniform vec4 uOrb;
-uniform vec2 uRot;
-uniform float uPhase;
-uniform float uPxScale;
-uniform vec3 uEdge;
-uniform vec3 uEdgeHi;
-uniform float uChainA;
-uniform float uWakeLen;   // radians of path behind the moon
-uniform float uWakeA;
-uniform int uBeadN;
-uniform vec4 uBead[24];   // phase on the ellipse, age 0..1, birth flash 0..1, radius (px)
-in vec2 vPx;
-
-const float TAU = 6.2831853;
-float aaw() { return 0.8 / uPxScale; }
-float band(float d, float w) { return 1.0 - smoothstep(w * 0.5 - aaw(), w * 0.5 + aaw(), d); }
-// Pointy-top hexagon of circumradius r.
-float hexD(vec2 p, float r) {
-  p = abs(p);
-  return max(p.x, dot(p, vec2(0.5, 0.8660254))) - 0.8660254 * r;
-}
-
-void main() {
-  vec2 p = vPx - uOrb.xy;
-  vec2 q = vec2(p.x * uRot.x + p.y * uRot.y, -p.x * uRot.y + p.y * uRot.x);
-  float a = uOrb.z;
-  float b = uOrb.w;
-  float f = q.x * q.x / (a * a) + q.y * q.y / (b * b) - 1.0;
-  vec2 g = 2.0 * vec2(q.x / (a * a), q.y / (b * b));
-  float d = abs(f) / max(length(g), 1e-5);
-  if (d > 14.0) discard;
-  float th = atan(q.y / b, q.x / a);
-  vec3 col = vec3(0.0);
-
-  // The wake: a short tail behind the moon along the (invisible) path. It tapers in width and fades to
-  // nothing; its core runs white at the moon and Flux light blue behind.
-  if (uChainA > 0.002) {
-    float back = mod(uPhase - th, TAU);
-    if (back < uWakeLen) {
-      float u = back / uWakeLen;
-      // It emerges from behind the moon and thins out to nothing.
-      float fade = pow(1.0 - u, 1.7) * smoothstep(0.0, 0.07, back);
-      float w = mix(1.6, 0.4, u);
-      col += uEdgeHi * 0.95 * fade * band(d, w) * uWakeA * uChainA;
-      col += vec3(1.0) * 0.4 * pow(1.0 - u, 3.2) * smoothstep(0.0, 0.07, back) * band(d, w * 0.55) * uWakeA * uChainA;
-      col += uEdge * 0.7 * fade * (1.0 - smoothstep(0.0, 6.0 * (1.0 - u) + 0.5, d)) * uWakeA * uChainA;
-    }
-  }
-
-  // The chain: a flat hexagon for every sealed block, falling back along the path behind the moon and
-  // shrinking and fading with age.
-  if (uBeadN > 0 && uChainA > 0.002) {
-    for (int i = 0; i < 24; i++) {
-      if (i >= uBeadN) break;
-      float t0 = uBead[i].x;
-      float ageF = uBead[i].y;
-      float vis = 1.0 - smoothstep(0.2, 1.0, ageF);
-      // The bead itself.
-      float c0 = cos(t0) * a;
-      float s0 = sin(t0) * b;
-      vec2 c = uOrb.xy + vec2(c0 * uRot.x - s0 * uRot.y, c0 * uRot.y + s0 * uRot.x);
-      float r = uBead[i].w;
-      float hd = hexD(vPx - c, r);
-      if (hd < 2.0 && vis > 0.002) {
-        float fill = 1.0 - smoothstep(-aaw(), aaw(), hd);
-        float edge = band(abs(hd + 0.65), 1.3);
-        float fl = uBead[i].z;
-        col += uEdge * 0.6 * vis * fill * uChainA;
-        col += uEdgeHi * vis * edge * uChainA;
-        // Born with a white flash that settles.
-        col += vec3(1.0) * fl * (0.55 * fill + 0.6 * edge) * uChainA;
-      }
-    }
-  }
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col * vis, 1.0);
 }`;
 
 export interface HudState {
@@ -254,22 +180,14 @@ export interface HudState {
   pieceFlash: ArrayLike<number>;
   /** Piece centers relative to the moon's center, CSS pixels (x, y pairs). */
   piecePx: ArrayLike<number>;
-  orbit: Orbit;
-  phase: number;
-  /** Length of the wake in radians of the path. */
-  wakeLen: number;
-  /** Wake brightness (rises with a seal). */
-  wakeA: number;
-  /** 0..1 for the trail and the chain of beads (off in the lite tier and under reduced motion). */
-  chainA: number;
-  /** The chain, from `MoonChain.companionBeads`: four floats per bead. */
-  beads: Float32Array;
-  beadN: number;
   /** Dashed outline alpha per piece (boot), in this mesh's piece order. */
   outline: ArrayLike<number>;
-  skew: THREE.Vector4;
-  /** 0..1 fade for everything (the moon lifting into the sky, or hidden). */
+  /** 0..1 fade for everything (the sky look taking over, the moon appearing, or hidden). */
   alpha: number;
+  /** Distance from the camera to the moon's centre along the view axis (world units), for the planet's occlusion. */
+  depth: number;
+  /** 0..1: how much the planet may hide the dressing (the boot symbol is in front of everything). */
+  occlusion: number;
 }
 
 const additive = {
@@ -287,16 +205,14 @@ const additive = {
 } as const;
 
 export class MoonHud {
-  readonly orbit: THREE.Mesh;
   readonly glow: THREE.Mesh;
   private readonly hudMat: THREE.ShaderMaterial;
-  private readonly orbMat: THREE.ShaderMaterial;
   private readonly geo: THREE.BufferGeometry;
   private readonly pieceF = new Float32Array(4);
   private readonly outF = new Float32Array(4);
   private readonly pieceP = [0, 1, 2, 3].map(() => new THREE.Vector2());
 
-  constructor() {
+  constructor(u: SharedUniforms) {
     this.geo = new THREE.BufferGeometry();
     this.geo.setAttribute(
       'position',
@@ -313,7 +229,17 @@ export class MoonHud {
         uHalf: { value: new THREE.Vector2(100, 100) },
         uS: { value: 65 },
         uK: { value: 0.2 },
-        uPxScale: { value: 1 },
+        uPxScale: u.uPxScale,
+        uCamPos: u.uCamPos,
+        uProjScale: u.uProjScale,
+        uCamRight: u.uCamRight,
+        uCamUp: u.uCamUp,
+        uCamBack: u.uCamBack,
+        uTanHalfFov: u.uTanHalfFov,
+        uAspect: u.uAspect,
+        uViewShift: u.uViewShift,
+        uMoonDepth: { value: 4 },
+        uOcc: { value: 1 },
         uGlowCol: { value: new THREE.Color('#2b61d1') },
         uRingCol: { value: new THREE.Color('#86a1da') },
         uGlowA: { value: 0 },
@@ -330,37 +256,11 @@ export class MoonHud {
         uPolyCum: { value: new Float32Array(32) },
         uPieceB: { value: [0, 1, 2, 3].map(() => new THREE.Vector2()) },
         uOut: { value: this.outF },
-        uSkew: { value: new THREE.Vector4(1, 0, 0, 1) },
-      },
-    });
-    this.orbMat = new THREE.ShaderMaterial({
-      ...additive,
-      vertexShader: QUAD_VERT,
-      fragmentShader: ORBIT_FRAG,
-      uniforms: {
-        uCenter: { value: new THREE.Vector2() },
-        uCss: { value: new THREE.Vector2(1, 1) },
-        uHalf: { value: new THREE.Vector2(1, 1) },
-        uOrb: { value: new THREE.Vector4() },
-        uRot: { value: new THREE.Vector2(1, 0) },
-        uPhase: { value: 0 },
-        uPxScale: { value: 1 },
-        uEdge: { value: new THREE.Color('#2b61d1') },
-        uEdgeHi: { value: new THREE.Color('#86a1da') },
-        uChainA: { value: 1 },
-        uWakeLen: { value: 0.5 },
-        uWakeA: { value: 1 },
-        uBeadN: { value: 0 },
-        uBead: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
       },
     });
     this.glow = new THREE.Mesh(this.geo, this.hudMat);
-    this.orbit = new THREE.Mesh(this.geo, this.orbMat);
-    for (const m of [this.glow, this.orbit]) {
-      m.frustumCulled = false;
-      m.matrixAutoUpdate = false;
-    }
-    this.orbit.renderOrder = 1;
+    this.glow.frustumCulled = false;
+    this.glow.matrixAutoUpdate = false;
     this.glow.renderOrder = 2;
   }
 
@@ -386,11 +286,9 @@ export class MoonHud {
   setTokens(t: GlobeTokens): void {
     (this.hudMat.uniforms.uGlowCol!.value as THREE.Color).set(t.moonGlow);
     (this.hudMat.uniforms.uRingCol!.value as THREE.Color).set(t.moonRing);
-    (this.orbMat.uniforms.uEdge!.value as THREE.Color).set(t.moonEdge);
-    (this.orbMat.uniforms.uEdgeHi!.value as THREE.Color).set(t.moonEdgeHi);
   }
 
-  update(s: HudState, showOrbit: boolean): void {
+  update(s: HudState): void {
     const h = this.hudMat.uniforms;
     (h.uCenter!.value as THREE.Vector2).set(s.x, s.y);
     (h.uCss!.value as THREE.Vector2).set(s.cssW, s.cssH);
@@ -398,7 +296,8 @@ export class MoonHud {
     (h.uHalf!.value as THREE.Vector2).set(half, half);
     h.uS!.value = s.s;
     h.uK!.value = s.k;
-    h.uPxScale!.value = s.pxScale;
+    h.uMoonDepth!.value = s.depth;
+    h.uOcc!.value = s.occlusion;
     h.uGlowA!.value = s.glowA * s.alpha;
     h.uFlash!.value = s.flash * s.alpha;
     h.uHover!.value = s.hover * s.alpha;
@@ -412,33 +311,11 @@ export class MoonHud {
       this.outF[i] = s.outline[i]!;
       this.pieceP[i]!.set(s.piecePx[i * 2]!, s.piecePx[i * 2 + 1]!);
     }
-    (h.uSkew!.value as THREE.Vector4).copy(s.skew);
     this.glow.visible = s.alpha > 0.002;
-
-    this.orbit.visible = showOrbit && s.alpha > 0.002;
-    if (this.orbit.visible) {
-      const o = this.orbMat.uniforms;
-      (o.uCenter!.value as THREE.Vector2).set(s.cssW * 0.5, s.cssH * 0.5);
-      (o.uCss!.value as THREE.Vector2).set(s.cssW, s.cssH);
-      (o.uHalf!.value as THREE.Vector2).set(s.cssW * 0.5, s.cssH * 0.5);
-      (o.uOrb!.value as THREE.Vector4).set(s.orbit.cx, s.orbit.cy, s.orbit.a, s.orbit.b);
-      (o.uRot!.value as THREE.Vector2).set(s.orbit.cs, s.orbit.sn);
-      o.uPhase!.value = ((s.phase % TAU) + TAU) % TAU;
-      o.uPxScale!.value = s.pxScale;
-      o.uChainA!.value = s.chainA * s.alpha;
-      o.uWakeLen!.value = s.wakeLen;
-      o.uWakeA!.value = s.wakeA;
-      const n = Math.min(24, s.beadN);
-      o.uBeadN!.value = n;
-      const arr = o.uBead!.value as THREE.Vector4[];
-      for (let i = 0; i < n; i++)
-        arr[i]!.set(s.beads[i * 4]!, s.beads[i * 4 + 1]!, s.beads[i * 4 + 2]!, s.beads[i * 4 + 3]!);
-    }
   }
 
   dispose(): void {
     this.geo.dispose();
     this.hudMat.dispose();
-    this.orbMat.dispose();
   }
 }
