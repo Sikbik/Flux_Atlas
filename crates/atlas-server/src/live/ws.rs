@@ -65,8 +65,11 @@ pub async fn ws_handler(
                 .into_response();
         }
     };
-    let max = state.hub.config().max_message_bytes;
+    let cfg = state.hub.config();
+    let max = cfg.max_message_bytes;
     upgrade
+        .read_buffer_size(cfg.read_buffer)
+        .write_buffer_size(cfg.write_buffer)
         .max_message_size(max)
         .max_frame_size(max)
         .on_upgrade(move |socket| run(state, socket, guard))

@@ -94,6 +94,11 @@ pub struct WsConfig {
     /// Most node ids / app names honored in one `sub`.
     pub max_watch_nodes: usize,
     pub max_watch_apps: usize,
+    /// Per-connection read buffer. Clients only send small `sub` / `pong` messages; the
+    /// library default (128 KiB, allocated up front) cost about 180 KiB of RSS per connection.
+    pub read_buffer: usize,
+    /// Per-connection write buffer target (frames are flushed once it fills).
+    pub write_buffer: usize,
 }
 
 impl Default for WsConfig {
@@ -108,6 +113,8 @@ impl Default for WsConfig {
             max_message_bytes: 64 * 1024,
             max_watch_nodes: 64,
             max_watch_apps: 16,
+            read_buffer: 8 * 1024,
+            write_buffer: 16 * 1024,
         }
     }
 }
