@@ -1242,8 +1242,11 @@ impl Reducer {
             return;
         }
         if let Some(e) = self.st.mempool.get_mut(&txid) {
-            let refined = matches!(e.kind, TxKind::NodeTx | TxKind::Unknown) && kind != e.kind;
-            if refined {
+            // The socket guessed node txs and app payments; the fetched tx decides.
+            if matches!(
+                e.kind,
+                TxKind::NodeTx | TxKind::Unknown | TxKind::AppMessage
+            ) {
                 e.kind = kind;
             }
             if e.size.is_none() && size.is_some() {
