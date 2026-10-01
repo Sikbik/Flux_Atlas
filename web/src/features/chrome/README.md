@@ -72,6 +72,7 @@ it is first wanted (`lazyCard` preloads on pointer-enter, focus or a quiet momen
 | `FullBoot` and `boot.css` | a boot that plays; the quick path is eager and tiny |
 | `Pulse` | desktop, as a chunk of its own (it is not on the first paint's path) |
 | `Toasts` | the first toast |
+| `WatchAlerts` (F3's, mounted by `shell/frame/watchgate.tsx`) | the boot is over |
 | `Tips`, `PlaceLabels` and `clearance` | the first hover on the globe, or the network arriving |
 | `ChromeCards`, the menus' place list and keyboard map | the first hover or open |
 | `LiveSheet` | the Live tab is within reach (preloaded after the first paint) |

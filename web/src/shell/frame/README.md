@@ -17,6 +17,7 @@ workspace, hands it over, binds windows to the URL, keeps the globe centred in t
 | `routing.ts` | the URL to window manager binding, and the globe's inset (`insetFor`, `useGlobeInsetSync`) |
 | `ShellLink.tsx` | a link that opens its subject as a window and still works as a link |
 | `skip.ts` | where "Skip to content" goes (pure): the open window's body, else the page panel, else the stage |
+| `watchgate.tsx` | mounts F3's watched-node alerts once for the shell's life, from a lazy chunk, once the boot is over |
 
 ## Contracts
 
@@ -42,6 +43,13 @@ an operator window that is already open.
 focused window's body (past its title bar's controls), else the topmost window's, else the page panel, else the
 globe's stage, and the next Tab lands on that thing's first control. On a phone the one window shown is the sheet.
 The targets take focus with `tabindex="-1"`, so the arrow keys scroll them and they stay out of the tab order.
+
+**Watch alerts.** `WatchAlertsGate` (`watchgate.tsx`) mounts F3's `WatchAlerts` (a lazy chunk from `views/inspect`)
+once, for the shell's life, so a watched node's offline, near-expiry, paid or new-address toast reaches you with no
+inspector open. It mounts once the boot is over, so the chunk is never on the load path, and not on the ambient
+route, which draws no toasts. It mounts whether or not anything is watched: `WatchAlerts` runs one engine however
+many copies are mounted (the operator view still mounts its own), the first to mount wins, and the shell's copy is
+the one that has to stay.
 
 **The globe's inset.** `globeInset` (`wm/machine.ts`) gives the workspace edges plus the windows: docked windows
 always reserve their side, a maximized window reserves nothing, and a floating window reserves its side only

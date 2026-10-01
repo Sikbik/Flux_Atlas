@@ -61,6 +61,7 @@ import { PhoneTabs } from './PhoneTabs';
 import { useGlobeInsetSync, usePageEdge, useWindowRouting } from './routing';
 import { focusContent } from './skip';
 import { TopBar } from './TopBar';
+import { WatchAlertsGate } from './watchgate';
 import './frame.css';
 
 /** The Pulse is its own chunk: it mounts with the shell and is long loaded by the time the boot is over. */
@@ -247,6 +248,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         />
         {phone && liveOpen && !sheetOpen ? <liveSheet.Card /> : null}
         <ToastHost />
+        <WatchAlertsGate />
         <CommandLayer />
         <Boot />
       </div>
