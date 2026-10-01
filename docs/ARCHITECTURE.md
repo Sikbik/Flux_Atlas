@@ -433,7 +433,16 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > left the model, so the difference also grew with every DOS ban (fixed: it leaves at `added + 720`). A
 > view that says "N nodes" shows `node_count` (or counts `status == confirmed` rows of `nodes.bin`, the same number);
 > `listed_count` is only for a "rows on the map" or "including pending" label.
-
+>
+> **Request log (B6).** A request slower than 1 s is logged at `warn` with `method`, `route` (the matched route
+> pattern), `path` (only for unmatched routes), `query` (first 256 bytes), `status` and `ms`. The slow requests seen
+> under normal use are the explorer proxies that wait on upstream (`/address/{addr}` about 1.3 s on Insight, several
+> `/blocks/{h}` at once queued behind the per-host rate limit, 0.2 to 1.2 s). The hot endpoints answer from memory
+> in under 1 ms (bootstrap, nodes.bin, mesh.bin, apps, summary, network views) to about 5 ms (`/nodes` pages, node
+> detail by endpoint). Two hot paths were fixed: the detail of a recent block (`/blocks/{h}` for the newest 32) is
+> built from the copy the BlockDecoder already fetched (`EngineHandle::recent_raw_block`) instead of a second
+> `getblock` (155 ms before, under 1 ms now), and node detail no longer waits for the hosted-apps map rebuild (every
+> 30 s a request paid about 35 ms reading every app record); a stale map is served while one task rebuilds it.
 
 ## 7. Binary node snapshot — `nodes.bin` (format v1)
 

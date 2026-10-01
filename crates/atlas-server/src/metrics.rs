@@ -182,14 +182,33 @@ pub fn histogram_samples(
     sample(out, &format!("{name}_count"), labels, h.count);
 }
 
-/// Per-request middleware: tracing span, latency histogram, slow-request warning.
+/// The first `max` bytes of `s`, cut at a character boundary.
+fn clip(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+/// Per-request middleware: tracing span, latency histogram, slow-request warning (with method,
+/// route, query and status).
 pub async fn track(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let route = req
         .extensions()
         .get::<MatchedPath>()
         .map_or("fallback", MatchedPath::as_str);
     let stats = state.metrics.route(route);
-    let span = tracing::debug_span!("http", method = %req.method(), route = %route);
+    let route = route.to_owned();
+    let method = req.method().clone();
+    // The query (percent-encoded, so one line) and, for unmatched routes, the path: what the slow
+    // request log needs to name the request. Bounded so a long URL cannot flood the log.
+    let query = req.uri().query().map(|q| clip(q, 256).to_owned());
+    let path = (route == "fallback").then(|| clip(req.uri().path(), 256).to_owned());
+    let span = tracing::debug_span!("http", method = %method, route = %route);
     let started = Instant::now();
     let resp = next.run(req).instrument(span.clone()).await;
     let elapsed = started.elapsed();
@@ -197,6 +216,10 @@ pub async fn track(State(state): State<AppState>, req: Request, next: Next) -> R
     let _e = span.enter();
     if elapsed > Duration::from_secs(1) {
         tracing::warn!(
+            method = %method,
+            route = %route,
+            path = path.as_deref().unwrap_or(""),
+            query = query.as_deref().unwrap_or(""),
             status = resp.status().as_u16(),
             ms = elapsed.as_millis() as u64,
             "slow request"

@@ -28,7 +28,7 @@ pub mod timemachine;
 #[cfg(test)]
 mod engine_tests;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -38,9 +38,10 @@ use atlas_core::api::{
     AppIndexEntry, BlockLite, JobFreshness, NetworkSummary, ServerInfo, TierStats, TxLite,
 };
 use atlas_core::live::{LiveBody, LiveMsg, NextPayeeDto};
-use atlas_core::{Amount, NodeId, NodeRecord, now_ms};
+use atlas_core::{Amount, Hash32, NodeId, NodeRecord, now_ms};
 use atlas_flux::Clients;
 use atlas_flux::insight_socket::SocketConfig;
+use atlas_flux::models::daemon::DaemonBlock;
 use atlas_store::{RetentionPolicy, Store};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
@@ -318,7 +319,13 @@ struct Inner {
     watch_tx: watch::Sender<WatchSet>,
     shutdown_tx: watch::Sender<bool>,
     obs_tx: std::sync::Mutex<Option<mpsc::Sender<Obs>>>,
+    /// The newest blocks as the BlockDecoder fetched them (`getblock` verbosity 2), so the block
+    /// detail of a recent block is served without a second upstream call.
+    raw_blocks: std::sync::Mutex<VecDeque<Arc<DaemonBlock>>>,
 }
+
+/// Raw blocks kept for [`EngineHandle::recent_raw_block`] (about 16 minutes of chain).
+const RAW_BLOCKS: usize = 32;
 
 /// The engine. Construct with [`Engine::start`].
 pub struct Engine;
@@ -379,6 +386,7 @@ impl Engine {
             watch_tx,
             shutdown_tx,
             obs_tx: std::sync::Mutex::new(Some(obs_tx.clone())),
+            raw_blocks: std::sync::Mutex::new(VecDeque::with_capacity(RAW_BLOCKS)),
             server,
             store: store.clone(),
             clients: clients.clone(),
@@ -546,6 +554,36 @@ impl EngineHandle {
     /// Current published state. Lock-free; hold the `Arc` for as long as a request needs it.
     pub fn published(&self) -> Arc<Published> {
         self.inner.published.load_full()
+    }
+
+    /// A recent block exactly as the BlockDecoder fetched it, by hash (the newest
+    /// [`RAW_BLOCKS`]). The block detail endpoint uses it instead of a second upstream call.
+    pub fn recent_raw_block(&self, hash: &Hash32) -> Option<Arc<DaemonBlock>> {
+        let want = hash.to_hex();
+        self.inner
+            .raw_blocks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .rev()
+            .find(|b| b.hash.eq_ignore_ascii_case(&want))
+            .cloned()
+    }
+
+    /// Keeps a fetched block for [`Self::recent_raw_block`].
+    pub(crate) fn keep_raw_block(&self, b: Arc<DaemonBlock>) {
+        let mut q = self
+            .inner
+            .raw_blocks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if q.iter().any(|x| x.hash == b.hash) {
+            return;
+        }
+        if q.len() >= RAW_BLOCKS {
+            q.pop_front();
+        }
+        q.push_back(b);
     }
 
     /// Subscribes to live messages published from now on.
