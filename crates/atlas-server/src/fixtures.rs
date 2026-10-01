@@ -840,6 +840,9 @@ pub fn offline_clients(base: Option<&str>) -> ClientsConfig {
     c.http.connect_timeout = Duration::from_secs(1);
     c.http.default_policy = HostPolicy::new(10_000, 10_000, 256);
     c.http.host_policies.clear();
+    // The explorer's interactive lane gets the same unthrottled budget against the mock.
+    c.http.interactive_default_policy = c.http.default_policy;
+    c.http.interactive_host_policies.clear();
     c
 }
 

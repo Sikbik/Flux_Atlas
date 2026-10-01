@@ -147,6 +147,8 @@ pub struct FailoverSet {
     pub max_dynamic_tries: usize,
     /// Answers rejected by validation (wrong block, implausible height), cumulative.
     rejected: AtomicU64,
+    /// Primaries only, and an open circuit fails fast (see [`Self::primaries_only`]).
+    strict: bool,
 }
 
 impl FailoverSet {
@@ -161,6 +163,7 @@ impl FailoverSet {
             dynamic: RwLock::new(Vec::new()),
             max_dynamic_tries: 3,
             rejected: AtomicU64::new(0),
+            strict: false,
         })
     }
 
@@ -194,8 +197,47 @@ impl FailoverSet {
         self.rejected.load(Ordering::Relaxed)
     }
 
-    /// Replaces the dynamic pool, keeping health state of entries that remain.
+    /// A set over the same primaries with fresh health (its own circuit breakers), for the
+    /// interactive lane:
+    /// - it never uses dynamic secondaries ([`Self::set_nodes`] is ignored), so user reads
+    ///   never go to community nodes;
+    /// - while every primary's circuit is open it fails fast with
+    ///   [`FluxError::NoHealthyUpstream`] instead of trying them anyway, so users cannot keep
+    ///   hammering a failing upstream.
+    pub fn primaries_only(&self) -> Self {
+        let primary = self
+            .primary
+            .iter()
+            .map(|u| {
+                Arc::new(Upstream {
+                    label: u.label.clone(),
+                    base: u.base.clone(),
+                    health: Health::default(),
+                    node: u.node,
+                })
+            })
+            .collect();
+        Self {
+            name: self.name,
+            primary,
+            dynamic: RwLock::new(Vec::new()),
+            max_dynamic_tries: 0,
+            rejected: AtomicU64::new(0),
+            strict: true,
+        }
+    }
+
+    /// True for a [`Self::primaries_only`] set.
+    pub fn is_strict(&self) -> bool {
+        self.strict
+    }
+
+    /// Replaces the dynamic pool, keeping health state of entries that remain. Ignored by a
+    /// [`Self::primaries_only`] set.
     pub fn set_nodes(&self, nodes: &[GuardedEndpoint]) {
+        if self.strict {
+            return;
+        }
         let mut dynamic = self
             .dynamic
             .write()
@@ -223,7 +265,8 @@ impl FailoverSet {
     }
 
     /// Candidates in try order: available primaries, then the healthiest available dynamic
-    /// entries; if nothing is available, every entry (a trial beats a hard failure).
+    /// entries; if nothing is available, every entry (a trial beats a hard failure). A
+    /// [`Self::primaries_only`] set returns the available primaries only, possibly none.
     pub fn candidates(&self) -> Vec<Arc<Upstream>> {
         let now = atlas_core::now_ms();
         let mut out: Vec<Arc<Upstream>> = self
@@ -232,6 +275,9 @@ impl FailoverSet {
             .filter(|u| u.health.available(now))
             .cloned()
             .collect();
+        if self.strict {
+            return out;
+        }
         let mut dynamic: Vec<Arc<Upstream>> = self
             .nodes()
             .into_iter()

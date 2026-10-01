@@ -1,6 +1,7 @@
 //! Engine-level tests: observations through the reducer (synthetic reorg, restore, flush),
 //! chain cursor, time machine.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 

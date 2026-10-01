@@ -87,7 +87,19 @@ Environment: the Rust toolchain lives in `~/.cargo/bin` (`export PATH="$HOME/.ca
   (per-endpoint overrides for big payloads).
 - A per-upstream `governor` token bucket (default ≤ 4 req/s to `api.runonflux.io`) plus a concurrency
   semaphore.
-- Retries: 3 attempts, jittered exponential backoff; never retry 4xx except 429 (honor `Retry-After`).
+- **Two lanes (X1 M2).** The engine's ingest lane owns that budget. User-driven lookups (the explorer)
+  use an **interactive lane** (`Clients::interactive`): the same connection pool, but separate per-host
+  gates (gateway 1 req/s, burst 2, 2 concurrent; each Insight mirror 2 req/s, burst 4, 2 concurrent;
+  never looser than the ingest policy of the host) and separate circuit breakers. A queue of user
+  requests therefore never delays an ingest request, and user faults never open an ingest breaker.
+  The interactive lane uses the primaries only (the gateway, the Insight mirrors): user reads never fail
+  over to community nodes, and while every primary's circuit is open it fails fast (503) instead of
+  retrying a failing upstream. Prometheus: `atlas_upstream_lane_requests_total{lane,host,result}`,
+  `atlas_upstream_lane_waiting{lane,host}`, `atlas_upstream_circuit_open{lane,set,upstream}`.
+  The Insight UTXO list is capped at 4 MiB (the explorer's UTXO cache size); a larger set is a
+  definitive answer (no mirror failover, no breaker fault). Input path segments `.` and `..` are
+  refused before any request.
+- Retries: 3 attempts (2 on the interactive lane), jittered exponential backoff; never retry 4xx except 429 (honor `Retry-After`).
 - **Failover pool:** the primary is `https://api.runonflux.io`. The secondaries are healthy FluxOS nodes picked
   from the current node list (`http://<ip>:<apiport>`), health-scored and rotated. A response is only accepted
   if its chain height is within ±2 of the best known tip (this guards against stale nodes).
@@ -288,6 +300,16 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   catalog log line reports `stale` and `kept_newer`.
 > - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
 >   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
+>   **Hardening (X1 M6):** the server keeps only app names in the published app catalog (case-insensitive,
+>   `.` and `..` refused) and node ids that exist, in the client's order (selection first). The engine keeps
+>   reference counts, so a `sub` costs O(its own lists) and only entries crossing zero change the union.
+>   The 16 hot apps and up to 256 probe hosts are picked by **fair share**: each connection votes for its
+>   first 4 apps / 16 nodes; entries rank by voters, then by vote share (a vote is split across the entries
+>   a connection votes for), then by a per-process seeded hash; free slots are filled round robin from the
+>   connections' other entries. Never alphabetical, never lowest IPs. WatchProbe keeps a per-host cadence
+>   of 60 s whatever the watch lists do: a change wakes it after a 2 s debounce to probe only hosts not
+>   probed within the interval, and a token bucket of 256 probes per 60 s bounds the total under any churn.
+>   The client IP is not known at the engine boundary; the per-IP WebSocket cap bounds one IP's votes.
 > - **Mempool classification.** The socket `tx` push carries no fluxnode type, no OP_RETURN and no size. Its
 >   fluxnode pushes also carry txids that resolve nowhere (not in the daemon mempool, not in any block, and
 >   Insight's own `/api/tx` answers "Not found"; measured: 66 of 66 over 150 s), so the engine ignores them and

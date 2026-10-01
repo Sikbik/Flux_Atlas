@@ -10,7 +10,7 @@ use url::Url;
 
 use crate::envelope::{parse_envelope, parse_plain};
 use crate::error::{FluxError, Result};
-use crate::http::{Fetched, HttpClient, HttpConfig, RequestOpts, join};
+use crate::http::{Fetched, HttpClient, HttpConfig, Lane, RequestOpts, join};
 use crate::models::apps::{
     AppLocation, DeploymentInformation, InstallingError, InstallingLocation, PermanentMessage,
     RawAppSpec, TemporaryMessage,
@@ -41,12 +41,27 @@ pub const BIG_TIMEOUT: Duration = Duration::from_secs(60);
 pub const BIG_BODY: usize = 64 * 1024 * 1024;
 /// The full permanent-message history is about 93 MB raw.
 pub const HUGE_BODY: usize = 256 * 1024 * 1024;
+/// Size cap of an Insight UTXO list. It matches the explorer's UTXO cache (4 MiB), so any
+/// answer it accepts can be cached; a larger set is refused instead of being refetched in full
+/// on every page view.
+pub const UTXO_BODY: usize = 4 * 1024 * 1024;
 
-/// Percent-encodes one path segment.
+/// Percent-encodes one query value or path segment.
 fn seg(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.trim().as_bytes())
         .collect::<String>()
         .replace('+', "%20")
+}
+
+/// Percent-encodes one path segment taken from input, refusing the dot segments `.` and `..`:
+/// URL normalisation would resolve them (`/apps/location/..` becomes `/apps/`), and an
+/// encoded dot (`%2e`) is a dot segment too.
+fn path_seg(s: &str) -> Result<String> {
+    let t = s.trim();
+    if t == "." || t == ".." {
+        return Err(FluxError::BadUrl(format!("dot segment {t:?}")));
+    }
+    Ok(seg(t))
 }
 
 fn big() -> RequestOpts {
@@ -97,6 +112,15 @@ impl FluxOsClient {
             http,
             set: Arc::new(FailoverSet::new("fluxos", &[gateway])?),
         })
+    }
+
+    /// The same gateway on another lane: `http`'s gates and a primaries-only failover set with
+    /// its own breaker (no direct-node secondaries).
+    fn on_lane(&self, http: HttpClient) -> Self {
+        Self {
+            http,
+            set: Arc::new(self.set.primaries_only()),
+        }
     }
 
     /// Replaces the pool of direct-node secondaries (the engine feeds healthy nodes).
@@ -175,7 +199,7 @@ impl FluxOsClient {
     pub async fn get_block(&self, hash_or_height: &str) -> Result<DaemonBlock> {
         self.get(
             "getblock",
-            &format!("daemon/getblock/{}/2", seg(hash_or_height)),
+            &format!("daemon/getblock/{}/2", path_seg(hash_or_height)?),
             &RequestOpts::default(),
         )
         .await
@@ -220,7 +244,7 @@ impl FluxOsClient {
     pub async fn get_block_header(&self, hash: &str) -> Result<DaemonBlock> {
         self.get(
             "getblockheader",
-            &format!("daemon/getblockheader/{}", seg(hash)),
+            &format!("daemon/getblockheader/{}", path_seg(hash)?),
             &RequestOpts::default(),
         )
         .await
@@ -230,7 +254,7 @@ impl FluxOsClient {
     pub async fn get_block_deltas(&self, hash: &str) -> Result<BlockDeltas> {
         self.get(
             "getblockdeltas",
-            &format!("daemon/getblockdeltas/{}", seg(hash)),
+            &format!("daemon/getblockdeltas/{}", path_seg(hash)?),
             &RequestOpts::default(),
         )
         .await
@@ -384,7 +408,7 @@ impl FluxOsClient {
             Some(f) => {
                 self.get(
                     "viewdeterministicfluxnodelist",
-                    &format!("daemon/viewdeterministicfluxnodelist/{}", seg(f)),
+                    &format!("daemon/viewdeterministicfluxnodelist/{}", path_seg(f)?),
                     &RequestOpts::default(),
                 )
                 .await
@@ -438,7 +462,7 @@ impl FluxOsClient {
     pub async fn app_specification(&self, name: &str) -> Result<RawAppSpec> {
         self.get(
             "appspecifications",
-            &format!("apps/appspecifications/{}", seg(name)),
+            &format!("apps/appspecifications/{}", path_seg(name)?),
             &RequestOpts::default(),
         )
         .await
@@ -453,7 +477,7 @@ impl FluxOsClient {
     pub async fn app_location(&self, name: &str) -> Result<Vec<AppLocation>> {
         self.get(
             "location",
-            &format!("apps/location/{}", seg(name)),
+            &format!("apps/location/{}", path_seg(name)?),
             &RequestOpts::default(),
         )
         .await
@@ -562,6 +586,15 @@ impl InsightClient {
         })
     }
 
+    /// The same mirrors on another lane: `http`'s gates and fresh breakers. Mirror failover
+    /// stays (the mirrors are explorer instances, not community nodes).
+    fn on_lane(&self, http: HttpClient) -> Self {
+        Self {
+            http,
+            set: Arc::new(self.set.primaries_only()),
+        }
+    }
+
     pub fn failover(&self) -> &FailoverSet {
         &self.set
     }
@@ -637,7 +670,7 @@ impl InsightClient {
     pub async fn address(&self, addr: &str) -> Result<InsightAddrSummary> {
         self.get(
             "insight addr",
-            &format!("addr/{}?noTxList=1", seg(addr)),
+            &format!("addr/{}?noTxList=1", path_seg(addr)?),
             &RequestOpts::default().timeout(Duration::from_secs(30)),
         )
         .await
@@ -647,14 +680,33 @@ impl InsightClient {
     pub async fn address_txs(&self, addr: &str, from: u32, to: u32) -> Result<InsightAddrTxs> {
         self.get(
             "insight addrs txs",
-            &format!("addrs/{}/txs?from={from}&to={to}", seg(addr)),
+            &format!("addrs/{}/txs?from={from}&to={to}", path_seg(addr)?),
             &RequestOpts::default(),
         )
         .await
     }
 
+    /// Unspent outputs of an address, at most [`UTXO_BODY`] of JSON. A larger set answers
+    /// [`FluxError::AnswerTooLarge`] from the first mirror: it is a property of the address,
+    /// so it neither fails over to the other mirrors nor counts against their breakers.
     pub async fn utxos(&self, addr: &str) -> Result<Vec<InsightUtxo>> {
-        self.get("insight utxo", &format!("addr/{}/utxo", seg(addr)), &big())
+        const WHAT: &str = "insight utxo";
+        let path = format!("api/addr/{}/utxo", path_seg(addr)?);
+        let path = path.as_str();
+        let opts = RequestOpts::default()
+            .timeout(BIG_TIMEOUT)
+            .max_bytes(UTXO_BODY);
+        let opts = &opts;
+        self.set
+            .run(|u| async move {
+                let b = match self.http.get_body(&join(&u.base, path)?, opts).await {
+                    Err(FluxError::TooLarge { limit }) => {
+                        return Err(FluxError::AnswerTooLarge { what: WHAT, limit });
+                    }
+                    r => r?,
+                };
+                Ok((parse_plain(WHAT, &b.bytes)?, b.elapsed))
+            })
             .await
     }
 
@@ -731,6 +783,17 @@ impl StatsClient {
             http,
             set: Arc::new(FailoverSet::new("stats", &[base])?),
         })
+    }
+
+    fn on_lane(&self, http: HttpClient) -> Self {
+        Self {
+            http,
+            set: Arc::new(self.set.primaries_only()),
+        }
+    }
+
+    pub fn failover(&self) -> &FailoverSet {
+        &self.set
     }
 
     async fn get<T: DeserializeOwned>(
@@ -951,7 +1014,13 @@ impl Default for ClientsConfig {
     }
 }
 
-/// All upstream clients, sharing one connection pool and rate-limit state. Cheap to clone.
+/// All upstream clients of one [`Lane`], sharing one connection pool and rate-limit state.
+/// Cheap to clone.
+///
+/// [`Clients::new`] builds the ingest lane (the engine's). [`Clients::interactive`] derives
+/// the lane for user-driven lookups from it: the same connection pool, but its own per-host
+/// gates (a small budget, see [`HttpConfig::interactive_host_policies`]) and its own circuit
+/// breakers, and no direct-node failover.
 #[derive(Clone, Debug)]
 pub struct Clients {
     pub http: HttpClient,
@@ -974,6 +1043,50 @@ impl Clients {
             coingecko: CoinGeckoClient::new(http.clone(), &cfg.coingecko_base)?,
             http,
         })
+    }
+
+    /// The lane these clients draw from.
+    pub fn lane(&self) -> Lane {
+        self.http.lane_kind()
+    }
+
+    /// Clients for user-driven lookups (the explorer), derived from these: shared connection
+    /// pool, separate gates, separate breakers, primaries only. Faults and queues of this lane
+    /// never touch the lane it was derived from.
+    #[must_use]
+    pub fn interactive(&self) -> Self {
+        let http = self.http.lane(Lane::Interactive);
+        Self {
+            fluxos: self.fluxos.on_lane(http.clone()),
+            insight: self.insight.on_lane(http.clone()),
+            stats: self.stats.on_lane(http.clone()),
+            node_api: NodeApiClient {
+                http: http.clone(),
+                timeout: self.node_api.timeout,
+            },
+            coingecko: CoinGeckoClient {
+                http: http.clone(),
+                base: self.coingecko.base.clone(),
+            },
+            http,
+        }
+    }
+
+    /// Every primary upstream of this lane with its breaker state: `(set, upstream, open)`.
+    pub fn breakers(&self) -> Vec<(&'static str, String, bool)> {
+        let now = atlas_core::now_ms();
+        [
+            self.fluxos.failover(),
+            self.insight.failover(),
+            self.stats.failover(),
+        ]
+        .into_iter()
+        .flat_map(|set| {
+            set.primaries()
+                .iter()
+                .map(move |u| (set.name, u.label.clone(), !u.health.available(now)))
+        })
+        .collect()
     }
 }
 
