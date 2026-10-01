@@ -617,6 +617,119 @@ test('Off draws the block timer as steps: no animation runs, and the state moves
   assert.deepEqual(pageErrors, []);
 });
 
+test('the boot veil says so when Atlas does not answer: Retry gets through once it does, Continue shows the shell', {
+  timeout: 150_000,
+}, async () => {
+  // Every API request is refused and the stream closes, until `blocked` is lifted; then it all goes through.
+  const refusing = async () => {
+    const state = { blocked: true };
+    const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    await context.route(
+      (url) => url.pathname.startsWith('/api/'),
+      (route) => (state.blocked ? route.abort('connectionrefused') : route.continue()),
+    );
+    await context.routeWebSocket(
+      (url) => url.pathname === '/ws',
+      (ws) => (state.blocked ? ws.close() : ws.connectToServer()),
+    );
+    const page = await context.newPage();
+    page.on('pageerror', (e) => pageErrors.push(`boot: ${e.message}`));
+    await page.goto(`${base}/?boot=off`, { waitUntil: 'load' });
+    return { state, context, page };
+  };
+
+  // Retry: the veil first stays quiet, then says Atlas did not answer; after the server is back, Retry lifts it.
+  {
+    const { state, context, page } = await refusing();
+    await page.waitForSelector('.boot .boot-fail', { timeout: 30_000 });
+    assert.equal(await page.locator('.boot-fail b').textContent(), 'Atlas did not answer');
+    assert.match(
+      (await page.locator('.boot-fail .boot-fail-now').textContent()) ?? '',
+      /Reconnecting|Offline/,
+    );
+    assert.equal(await page.locator('.boot-fail[role="alert"]').count(), 1, 'announced as an alert');
+    const buttons = await page.locator('.boot-fail button').allTextContents();
+    assert.deepEqual(buttons, ['Retry', 'Continue without data']);
+    // The shell waits behind the veil: nothing under it takes focus.
+    assert.equal(await page.locator('.shell').getAttribute('data-boot'), 'running');
+    state.blocked = false;
+    await page.click('.boot-fail .boot-btn:not([data-quiet])');
+    await page.waitForFunction(() => globalThis.__atlas?.store?.loaded === true, null, { timeout: 60_000 });
+    await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+      timeout: 20_000,
+    });
+    assert.equal(await page.locator('.boot-fail').count(), 0, 'the offline state is gone with the veil');
+    await context.close();
+  }
+
+  // Continue: the shell shows what it has, with its own offline words.
+  {
+    const { context, page } = await refusing();
+    await page.waitForSelector('.boot .boot-fail', { timeout: 30_000 });
+    await page.click('.boot-fail .boot-btn[data-quiet]');
+    await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+      timeout: 10_000,
+    });
+    const chip = (await page.getByTestId('live-status').textContent()) ?? '';
+    assert.match(chip, /Reconnecting|Offline|Connecting/, `the Live chip says what is wrong: ${chip}`);
+    await context.close();
+  }
+  assert.deepEqual(pageErrors, []);
+});
+
+test('Skip to content is the first tab stop, hidden until focused, and lands in what is open', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/mempool');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+    timeout: 30_000,
+  });
+  await page.waitForSelector('.wm-window[data-window-type="mempool"] .wm-body', { timeout: 30_000 });
+  const above = () =>
+    page.evaluate(() => document.querySelector('.skip-link').getBoundingClientRect().bottom <= 0);
+  assert.equal(await above(), true, 'hidden above the screen until it has focus');
+
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement?.className), 'skip-link');
+  assert.equal(await above(), false, 'it comes into view with focus');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Skip to content');
+
+  // Past the chrome and the window's own title bar, onto its body.
+  await page.keyboard.press('Enter');
+  const landed = await page.evaluate(() => {
+    const el = document.activeElement;
+    return {
+      body: !!el?.classList.contains('wm-body'),
+      window: el?.closest('.wm-window')?.getAttribute('data-window-type') ?? null,
+      hash: location.hash,
+    };
+  });
+  assert.deepEqual(
+    landed,
+    { body: true, window: 'mempool', hash: '' },
+    'focus is on the window body; the hash is untouched',
+  );
+  await page.keyboard.press('Tab');
+  const next = await page.evaluate(() => {
+    const el = document.activeElement;
+    return { inWindow: !!el?.closest('.wm-window .wm-body'), tag: el?.tagName };
+  });
+  assert.equal(next.inWindow, true, `the next stop is the window's first control (${next.tag})`);
+
+  // A page panel takes it too.
+  await page.evaluate(() => {
+    history.pushState({}, '', '/no-such-page');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await page.waitForSelector('.shell-page:not(:empty)', { timeout: 20_000 });
+  await page.evaluate(() => document.querySelector('.skip-link').focus());
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('shell-page')), true);
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
 test("the moon parks in the phone header's Beat ring while a tall sheet covers its orbit", {
   timeout: 120_000,
 }, async () => {
