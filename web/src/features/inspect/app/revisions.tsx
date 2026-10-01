@@ -86,7 +86,7 @@ export function revisionItems(
       title: current ? (
         <span aria-current="page">{typeWord(it)}</span>
       ) : (
-        <HistoryLink name={name} n={it.rev}>
+        <HistoryLink name={name} n={it.rev} aria-label={`Revision ${it.rev}, ${typeWord(it).toLowerCase()}`}>
           {typeWord(it)}
         </HistoryLink>
       ),
