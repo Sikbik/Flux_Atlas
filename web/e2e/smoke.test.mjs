@@ -196,6 +196,7 @@ test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: 
     ['/queue', 'Payment queue'],
     ['/queue/stratus', 'Payment queue, stratus'],
     ['/analytics/geography', 'Analytics, geography'],
+    ['/analytics/chain', 'Analytics, chain'],
     ['/time?speed=60', 'Time machine'],
     // The weather heading is the live verdict (Clear, Unsettled...); the view names itself on its article.
     ['/weather', { role: 'article', name: 'Network weather' }],

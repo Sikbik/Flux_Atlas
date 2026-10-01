@@ -167,3 +167,85 @@
   color: var(--text-1);
   font-weight: var(--fw-semibold);
 }
+
+/* ---- chain: four tiles, two charts, one calm note ----------------------------------------------- */
+
+/* The layout follows the width of the window the tab is in, not the viewport. */
+.an-chain {
+  container-type: inline-size;
+}
+
+/* The query boundary pads its loading block and gives its notices no gutter; the tab's own blocks do both. */
+.an-chain .ui-qb-loading {
+  padding: 0;
+}
+
+.an-chain > [role="alert"] {
+  margin: var(--space-6);
+}
+
+.an-chain > .ui-qb-stale {
+  margin: var(--space-5) var(--space-6) 0;
+}
+
+.an-chain-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@container (min-width: 620px) {
+  .an-chain-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Side by side once there is room for two plots; stacked on a phone. */
+.an-chain-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 900px) {
+  .an-chain-charts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Each chart carries its own hairline; the first section of a view normally has none. */
+.an-chain .an-chain-charts > .ui-section::before {
+  display: block;
+}
+
+/* The last answer stays on screen, dimmed, while the next window loads. */
+.an-chain-body {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.an-chain-body[data-stale] {
+  opacity: 0.6;
+}
+
+.an-chain-note__text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.an-chain-note__text svg {
+  flex: none;
+  color: var(--accent-400);
+}
+
+.an-chain-note__text strong {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+}
+
+:root[data-motion="off"] .an-chain-body {
+  transition: none;
+}

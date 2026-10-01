@@ -157,6 +157,7 @@ const VersionsTab = () => <QueryState q={useNetworkVersions()} />;
 const ArchaeologyTab = () => <QueryState q={useTimeline()} />;
 const EconomicsTab = () => <QueryState q={useNetworkSummary()} />;
 const FairnessTab = () => <QueryState q={useNetworkDecentralization()} />;
+const ChainTab = () => <QueryState q={useNetworkSummary()} />;
 function ChurnTab() {
   const to = Math.floor(Date.now() / 3_600_000) * 3_600_000;
   const q = useMetrics({
@@ -178,6 +179,7 @@ const TABS: Record<AnalyticsTab, () => React.JSX.Element> = {
   archaeology: ArchaeologyTab,
   economics: EconomicsTab,
   fairness: FairnessTab,
+  chain: ChainTab,
 };
 
 function AnalyticsBody({ tab }: { tab: AnalyticsTab }) {
