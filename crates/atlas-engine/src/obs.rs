@@ -121,6 +121,10 @@ pub enum Obs {
     BackfillBlocks(Vec<DecodedBlock>),
     /// `(unix ms, [cumulus, nimbus, stratus])`.
     HistoryStats(Vec<(u64, [u32; 3])>),
+    /// Sampled chain heights: time and difficulty (chain sampler).
+    ChainPoints(Vec<(u32, atlas_store::ChainPoint)>),
+    /// Insight's daily difficulty series: `(UTC day start ms, difficulty)`.
+    ChainDaily(Vec<(u64, f64)>),
     /// Sets a meta key (backfill cursors) through the single writer.
     Meta {
         key: &'static str,

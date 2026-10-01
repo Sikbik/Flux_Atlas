@@ -21,6 +21,22 @@ pub const MAX_REDUCTIONS: u32 = 20;
 pub const PON_INITIAL_SUBSIDY: Amount = Amount::from_flux(14);
 /// Target block spacing in seconds.
 pub const PON_TARGET_SPACING_S: u32 = 30;
+/// Target block spacing before Proof of Node (proof of work), in seconds. Checked against the
+/// chain: blocks 1 to 2,019,999 took 120.9 s on average.
+pub const PRE_PON_TARGET_SPACING_S: u32 = 120;
+/// Header time of the genesis block (height 0), unix ms.
+pub const GENESIS_TIME_MS: u64 = 1_516_980_000_000;
+/// Header time of the first Proof of Node block (height 2,020,000), unix ms.
+pub const PON_ACTIVATION_TIME_MS: u64 = 1_761_415_235_000;
+
+/// Target block spacing at `height`, in seconds.
+pub const fn target_spacing_s(height: u32) -> u32 {
+    if is_pon(height) {
+        PON_TARGET_SPACING_S
+    } else {
+        PRE_PON_TARGET_SPACING_S
+    }
+}
 /// Dev fund (P2SH) address that receives the remainder plus fees.
 pub const DEV_FUND_ADDRESS: &str = "t3hPu1YDeGUCp8m7BQCnnNUmRMJBa5RadyA";
 
@@ -203,6 +219,14 @@ mod tests {
 
     fn flux(s: &str) -> Amount {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn target_spacing_across_the_fork() {
+        assert_eq!(target_spacing_s(0), 120);
+        assert_eq!(target_spacing_s(PON_ACTIVATION_HEIGHT - 1), 120);
+        assert_eq!(target_spacing_s(PON_ACTIVATION_HEIGHT), 30);
+        const { assert!(GENESIS_TIME_MS < PON_ACTIVATION_TIME_MS) };
     }
 
     #[test]

@@ -118,6 +118,9 @@ live data (tip, mempool, confirmations) updates without reloads.
 - **Versions:** adoption waves over time (FluxOS, fluxd, bench, ArcaneOS), stragglers per operator.
 - **Economics:** payouts per tier per day, per-node daily estimate per tier, emission, dev fund, reward-cut impact.
 - **PoN fairness:** producer share by tier/country/provider vs node share (expected vs actual).
+- **Chain history:** block difficulty and time per block over 24 h, 7 d, 30 d, a year and the whole chain, against
+  the target (120 s before the PoN fork, 30 s after); per block for recent windows, sampled every 720 blocks for
+  the rest, with honest gaps and coverage (`GET /network/chain-history`).
 - **App economy:** apps and instances over time, deploys/updates per day, FLUX spent on apps, top images,
   enterprise share, spec-version adoption (spec archaeology over the full permanent-message history).
 

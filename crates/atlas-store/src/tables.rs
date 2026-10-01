@@ -65,6 +65,12 @@ pub(crate) const MESH_EVENTS: TableDefinition<'_, (u64, u64), &[u8]> =
     TableDefinition::new("mesh_events");
 /// `geo_cache`: IP octets (4 or 16 bytes) -> (Geo, fetched_ms).
 pub(crate) const GEO_CACHE: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new("geo_cache");
+/// `chain_points`: height -> ChainPoint (block time and difficulty: per block for recent
+/// history, the sample grid for older history).
+pub(crate) const CHAIN_POINTS: TableDefinition<'_, u32, &[u8]> =
+    TableDefinition::new("chain_points");
+/// `chain_daily`: UTC day start (unix ms) -> difficulty from Insight's daily series.
+pub(crate) const CHAIN_DAILY: TableDefinition<'_, u64, f64> = TableDefinition::new("chain_daily");
 
 /// Creates every table (idempotent).
 pub(crate) fn create_all(txn: &WriteTransaction) -> Result<()> {
@@ -91,6 +97,8 @@ pub(crate) fn create_all(txn: &WriteTransaction) -> Result<()> {
     txn.open_table(MESH_EDGES)?;
     txn.open_table(MESH_EVENTS)?;
     txn.open_table(GEO_CACHE)?;
+    txn.open_table(CHAIN_POINTS)?;
+    txn.open_table(CHAIN_DAILY)?;
     Ok(())
 }
 

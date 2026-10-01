@@ -320,6 +320,8 @@ struct Writer<'t> {
     mesh_edges: Table<'t, (u32, u32), Bytes>,
     mesh_events: Table<'t, (u64, u64), Bytes>,
     geo_cache: Table<'t, Bytes, Bytes>,
+    chain_points: Table<'t, u32, Bytes>,
+    chain_daily: Table<'t, u64, f64>,
     /// Row sequence: loaded lazily, written back in `finish`.
     row_seq: Option<(u64, bool)>,
 }
@@ -350,6 +352,8 @@ impl<'t> Writer<'t> {
             mesh_edges: txn.open_table(tables::MESH_EDGES)?,
             mesh_events: txn.open_table(tables::MESH_EVENTS)?,
             geo_cache: txn.open_table(tables::GEO_CACHE)?,
+            chain_points: txn.open_table(tables::CHAIN_POINTS)?,
+            chain_daily: txn.open_table(tables::CHAIN_DAILY)?,
             row_seq: None,
         })
     }
@@ -513,6 +517,13 @@ impl<'t> Writer<'t> {
             Op::DeleteGeo(ip) => {
                 self.geo_cache.remove(ip_key(ip).as_slice())?;
             }
+            Op::PutChainPoint(height, point) => {
+                self.chain_points
+                    .insert(height, codec::encode(&point)?.as_slice())?;
+            }
+            Op::PutChainDaily(day_ms, difficulty) => {
+                self.chain_daily.insert(day_ms, difficulty)?;
+            }
         }
         Ok(())
     }
@@ -579,10 +590,16 @@ impl<'t> Writer<'t> {
                 self.node_txs_by_node.remove((node.0, *h, *i))?;
             }
         }
+        let mut points = 0usize;
+        self.chain_points.retain_in(height.., |_, _| {
+            points += 1;
+            false
+        })?;
         tracing::debug!(
             from = height,
             blocks = doomed.len(),
             node_txs = txs.len(),
+            chain_points = points,
             "blocks deleted (reorg)"
         );
         Ok(())

@@ -13,7 +13,7 @@ use atlas_core::node::{Geo, NodeRecord};
 
 use crate::codec;
 use crate::error::Result;
-use crate::records::{MeshChangeRecord, MeshEdgeRecord, MetricsRow, Resolution};
+use crate::records::{ChainPoint, MeshChangeRecord, MeshEdgeRecord, MetricsRow, Resolution};
 
 /// Format version byte of snapshot blobs. The snapshot type itself is chosen by the engine; if
 /// its shape changes incompatibly, bump this constant. [`crate::Store::snapshot_at_or_before`]
@@ -53,6 +53,8 @@ pub(crate) enum Op {
     DeleteSnapshot(u64),
     PutGeo(IpAddr, Box<Geo>, u64),
     DeleteGeo(IpAddr),
+    PutChainPoint(u32, ChainPoint),
+    PutChainDaily(u64, f64),
 }
 
 /// A set of writes applied atomically by [`crate::Store::commit`].
@@ -135,7 +137,7 @@ impl WriteBatch {
     }
 
     /// Reorg: removes every block at `height` and above together with its hash, payout,
-    /// payment, and node-tx rows (and their by-node index rows).
+    /// payment, node-tx and chain-point rows (and the by-node index rows).
     pub fn delete_blocks_from(&mut self, height: u32) -> &mut Self {
         self.push(Op::DeleteBlocksFrom(height))
     }
@@ -222,6 +224,17 @@ impl WriteBatch {
     /// Drops the cached geolocation of `ip`.
     pub fn delete_geo(&mut self, ip: IpAddr) -> &mut Self {
         self.push(Op::DeleteGeo(ip))
+    }
+
+    /// Upserts the time and difficulty of the block at `height` (`chain_points`). A later write
+    /// for the same height (a reorg, a fetched sample) replaces it.
+    pub fn put_chain_point(&mut self, height: u32, point: ChainPoint) -> &mut Self {
+        self.push(Op::PutChainPoint(height, point))
+    }
+
+    /// Upserts the daily difficulty of the UTC day starting at `day_ms` (`chain_daily`).
+    pub fn put_chain_daily(&mut self, day_ms: u64, difficulty: f64) -> &mut Self {
+        self.push(Op::PutChainDaily(day_ms, difficulty))
     }
 
     fn push(&mut self, op: Op) -> &mut Self {

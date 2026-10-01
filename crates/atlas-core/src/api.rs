@@ -750,6 +750,113 @@ pub struct MetricsSeriesDto {
     pub series: BTreeMap<String, Vec<Option<f64>>>,
 }
 
+/// Window of `GET /network/chain-history`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+pub enum ChainWindow {
+    #[serde(rename = "24h")]
+    Day,
+    #[serde(rename = "7d")]
+    Week,
+    #[serde(rename = "30d")]
+    Month,
+    #[serde(rename = "1y")]
+    Year,
+    #[serde(rename = "all")]
+    All,
+}
+
+impl ChainWindow {
+    pub const ALL: [Self; 5] = [Self::Day, Self::Week, Self::Month, Self::Year, Self::All];
+
+    /// The query value (`24h`, `7d`, `30d`, `1y`, `all`).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Day => "24h",
+            Self::Week => "7d",
+            Self::Month => "30d",
+            Self::Year => "1y",
+            Self::All => "all",
+        }
+    }
+
+    /// Parses a query value (exact, lowercase).
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|w| w.as_str() == s)
+    }
+}
+
+/// `GET /network/chain-history?window`: block difficulty and time per block over a window,
+/// in at most 720 time buckets. Recent windows (24 h to 30 d) come from per-block rows; the year
+/// and the whole chain from sampled heights (one every 720 blocks), so the mean time per block
+/// of a bucket is the time between two sampled heights divided by the blocks between them.
+/// Unknown values are `null`, never invented; buckets without any data have no point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ChainHistoryDto {
+    pub window: ChainWindow,
+    pub generated_ms: u64,
+    /// Time span the points cover (first and last data row of the window).
+    pub from_ms: u64,
+    pub to_ms: u64,
+    pub from_height: u32,
+    pub to_height: u32,
+    /// `to_height - from_height + 1`; 0 when the window holds no data.
+    pub block_count: u32,
+    /// `(time(to) - time(from)) / (to_height - from_height)`.
+    pub avg_block_time_s: Option<f64>,
+    /// Width of one bucket. Points are bucket ends, so a step wider than this is a gap.
+    pub bucket_ms: u64,
+    /// Newest height with data.
+    pub latest_height: u32,
+    /// Difficulty at `latest_height`.
+    pub latest_difficulty: Option<f64>,
+    /// The current target spacing (30 s since Proof of Node).
+    pub target_block_time_s: u32,
+    /// Target spacing schedule, ascending: 120 s from genesis, 30 s from the PoN fork.
+    pub targets: Vec<BlockTimeTargetDto>,
+    /// Ascending by `t_ms`, at most 720.
+    pub points: Vec<ChainPointDto>,
+    pub coverage: ChainCoverageDto,
+}
+
+/// One step of the block-time target schedule.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct BlockTimeTargetDto {
+    pub from_height: u32,
+    pub from_ms: u64,
+    pub seconds: u32,
+}
+
+/// One bucket of [`ChainHistoryDto`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ChainPointDto {
+    /// Bucket end time (the window end for the last bucket).
+    pub t_ms: u64,
+    /// Last height with data in the bucket.
+    pub height: u32,
+    /// Difficulty at the bucket end (the last known value in the bucket).
+    pub difficulty: Option<f64>,
+    /// Mean of the known difficulties in the bucket (Proof of Node difficulty can move 100x from
+    /// one day to the next, so this is the steadier trend line).
+    pub difficulty_mean: Option<f64>,
+    /// Mean seconds per block across the bucket: delta time / delta height from the last data
+    /// row before the bucket to the last one in it. `null` when the row before is too far back.
+    pub block_time_s: Option<f64>,
+    /// Longest single gap between consecutive blocks in the bucket, when per-block data covers
+    /// it; else `null`.
+    pub block_time_max_s: Option<f64>,
+}
+
+/// How much of a chain-history window is indexed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ChainCoverageDto {
+    /// Every height of the window is covered by a known time per block.
+    pub complete: bool,
+    /// Lowest height with data in the window.
+    pub indexed_from_height: Option<u32>,
+    /// Share of the window's heights covered by a known time per block, 0 to 100.
+    pub percent: f64,
+}
+
 // ---------------------------------------------------------------------------------------------
 // Explorer
 // ---------------------------------------------------------------------------------------------

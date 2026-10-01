@@ -96,6 +96,10 @@ Environment: the Rust toolchain lives in `~/.cargo/bin` (`export PATH="$HOME/.ca
   over to community nodes, and while every primary's circuit is open it fails fast (503) instead of
   retrying a failing upstream. Prometheus: `atlas_upstream_lane_requests_total{lane,host,result}`,
   `atlas_upstream_lane_waiting{lane,host}`, `atlas_upstream_circuit_open{lane,set,upstream}`.
+  **Bulk lane (chain history).** Background history work (the ChainSampler, section 3.2) has a third lane
+  (`Clients::bulk`, `atlas_upstream_lane_*{lane="bulk"}`): the same pool, one request at a time and at most one a
+  second per host (`HttpConfig::bulk_policy`, never looser than the ingest policy), 2 attempts, its own breakers,
+  primaries only. Its queue and faults never touch the ingest or the explorer.
   The Insight UTXO list is capped at 4 MiB (the explorer's UTXO cache size); a larger set is a
   definitive answer (no mirror failover, no breaker fault). Input path segments `.` and `..` are
   refused before any request.
@@ -146,6 +150,7 @@ expensive payload only when that indicator moves. v1 rebuilt everything every 30
 | T3 | **GeoResolve** | `stats.runonflux.io/fluxlocation/<ip>` (0.5 s, works for any node IP) **immediately** for every new or changed IP (so new nodes land on the globe within seconds), and for zero-geo nodes; cached 7 days per IP. Local fallback for org/country/region: Flux's own `iplocation.bin.gz` (the table FluxOS placement uses; weekly). **City names** (and approximate coordinates for nodes without any) from the local DB-IP City Lite database, see *Local GeoIP* below | on event | `NodeLocated` |
 | T3 | **TopologySweep** | `/flux/topology` on rotating reachable nodes (each call returns ~60 reporters' peer lists). **Rolling: one call every ~12 s**, and each result streams immediately, so the whole overlay graph refreshes about every 30 min without a batch | continuous | `PeerLinksChanged` (mesh deltas) |
 | T3 | **WatchProbe** | direct, SSRF-guarded probes of **watched** nodes only (clients' watchlists): `/flux/version` (or `/flux/uptime`) every 60 s. This gives operators near-real-time offline detection, which is otherwise impossible at network scale | 60 s per watched host | `NodeUnreachable`/`NodeRecovered` (fast path) |
+| T3 | **ChainSampler** (chain history) | Live blocks and the 7-day block backfill write each block's time and difficulty (`chain_points`) from the `getblock` they already fetched: no extra call. Older history is **sampled**: every 720th height (6 h after PoN, a day before it; about 4,170 heights for the whole chain), one `daemon/getblock/<height>/1` each (header fields and txids, 1 to 20 KB) on the bulk lane, 1 s apart, backing off 5 s to 10 min on errors. Coarse heights first (every 5,760th, then 2,880th, 1,440th, 720th; newest first within a level), so the year and all-time charts have a shape within minutes. Resumable and idempotent: each pass asks the store which grid heights below `tip - 100` lack a row with a difficulty, so a restart resumes and nothing is fetched twice. Plus Insight `statistics/difficulty?days=all` (730 daily values) once a day. Rows that predate the table are copied once from the stored blocks (time only). On by default (`IngestConfig::chain_sampler`) | 1 req/s until sampled, then every 30 min for new grid heights | none (store only) |
 
 **No full-network per-node crawl.** Aggregated sources (stats rounds, topology) replace it. We only touch individual
 node APIs for TopologySweep, WatchProbe and failover reads, always through the SSRF guard.
@@ -524,6 +529,12 @@ byte. Large blobs are **zstd**-compressed.
 | `app_events` | `(&str name, u64 ts, u32 seq)` | AppEvent | spec updates, instance moves |
 | `geo_cache` | `IpAddr bytes` | (Geo, fetched_ms) | enrichment cache (TTL 7 d) |
 
+> **Chain history (B10): `chain_points`** (`u32 height` -> `[1] ++ postcard(ChainPoint {time_s, difficulty})`, about
+> 15 bytes of value) and **`chain_daily`** (`u64` UTC day -> `f64` difficulty from Insight's daily series), 25 tables
+> in all. They were added without a migration: tables are created idempotently on open, and the `blocks` layout is
+> untouched. A reorg (`delete_blocks_from`) also deletes the chain rows from the fork up, and the replacement blocks
+> write theirs.
+>
 > **Implemented (B1): 23 tables**, see `crates/atlas-store/src/tables.rs`. Added: `node_ids_rev`,
 > `block_payouts`, `node_txs` + `node_txs_by_node`, `app_messages` + `app_messages_by_app`,
 > `pending_app_messages`, `mesh_edges` + `mesh_events`. Notes: the global event key is a store row counter
@@ -572,6 +583,7 @@ the 31 minutes after the backfill finished (2,832 blocks a day at 30 s spacing).
 | Mesh changes | `mesh_events` | 7 d | topology history | 6,450 to 8,590 | 6,900 to 13,000 | 44 to 111 | 310 to 780 MB |
 | Snapshots | `snapshots` | hourly 30 d, then daily keyframes 365 d | time machine | 525 KB | 24 | 12.6 | 380 + 190 MB |
 | Metrics | `metrics_1m` / `metrics_1h` | 30 d / forever | charts | 160 / 96 | 1,440 / 24 | 0.23 / 0.002 | 7 MB / +1 MB a year |
+| Chain history | `chain_points`, `chain_daily` | per block 31 d, then the 720-block sample grid forever; daily 2 y (upstream's span) | `/network/chain-history` | 45 / 22 | 2,880 per block; 4 grid | 0.13 | 4.0 MB per-block window + 0.07 MB a year of grid rows (0.19 MB for the whole chain so far; measured on 3130: 10,251 rows in 0.44 MiB) |
 | App history | `app_messages`(+`_by_app`) | forever | app spec history (from the six-year bootstrap) | 768 + 91 | ~190 | 0.16 | 58 MB, +60 MB a year |
 | App timelines | `app_events` | forever | app timelines | 175 | 2,300 | 0.4 | +150 MB a year |
 
@@ -584,7 +596,8 @@ after the age tiers:
 2. Over it: walk the table pages (`db_stats`). If the live data is under 75%, the file is mostly free pages:
    compact.
 3. Otherwise prune oldest-first: delete the oldest day of every history table (events, node and mesh events,
-   snapshots, app events, blocks with their hash and payout rows, payments, node txs, app messages), estimate
+   snapshots, app events, blocks with their hash and payout rows, payments, node txs, app messages; per-block
+   `chain_points` are thinned to the sample grid, which stays), estimate
    the freed bytes from each table's bytes per row, and repeat until the estimate is under 75%; then compact.
    It never prunes the newest 7 days and never touches current state; if 7 days do not fit, it logs an error
    asking for a larger budget.
@@ -630,6 +643,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /apps/{name}/history` | spec versions with diffs |
 | `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization?top` | analytics aggregates. The summary's counts are defined under Node counts below. Decentralization (B7): `top` (1 to 5,000, default 25) is the number of `top_operators` rows; `operator_count` counts every operator and `operator_sizes` is the whole distribution as `[{nodes, operators}]` (ascending by `nodes`: how many operators run exactly that many confirmed nodes), so the long tail needs no long list |
 | `GET /network/app-economy?days&top` | app economy (B7), see App economy below |
+| `GET /network/chain-history?window` | block difficulty and time per block (B10), see Chain history below. `window` is `24h`, `7d`, `30d` (default), `1y` or `all`; anything else is a 400 `bad_request` |
 | `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
 | `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. `limit` is 1 to 1,000 (B7, was 100; default 20); page with `before = next_before`. A full, gapless page wholly below the finality window is immutable and served from a cache keyed by `(before, limit)` (10 min); a page that reaches the tip is built once per tip block hash (10 s). Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations). An app payment (`kind: app_message`) carries `app_ref` (B7, typed optional): `{name, display_name, kind: register\|update, spec_version, message_hash, height, paid}` from the permanent message its OP_RETURN names, or from the pending message while it is unmined (`height` and `paid` null). Absent when the tx is no app payment or the message is not known yet. `/address/{addr}/txs` items carry it too |
@@ -694,6 +708,35 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > Renewals (an update that only extends `expire`) count as updates. Not derivable: who paid beyond the paying
 > transaction, any fiat price paid off chain, the USD value at payment time before this server's own price history,
 > and running instances before the first ingest (the `instance_count` metric starts then).
+
+> **Chain history (B10).** `GET /network/chain-history?window` returns `{window, generated_ms, from_ms, to_ms,
+> from_height, to_height, block_count, avg_block_time_s, bucket_ms, latest_height, latest_difficulty,
+> target_block_time_s, targets, points, coverage}` (`ChainHistoryDto`).
+> - **Buckets** are right-closed UTC steps ending at the newest row: 5 min (288) for 24 h, 15 min (672) for 7 d, 1 h
+>   (720) for 30 d, 1 day (365) for 1 y, and whole days for `all` (at most 720; 5 days in 2026). A point is
+>   `{t_ms, height, difficulty, difficulty_mean, block_time_s, block_time_max_s}`: `t_ms` the bucket end (the newest
+>   row's time for the last bucket), `height` its last height, `difficulty` the last known value in the bucket and
+>   `difficulty_mean` their mean (PoN difficulty can move 100x from one day to the next: Insight's daily values run
+>   from 0.002 to 0.6, so the mean is the steadier trend line). A bucket without data has no point: a `t_ms` step
+>   wider than `bucket_ms` is a gap.
+> - **Time per block** is `(time(last) - time(anchor)) / (last - anchor)`, `anchor` being the row just below the
+>   bucket. Per-block rows make it exact (24 h to 30 d). Sampled rows (one every 720 heights) make it the mean
+>   between samples; the anchor is used only while it lies in the two previous buckets (a sample interval can be a
+>   little wider than a bucket), else the bucket's own rows give the span, and a lone row after a gap is `null`.
+>   `block_time_max_s` (the longest gap between consecutive blocks) only where per-block rows cover the bucket. Daily Insight difficulty fills `difficulty` in day-wide buckets whose
+>   rows carry none. Nothing is interpolated.
+> - **`targets`**: `[{from_height: 0, from_ms: genesis, seconds: 120}, {from_height: 2,020,000, from_ms:
+>   1761415235000, seconds: 30}]`. The 120 s pre-PoN target is the chain's (blocks 1 to 2,019,999 averaged 120.9 s).
+> - **`coverage`** `{complete, indexed_from_height, percent}`: the share of the window's heights covered by a known
+>   time per block (heights counted from the row at or before the window start, else estimated at the target
+>   spacing), and the lowest height with data in the window. On a fresh instance 24 h and 7 d fill with the block
+>   backfill (about 4.7 h for 7 days), 30 d is partial until 30 days of live blocks exist (or the grid's 6 h samples
+>   remain, which leave the 1 h buckets' time per block `null`), and 1 y / all fill as the sampler runs (coarse
+>   first: usable after about 15 minutes, every grid height in about 80 minutes; measured on 3130: 4,167 samples at
+>   0.86 requests a second, no errors, `all` complete after 22 minutes).
+> - **Caching**: one computation per window per reuse period (30 s for 24 h, 60 s for 7 d, 2 min for 30 d, 10 min
+>   for 1 y and all; concurrent identical requests share it), served with an ETag (304 on `If-None-Match`) and
+>   `Cache-Control: public, max-age=30` (24 h, 7 d), `60` (30 d) or `600` (1 y, all).
 
 ## 7. Binary node snapshot — `nodes.bin` (format v1)
 

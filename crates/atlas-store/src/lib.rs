@@ -11,11 +11,13 @@
 //! Tables: `meta`, `node_ids`, `node_ids_rev`, `node_state`, `node_events`, `events`,
 //! `snapshots`, `metrics_1m`, `metrics_1h`, `blocks`, `block_hash`, `block_payouts`, `payments`,
 //! `node_txs`, `node_txs_by_node`, `apps`, `app_events`, `app_messages`, `app_messages_by_app`,
-//! `pending_app_messages`, `mesh_edges`, `mesh_events`, `geo_cache`.
+//! `pending_app_messages`, `mesh_edges`, `mesh_events`, `geo_cache`, `chain_points`,
+//! `chain_daily`.
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 mod batch;
 mod budget;
+mod chain;
 mod codec;
 mod error;
 mod read;
@@ -32,8 +34,8 @@ pub use budget::{
 };
 pub use error::{Result, StoreError};
 pub use records::{
-    CommitStats, DAY_MS, EventKey, HOUR_MS, MINUTE_MS, MeshChangeRecord, MeshEdgeRecord,
-    MeshReporter, MetricsRow, Order, Resolution,
+    CHAIN_SAMPLE_GRID, ChainPoint, CommitStats, DAY_MS, EventKey, HOUR_MS, MINUTE_MS,
+    MeshChangeRecord, MeshEdgeRecord, MeshReporter, MetricsRow, Order, Resolution,
 };
 pub use retention::{RetentionPolicy, RetentionReport};
 pub use stats::{DbStats, FileUsage, TableSize, db_stats_at, dir_usage};

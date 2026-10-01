@@ -19,7 +19,9 @@ use atlas_core::node::{Geo, NodeRecord};
 use crate::error::{Result, StoreError};
 use atlas_core::NodeId;
 
-use crate::records::{MeshChangeRecord, MeshEdgeRecord, MeshReporter, MetricsRow, MetricsRowV1};
+use crate::records::{
+    ChainPoint, MeshChangeRecord, MeshEdgeRecord, MeshReporter, MetricsRow, MetricsRowV1,
+};
 
 /// zstd level used for snapshot blobs.
 const BLOB_ZSTD_LEVEL: i32 = 3;
@@ -58,6 +60,7 @@ stored! {
     MeshEdgeRecord => 1, "MeshEdgeRecord";
     MetricsRow => 2, "MetricsRow";
     (Geo, u64) => 1, "GeoCacheEntry";
+    ChainPoint => 1, "ChainPoint";
 }
 
 /// Encodes `value` as `[T::VERSION] ++ postcard(value)`.

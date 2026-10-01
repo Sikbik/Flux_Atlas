@@ -1,9 +1,10 @@
-//! Network analytics (computed once per publish) and metrics time series (from the store).
+//! Network analytics (computed once per publish), metrics time series and chain history (from
+//! the store).
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
-use atlas_core::api::MetricsSeriesDto;
+use atlas_core::api::{ChainWindow, MetricsSeriesDto};
 use atlas_core::now_ms;
 use atlas_store::{HOUR_MS, MINUTE_MS, MetricsRow, Resolution};
 use axum::extract::State;
@@ -12,6 +13,7 @@ use axum::response::Response;
 use serde::Deserialize;
 
 use crate::body::{CachedBody, cache};
+use crate::chain_history;
 use crate::error::{ApiError, ApiResult};
 use crate::extract::Q;
 use crate::state::AppState;
@@ -167,6 +169,51 @@ pub async fn app_economy(
         b
     };
     Ok(body.respond(&headers, cache::DERIVED))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChainHistoryQuery {
+    pub window: Option<String>,
+}
+
+/// `GET /network/chain-history?window` (`24h`, `7d`, `30d` (default), `1y`, `all`): block
+/// difficulty and time per block in at most 720 buckets, from the `chain_points` rows. One
+/// computation per window per reuse period, however many requests arrive at once.
+pub async fn chain_history(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Q(q): Q<ChainHistoryQuery>,
+) -> ApiResult<Response> {
+    let window = match q.window.as_deref() {
+        None => ChainWindow::Month,
+        Some(w) => ChainWindow::parse(w).ok_or_else(|| {
+            ApiError::bad_request(format!(
+                "unsupported window {w:?}: use one of 24h, 7d, 30d, 1y, all"
+            ))
+        })?,
+    };
+    let (reuse_ms, cache_control) = chain_history::cache_policy(window);
+    let now = now_ms();
+    let st = s.clone();
+    let body = s
+        .chain_cache
+        .try_get_with((window, now / reuse_ms), async move {
+            st.store_read(move |store| {
+                let latest = store.latest_chain_point()?;
+                let lo = chain_history::lowest_height(window, latest);
+                let rows = store.chain_points(lo, u32::MAX)?;
+                let daily = match window {
+                    ChainWindow::Year | ChainWindow::All => store.chain_daily()?,
+                    _ => Vec::new(),
+                };
+                let dto = chain_history::build(window, &rows, &daily, now);
+                Ok(Arc::new(CachedBody::json(&dto)))
+            })
+            .await
+        })
+        .await
+        .map_err(|e| (*e).clone())?;
+    Ok(body.respond(&headers, cache_control))
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -656,12 +656,17 @@ fn render_caches(out: &mut String, s: &AppState) {
     );
 }
 
-/// Upstream lanes (X1 M2): the engine's ingest lane and the explorer's interactive lane, each
-/// with its own per-host gates and circuit breakers. Labels are bounded: two lanes, the
-/// configured upstream hosts plus one `direct-node` label, and the configured primaries.
+/// Upstream lanes (X1 M2): the engine's ingest lane, the explorer's interactive lane and the
+/// chain sampler's bulk lane, each with its own per-host gates and circuit breakers. Labels are
+/// bounded: three lanes, the configured upstream hosts plus one `direct-node` label, and the
+/// configured primaries.
 fn render_lanes(out: &mut String, s: &AppState) {
     use crate::metrics::{header, sample};
-    let lanes = [s.engine.clients(), s.explorer.clients()];
+    let lanes = [
+        s.engine.clients(),
+        s.explorer.clients(),
+        s.engine.bulk_clients(),
+    ];
     header(
         out,
         "atlas_upstream_lane_requests_total",

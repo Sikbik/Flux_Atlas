@@ -78,8 +78,14 @@ async fn synthetic_reorg_replaces_orphaned_blocks() {
     let b0 = synth(&base, 3_000_000, 0, h(1));
     let b1 = synth(&base, 3_000_001, 0, b0.summary.hash);
     let b2 = synth(&base, 3_000_002, 0, b1.summary.hash);
-    let b1x = synth(&base, 3_000_001, 1, b0.summary.hash);
+    let mut b1x = synth(&base, 3_000_001, 1, b0.summary.hash);
+    b1x.summary.time_ms += 7_000;
+    b1x.difficulty = Some(9.5);
     let b2x = synth(&base, 3_000_002, 1, b1x.summary.hash);
+    assert!(
+        base.difficulty.is_some(),
+        "verbosity 2 carries the difficulty"
+    );
     let mut rx = eng.subscribe();
     for (b, disc) in [(&b0, true), (&b1, false), (&b2, false)] {
         inject(
@@ -156,6 +162,11 @@ async fn synthetic_reorg_replaces_orphaned_blocks() {
     assert_eq!(s.block(3_000_001).unwrap().unwrap().hash, b1x.summary.hash);
     assert_eq!(s.block(3_000_002).unwrap().unwrap().hash, b2x.summary.hash);
     assert!(s.block_by_hash(&b1.summary.hash).unwrap().is_none());
+    // The chain-history rows follow the replacement blocks.
+    let point = s.chain_point(3_000_001).unwrap().unwrap();
+    assert_eq!(point.time_ms(), b1x.summary.time_ms);
+    assert_eq!(point.difficulty, Some(9.5));
+    assert_eq!(s.chain_points(3_000_000, 3_000_010).unwrap().len(), 3);
     let events = s.latest_events(10_000).unwrap();
     assert!(
         events

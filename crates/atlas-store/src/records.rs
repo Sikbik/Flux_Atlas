@@ -307,6 +307,30 @@ impl Resolution {
     }
 }
 
+/// Heights on this grid are the chain-history samples kept forever; per-block rows off the grid
+/// are thinned away once older than the per-block tier (`HistoryRetention::chain_blocks_ms`).
+/// One sample every 720 blocks is 6 hours after Proof of Node and a day before it.
+pub const CHAIN_SAMPLE_GRID: u32 = 720;
+
+/// Time and difficulty of one block (`chain_points`, keyed by height). Recent blocks have a row
+/// each (live blocks and the block backfill); older history keeps the [`CHAIN_SAMPLE_GRID`]
+/// heights, which the chain sampler fetches. A reorg overwrites the rows of its heights.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct ChainPoint {
+    /// Block header time, unix seconds.
+    pub time_s: u32,
+    /// Block difficulty; `None` when the source did not carry it (rows seeded from stored
+    /// blocks).
+    pub difficulty: Option<f64>,
+}
+
+impl ChainPoint {
+    /// Header time in unix ms.
+    pub const fn time_ms(&self) -> u64 {
+        self.time_s as u64 * 1000
+    }
+}
+
 /// One overlay mesh edge between two nodes. Stored under `(a, b)` with `a < b`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct MeshEdgeRecord {

@@ -30,6 +30,8 @@ pub const JOBS: &[(&str, u64)] = &[
     // Runs only while clients watch nodes.
     ("watch_probe", u64::MAX),
     ("backfill", u64::MAX),
+    // Background history sampling; idle once the whole chain is sampled.
+    ("chain_sampler", u64::MAX),
     ("maintenance", 7_200_000),
     // Daily DB-IP City Lite check (or an operator file); stale after three days without one.
     ("geoip_db", 259_200_000),

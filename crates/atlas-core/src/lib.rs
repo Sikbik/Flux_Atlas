@@ -64,6 +64,7 @@ pub fn export_typescript(dir: &Path) -> Result<(), ts_rs::ExportError> {
         api::DecentralizationDto,
         api::AppEconomyDto,
         api::MetricsSeriesDto,
+        api::ChainHistoryDto,
         api::BlocksPage,
         api::BlockDetailDto,
         api::TxDetailDto,
