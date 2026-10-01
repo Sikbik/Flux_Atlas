@@ -3,8 +3,10 @@
 // and the minimized windows wait under the divider as small restore buttons. About Flux is last and is
 // the brand mark itself: gray at rest, white when hovered, open or focused.
 
-import { type CSSProperties, type Ref, useMemo } from 'react';
+import { type ComponentPropsWithRef, type CSSProperties, useMemo } from 'react';
 import { FluxMarkToggle } from '../../features/chrome/brand';
+import { cx } from '../../ui';
+import { pressHandlers } from '../../ui/internal/press';
 import { useWm, WindowDots } from '../wm/react';
 import { useShellActions } from './actions';
 import { type DockState, dockKey, parseDockKey } from './dock';
@@ -32,11 +34,13 @@ function DockItem({ id, state }: { id: LauncherId; state: DockState }) {
     <button
       type="button"
       className="dk"
+      data-fx="charge"
       data-launcher={id}
       data-state={state}
       style={{ '--dk-accent': ACCENT_VAR[l.accent] } as CSSProperties}
       aria-label={caps.length ? `${l.label}, key ${caps.join(' ')}` : l.label}
       aria-pressed={state === 'focus' ? true : undefined}
+      {...pressHandlers<HTMLButtonElement>()}
       onClick={() => launch(id)}
     >
       <span className="dk-ico">
@@ -54,12 +58,14 @@ function DockItem({ id, state }: { id: LauncherId; state: DockState }) {
   );
 }
 
-export function Dock({ ref }: { ref?: Ref<HTMLElement> }) {
+/** The dock. The root takes a ref, a class and a style like any element; each launcher is `button.dk` with
+ * `data-launcher`, `data-state` (`idle`, `open`, `focus`, `min`) and `data-pressed` while held. */
+export function Dock({ className, ...rest }: ComponentPropsWithRef<'nav'>) {
   const key = useWm((s) => dockKey(s, ALL), Object.is);
   const states = useMemo(() => parseDockKey(key), [key]);
   const state = (id: LauncherId): DockState => states[id] ?? 'idle';
   return (
-    <nav ref={ref} className="dock" data-region="dock" aria-label="Launchers">
+    <nav className={cx('dock', className)} data-region="dock" aria-label="Launchers" {...rest}>
       {DOCK_MAIN.map((id) => (
         <DockItem key={id} id={id} state={state(id)} />
       ))}

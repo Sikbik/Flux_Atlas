@@ -99,7 +99,7 @@ export function PhoneSheet({
               stepSheet(e.key === 'ArrowUp' ? 1 : -1);
             }}
           />
-          <header className="wm-titlebar" {...drag.handlers}>
+          <header className="wm-titlebar" data-fx-density="dense" {...drag.handlers}>
             <span className="wm-glyph" aria-hidden="true">
               {glyph}
             </span>

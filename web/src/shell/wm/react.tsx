@@ -345,6 +345,7 @@ function Frame({
         {/* biome-ignore lint/a11y/noStaticElementInteractions: a double-click on the title bar maximises, like any desktop window; the Maximize button is the keyboard route */}
         <header
           className="wm-titlebar"
+          data-fx-density="dense"
           {...(phone ? sheetDrag.handlers : dragHandlers('move', ''))}
           onDoubleClick={(e) => {
             if (!phone && !(e.target as HTMLElement).closest('button')) toggleMaximize();

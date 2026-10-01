@@ -4,16 +4,21 @@
 // windows' workspace start under it.
 
 import { Search } from 'lucide-react';
-import { type Ref, useLayoutEffect, useRef } from 'react';
+import { type ComponentPropsWithRef, useLayoutEffect, useMemo, useRef } from 'react';
 import { AimStrip } from '../../features/chrome/AimStrip';
 import { BeatChip, LiveChip } from '../../features/chrome/Beat';
 import { FluxRound } from '../../features/chrome/brand';
+import { cx } from '../../ui';
+import { pressHandlers } from '../../ui/internal/press';
+import { mergeRefs } from '../../ui/internal/refs';
 import { useShellNav } from './nav';
 import './phoneheader.css';
 
-export function PhoneHeader({ ref }: { ref?: Ref<HTMLElement> }) {
+/** The header. The root takes a ref, a class and a style; its controls carry `data-pressed` while held. */
+export function PhoneHeader({ ref, className, ...rest }: ComponentPropsWithRef<'header'>) {
   const nav = useShellNav();
   const own = useRef<HTMLElement | null>(null);
+  const setRoot = useMemo(() => mergeRefs<HTMLElement>(own, ref), [ref]);
 
   // The header's height is the stage's top edge; the shell's CSS reads it.
   useLayoutEffect(() => {
@@ -32,20 +37,13 @@ export function PhoneHeader({ ref }: { ref?: Ref<HTMLElement> }) {
   }, []);
 
   return (
-    <header
-      ref={(el) => {
-        own.current = el;
-        if (typeof ref === 'function') ref(el);
-        else if (ref) ref.current = el;
-      }}
-      className="phone-header"
-      data-region="topbar"
-    >
+    <header ref={setRoot} className={cx('phone-header', className)} data-region="topbar" {...rest}>
       <div className="ph-row">
         <a
           href="/"
           className="brand"
           aria-label="Flux Atlas, home"
+          {...pressHandlers<HTMLAnchorElement>()}
           onClick={(e) => {
             if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
@@ -63,6 +61,7 @@ export function PhoneHeader({ ref }: { ref?: Ref<HTMLElement> }) {
       <button
         type="button"
         className="ph-search"
+        {...pressHandlers<HTMLButtonElement>()}
         onClick={() => nav.palette()}
         aria-label="Search, command palette"
       >

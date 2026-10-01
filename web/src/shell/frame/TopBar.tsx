@@ -4,9 +4,11 @@
 // has its own header (PhoneHeader.tsx).
 
 import { Layers2, Orbit, Search, UserRoundCheck } from 'lucide-react';
-import type { Ref } from 'react';
+import type { ComponentPropsWithRef } from 'react';
 import { BeatChip, LiveChip, TopLight, UtcClock } from '../../features/chrome/Beat';
 import { FluxRound } from '../../features/chrome/brand';
+import { cx } from '../../ui';
+import { pressHandlers } from '../../ui/internal/press';
 import { useShellActions } from './actions';
 import { useShellNav } from './nav';
 import { MenuBar, TopMenu } from './topmenus';
@@ -14,15 +16,17 @@ import './topbar.css';
 
 const isApple = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
-export function TopBar({ ref }: { ref?: Ref<HTMLElement> }) {
+/** The top bar. The root takes a ref, a class and a style; its controls carry `data-pressed` while held. */
+export function TopBar({ className, ...rest }: ComponentPropsWithRef<'header'>) {
   const nav = useShellNav();
   const { launch } = useShellActions();
   return (
-    <header ref={ref} className="topbar" data-region="topbar">
+    <header className={cx('topbar', className)} data-region="topbar" data-fx-density="dense" {...rest}>
       <a
         href="/"
         className="brand"
         aria-label="Flux Atlas, home"
+        {...pressHandlers<HTMLAnchorElement>()}
         onClick={(e) => {
           if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
@@ -36,6 +40,7 @@ export function TopBar({ ref }: { ref?: Ref<HTMLElement> }) {
       <button
         type="button"
         className="omni"
+        {...pressHandlers<HTMLButtonElement>()}
         onClick={() => nav.palette()}
         aria-label="Search, command palette"
       >
@@ -61,6 +66,7 @@ export function TopBar({ ref }: { ref?: Ref<HTMLElement> }) {
           className="iconbtn"
           aria-label="Ambient mode"
           title="Ambient mode"
+          {...pressHandlers<HTMLButtonElement>()}
           onClick={() => launch('ambient')}
         >
           <Orbit size={19} strokeWidth={1.5} aria-hidden="true" />
@@ -70,6 +76,7 @@ export function TopBar({ ref }: { ref?: Ref<HTMLElement> }) {
           className="opchip"
           aria-label="Operator view"
           title="Operator view"
+          {...pressHandlers<HTMLButtonElement>()}
           onClick={() => launch('operator')}
         >
           <UserRoundCheck size={15} strokeWidth={1.5} aria-hidden="true" />

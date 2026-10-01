@@ -5,12 +5,12 @@
 // or focusing either group opens the detail behind it: every age, every source, every total. The cards are
 // their own chunks (lazyCard), fetched when the pointer or focus nears a chip.
 
-import type { Ref } from 'react';
+import type { ComponentPropsWithRef } from 'react';
 import { useNetwork, usePrice, useRuntime, useSummary, useTip } from '../../app/context';
 import { formatAge, formatDuration, formatHeight, UNKNOWN } from '../../lib/format';
 import { useNow } from '../../lib/useClock';
 import { ShellLink } from '../../shell/frame/ShellLink';
-import { AnimatedNumber, HoverCard, LiveDot, TierGlyph } from '../../ui';
+import { AnimatedNumber, cx, HoverCard, LiveDot, TierGlyph } from '../../ui';
 import { UtcClock, useBlockSince } from './Beat';
 import { useRewardCut } from './data';
 import { type PathReading, readPaths } from './freshness';
@@ -35,9 +35,16 @@ const STATE_WORD: Partial<Record<PathReading['state'], string>> = { stale: 'stal
 /** A path that is not keeping up says so in words; one that is stays a quiet light. */
 const needsWords = (r: PathReading): boolean => r.state === 'stale' || r.state === 'dead';
 
-export function StatusBar({ ref }: { ref?: Ref<HTMLElement> }) {
+/** The status bar. The root takes a ref, a class and a style; it is a dense zone for the motion language. */
+export function StatusBar({ className, ...rest }: ComponentPropsWithRef<'section'>) {
   return (
-    <section ref={ref} className="statusbar" data-region="statusbar" aria-label="Network status">
+    <section
+      className={cx('statusbar', className)}
+      data-region="statusbar"
+      data-fx-density="dense"
+      aria-label="Network status"
+      {...rest}
+    >
       <StatusLeft />
       <StatusRight />
     </section>

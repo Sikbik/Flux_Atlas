@@ -8,11 +8,13 @@
 
 import { Award, CircleCheck, Coins, Info, OctagonAlert, TriangleAlert, X } from 'lucide-react';
 import {
+  type ComponentPropsWithRef,
   type ComponentType,
   type CSSProperties,
   type KeyboardEvent,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -20,6 +22,9 @@ import { type ToastKind, useToasts } from '../../app/toasts';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import { globeInset } from '../../shell/wm/machine';
 import { useWm } from '../../shell/wm/react';
+import { cx } from '../../ui';
+import { pressHandlers } from '../../ui/internal/press';
+import { mergeRefs } from '../../ui/internal/refs';
 import { cssValue, play, scaledMs } from './motion';
 import {
   type Entry,
@@ -48,7 +53,12 @@ const ICON: Record<ToastKind, ComponentType<{ size?: number }>> = {
 const TICK_MS = 250;
 const SHIFT_MS = 220;
 
-export function Toasts() {
+/**
+ * The stack. The root takes a ref, a class and a style like any element; a toast is `.toast` with `data-kind`,
+ * `data-state` (`open`, `leaving`) and `data-toast-id`, its link `.toast-main` and its dismiss `.toast-x` carry
+ * `data-pressed` while held.
+ */
+export function Toasts({ ref, className, style: given, ...rest }: ComponentPropsWithRef<'div'>) {
   const toasts = useToasts((s) => s.toasts);
   const dismiss = useToasts((s) => s.dismiss);
   const phone = useWm((s) => s.layout === 'phone', Object.is);
@@ -56,6 +66,7 @@ export function Toasts() {
   const dockedRight = useWm((s) => (s.layout === 'phone' ? 0 : globeInset(s).right), Object.is);
   const max = phone ? STACK_MAX_PHONE : STACK_MAX;
   const rootRef = useRef<HTMLDivElement>(null);
+  const setRoot = useMemo(() => mergeRefs<HTMLDivElement>(rootRef, ref), [ref]);
 
   const [entries, setEntries] = useState<Entry[]>(() => reconcile([], toasts, max));
   const [synced, setSynced] = useState({ toasts, max });
@@ -130,9 +141,15 @@ export function Toasts() {
     tops.current = next;
   });
 
-  const style = { '--toast-shift': `${Math.max(0, dockedRight - 24)}px` } as CSSProperties;
+  const style = { ...given, '--toast-shift': `${Math.max(0, dockedRight - 24)}px` } as CSSProperties;
   return (
-    <div className="toasts" ref={rootRef} style={style} data-docked={dockedRight > 0 || undefined}>
+    <div
+      {...rest}
+      className={cx('toasts', className)}
+      ref={setRoot}
+      style={style}
+      data-docked={dockedRight > 0 || undefined}
+    >
       {entries.map((e) => (
         <ToastItem key={e.toast.id} entry={e} onDismiss={dismiss} />
       ))}
@@ -167,17 +184,29 @@ function ToastItem({ entry, onDismiss }: { entry: Entry; onDismiss: (id: number)
       role={roleOf(toast.kind)}
       data-toast-id={toast.id}
       data-kind={toast.kind}
+      data-state={leaving ? 'leaving' : 'open'}
       data-leaving={leaving || undefined}
       onKeyDown={onKey}
     >
       {toast.to ? (
-        <ShellLink to={toast.to} className="toast-main" onClick={close}>
+        <ShellLink
+          to={toast.to}
+          className="toast-main"
+          {...pressHandlers<HTMLAnchorElement>()}
+          onClick={close}
+        >
           {body}
         </ShellLink>
       ) : (
         <div className="toast-main">{body}</div>
       )}
-      <button type="button" className="toast-x" aria-label="Dismiss" onClick={close}>
+      <button
+        type="button"
+        className="toast-x"
+        aria-label="Dismiss"
+        {...pressHandlers<HTMLButtonElement>()}
+        onClick={close}
+      >
         <X size={14} />
       </button>
     </div>

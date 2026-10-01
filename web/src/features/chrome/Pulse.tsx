@@ -250,6 +250,7 @@ function EventRow({ ev, fresh }: { ev: PulseEvent; fresh: boolean }) {
       data-flip={ev.id}
       data-kind={ev.kind}
       data-fresh={fresh || undefined}
+      data-fx={ev.kind === 'paid_mine' ? 'current' : undefined}
       data-tier={d.tier && d.tier !== 'unknown' ? d.tier : undefined}
       style={{ '--ev': TONE_VAR[toneOf(ev.kind)] } as CSSProperties}
     >

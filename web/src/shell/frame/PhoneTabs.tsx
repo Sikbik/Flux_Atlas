@@ -6,10 +6,11 @@
 
 import { useRouterState } from '@tanstack/react-router';
 import { Activity, Boxes, Globe, type LucideIcon, Search, UserRound } from 'lucide-react';
-import { type Ref, useEffect } from 'react';
+import { type ComponentPropsWithRef, useEffect } from 'react';
 import { useLiveView } from '../../features/chrome/live';
 import { usePhone } from '../../features/chrome/phone';
-import { LiveDot } from '../../ui';
+import { cx, LiveDot } from '../../ui';
+import { pressHandlers } from '../../ui/internal/press';
 import { visibleWindows, windowOfType } from '../wm/machine';
 import { useWindowManager, useWm } from '../wm/react';
 import { useShellActions } from './actions';
@@ -26,7 +27,9 @@ const ICON: Record<PhoneTab, LucideIcon> = {
   you: UserRound,
 };
 
-export function PhoneTabs({ ref }: { ref?: Ref<HTMLElement> }) {
+/** The tab bar. The root takes a ref, a class and a style; a tab is `button.shell-tab` with `data-tab`,
+ * `aria-current` when lit and `data-pressed` while held. */
+export function PhoneTabs({ className, ...rest }: ComponentPropsWithRef<'nav'>) {
   const nav = useShellNav();
   const { launch } = useShellActions();
   const wm = useWindowManager();
@@ -75,7 +78,7 @@ export function PhoneTabs({ ref }: { ref?: Ref<HTMLElement> }) {
   };
 
   return (
-    <nav ref={ref} className="shell-tabs" data-region="tabs" aria-label="Sections">
+    <nav className={cx('shell-tabs', className)} data-region="tabs" aria-label="Sections" {...rest}>
       {PHONE_TABS.map(({ id, label }) => {
         const Icon = ICON[id];
         return (
@@ -85,7 +88,9 @@ export function PhoneTabs({ ref }: { ref?: Ref<HTMLElement> }) {
             className="shell-tab"
             data-tab={id}
             aria-current={active === id ? 'page' : undefined}
-            onPointerDown={id === 'live' ? liveSheet.preload : undefined}
+            {...pressHandlers<HTMLButtonElement>({
+              onPointerDown: id === 'live' ? liveSheet.preload : undefined,
+            })}
             onClick={() => press(id)}
           >
             <span className="tab-icon">

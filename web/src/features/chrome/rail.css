@@ -300,7 +300,7 @@ a.blk:focus-visible {
 
 /* ---- a block lands ---------------------------------------------------------------------------- */
 
-.blk-item[data-new] {
+.blk-item[data-fresh] {
   /* A beat behind the slide, so the slot is mostly clear when the card arrives. */
   animation: blk-land 360ms var(--ease-beat) 90ms both;
 }
@@ -313,7 +313,7 @@ a.blk:focus-visible {
 }
 
 /* The white rim: a hairline and a glow that fade over 1.6 s (opacity only). */
-.blk-item[data-new] .blk::after {
+.blk-item[data-fresh] .blk::after {
   content: "";
   position: absolute;
   inset: -1px;
@@ -336,20 +336,20 @@ a.blk:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) .blk-item[data-new] {
+  :root:not([data-motion="full"]) .blk-item[data-fresh] {
     animation-name: blk-land-quiet;
     animation-duration: var(--dur-base);
     animation-timing-function: var(--ease-standard);
   }
 }
 
-:root[data-motion="reduced"] .blk-item[data-new] {
+:root[data-motion="reduced"] .blk-item[data-fresh] {
   animation-name: blk-land-quiet;
   animation-duration: var(--dur-base);
   animation-timing-function: var(--ease-standard);
 }
 
-:root[data-motion-off] .blk-item[data-new] {
+:root[data-motion-off] .blk-item[data-fresh] {
   animation: none;
 }
 

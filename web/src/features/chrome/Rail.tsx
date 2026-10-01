@@ -7,8 +7,8 @@
 
 import { History } from 'lucide-react';
 import {
+  type ComponentPropsWithRef,
   type CSSProperties,
-  type Ref,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -22,7 +22,8 @@ import { useAgo, useBeat } from '../../lib/useClock';
 import { useShellActions } from '../../shell/frame/actions';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import type { ChainBlock } from '../../store/network';
-import { HoverCard, TierGlyph } from '../../ui';
+import { cx, HoverCard, TierGlyph } from '../../ui';
+import { pressHandlers } from '../../ui/internal/press';
 import { useNodeFacts, usePayoutLines } from './data';
 import { ProducerGlyph } from './glyphs';
 import { lazyCard } from './lazyCard';
@@ -53,9 +54,12 @@ const SKELETONS = ['a', 'b', 'c', 'd', 'e', 'f'] as const;
 
 const keyOf = (b: ChainBlock) => `${b.height}:${b.hash.slice(0, 8)}`;
 
-export function BlockRail({ ref }: { ref?: Ref<HTMLElement> }) {
+/** The rail. The root takes a ref, a class and a style like any element; a block's card is `li.blk-item` with
+ * `data-fresh` while it is new and `data-orphan` after a reorganisation, and its link `a.blk` carries the producer's
+ * `data-tier` and `data-pressed` while held. */
+export function BlockRail({ className, ...rest }: ComponentPropsWithRef<'section'>) {
   return (
-    <section ref={ref} className="railwrap" data-region="rail" aria-label="Blocks">
+    <section className={cx('railwrap', className)} data-region="rail" aria-label="Blocks" {...rest}>
       <Timeline />
       <RailTrack />
     </section>
@@ -137,7 +141,7 @@ function RailTrack() {
       const left = c.offsetLeft;
       next.set(k, left);
       const was = flip.current.get(k);
-      if (changed <= 3 && was !== undefined && Math.abs(was - left) > 1 && !c.hasAttribute('data-new')) {
+      if (changed <= 3 && was !== undefined && Math.abs(was - left) > 1 && !c.hasAttribute('data-fresh')) {
         play(c, [{ transform: `translateX(${was - left}px)` }, { transform: 'none' }], {
           duration: 420,
           easing: ease,
@@ -223,7 +227,7 @@ function BlockCard({ block, orphan, isNew }: { block: ChainBlock; orphan: boolea
     <li
       className="blk-item"
       data-flip={keyOf(block)}
-      data-new={isNew || undefined}
+      data-fresh={isNew || undefined}
       data-orphan={orphan || undefined}
     >
       <HoverCard
@@ -237,6 +241,7 @@ function BlockCard({ block, orphan, isNew }: { block: ChainBlock; orphan: boolea
           className="blk"
           data-tier={prod?.tier}
           aria-label={label}
+          {...pressHandlers<HTMLAnchorElement>()}
           onPointerEnter={peekCard.preload}
           onFocus={peekCard.preload}
         >
