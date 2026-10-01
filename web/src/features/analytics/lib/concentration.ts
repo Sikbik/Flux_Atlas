@@ -1,6 +1,25 @@
 // What the concentration headlines say: who the leaders are, how many it takes to pass half of the
 // network, and how to name them in a sentence.
 
+/**
+ * The bars outside the leading set step back to the neutral gray (the kit's "Other" colour), so the
+ * coloured bars read as the few entities that together pass half of the network.
+ */
+export const REST_COLOR = 'var(--viz-other)';
+
+/** The label column of a ranked bar list: up to 150 px, a third of the width on a phone. */
+export const BAR_LABEL_COLUMN = 'min(150px, 32%)';
+
+/**
+ * A node share (a fraction) as a percentage. A share too small for one decimal reads "<0.1%": three
+ * nodes out of thousands are not zero, and a bar row that says 0.0% next to a count of 3 looks wrong.
+ */
+export function shareText(fraction: number): string {
+  if (!Number.isFinite(fraction) || fraction < 0) return '';
+  if (fraction > 0 && fraction < 0.001) return '<0.1%';
+  return `${(fraction * 100).toFixed(1)}%`;
+}
+
 export interface Counted {
   key: string;
   label: string;

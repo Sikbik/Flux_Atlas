@@ -11,18 +11,21 @@ import { formatInt, formatPercent, formatUtcDateTime } from '../../../lib/format
 import {
   Chip,
   EmptyState,
-  EntityHead,
   ErrorState,
-  HeroNumber,
+  KeyValue,
+  Row,
   Section,
-  Segmented,
-  type SegmentedItem,
+  SegmentedControl,
   Skeleton,
+  Stack,
+  Stat,
+  StatGrid,
   StatusChip,
-  TIER_LABEL,
   TierGlyph,
   type TierName,
-} from '../../explorer/parts';
+  tierLabel,
+  ViewHeader,
+} from '../../../ui';
 import { type EligibleSets, useEligibleSets } from '../hooks/useEligibleSets';
 import { useProducerSample } from '../hooks/useProducerSample';
 import { blocksCovered, expectedByBlock, sumCounts } from '../lib/eligibility';
@@ -32,11 +35,11 @@ import { chiSquare, chiSquareP, deviation, type FairnessRow, fairness, mostOff, 
 
 const TIERS: readonly TierName[] = ['stratus', 'nimbus', 'cumulus'];
 
-const SIZES: readonly SegmentedItem<string>[] = [
-  { id: '1000', label: '1,000 blocks', hint: 'About 8 hours' },
-  { id: '3000', label: '3,000 blocks', hint: 'About a day' },
-  { id: '10000', label: '10,000 blocks', hint: 'About 3.5 days' },
-];
+const SIZES = [
+  { value: '1000', label: '1,000 blocks' },
+  { value: '3000', label: '3,000 blocks' },
+  { value: '10000', label: '10,000 blocks' },
+] as const;
 
 /** fluxd at the commit the rule was read from; the research notes cite the same files. */
 const FLUXD = 'https://github.com/RunOnFlux/fluxd/blob/8a60ee6316371a120ae8546c8d42f4cb3bc71158/src/pon';
@@ -70,7 +73,7 @@ function buildModel(tally: ProducerTally, sets: EligibleSets): Model | null {
   const e = expectedByBlock(tally.knownTimes, sets.samples, sets.fallback);
   const inputs = TIERS.map((tier) => ({
     key: tier,
-    label: TIER_LABEL[tier],
+    label: tierLabel(tier),
     nodes: sets.fallback[tier],
     produced: tally.counts[tier],
     expectedBlocks: e.expected[tier],
@@ -124,22 +127,26 @@ function Source() {
 function FairnessSkeleton({ progress }: { progress?: string }) {
   return (
     <div role="status" aria-busy="true" aria-label="Sampling blocks">
-      <EntityHead
-        kind="Minting reliability by tier"
-        icon={Scale}
-        title={<Skeleton w={260} h={46} radius={8} />}
-        aside={progress ? <span className="ex-mono ex-muted">{progress}</span> : undefined}
-        loading
-      />
-      <Section>
-        {TIERS.map((t) => (
-          <Skeleton key={t} h={56} radius={10} style={{ marginBottom: 20 }} />
-        ))}
+      <ViewHeader level={2} kind="Fairness" icon={Scale} title="Minting reliability by tier">
+        {progress ? <Chip mono>{progress}</Chip> : null}
+      </ViewHeader>
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat hero label="Against the eligible share" loading />
+        </StatGrid>
+      </div>
+      <Section title="Blocks minted by tier">
+        <Stack gap={6}>
+          {TIERS.map((t) => (
+            <Skeleton key={t} h={56} radius={10} />
+          ))}
+        </Stack>
       </Section>
     </div>
   );
 }
 
+/** One row per tier: the share of blocks it minted (the dot), its 99% range (the line) and its eligible share (the tick). */
 function Rows({ model }: { model: Model }) {
   return (
     <>
@@ -154,17 +161,17 @@ function Rows({ model }: { model: Model }) {
                   {r.label}
                 </span>
                 <span className="an-fair__nums">
-                  <strong className="ex-mono">{pct(r.producedShare)}</strong> of blocks
+                  <strong className="ui-mono">{pct(r.producedShare)}</strong> of blocks
                   <span> eligible share {pct(r.nodeShare)}</span>
                 </span>
                 {r.verdict === 'within' ? (
-                  <StatusChip status="ok" label="As expected" size="sm" />
+                  <StatusChip status="confirmed" label="As expected" size="sm" />
                 ) : r.verdict === 'above' ? (
                   <Chip size="sm" tone="accent" icon={ArrowUp}>
                     Mints more than its share
                   </Chip>
                 ) : (
-                  <StatusChip status="warn" label="Mints less than its share" size="sm" />
+                  <StatusChip status="at-risk" label="Mints less than its share" size="sm" />
                 )}
               </div>
               <div
@@ -189,7 +196,7 @@ function Rows({ model }: { model: Model }) {
         <span>{pct(model.scaleMax / 2)}</span>
         <span>{pct(model.scaleMax)}</span>
       </div>
-      <p className="an-note">
+      <p className="ex-caption">
         The dot is the share of blocks the tier minted and the line its 99% range; the white tick is its
         eligible share, its part of the confirmed nodes.
       </p>
@@ -201,57 +208,60 @@ function Method({ model }: { model: Model }) {
   const { sets } = model;
   const fb = sets.fallback;
   return (
-    <dl className="an-facts">
-      <div>
-        <dt>Sample</dt>
-        <dd>
-          The newest {formatInt(model.total)} blocks. {formatInt(model.known)} were minted by a node still on
-          the network and are compared; the other {formatInt(model.unknown)} (
-          {pct(model.total > 0 ? model.unknown / model.total : 0)}) are left out.
-        </dd>
-      </div>
-      <div>
-        <dt>Eligible share</dt>
-        <dd>
-          {sets.samples.length > 0 && sets.recordedFromMs !== null ? (
+    <KeyValue
+      align="start"
+      items={[
+        {
+          label: 'Sample',
+          value: (
             <>
-              For each block, a tier's chance is its confirmed nodes over all confirmed nodes at that time,
-              read from the server's recorded timeline at {formatInt(sets.samples.length)} moments across the
-              sample. The record begins {formatUtcDateTime(sets.recordedFromMs)} and covers{' '}
-              {formatInt(model.covered)} of the {formatInt(model.known)} blocks; older blocks use the set from
-              that moment.
+              The newest {formatInt(model.total)} blocks. {formatInt(model.known)} were minted by a node still
+              on the network and are compared; the other {formatInt(model.unknown)} (
+              {pct(model.total > 0 ? model.unknown / model.total : 0)}) are left out.
             </>
-          ) : (
+          ),
+        },
+        {
+          label: 'Eligible share',
+          value: (
             <>
-              The server has no recorded history to read yet, so today's confirmed nodes (
-              {formatInt(fb.cumulus)} Cumulus, {formatInt(fb.nimbus)} Nimbus, {formatInt(fb.stratus)} Stratus)
-              stand in for the whole sample.
+              {sets.samples.length > 0 && sets.recordedFromMs !== null ? (
+                <>
+                  For each block, a tier's chance is its confirmed nodes over all confirmed nodes at that
+                  time, read from the server's recorded timeline at {formatInt(sets.samples.length)} moments
+                  across the sample. The record begins {formatUtcDateTime(sets.recordedFromMs)} and covers{' '}
+                  {formatInt(model.covered)} of the {formatInt(model.known)} blocks; older blocks use the set
+                  from that moment.
+                </>
+              ) : (
+                <>
+                  The server has no recorded history to read yet, so today's confirmed nodes (
+                  {formatInt(fb.cumulus)} Cumulus, {formatInt(fb.nimbus)} Nimbus, {formatInt(fb.stratus)}{' '}
+                  Stratus) stand in for the whole sample.
+                </>
+              )}{' '}
+              Started, offline, expired and DoS nodes do not count.
             </>
-          )}{' '}
-          Started, offline, expired and DoS nodes do not count.
-        </dd>
-      </div>
-      <div>
-        <dt>Range</dt>
-        <dd>
-          The line on a row is the 99% Wilson interval of the share a tier minted. A tier is flagged when its
-          block count is more than {Z[99].toFixed(2)} standard deviations from the expected count; with three
-          tiers, one can sit outside a 95% range by luck alone.
-        </dd>
-      </div>
-      <div>
-        <dt>All tiers together</dt>
-        <dd className="ex-mono">
-          chi-square {model.chi2.toFixed(2)} on {model.df} degrees of freedom,{' '}
-          {model.p < 0.01 ? 'p < 0.01' : `p = ${model.p.toFixed(2)}`}
-        </dd>
-      </div>
-    </dl>
+          ),
+        },
+        {
+          label: 'Range',
+          value: `The line on a row is the 99% Wilson interval of the share a tier minted. A tier is flagged when its block count is more than ${Z[99].toFixed(2)} standard deviations from the expected count; with three tiers, one can sit outside a 95% range by luck alone.`,
+        },
+        {
+          label: 'All tiers together',
+          value: `chi-square ${model.chi2.toFixed(2)} on ${model.df} degrees of freedom, ${
+            model.p < 0.01 ? 'p < 0.01' : `p = ${model.p.toFixed(2)}`
+          }`,
+          mono: true,
+        },
+      ]}
+    />
   );
 }
 
 export function FairnessTab() {
-  const [size, setSize] = useState('3000');
+  const [size, setSize] = useState<'1000' | '3000' | '10000'>('3000');
   const sample = useProducerSample(Number(size));
   const { tally } = sample;
 
@@ -266,7 +276,9 @@ export function FairnessTab() {
   const model = useLast(fresh);
   const stale = model !== null && fresh === null;
 
-  if (sample.error && tally.known === 0) return <ErrorState title="Could not load recent blocks" />;
+  if (sample.error && tally.known === 0) {
+    return <ErrorState error={sample.error} title="Could not load recent blocks" />;
+  }
   if (!model) {
     if (ready) {
       return (
@@ -293,31 +305,21 @@ export function FairnessTab() {
 
   return (
     <div className="an-fairness" data-stale={stale || undefined} aria-busy={stale || undefined}>
-      <EntityHead
-        kind="Minting reliability by tier"
+      <ViewHeader
+        level={2}
+        kind="Fairness"
         icon={Scale}
-        status={headline ? 'pending' : 'ok'}
-        aside={
+        title="Minting reliability by tier"
+        subtitle={note || 'Every tier minted about as many blocks as its eligible share predicts.'}
+        freshness={
           stale ? (
-            <span className="ex-mono ex-muted" role="status">
+            <Chip mono role="status">
               {sample.done
                 ? 'reading node sets'
                 : `sampling ${formatInt(sample.loaded)} of ${formatInt(sample.target)} blocks`}
-            </span>
+            </Chip>
           ) : undefined
         }
-        title={
-          headline && dev ? (
-            <HeroNumber
-              whole={signedNumber(dev.rel)}
-              frac="%"
-              unit={`${headline.label} blocks against its eligible share, over ${formatInt(model.known)} blocks`}
-            />
-          ) : (
-            <HeroNumber whole="In range" unit={`over ${formatInt(model.known)} blocks`} />
-          )
-        }
-        sub={<span>{note || 'Every tier minted about as many blocks as its eligible share predicts.'}</span>}
       >
         {headline && dev ? (
           <Chip mono title="The range of the share the tier minted, as a difference from its eligible share">
@@ -325,14 +327,43 @@ export function FairnessTab() {
           </Chip>
         ) : null}
         <Chip mono>{formatInt(model.known)} blocks compared</Chip>
-      </EntityHead>
+      </ViewHeader>
 
-      <Section
-        title="Blocks minted by tier"
-        aside="against each tier's eligible share"
-        actions={<Segmented items={SIZES} value={size} onChange={setSize} label="Sample size" />}
-      >
-        <Rows model={model} />
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          {headline && dev ? (
+            <Stat
+              hero
+              tier={headline.key as TierName}
+              label={`${headline.label} blocks against its eligible share`}
+              value={signedNumber(dev.rel)}
+              unit="%"
+              caption={`over ${formatInt(model.known)} blocks`}
+            />
+          ) : (
+            <Stat
+              hero
+              label="Every tier against its eligible share"
+              value="In range"
+              caption={`over ${formatInt(model.known)} blocks`}
+            />
+          )}
+        </StatGrid>
+      </div>
+
+      <Section title="Blocks minted by tier">
+        <Stack gap={5}>
+          <Row>
+            <SegmentedControl
+              size="sm"
+              aria-label="Sample size"
+              options={SIZES}
+              value={size}
+              onChange={setSize}
+            />
+          </Row>
+          <Rows model={model} />
+        </Stack>
       </Section>
 
       <Section title="How blocks are chosen">

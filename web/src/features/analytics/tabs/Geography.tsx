@@ -1,79 +1,114 @@
 // Geography: how few countries it takes to hold more than half of the network. The headline is that
-// number (the Nakamoto coefficient for countries); the instrument is the ranked countries with the
-// rule drawn where the running share crosses half. A row filters the globe to that country.
+// number (the Nakamoto coefficient for countries); the instrument is the ranked countries, the ones
+// that together pass half drawn in colour. A row filters the globe to that country.
 
 import { Globe2 } from 'lucide-react';
 import { useMemo } from 'react';
+import type { GeoBreakdownDto } from '../../../api/generated/GeoBreakdownDto';
 import { useNetworkGeo } from '../../../api/queries';
 import { useSummary } from '../../../app/context';
 import { formatInt, formatPercent } from '../../../lib/format';
-import { Chip, EntityHead, ErrorState, Freshness, HeroNumber, Section, Skeleton } from '../../explorer/parts';
+import {
+  BarList,
+  type BarListItem,
+  Chip,
+  Freshness,
+  QueryBoundary,
+  Section,
+  Skeleton,
+  Stat,
+  StatGrid,
+  ViewHeader,
+} from '../../../ui';
 import { useGlobeFilter } from '../hooks/useGlobeFilter';
-import { leaders, nameList } from '../lib/concentration';
+import { BAR_LABEL_COLUMN, leaders, nameList, REST_COLOR, shareText } from '../lib/concentration';
 import { hhi, hhiBand } from '../lib/stats';
-import { RankedBars, type RankedItem } from '../viz/RankedBars';
 
 const BAND_WORD = { low: 'low', moderate: 'moderate', high: 'high' } as const;
+
+function GeographySkeleton() {
+  return (
+    <div>
+      <ViewHeader level={2} kind="Geography" icon={Globe2} title="Countries" />
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat hero label="Countries that hold more than half of all nodes" loading />
+        </StatGrid>
+      </div>
+      <Section title="Countries by node count">
+        <Skeleton h={300} radius={12} />
+      </Section>
+    </div>
+  );
+}
 
 export function GeographyTab() {
   const q = useNetworkGeo();
   const summary = useSummary();
   const filter = useGlobeFilter();
-  const geo = q.data;
+  const selected = filter.cc && !filter.cc.includes(',') ? filter.cc.toUpperCase() : null;
+  return (
+    <QueryBoundary query={q} skeleton={<GeographySkeleton />}>
+      {(geo) => (
+        <Countries
+          geo={geo}
+          total={summary?.node_count ?? null}
+          selected={selected}
+          onToggle={(cc) => filter.toggle('cc', cc)}
+          updatedAt={q.dataUpdatedAt || null}
+        />
+      )}
+    </QueryBoundary>
+  );
+}
 
+function Countries({
+  geo,
+  total: summaryTotal,
+  selected,
+  onToggle,
+  updatedAt,
+}: {
+  geo: GeoBreakdownDto;
+  total: number | null;
+  selected: string | null;
+  onToggle: (cc: string) => void;
+  updatedAt: number | null;
+}) {
   const model = useMemo(() => {
-    if (!geo) return null;
-    const items: RankedItem[] = geo.countries.map((c) => ({
-      key: c.key,
-      label: c.label,
-      sub: c.key,
-      count: c.count,
-      share: c.share,
-      title: `${c.label}: ${formatInt(c.count)} nodes, ${formatPercent(c.share)}. Click to show them on the globe.`,
-    }));
+    const items = geo.countries.map((c) => ({ key: c.key, label: c.label, count: c.count, share: c.share }));
     const located = items.reduce((s, i) => s + i.count, 0);
-    const total = summary?.node_count ?? located + geo.unlocated;
+    const total = summaryTotal ?? located + geo.unlocated;
     const lead = leaders(items, total);
-    return { items, total, lead, hhi: hhi([...items.map((i) => i.count), geo.unlocated]) };
-  }, [geo, summary?.node_count]);
-
-  if (q.isPending) {
-    return (
-      <div role="status" aria-busy="true" aria-label="Loading geography">
-        <EntityHead kind="Geography" icon={Globe2} title={<Skeleton w={200} h={46} radius={8} />} loading />
-        <Section>
-          <Skeleton h={360} radius={14} />
-        </Section>
-      </div>
-    );
-  }
-  if (!geo || !model) {
-    return <ErrorState title="Could not load geography" onRetry={() => void q.refetch()} />;
-  }
+    const inLead = new Set(lead.leaders.map((l) => l.key));
+    return { items, total, lead, inLead, hhi: hhi([...items.map((i) => i.count), geo.unlocated]) };
+  }, [geo, summaryTotal]);
   const { lead } = model;
   const band = hhiBand(model.hhi);
-  const selected = filter.cc && !filter.cc.includes(',') ? filter.cc.toUpperCase() : null;
+  const bars: BarListItem[] = model.items.map((c) => ({
+    id: c.key,
+    label: c.label,
+    title: `${c.label}: ${formatInt(c.count)} nodes, ${shareText(c.share)}. Choose it to show these nodes on the globe.`,
+    value: c.count,
+    display: formatInt(c.count),
+    detail: shareText(c.share),
+    color: lead.reached && !model.inLead.has(c.key) ? REST_COLOR : undefined,
+    onSelect: () => onToggle(c.key),
+  }));
 
   return (
     <>
-      <EntityHead
+      <ViewHeader
+        level={2}
         kind="Geography"
         icon={Globe2}
-        status="ok"
-        aside={<Freshness label="geography" at={q.dataUpdatedAt || null} cadenceMs={30_000} />}
-        title={
-          <HeroNumber
-            whole={lead.reached ? lead.n : `${lead.n}+`}
-            unit={lead.n === 1 ? 'country holds' : 'countries hold'}
-          />
+        title="Countries"
+        subtitle={
+          lead.reached
+            ? `${nameList(lead.leaders.map((l) => l.label))} together hold ${formatPercent(lead.share)} of all nodes.`
+            : 'The located countries together do not reach half of the nodes yet.'
         }
-        sub={
-          <span>
-            {lead.reached
-              ? `more than half of all nodes: ${nameList(lead.leaders.map((l) => l.label))} together hold ${formatPercent(lead.share)}.`
-              : 'The located countries together do not reach half of the nodes yet.'}
-          </span>
-        }
+        freshness={<Freshness label="geography" ts={updatedAt} cadenceMs={30_000} />}
       >
         <Chip mono>{formatInt(geo.countries.length)} countries</Chip>
         {geo.unlocated > 0 ? (
@@ -84,16 +119,33 @@ export function GeographyTab() {
         <Chip title="Herfindahl-Hirschman index of the country shares: 0 is spread evenly, 1 is one country">
           Concentration {BAND_WORD[band]}, HHI {model.hhi.toFixed(2)}
         </Chip>
-      </EntityHead>
+      </ViewHeader>
 
-      <Section title="Countries by node count" aside="choose one to show it on the globe">
-        <RankedBars
-          items={model.items}
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat
+            hero
+            label="Countries that hold more than half of all nodes"
+            value={lead.reached ? lead.n : `${lead.n}+`}
+            unit={lead.n === 1 ? 'country' : 'countries'}
+            caption={lead.reached ? `${formatPercent(lead.share)} of all nodes together` : undefined}
+          />
+        </StatGrid>
+      </div>
+
+      <Section title="Countries by node count">
+        <BarList
           label="Countries by node count"
-          nakamoto={lead.reached ? lead.n : undefined}
-          selected={selected}
-          onSelect={(key) => filter.toggle('cc', key)}
+          items={bars}
+          total={model.total}
+          selectedId={selected}
+          limit={12}
+          labelWidth={BAR_LABEL_COLUMN}
         />
+        <p className="ex-caption">
+          {lead.reached ? 'The coloured bars together hold more than half of all nodes. ' : ''}
+          Choose a country to show its nodes on the globe.
+        </p>
       </Section>
     </>
   );

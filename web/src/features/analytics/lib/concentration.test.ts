@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { leaders, nameList } from './concentration';
+import { leaders, nameList, shareText } from './concentration';
 
 const c = (label: string, count: number) => ({ key: label, label, count });
 
@@ -43,5 +43,21 @@ describe('nameList', () => {
   it('folds a long list into a count', () => {
     expect(nameList(['A', 'B', 'C', 'D', 'E'])).toBe('A, B and 3 others');
     expect(nameList(['A', 'B', 'C', 'D', 'E'], 4)).toBe('A, B, C and 2 others');
+  });
+});
+
+describe('shareText', () => {
+  it('shows one decimal for an ordinary share', () => {
+    expect(shareText(0.989)).toBe('98.9%');
+    expect(shareText(0.5)).toBe('50.0%');
+    expect(shareText(0.001)).toBe('0.1%');
+  });
+  it('never rounds a small share down to zero', () => {
+    expect(shareText(0.00045)).toBe('<0.1%');
+  });
+  it('keeps a true zero and rejects what is not a share', () => {
+    expect(shareText(0)).toBe('0.0%');
+    expect(shareText(Number.NaN)).toBe('');
+    expect(shareText(-1)).toBe('');
   });
 });

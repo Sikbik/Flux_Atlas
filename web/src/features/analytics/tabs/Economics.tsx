@@ -1,26 +1,25 @@
 // Economics: what a node earns. The headline is the best yearly yield on collateral across the tiers;
-// the instrument is one row per tier with the yield as a bar, FLUX per day, how often it is paid and
-// where the yield lands after the next reward cut. Everything here is an estimate and says so.
+// the instrument is one tile per tier with the yield, FLUX per day, how often it is paid and where the
+// yield lands after the next reward cut. Everything here is an estimate and says so.
 
 import { Coins } from 'lucide-react';
 import { useMemo } from 'react';
 import { useNetwork, usePrice, useTip } from '../../../app/context';
 import { formatInt, formatPercent, parseFlux } from '../../../lib/format';
-import { nextReductionHeight, payoutSchedule } from '../../explorer/lib/emission';
 import {
   Chip,
-  EntityHead,
   EntityLink,
-  HeroNumber,
-  RouteLink,
   Section,
   Skeleton,
-  TIER_LABEL,
-  TierGlyph,
+  Stat,
+  StatGrid,
   type TierName,
-} from '../../explorer/parts';
+  tierLabel,
+  ViewHeader,
+} from '../../../ui';
+import { nextReductionHeight, payoutSchedule } from '../../explorer/lib/emission';
+import { RouteLink } from '../../explorer/views/shared';
 import { formatCycle, type TierInput, tierYields } from '../lib/economics';
-import { Meter } from '../viz/Meter';
 
 const TIERS: readonly TierName[] = ['cumulus', 'nimbus', 'stratus'];
 
@@ -64,36 +63,30 @@ export function EconomicsTab() {
   if (!model) {
     return (
       <div role="status" aria-busy="true" aria-label="Loading economics">
-        <EntityHead kind="Economics" icon={Coins} title={<Skeleton w={240} h={46} radius={8} />} loading />
-        <Section>
-          <Skeleton h={300} radius={14} />
+        <ViewHeader level={2} kind="Economics" icon={Coins} title="What a node earns" />
+        <div className="ex-hero">
+          <StatGrid min={220}>
+            <Stat hero label="Best yearly yield on collateral" loading />
+          </StatGrid>
+        </div>
+        <Section title="By tier">
+          <Skeleton h={200} radius={12} />
         </Section>
       </div>
     );
   }
   const best = model.rows[0];
   if (!best) return null;
-  const maxApy = Math.max(...model.rows.map((r) => r.apy), 0.0001);
   const usd = price?.usd ?? null;
 
   return (
     <>
-      <EntityHead
+      <ViewHeader
+        level={2}
         kind="Economics"
         icon={Coins}
-        status="ok"
-        title={
-          <HeroNumber
-            whole={(best.apy * 100).toFixed(1)}
-            frac="%"
-            unit={`a year on a ${TIER_LABEL[best.tier]} node`}
-          />
-        }
-        sub={
-          <span>
-            the best estimated yield on collateral at today's rewards, before hosting costs and price changes.
-          </span>
-        }
+        title="What a node earns"
+        subtitle="The best estimated yield on collateral at today's rewards, before hosting costs and price changes."
       >
         {usd !== null ? (
           <Chip mono title="The current FLUX price; dollar figures below are estimates at this price">
@@ -105,45 +98,42 @@ export function EconomicsTab() {
             Next cut at block <EntityLink kind="block" value={model.cut} />, minus 10%
           </Chip>
         ) : null}
-      </EntityHead>
+      </ViewHeader>
 
-      <Section title="What a node earns" aside="estimates, per node">
-        <ul className="an-yields" aria-label="Estimated earnings by tier">
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat
+            hero
+            tier={best.tier}
+            label={`Yearly yield on a ${tierLabel(best.tier)} node`}
+            value={(best.apy * 100).toFixed(1)}
+            unit="% a year"
+            caption="an estimate, the best of the three tiers"
+          />
+        </StatGrid>
+      </div>
+
+      <Section title="By tier">
+        <StatGrid min={200}>
           {model.rows.map((y) => (
-            <li key={y.tier} className="an-yield" data-tier={y.tier}>
-              <div className="an-yield__head">
-                <span className="an-yield__tier">
-                  <TierGlyph tier={y.tier} size={16} />
-                  {TIER_LABEL[y.tier]}
-                </span>
-                <span className="an-yield__apy">
-                  {formatPercent(y.apy)}
-                  <small> a year</small>
-                </span>
-              </div>
-              <Meter
-                value={y.apy / maxApy}
-                marker={y.after ? y.after.apy / maxApy : undefined}
-                color={`var(--tier-${y.tier}-ink)`}
-                label={`${TIER_LABEL[y.tier]}: ${formatPercent(y.apy)} a year${y.after ? `, ${formatPercent(y.after.apy)} after the next cut` : ''}`}
-              />
-              <div className="an-yield__facts">
-                <span>
-                  <strong className="ex-mono">{perDay(y.perDay)}</strong> FLUX a day
-                  {usd !== null ? <> (about ${(y.perDay * usd).toFixed(2)})</> : null}
-                </span>
-                <span>on {formatInt(y.collateral)} FLUX locked</span>
-                <span>paid about every {formatCycle(y.cycleHours)}</span>
-                {y.after ? (
-                  <span>
-                    <strong className="ex-mono">{formatPercent(y.after.apy)}</strong> after the next cut
-                  </span>
-                ) : null}
-              </div>
-            </li>
+            <Stat
+              key={y.tier}
+              tier={y.tier}
+              label={tierLabel(y.tier)}
+              value={formatPercent(y.apy)}
+              unit="a year"
+              caption={
+                <>
+                  {perDay(y.perDay)} FLUX a day
+                  {usd !== null ? ` (about $${(y.perDay * usd).toFixed(2)})` : ''}, paid about every{' '}
+                  {formatCycle(y.cycleHours)}, on {formatInt(y.collateral)} FLUX locked
+                  {y.after ? `. ${formatPercent(y.after.apy)} after the next cut.` : '.'}
+                </>
+              }
+            />
           ))}
-        </ul>
-        <p className="an-note">
+        </StatGrid>
+        <p className="ex-caption">
           Each block pays one node per tier. An estimate shares a tier's payouts over its payment cycle, so it
           moves with the number of nodes. <RouteLink to="/supply">See the emission schedule</RouteLink>.
         </p>

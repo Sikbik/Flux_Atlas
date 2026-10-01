@@ -4,124 +4,151 @@
 
 import { Cpu } from 'lucide-react';
 import { useMemo } from 'react';
+import type { CapacityDto } from '../../../api/generated/CapacityDto';
 import { useNetworkCapacity } from '../../../api/queries';
 import { formatInt, formatPercent } from '../../../lib/format';
 import {
+  Card,
   Chip,
-  EntityHead,
-  ErrorState,
   Freshness,
-  HeroNumber,
+  Meter,
+  QueryBoundary,
+  Row,
   Section,
+  ShareBar,
   Skeleton,
-  TIER_LABEL,
-} from '../../explorer/parts';
+  Stack,
+  Stat,
+  StatGrid,
+  tierLabel,
+  ViewHeader,
+} from '../../../ui';
 import { useGlobeFilter } from '../hooks/useGlobeFilter';
 import { capacityRows, formatCapacity, type ResourceRow } from '../lib/capacity';
-import { Meter } from '../viz/Meter';
 
-function CapacityRow({
-  row,
-  tier,
-  onTier,
-}: {
-  row: ResourceRow;
-  tier: string | null;
-  onTier: (tier: string) => void;
-}) {
+function CapacityRow({ row }: { row: ResourceRow }) {
   return (
-    <li className="an-cap">
-      <div className="an-cap__top">
-        <span className="an-cap__name">{row.label}</span>
-        <b className="an-cap__total">{formatCapacity(row.key, row.total)}</b>
+    <Card padding="md">
+      <Stack gap={4}>
+        <Row justify="between" wrap={false}>
+          <span>{row.label}</span>
+          <strong className="ui-mono">{formatCapacity(row.key, row.total)}</strong>
+        </Row>
+        <ShareBar
+          label={`${row.label} capacity by tier`}
+          legend="inline"
+          show="both"
+          format={(v) => formatCapacity(row.key, v)}
+          segments={row.tiers.map((p) => ({
+            id: p.tier,
+            label: tierLabel(p.tier),
+            value: p.value,
+            tier: p.tier,
+          }))}
+        />
+        <Meter
+          label={`${row.label} in use by running apps: ${formatPercent(row.lockedShare)}; requested by app specs: ${formatPercent(row.requestedShare)}`}
+          value={row.lockedShare}
+          marker={row.requestedShare}
+          markerLabel="Asked for by app specs"
+        />
+        <p className="ex-caption">
+          <strong className="ui-mono">{formatPercent(row.lockedShare)}</strong> in use by running apps,{' '}
+          <strong className="ui-mono">{formatPercent(row.requestedShare)}</strong> asked for by app specs.
+        </p>
+      </Stack>
+    </Card>
+  );
+}
+
+function CapacitySkeleton() {
+  return (
+    <div>
+      <ViewHeader level={2} kind="Capacity" icon={Cpu} title="What the nodes offer" />
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat hero label="CPU the network offers" loading />
+        </StatGrid>
       </div>
-      <fieldset className="an-cap__tiers">
-        <legend className="ex-sr">{row.label} capacity by tier</legend>
-        {row.tiers.map((p) => (
-          <button
-            key={p.tier}
-            type="button"
-            className="an-cap__seg"
-            data-tier={p.tier}
-            data-on={tier === p.tier || undefined}
-            style={{ flexGrow: Math.max(p.share, 0.004) }}
-            aria-pressed={tier === p.tier}
-            aria-label={`${TIER_LABEL[p.tier]}: ${formatCapacity(row.key, p.value)}, ${formatPercent(p.share)} of the ${row.label.toLowerCase()}. Show ${TIER_LABEL[p.tier]} nodes on the globe.`}
-            title={`${TIER_LABEL[p.tier]}: ${formatCapacity(row.key, p.value)} (${formatPercent(p.share)})`}
-            onClick={() => onTier(p.tier)}
-          />
-        ))}
-      </fieldset>
-      <Meter
-        value={row.lockedShare}
-        marker={row.requestedShare}
-        label={`${row.label} in use by running apps: ${formatPercent(row.lockedShare)}; requested by app specs: ${formatPercent(row.requestedShare)}`}
-      />
-      <div className="an-cap__legend">
-        <span>
-          <strong className="ex-mono">{formatPercent(row.lockedShare)}</strong> in use by running apps
-        </span>
-        <span>
-          <strong className="ex-mono">{formatPercent(row.requestedShare)}</strong> asked for by app specs
-        </span>
-      </div>
-    </li>
+      <Section title="Capacity and use">
+        <Skeleton h={300} radius={12} />
+      </Section>
+    </div>
   );
 }
 
 export function CapacityTab() {
   const q = useNetworkCapacity();
   const filter = useGlobeFilter();
-  const rows = useMemo(() => (q.data ? capacityRows(q.data) : null), [q.data]);
+  return (
+    <QueryBoundary query={q} skeleton={<CapacitySkeleton />}>
+      {(data) => (
+        <Capacity
+          data={data}
+          tier={filter.tier}
+          onTier={(t) => filter.toggle('tier', t)}
+          updatedAt={q.dataUpdatedAt || null}
+        />
+      )}
+    </QueryBoundary>
+  );
+}
 
-  if (q.isPending) {
-    return (
-      <div role="status" aria-busy="true" aria-label="Loading capacity">
-        <EntityHead kind="Capacity" icon={Cpu} title={<Skeleton w={260} h={46} radius={8} />} loading />
-        <Section>
-          <Skeleton h={300} radius={14} />
-        </Section>
-      </div>
-    );
-  }
-  const data = q.data;
-  if (!data || !rows) return <ErrorState title="Could not load capacity" onRetry={() => void q.refetch()} />;
+function Capacity({
+  data,
+  tier,
+  onTier,
+  updatedAt,
+}: {
+  data: CapacityDto;
+  tier: string | null;
+  onTier: (tier: string) => void;
+  updatedAt: number | null;
+}) {
+  const rows = useMemo(() => capacityRows(data), [data]);
   const [cpu, ram, ssd] = rows;
   if (!cpu || !ram || !ssd) return null;
-
   return (
     <>
-      <EntityHead
+      <ViewHeader
+        level={2}
         kind="Capacity"
         icon={Cpu}
-        status="ok"
-        aside={<Freshness label="capacity" at={q.dataUpdatedAt || null} cadenceMs={30_000} />}
-        title={<HeroNumber whole={formatInt(Math.round(cpu.total))} unit="cores" />}
-        sub={
-          <span>
-            {formatCapacity('ram', ram.total)} of memory and {formatCapacity('ssd', ssd.total)} of storage
-            across {formatInt(data.total.nodes)} benchmarked nodes.
-          </span>
-        }
-      >
-        <Chip title="Share of all cores that running apps hold">
-          {formatPercent(cpu.lockedShare)} of cores in use
-        </Chip>
-      </EntityHead>
+        title="What the nodes offer"
+        subtitle={`${formatCapacity('ram', ram.total)} of memory and ${formatCapacity('ssd', ssd.total)} of storage across ${formatInt(data.total.nodes)} benchmarked nodes.`}
+        freshness={<Freshness label="capacity" ts={updatedAt} cadenceMs={30_000} />}
+      />
 
-      <Section
-        title="What the network offers and what apps use"
-        aside="choose a tier to show it on the globe"
-      >
-        <ul className="an-caps" aria-label="Capacity by resource">
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat
+            hero
+            label="CPU the network offers"
+            value={formatInt(Math.round(cpu.total))}
+            unit="cores"
+            caption={`${formatPercent(cpu.lockedShare)} of cores in use by running apps`}
+          />
+        </StatGrid>
+      </div>
+
+      <Section title="Capacity and use">
+        <Stack gap={5}>
           {rows.map((r) => (
-            <CapacityRow key={r.key} row={r} tier={filter.tier} onTier={(t) => filter.toggle('tier', t)} />
+            <CapacityRow key={r.key} row={r} />
           ))}
-        </ul>
-        <p className="an-note">
-          Bars show where the capacity sits, split by tier. The line under each is what running apps hold; the
-          tick is what app specs request at their target instance counts.
-        </p>
+          <p className="ex-caption">
+            Each bar shows where the capacity sits, split by tier. The line under it is what running apps
+            hold; the tick is what app specs request at their target instance counts.
+          </p>
+          <Row gap={3} wrap role="group" aria-label="Show a tier on the globe">
+            <span className="ex-muted">Show on the globe</span>
+            {(['cumulus', 'nimbus', 'stratus'] as const).map((t) => (
+              <Chip key={t} selected={tier === t} onClick={() => onTier(t)}>
+                {tierLabel(t)}
+              </Chip>
+            ))}
+          </Row>
+        </Stack>
       </Section>
     </>
   );

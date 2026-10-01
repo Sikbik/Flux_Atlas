@@ -7,8 +7,17 @@ import { Boxes } from 'lucide-react';
 import { useMemo } from 'react';
 import { useNetwork } from '../../../app/context';
 import { formatInt } from '../../../lib/format';
-import { Chip, EntityHead, HeroNumber, LiveBadge, Section, Skeleton } from '../../explorer/parts';
-import { RankedBars, type RankedItem } from '../viz/RankedBars';
+import {
+  BarList,
+  type BarListItem,
+  Section,
+  Skeleton,
+  Stat,
+  StatGrid,
+  StatusChip,
+  ViewHeader,
+} from '../../../ui';
+import { BAR_LABEL_COLUMN } from '../lib/concentration';
 
 export function ArchaeologyTab() {
   const apps = useNetwork((s) => s.appList());
@@ -23,25 +32,29 @@ export function ArchaeologyTab() {
       by.set(a.spec_version, e);
     }
     const versions = [...by.entries()].sort((a, b) => b[0] - a[0]);
-    const total = apps.length;
-    const items: RankedItem[] = versions.map(([v, e]) => ({
-      key: String(v),
+    const items: BarListItem[] = versions.map(([v, e]) => ({
+      id: String(v),
       label: `Version ${v}`,
-      sub: e.enterprise > 0 ? `${formatInt(e.enterprise)} encrypted` : undefined,
-      count: e.apps,
-      share: total > 0 ? e.apps / total : 0,
       title: `Specification version ${v}: ${formatInt(e.apps)} apps${e.enterprise > 0 ? `, ${formatInt(e.enterprise)} with a private compose file` : ''}, ${formatInt(e.instances)} instances wanted`,
+      value: e.apps,
+      display: formatInt(e.apps),
+      detail: e.enterprise > 0 ? `${formatInt(e.enterprise)} encrypted` : undefined,
     }));
     const latest = versions[0];
-    return { items, total, latest: latest ? { version: latest[0], ...latest[1] } : null };
+    return { items, total: apps.length, latest: latest ? { version: latest[0], ...latest[1] } : null };
   }, [apps]);
 
   if (apps.length === 0) {
     return (
       <div role="status" aria-busy="true" aria-label="Loading the app registry">
-        <EntityHead kind="Archaeology" icon={Boxes} title={<Skeleton w={260} h={46} radius={8} />} loading />
-        <Section>
-          <Skeleton h={260} radius={14} />
+        <ViewHeader level={2} kind="Archaeology" icon={Boxes} title="App specifications" />
+        <div className="ex-hero">
+          <StatGrid min={220}>
+            <Stat hero label="Newest-generation apps that keep their compose file private" loading />
+          </StatGrid>
+        </div>
+        <Section title="Apps by specification version">
+          <Skeleton h={220} radius={12} />
         </Section>
       </div>
     );
@@ -51,40 +64,40 @@ export function ArchaeologyTab() {
 
   return (
     <>
-      <EntityHead
+      <ViewHeader
+        level={2}
         kind="Archaeology"
         icon={Boxes}
-        status="ok"
-        aside={<LiveBadge label="Live registry" />}
-        title={
-          latest ? (
-            <HeroNumber
-              whole={(shareEnterprise * 100).toFixed(0)}
-              frac="%"
-              unit={`of version ${latest.version} apps are encrypted`}
-            />
-          ) : (
-            <HeroNumber whole="No apps" />
-          )
-        }
-        sub={
-          latest ? (
-            <span>
-              {formatInt(latest.enterprise)} of {formatInt(latest.apps)} keep their compose file private; the
-              network shows only their instances, expiry and owner.
-            </span>
-          ) : undefined
-        }
-      >
-        <Chip mono>{formatInt(model.total)} apps</Chip>
-        <Chip>{formatInt(model.items.length)} spec versions</Chip>
-      </EntityHead>
+        title="App specifications"
+        subtitle={`${formatInt(model.total)} apps across ${formatInt(model.items.length)} specification versions, each app at the version it was last published with.`}
+        freshness={<StatusChip status="live" label="Live registry" />}
+      />
 
-      <Section title="Apps by specification version" aside="newest first">
-        <RankedBars items={model.items} label="Apps by specification version" initial={8} />
-        <p className="an-note">
-          The version is the one each app was last published with. An app's own history of registrations,
-          renewals and updates is on its History tab.
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat
+            hero
+            label={latest ? `Version ${latest.version} apps that are encrypted` : 'Apps'}
+            value={latest ? (shareEnterprise * 100).toFixed(0) : null}
+            unit="%"
+            caption={
+              latest
+                ? `${formatInt(latest.enterprise)} of ${formatInt(latest.apps)} keep their compose file private; the network shows only their instances, expiry and owner`
+                : undefined
+            }
+          />
+        </StatGrid>
+      </div>
+
+      <Section title="Apps by specification version">
+        <BarList
+          label="Apps by specification version"
+          items={model.items}
+          limit={8}
+          labelWidth={BAR_LABEL_COLUMN}
+        />
+        <p className="ex-caption">
+          An app's own history of registrations, renewals and updates is on its History tab.
         </p>
       </Section>
     </>

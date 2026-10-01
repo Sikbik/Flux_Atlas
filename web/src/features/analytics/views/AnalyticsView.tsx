@@ -4,7 +4,8 @@
 
 import { useNavigate } from '@tanstack/react-router';
 import { ANALYTICS_TABS, type AnalyticsTab } from '../../../app/search';
-import { TabPanel, Tabs } from '../../explorer/parts';
+import { TabPanel, Tabs } from '../../../ui';
+import '../../explorer/views/view.css';
 import { useAggregateRefresh } from '../hooks/useAggregates';
 import { ArchaeologyTab } from '../tabs/Archaeology';
 import { CapacityTab } from '../tabs/Capacity';
@@ -59,22 +60,23 @@ export function AnalyticsView({ tab }: { tab: AnalyticsTab }) {
   useAggregateRefresh();
   const navigate = useNavigate();
   return (
-    <div className="ex-root an-root" data-tab={tab}>
-      <Tabs
-        className="an-tabs"
-        items={ITEMS}
-        value={tab}
-        label="Analytics sections"
-        id={BASE}
-        onChange={(next) =>
-          void navigate({
-            to: '/analytics/$tab',
-            params: { tab: next },
-            search: (prev: Record<string, unknown>) => prev,
-          } as never)
-        }
-      />
-      <TabPanel tabsId={BASE} id={tab}>
+    <div data-tab={tab}>
+      <div className="ex-tabs">
+        <Tabs
+          items={ITEMS}
+          value={tab}
+          aria-label="Analytics sections"
+          id={BASE}
+          onChange={(next) =>
+            void navigate({
+              to: '/analytics/$tab',
+              params: { tab: next },
+              search: (prev: Record<string, unknown>) => prev,
+            } as never)
+          }
+        />
+      </div>
+      <TabPanel tabsId={BASE} id={tab} value={tab}>
         <Body tab={tab} />
       </TabPanel>
     </div>
