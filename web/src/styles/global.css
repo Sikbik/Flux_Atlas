@@ -1,5 +1,7 @@
-/* Neutral base styles driven entirely by the design tokens (tokens.css). The designed shell and
-   windows replace the placeholder surfaces; this file keeps only resets and utilities. */
+/* Base styles driven entirely by the design tokens (tokens.css): resets, focus, scrollbars and the small
+   utilities every surface shares. The shell frame (shell/frame/frame.css), the windows
+   (shell/wm/wm.css) and the live chrome (features/chrome) carry their own styles; the placeholder
+   classes below (.panel, .kv, .table, ...) stay until the feature views replace them. */
 
 *,
 *::before,
@@ -42,9 +44,22 @@ h2 {
   margin-block: var(--space-6) var(--space-4);
 }
 
+/* Focus is never removed and never colour alone: a 2 px ring in Flux blue shade 2. Controls in the
+   frame draw the two-step ring of --focus-ring (a surface gap, then the accent) instead. */
 :focus-visible {
-  outline: 2px solid var(--focus-ring, var(--accent-400));
+  outline: 2px solid var(--accent-400);
   outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Thin scrollbars on the dark surfaces. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
 }
 
 ::selection {
@@ -52,6 +67,32 @@ h2 {
 }
 
 /* Utilities */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A key cap: one per key ("ctrl" "K"), never "Ctrl+K" as one string. */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  color: var(--text-2);
+  background: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+}
+
 .tabular {
   font-variant-numeric: tabular-nums;
 }
