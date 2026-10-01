@@ -6,10 +6,10 @@ import { useRuntime } from '../../../app/context';
 import { formatAgo, formatInt, formatPercent, formatUtcDateTime } from '../../../lib/format';
 import { Meter, Skeleton, Timeline, type TimelineItem } from '../../../ui';
 import { spanText } from '../derive/eta';
-import { CHECKIN, checkinGauge } from '../derive/expiry';
+import { CHECKIN, checkinGauge, START_EXPIRY_BLOCKS } from '../derive/expiry';
 import { heartbeatTicks, ipHistory, uptimeCells } from '../derive/uptime';
 import { useFirstIngestMs } from '../sources/hooks';
-import { useSince } from './checkin';
+import { useSince, useStartLeft } from './checkin';
 import { useNodeCtx } from './context';
 import { SubHead } from './SubHead';
 
@@ -20,14 +20,39 @@ function CheckinGauge() {
   const { node, live, detail } = useNodeCtx();
   const since = useSince();
   const g = checkinGauge(since);
+  const left = useStartLeft();
   const status = live?.status ?? node?.status ?? 'unknown';
 
   if (status === 'started') {
+    if (left === null) {
+      return (
+        <p className="ix-cap">
+          A start transaction is in the chain. The node joins at its first confirmation; an unconfirmed start
+          expires after {START_EXPIRY_BLOCKS} blocks.
+        </p>
+      );
+    }
     return (
-      <p className="ix-cap">
-        A start transaction is in the chain. The node joins at its first confirmation; an unconfirmed start
-        expires after 240 blocks.
-      </p>
+      <div className="ix-stack">
+        <Meter
+          label="Waiting for confirmation"
+          showLabel
+          showValue
+          value={START_EXPIRY_BLOCKS - left}
+          min={0}
+          max={START_EXPIRY_BLOCKS}
+          size="lg"
+          zones={[{ from: 0, to: START_EXPIRY_BLOCKS, tone: 'accent' }]}
+          startLabel="0"
+          endLabel={`${START_EXPIRY_BLOCKS} expires`}
+          format={(v) => `${formatInt(Math.round(v))} blocks (${spanText(v * 30_000)})`}
+        />
+        <p className="ix-cap" data-tone={left === 0 ? 'crit' : undefined}>
+          {left === 0
+            ? `No confirmation within ${START_EXPIRY_BLOCKS} blocks: the start expires unless one is already on its way.`
+            : `A start transaction is in the chain. The node joins at its first confirmation; it has ${formatInt(left)} blocks (${spanText(left * 30_000)}) left before an unconfirmed start expires.`}
+        </p>
+      </div>
     );
   }
   const note =

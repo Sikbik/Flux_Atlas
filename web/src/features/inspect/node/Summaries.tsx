@@ -10,7 +10,7 @@ import { spanText } from '../derive/eta';
 import { checkinGauge } from '../derive/expiry';
 import { latestVersion, versionStanding } from '../derive/versions';
 import { useHostNodes } from '../sources/host';
-import { useSince } from './checkin';
+import { useSince, useStartLeft } from './checkin';
 import { useNodeCtx } from './context';
 
 /** A summary line: an optional status dot, then the words. */
@@ -52,11 +52,18 @@ export function PaymentsSummary() {
 export function HealthSummary() {
   const { node, live } = useNodeCtx();
   const since = useSince();
+  const left = useStartLeft();
   const status = live?.status ?? node?.status ?? 'unknown';
   const g = checkinGauge(since);
 
   if (status === 'dos') return <Sum tone="crit">DoS listed, skipped by the queue</Sum>;
-  if (status === 'started') return <Sum tone="pending">Waiting for its first confirmation</Sum>;
+  if (status === 'started') {
+    return (
+      <Sum tone="pending">
+        Waiting for its first confirmation{left !== null ? `, ${formatInt(left)} blocks left` : ''}
+      </Sum>
+    );
+  }
   if (since === null) return <Sum tone="off">Last check-in not known yet</Sum>;
   if (g.state === 'expired') {
     return <Sum tone="crit">Past expiry: no check-in for {formatInt(since)} blocks</Sum>;
