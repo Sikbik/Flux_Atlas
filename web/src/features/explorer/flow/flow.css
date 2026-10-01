@@ -1,0 +1,386 @@
+/* The transaction flow: cards, ribbons, the dashed fee line, the pending sweep. */
+
+.ex-flow {
+  position: relative;
+  min-width: 0;
+}
+
+.ex-flow__stage {
+  position: relative;
+}
+
+.ex-flow__svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.ex-flow__ribbons {
+  animation: ex-flow-reveal 900ms var(--ease-out-expo) both;
+}
+
+@keyframes ex-flow-reveal {
+  from {
+    clip-path: inset(-20px 100% -20px 0);
+  }
+  to {
+    clip-path: inset(-20px -20px -20px 0);
+  }
+}
+
+.ex-flow__ribbon {
+  stroke-width: 0;
+  fill-opacity: 0.62;
+  stroke-opacity: 0;
+  transition:
+    fill-opacity var(--dur-base) var(--ease-out),
+    stroke-opacity var(--dur-base) var(--ease-out);
+  cursor: default;
+}
+
+.ex-flow__ribbon[data-change] {
+  fill-opacity: 0.34;
+}
+
+.ex-flow[data-hot] .ex-flow__ribbon {
+  fill-opacity: 0.07;
+}
+
+.ex-flow[data-hot] .ex-flow__ribbon[data-on] {
+  fill-opacity: 0.85;
+}
+
+/* Pending: outlined, marching, not yet filled. */
+.ex-flow[data-pending] .ex-flow__ribbon {
+  fill-opacity: 0.09;
+  stroke-width: 1;
+  stroke-opacity: 0.8;
+  stroke-dasharray: 5 6;
+  animation: ex-march 1.6s linear infinite;
+}
+
+@keyframes ex-march {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+
+.ex-flow__sweep {
+  opacity: 0;
+}
+
+.ex-flow[data-flash] .ex-flow__sweep {
+  animation: ex-sweep 1.3s var(--ease-in-out) both;
+}
+
+@keyframes ex-sweep {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(var(--sw, 600px));
+    opacity: 0;
+  }
+}
+
+.ex-flow__feeline {
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+@keyframes ex-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- cards ------------------------------------------------------------------------------------- */
+
+.ex-fcard {
+  --ex-edge: var(--accent-600);
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+  padding: var(--space-4) var(--space-5) var(--space-4) calc(var(--space-5) + 2px);
+  border-radius: var(--r-md);
+  background: var(--ink-1);
+  box-shadow:
+    inset 0 0 0 1px var(--line-1),
+    var(--shadow-inset-hi);
+  overflow: hidden;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+  animation: ex-rise var(--dur-enter) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+.ex-flow__stage > .ex-fcard {
+  position: absolute;
+}
+
+.ex-fcard::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: var(--space-4);
+  bottom: var(--space-4);
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ex-edge);
+  opacity: 0.85;
+}
+
+.ex-fcard[data-role="coinbase"] {
+  --ex-edge: var(--hot);
+}
+
+.ex-fcard[data-role="recipient"] {
+  --ex-edge: var(--accent-300);
+}
+
+.ex-fcard[data-role="change"] {
+  --ex-edge: var(--text-4);
+}
+
+.ex-fcard[data-role="devfund"] {
+  --ex-edge: var(--accent-300);
+}
+
+.ex-fcard[data-role="tier"] {
+  --ex-edge: var(--tier);
+}
+
+.ex-fcard[data-role="tier"]::before {
+  box-shadow: 0 0 10px 0 color-mix(in oklab, var(--tier) 70%, transparent);
+}
+
+.ex-fcard[data-dim] {
+  opacity: 0.4;
+}
+
+.ex-fcard[data-hot] {
+  background: var(--ink-2);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--ex-edge) 55%, transparent),
+    var(--shadow-inset-hi);
+}
+
+.ex-fcard__role {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1.2 var(--font-sans);
+  white-space: nowrap;
+}
+
+.ex-fcard__role > span:not(.ex-fcard__sub):not(.ex-fcard__share) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ex-fcard__role svg:not(.ui-tier-glyph) {
+  flex: none;
+  color: var(--accent-300);
+}
+
+.ex-fcard__sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font-weight: var(--fw-regular);
+}
+
+.ex-fcard__share {
+  margin-left: auto;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+}
+
+.ex-fcard__addr {
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+.ex-fcard__addr[data-muted] {
+  color: var(--text-3);
+}
+
+.ex-fcard__amt {
+  font-size: var(--fs-sm);
+  color: var(--text-1);
+}
+
+.ex-fcard__foot {
+  min-height: 0;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 1.3;
+}
+
+.ex-fcard__foot:empty {
+  display: none;
+}
+
+.ex-fcard__unspent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ex-fcard__unspent > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--status-ok);
+}
+
+.ex-fcard--fee {
+  --ex-edge: var(--text-4);
+  position: static;
+  height: 100%;
+  align-content: center;
+  background: transparent;
+  box-shadow: none;
+  outline: 1px dashed var(--line-3);
+  outline-offset: -1px;
+  animation: none;
+}
+
+.ex-fcard--fee::before {
+  display: none;
+}
+
+.ex-flow__feeslot {
+  position: absolute;
+}
+
+/* ---- data chips, notes ------------------------------------------------------------------------- */
+
+.ex-flow__data {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.ex-flow__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.ex-flow__chip svg:not(.ui-copy svg) {
+  flex: none;
+  color: var(--accent-400);
+}
+
+.ex-flow__chip code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-mono);
+}
+
+.ex-flow__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: var(--space-5) 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* ---- narrow: a proportional list --------------------------------------------------------------- */
+
+.ex-flow__list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ex-flow__col {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ex-flow__arrow {
+  height: 22px;
+  justify-self: center;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--accent-500));
+  position: relative;
+}
+
+.ex-flow__arrow::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  border-right: 1.5px solid var(--accent-500);
+  border-bottom: 1.5px solid var(--accent-500);
+  transform: translateY(-1px) rotate(45deg) scale(0.8);
+}
+
+.ex-flow__list .ex-fcard::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--space-5) + 2px);
+  right: var(--space-5);
+  bottom: var(--space-3);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ex-edge);
+  opacity: 0.6;
+  transform-origin: left center;
+  transform: scaleX(var(--share, 0));
+}
+
+.ex-flow__list .ex-fcard {
+  padding-bottom: var(--space-6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ex-flow__ribbons,
+  :root:not([data-motion="full"]) .ex-fcard,
+  :root:not([data-motion="full"]) .ex-flow[data-pending] .ex-flow__ribbon,
+  :root:not([data-motion="full"]) .ex-flow[data-flash] .ex-flow__sweep {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-flow__ribbons,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-fcard,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-flow[data-pending] .ex-flow__ribbon,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-flow[data-flash] .ex-flow__sweep {
+  animation: none;
+}

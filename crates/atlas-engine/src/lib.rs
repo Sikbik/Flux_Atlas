@@ -28,7 +28,7 @@ pub mod timemachine;
 #[cfg(test)]
 mod engine_tests;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -38,9 +38,10 @@ use atlas_core::api::{
     AppIndexEntry, BlockLite, JobFreshness, NetworkSummary, ServerInfo, TierStats, TxLite,
 };
 use atlas_core::live::{LiveBody, LiveMsg, NextPayeeDto};
-use atlas_core::{Amount, NodeId, NodeRecord, now_ms};
+use atlas_core::{Amount, Hash32, NodeId, NodeRecord, now_ms};
 use atlas_flux::Clients;
 use atlas_flux::insight_socket::SocketConfig;
+use atlas_flux::models::daemon::DaemonBlock;
 use atlas_store::{RetentionPolicy, Store};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
@@ -281,7 +282,12 @@ impl Published {
             bodies: PrebuiltBodies::default(),
             tiers: tiers.into(),
             freshness: Arc::from(Vec::new()),
-            next_payees: Arc::from(Vec::new()),
+            next_payees: st
+                .next_payees
+                .iter()
+                .map(derive::block::payee_dto)
+                .collect::<Vec<_>>()
+                .into(),
             mesh_edge_count: st.mesh.edge_count() as u32,
             mempool: st.mempool_list().into(),
             attributions: geoip::attributions(st).into(),
@@ -318,7 +324,13 @@ struct Inner {
     watch_tx: watch::Sender<WatchSet>,
     shutdown_tx: watch::Sender<bool>,
     obs_tx: std::sync::Mutex<Option<mpsc::Sender<Obs>>>,
+    /// The newest blocks as the BlockDecoder fetched them (`getblock` verbosity 2), so the block
+    /// detail of a recent block is served without a second upstream call.
+    raw_blocks: std::sync::Mutex<VecDeque<Arc<DaemonBlock>>>,
 }
+
+/// Raw blocks kept for [`EngineHandle::recent_raw_block`] (about 16 minutes of chain).
+const RAW_BLOCKS: usize = 32;
 
 /// The engine. Construct with [`Engine::start`].
 pub struct Engine;
@@ -379,6 +391,7 @@ impl Engine {
             watch_tx,
             shutdown_tx,
             obs_tx: std::sync::Mutex::new(Some(obs_tx.clone())),
+            raw_blocks: std::sync::Mutex::new(VecDeque::with_capacity(RAW_BLOCKS)),
             server,
             store: store.clone(),
             clients: clients.clone(),
@@ -462,23 +475,11 @@ fn restore(store: &Store) -> NetworkState {
         nodes: state::NodeTable::restore(&ids, records, next),
         ..NetworkState::default()
     };
-    st.queue.rebuild(
-        st.nodes
-            .listed()
-            .map(|e| &e.rec)
-            .filter(|r| r.rank.is_some()),
-    );
-    // Queue members without a stored rank go by their heights.
-    let extra: Vec<(NodeId, atlas_core::Tier, state::queue::QKey)> = st
-        .nodes
-        .listed()
-        .filter(|e| e.rec.status == atlas_core::NodeStatus::Confirmed && e.rec.rank.is_none())
-        .map(|e| (e.rec.id, e.rec.tier, state::queue::key_of(&e.rec, u32::MAX)))
-        .collect();
-    for (id, tier, key) in extra {
-        st.queue.upsert(id, tier, key);
-    }
+    // The queue key is a function of the record (fluxd's order), so the restored queue is exact.
+    st.queue.rebuild(st.nodes.listed().map(|e| &e.rec));
     st.apply_ranks();
+    // The restored queue heads are the next block's payees: the first bootstrap carries them.
+    st.next_payees = derive::block::next_payees(&st);
     st.apps = state::apps::AppTable::restore(
         ok("apps", store.apps()),
         ok("pending app messages", store.pending_app_messages()),
@@ -505,6 +506,21 @@ fn restore(store: &Store) -> NetworkState {
     }
     st.recent = recent.into();
     st.live_floor = ok("live floor", store.meta_u64(meta::LIVE_FLOOR)).map(|v| v as u32);
+    // A store that has been reconciled before holds a block-exact model at its tip: the blocks
+    // replayed after a restart derive expiry and DOS like live blocks, so nodes that expired
+    // during the downtime leave the queue at their real height instead of at the first
+    // reconcile (which would shift every rank behind them for clients).
+    let reconciled = ok(
+        "first ingest",
+        store.meta_u64(atlas_store::meta_keys::FIRST_INGEST_MS),
+    )
+    .is_some();
+    st.expiry_armed = reconciled
+        && st.tip.is_some()
+        && st
+            .nodes
+            .listed()
+            .any(|e| e.rec.status == atlas_core::NodeStatus::Confirmed);
     st.blocks_dirty = true;
     st.summary_dirty = true;
     tracing::info!(
@@ -545,6 +561,36 @@ impl EngineHandle {
     /// Current published state. Lock-free; hold the `Arc` for as long as a request needs it.
     pub fn published(&self) -> Arc<Published> {
         self.inner.published.load_full()
+    }
+
+    /// A recent block exactly as the BlockDecoder fetched it, by hash (the newest
+    /// [`RAW_BLOCKS`]). The block detail endpoint uses it instead of a second upstream call.
+    pub fn recent_raw_block(&self, hash: &Hash32) -> Option<Arc<DaemonBlock>> {
+        let want = hash.to_hex();
+        self.inner
+            .raw_blocks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .rev()
+            .find(|b| b.hash.eq_ignore_ascii_case(&want))
+            .cloned()
+    }
+
+    /// Keeps a fetched block for [`Self::recent_raw_block`].
+    pub(crate) fn keep_raw_block(&self, b: Arc<DaemonBlock>) {
+        let mut q = self
+            .inner
+            .raw_blocks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if q.iter().any(|x| x.hash == b.hash) {
+            return;
+        }
+        if q.len() >= RAW_BLOCKS {
+            q.pop_front();
+        }
+        q.push_back(b);
     }
 
     /// Subscribes to live messages published from now on.

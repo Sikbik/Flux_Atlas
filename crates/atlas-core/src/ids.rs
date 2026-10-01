@@ -154,6 +154,15 @@ impl Outpoint {
         k
     }
 
+    /// Sort key that orders outpoints the way fluxd's `COutPoint::operator<` does: `uint256`
+    /// compares its internal little-endian bytes with `memcmp` (the hex text is those bytes
+    /// reversed), then the output index. The payment queue breaks ties with it.
+    pub fn consensus_order(&self) -> ([u8; 32], u32) {
+        let mut b = self.txid.0;
+        b.reverse();
+        (b, self.vout)
+    }
+
     /// Inverse of [`Outpoint::to_key`].
     pub fn from_key(k: &[u8; OUTPOINT_KEY_LEN]) -> Self {
         let mut txid = [0u8; 32];

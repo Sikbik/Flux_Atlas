@@ -121,5 +121,7 @@ export const ANALYTICS_TABS = [
   'versions',
   'churn',
   'archaeology',
+  'economics',
+  'fairness',
 ] as const;
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number];

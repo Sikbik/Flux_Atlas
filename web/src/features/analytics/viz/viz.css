@@ -1,0 +1,350 @@
+/* The instruments the kit does not provide: signed change bars, the dot map and the tooltip, key and
+   data-table twin they share (the payout strip on the address view uses the axis and tooltip too).
+   Thin marks, hairline precision, data in Plex Mono. Everything reads the design tokens; the colour of a
+   mark arrives as the `--c` custom property so text never wears a data colour. Motion is opacity only
+   and stands still under reduced motion. */
+
+.vz-fig {
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* a short stroke of the series colour: the key of every tooltip row */
+.vz-key {
+  flex: none;
+  width: 14px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--c, var(--text-3));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--c, transparent) 55%, transparent);
+}
+
+/* ---- plot ------------------------------------------------------------------------------------- */
+
+.vz-chart {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.vz-svg {
+  display: block;
+  overflow: visible;
+}
+
+.vz-grid line {
+  stroke: var(--viz-grid);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.vz-grid text,
+.vz-xaxis text {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  fill: var(--viz-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.vz-xaxis line {
+  stroke: var(--viz-axis);
+  shape-rendering: crispEdges;
+}
+
+.vz-xaxis [data-major] text {
+  fill: var(--text-2);
+}
+
+.vz-cross {
+  stroke: rgb(255 255 255 / 0.3);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+/* the focusable, pointer-aware plot (a slider over the points) */
+.vz-overlay {
+  position: absolute;
+  cursor: crosshair;
+  touch-action: pan-y;
+  outline: none;
+  border-radius: var(--r-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vz-overlay:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent-400);
+}
+
+/* Signed change bars: up in the blue pole, down in the warm pole, a hairline at zero. */
+.vz-delta {
+  fill: var(--div-pos);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.vz-delta[data-sign="down"] {
+  fill: var(--div-neg);
+}
+
+.vz-delta[data-hot] {
+  filter: brightness(1.25);
+}
+
+.vz-svg:has(.vz-delta[data-hot]) .vz-delta:not([data-hot]) {
+  opacity: 0.5;
+}
+
+.vz-zero {
+  stroke: var(--viz-axis);
+  stroke-width: 1;
+}
+
+/* ---- tooltip: glass, values lead, names follow -------------------------------------------------- */
+
+.vz-tip {
+  position: absolute;
+  z-index: 4;
+  min-width: 164px;
+  max-width: 260px;
+  padding: var(--space-4) var(--space-5) var(--space-4);
+  border-radius: var(--r-md);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  transform: translateX(14px);
+  animation: vz-tip-in var(--dur-fast) var(--ease-out) both;
+}
+
+.vz-tip[data-side="left"] {
+  transform: translateX(calc(-100% - 14px));
+}
+
+@keyframes vz-tip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.vz-tip-head {
+  margin-bottom: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.vz-tip ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.vz-tip li {
+  display: grid;
+  grid-template-columns: 14px auto 1fr;
+  align-items: center;
+  column-gap: var(--space-3);
+  font-size: var(--fs-xs);
+}
+
+.vz-tip-name {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.vz-tip-val {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+  color: var(--text-1);
+  font-size: 12.5px;
+  justify-self: end;
+}
+
+/* ---- footer and the table twin ----------------------------------------------------------------- */
+
+.vz-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  min-height: 24px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.vz-summary {
+  min-width: 0;
+}
+
+.vz-toggle {
+  flex: none;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.vz-toggle:hover {
+  color: var(--text-1);
+  background: rgb(255 255 255 / 0.06);
+}
+
+.vz-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.vz-table-wrap {
+  max-height: 240px;
+  overflow: auto;
+  border-radius: var(--r-md);
+  background: var(--ink-0);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.vz-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.vz-table caption {
+  padding: var(--space-4) var(--space-5);
+  text-align: left;
+  color: var(--text-3);
+}
+
+.vz-table th,
+.vz-table td {
+  padding: var(--space-2) var(--space-5);
+  text-align: right;
+  font-family: var(--font-mono);
+  font-weight: var(--fw-regular);
+  white-space: nowrap;
+  border-top: 1px solid var(--line-1);
+}
+
+.vz-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--ink-0);
+  color: var(--text-3);
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: 11px;
+}
+
+.vz-table tbody th {
+  text-align: left;
+  color: var(--text-2);
+}
+
+.vz-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* ---- dot map ---------------------------------------------------------------------------------- */
+
+.vz-map-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.vz-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.vz-map-land {
+  fill: none;
+  stroke: rgb(134 161 218 / 0.3);
+  stroke-linecap: round;
+  opacity: 0;
+  transition: opacity var(--dur-slower) var(--ease-out);
+}
+
+.vz-map-land[data-ready] {
+  opacity: 1;
+}
+
+.vz-map-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.vz-map-halo {
+  fill: var(--c, var(--viz-1));
+  fill-opacity: 0;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.7);
+  transition:
+    fill-opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.vz-map-halo[data-on] {
+  fill-opacity: 0.2;
+  transform: scale(1);
+}
+
+.vz-map-site {
+  fill: var(--c, var(--viz-1));
+  fill-opacity: 0.82;
+  stroke: var(--ink-1);
+  stroke-width: 1.2;
+  pointer-events: none;
+  transition: fill-opacity var(--dur-fast) var(--ease-out);
+}
+
+.vz-map-site[data-hot] {
+  fill-opacity: 1;
+}
+
+.vz-map-site[data-dim] {
+  fill-opacity: 0.4;
+}
+
+g[role="button"]:focus-visible {
+  outline: none;
+}
+
+g[role="button"]:focus-visible .vz-map-site {
+  stroke: var(--accent-200);
+  stroke-width: 2;
+}
+
+/* ---- reduced motion ---------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .vz-tip {
+    animation: none;
+  }
+}
+
+:root[data-motion="reduced"] .vz-tip,
+:root[data-motion="off"] .vz-tip {
+  animation: none;
+}

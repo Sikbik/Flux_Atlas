@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use atlas_core::api::{
     AppIndexEntry, BlockLite, NetworkSummary, SupplyInfo, TierCounts, TierStats, TipInfo, TxLite,
 };
-use atlas_core::chain::TxKind;
+use atlas_core::chain::{NodeTxKind, TxKind};
 use atlas_core::emission::{next_reduction_height, pon_subsidy, tier_payout};
 use atlas_core::event::{Event, EventEnvelope};
 use atlas_core::live::{
@@ -47,6 +47,8 @@ pub struct JobCmds {
     pub geo: mpsc::Sender<(IpAddr, bool)>,
     pub reconcile: Arc<Notify>,
     pub catalog: Arc<Notify>,
+    /// Polls the start list soon (a block started nodes whose payment address is unknown).
+    pub lists: Arc<Notify>,
 }
 
 /// Commands to the store writer thread.
@@ -346,6 +348,20 @@ impl Reducer {
                                 .chain_feed
                                 .try_send((p.message_hash, block.summary.height));
                         }
+                    }
+                    // No block transaction carries a payment address: fetch the start list
+                    // soon, before these nodes confirm.
+                    let unknown = block.node_txs.iter().any(|t| {
+                        t.kind == NodeTxKind::Start
+                            && self
+                                .st
+                                .nodes
+                                .id_of(&t.collateral)
+                                .and_then(|id| self.st.nodes.rec(id))
+                                .is_some_and(|r| r.payment_address.is_empty())
+                    });
+                    if unknown {
+                        c.lists.notify_one();
                     }
                 }
                 if self.live_floor_saved != self.st.live_floor
@@ -722,6 +738,9 @@ impl Reducer {
                 removed = rep.removed,
                 skipped_newer = rep.skipped_newer,
                 reattributed = rep.reattributed,
+                tip = self.st.tip_height(),
+                filled = ?rep.filled,
+                samples = ?rep.samples,
                 "reconcile found differences (bug signal)"
             );
         } else {
@@ -734,6 +753,8 @@ impl Reducer {
                 after_gap,
                 diffs = total,
                 reattributed = rep.reattributed,
+                tip = self.st.tip_height(),
+                filled = ?rep.filled,
                 "reconcile clean"
             );
         }
@@ -1805,10 +1826,25 @@ pub fn summarize(st: &NetworkState) -> NetworkSummary {
     let mut providers = HashSet::new();
     let mut arcane = 0;
     let mut unreachable = 0;
+    let (mut listed, mut started, mut dos, mut expired) = (0u32, 0u32, 0u32, 0u32);
     for e in st.nodes.listed() {
         let r = &e.rec;
-        if r.status != NodeStatus::Confirmed {
-            continue;
+        listed += 1;
+        match r.status {
+            NodeStatus::Confirmed => {}
+            NodeStatus::Started => {
+                started += 1;
+                continue;
+            }
+            NodeStatus::Dos => {
+                dos += 1;
+                continue;
+            }
+            NodeStatus::Expired => {
+                expired += 1;
+                continue;
+            }
+            _ => continue,
         }
         tiers.add(r.tier);
         if let Some(ep) = r.endpoint {
@@ -1838,6 +1874,10 @@ pub fn summarize(st: &NetworkState) -> NetworkSummary {
     let next = st.tip_height() + 1;
     NetworkSummary {
         node_count: tiers.total,
+        listed_count: listed,
+        started_count: started,
+        dos_count: dos,
+        expired_count: expired,
         host_count: hosts.len() as u32,
         tiers,
         country_count: countries.len() as u32,

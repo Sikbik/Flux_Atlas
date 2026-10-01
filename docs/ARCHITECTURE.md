@@ -109,13 +109,13 @@ expensive payload only when that indicator moves. v1 rebuilt everything every 30
 | T1 | **BlockDecoder** | FluxOS `GET /daemon/getblock/{hash}` (verbosity 2, ~160 ms, ~10 KB): every tx decoded, including fluxnode fields. Producer = header `collateral` (10-hex prefix + index), resolved against the local node table (Insight `/api/block/{hash}` `nodesCollateral` for the full txid if ambiguous). Payouts: classify the coinbase outputs **by amount** (Cumulus 1.0 / Nimbus 3.5 / Stratus 9.0 × reduction factor; the remainder, 0.5 + fees, goes to the dev fund `t3hPu1YDeGUCp8m7BQCnnNUmRMJBa5RadyA`). Reorg-aware: check `previousblockhash` against our tip, walk back on mismatch, fill gaps. 10-block finality window. Optional `getblockdeltas/{hash}` for transfer inputs. | per block (~30 s), ~3 upstream calls | `BlockAdded` (producer, payouts, dev fund, tx mix), `NodeHeartbeat` (confirm tx, `update_type` 1), `NodeConfirmed` (`update_type` 0 = initial confirm), `NodeStarted` (start tx, v5/v6, incl. P2SH/multisig), `NodePaid`, `NodeIpChanged` (confirm carries IP), `LargeTransfer` |
 | T1 | **PayoutAttribution** | Our own payment-queue model per tier (rank order from the node list, advanced locally on every block; the paid node moves to the back). Match each coinbase payee `(tier, address)` against the head of that tier's queue. Reconcile with `last_paid_height` from NodeReconcile. **Must be recorded at ingest time**, since `last_paid_height` is overwritten on the next payment and one address can own 180+ nodes. | per block | `NodePaid` with an exact node; drives the **"next to be paid"** predictive highlight (head of each tier queue) before the block lands |
 | T1 | **MempoolStream** | the same Insight socket, `tx` events (~23/min; ~91% are fluxnode confirms/starts with empty `vout`, ~2/min regular transfers carrying value + outputs). Push transfers immediately. Socket fluxnode txids do not resolve, so node txs come from the 20 s reconcile, fetched and classified (≤ 0.4 req/s per host) before they are streamed; see Mempool classification below. | push | `MempoolTx` (transfer / app payment; node txs from the reconcile) |
-| T1 | **Expiry watch** | derived: a node expires after **640 blocks** without a confirm; confirms are allowed every **≥ 500 blocks** | per block | `NodeAtRisk` (≥ 560 blocks since last confirm), `NodeExpired` (predicted, then confirmed by reconcile) |
+| T1 | **Expiry watch** | derived: a node is dropped by the block `last_confirmed + 641` (still listed at `+ 640`; see "Lifecycle boundaries" below); confirms are allowed every **≥ 500 blocks** | per block | `NodeAtRisk` (≥ 560 blocks since last confirm), `NodeExpired` (predicted, then confirmed by reconcile) |
 | T1 | **AppChainFeed** | app register/update payments are txs with an OP_RETURN (message hash) to the app address; seen in the decoded block → `GET /apps/permanentmessages?hash=<h>` for the exact spec + price paid | per block | `AppRegistered`, `AppUpdated` (spec diff + FLUX paid) |
 | T2 | **AppPending** | `/apps/temporarymessages` (5 s apicache, 12.8 KB br). Pending deploys appear a median ~168 s before they're mined; ~15% never get mined (show as pending, expire after 1 h) | 10 s | `AppPending` → promoted when the OP_RETURN lands, or `AppPendingExpired` |
 | T2 | **AppInstalling** | `/apps/installinglocations` (30 B when empty) | 10 s | `AppInstalling` |
 | T2 | **AppPlacement** | `/apps/locations` (318 KB br), diffed on `(name, ip)`: new key = spawn, missing = removal/expiry, changed `hash` = rolling update. **Hot apps** (open in any client) are polled via `/apps/location/<name>` every 5–10 s | 90 s (configurable 60–120) | `AppInstanceStarted`, `AppInstanceRemoved`, `AppInstanceUpdated` |
 | T2 | **AppCatalog** | `/apps/globalappsspecifications` (1.22 MB) with `If-None-Match`, plus an immediate refresh on AppChainFeed; `/apps/installingerrorslocations` every 15 min; marketplace list hourly | 10 min | reconciliation + `AppInstallFailed` |
-| T2 | **NodeRegistry** | a **block-driven state machine**: starts, initial confirms (joins), heartbeats (every ~500–520 blocks), IP changes, payouts, collateral spends (from block vins), expiry (>640 blocks since confirm) and DOS (unconfirmed start after 240 blocks) are all derived per block. Rank is recomputed locally: per tier, ascending `max(last_paid_height, confirmed_height)`, verified zero inversions. Reconciled against `/daemon/viewdeterministicfluxnodelist` (546 KB br) every 10 min, or immediately if `getfluxnodecount` (60 s) totals disagree. `getstartlist` / `getdoslist` every 60 s as cross-checks. Any reconcile diff is logged as a bug signal | per block + 10 min | `NodeStarted`, `NodeConfirmed`, `NodeHeartbeat`, `NodeIpChanged`, `NodeExpired`, `NodeDosed`, `NodeCollateralSpent`, `RankShift` (coalesced) |
+| T2 | **NodeRegistry** | a **block-driven state machine**: starts, initial confirms (joins), heartbeats (every ~500–520 blocks), IP changes, payouts, collateral spends (from block vins), expiry (the block `last_confirmed + 641`), DOS (an unconfirmed start at `added + 240`) and the end of a DOS ban (`added + 720`) are all derived per block. Rank is recomputed locally with fluxd's own sort: per tier, ascending `last_paid_height` (or `confirmed_height` when never paid), never-paid before paid at one height, then the collateral outpoint in fluxd's byte order (see "Queue order" below); it reproduces all 6,724 ranks of the research dump. Reconciled against `/daemon/viewdeterministicfluxnodelist` (546 KB br) every 10 min, or immediately if `getfluxnodecount` (60 s) totals disagree. `getstartlist` / `getdoslist` every 60 s as cross-checks. Any reconcile diff is logged as a bug signal | per block + 10 min | `NodeStarted`, `NodeConfirmed`, `NodeHeartbeat`, `NodeIpChanged`, `NodeExpired`, `NodeDosed`, `NodeCollateralSpent`, `RankShift` (coalesced) |
 | T2 | **NextPayees** | local queue model (rank 0 per tier), validated against `fluxnodecurrentwinner?nc=<ts>` after each tip (it names the exact payees of the next block; ignore it if stale) | per block | `NextPayees` (drives the pre-aimed payout glow) |
 | T2 | **Chain** | `getfluxnodecount`, socket `info` (supply per block) | 60 s / push | `Stats` |
 | T2 | **Price** | Insight `/api/markets/info` (Flux-provided; also pushed as socket `markets_info`), CoinGecko `ids=zelcash` as fallback | 60 s / push | `Price` |
@@ -149,16 +149,70 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   second time: this was the "thousands of rank diffs after every restart" bug signal (the startup reconcile
 >   runs within a second of the restart, before the catch-up). Nodes that newer blocks changed are still skipped,
 >   but fields those blocks cannot know (tier, payment address, confirm height, an unknown last payment) are filled
->   from the list. On shutdown every listed record is written with its current rank, so the restore orders nodes
->   that share a queue key exactly.
+>   from the list. On shutdown every listed record is written with its current rank. (Since B6 the restore does not
+>   need the stored rank: the queue key is fluxd's full order, see "Queue order".)
+> - **Lifecycle boundaries (B6, from fluxd `RunOnFlux/fluxd` @ `8a60ee63`).** `ConnectBlock` (`src/main.cpp`
+>   4118 to 4129) applies, at the height `H` of the block being connected: confirm expiry when
+>   `nLastConfirmedBlockHeight < H - 640` unless that block confirms the node (`src/fluxnode/fluxnode.cpp` 235, 276,
+>   280), so a node last confirmed at `c` is listed through `c + 640` and gone at `c + 641`; DOS for a start with
+>   `nAddedBlockHeight == H - 240` that the block does not confirm (`CheckForExpiredStartTx`, 494); the end of a DOS
+>   ban when `nAddedBlockHeight <= H - 720` (`GetUndoDataForExpiredFluxnodeDosScores`, 220), after which fluxd no
+>   longer tracks the collateral. Verified live: `7feb2f4f...:0` (last confirmed 2,997,359) was listed at 2,997,999
+>   and gone at 2,998,000. The engine used `>= 640` before, one block early: the B5 soak's
+>   `expiry_mispredicted` (node `c6ec3309...:0`, last confirmed 2,997,231, still in the list at 2,997,871) was this.
+>   The heights are `atlas_core::node::windows::{expiry_height, dos_height, dos_end_height}`. A start resets the
+>   node's heights and a first confirm resets its last payment (fluxd builds fresh cache data, `nLastPaidHeight = 0`,
+>   `fluxnode.cpp` 327, 1166). A DOS entry the DOS list no longer holds after its ban is dropped as departed (the
+>   block path does this at `added + 720`; the list catches jumps).
+> - **Queue order (B6).** fluxd sorts each tier's payment list with `FluxnodeListData::operator<`
+>   (`src/fluxnode/fluxnode.h` 313): comparator height `nLastPaidHeight` if non-zero, else `nConfirmedBlockHeight`;
+>   at one height a never-paid node comes first; ties go by `COutPoint` (`src/primitives/transaction.h` 446), whose
+>   `uint256` compares its internal bytes with `memcmp` (`src/uint256.h` 94), i.e. the hex text reversed, then the
+>   output index. `SortList` (`fluxnode.cpp` 1436, 1470) runs after every block that pays the tier, and the RPC rank
+>   counts only entries still confirmed (`src/rpc/fluxnode.cpp` 1507, 1559), so expired entries left in the list
+>   until they reach its front never shift a rank. The engine's queue key is this function of the record alone
+>   (`state::queue::key_of`), so joins confirmed in one block, a reconcile and a restart all produce the exact
+>   upstream order with no upstream rank or transaction order involved. Measured on the live list (height
+>   2,997,987): all 145 tie groups put never-paid nodes first and all 30 groups of several never-paid nodes follow
+>   the reversed-byte order (6 of them would also match the hex order).
+> - **Restore arms expiry (B6).** A store that has been reconciled before (it has `first_ingest_ms`) restores an
+>   armed model, so the blocks replayed after a restart derive expiry and DOS like live blocks. Unarmed, a node that
+>   expired during the downtime stayed queued until the first reconcile removed it and shifted every rank behind
+>   it (measured on 3106: 1,466 ranks moved by one removal after a 62-block catch-up).
+> - **Payment address of a fresh start (B6).** No fluxnode transaction carries the payment address (fluxd's
+>   `TxToJSON` has it commented out), so a node seen first in a start transaction has none until the start list or
+>   the node list names it. After a block with such starts the engine polls `getstartlist` 25 s later (past the
+>   daemon's 20 s cache, `?nc=` past the gateway's apicache) instead of waiting for the 60 s poll, so a join that
+>   confirms a few blocks later already has it. A reconcile that still finds an empty address fills it and counts
+>   it under `filled`, not as a diff: that was the B5 `payment_address` bug signal (node `da84503a...:0` started at
+>   2,997,933 during a restart and confirmed 5 blocks later). A different non-empty address stays a bug signal.
+> - **Reconcile report (B6).** Per reconcile: field `diffs` (bug signals), `rank_diffs` (listed nodes whose
+>   position among the nodes queued in their tier both before and after changed: order errors; a join or a leave
+>   shifts ranks too but is a membership diff), `queue_order` (adjacent upstream ranks whose model keys are out of
+>   order: a direct check of the key rule), `filled` (unknown fields taken from the list), and up to 12 `samples`
+>   with node, field, model and list values in the warning log.
 > - **Reorgs.** On a `previousblockhash` mismatch the sync walks back through the 10-block finality window to the
 >   fork, then the reducer deletes the orphaned blocks (store and recent ring), moves the tip to the fork, clears
 >   the expected payees, emits `reorg` (+ a feed item), and **triggers an immediate NodeRegistry reconcile**. The
 >   replacement blocks then arrive as ordinary `block` messages. A reorg deeper than the window is logged as an
 >   error and treated as a discontinuity.
-> - **Mesh expiry.** Each TopologySweep reporter's peer list replaces its previous one; an undirected edge is decided
->   by the newer of its two reports. A report not refreshed for **1 h** (about two sweep cycles) expires and its edges
->   are removed (streamed as a `mesh` delta).
+> - **Mesh expiry.** Each TopologySweep reporter's peer list replaces its previous one. A report not refreshed for
+>   **1 h** (about two sweep cycles) expires, and an edge no unexpired report lists is removed (streamed as a `mesh`
+>   delta).
+> - **Mesh hysteresis (B6).** An edge appears as soon as a report from either endpoint lists it, and is removed only
+>   when **two consecutive reports covering it** (new reports from either endpoint) omit it, or when no unexpired
+>   report lists it. Before, the newer of the two endpoints' reports decided alone, and a single omission removed the
+>   link. Measured on 3106 with that rule: about 320 links added and 310 removed per 12 s call (out of about
+>   134,000), and 31.7% of the removed links came back within 10 minutes (20.6% of all additions re-added a link
+>   removed within the previous 30 minutes): the copies of a reporter's list that different queried nodes hold
+>   differ in age, and the two endpoints disagree for a while after a reconnect. Every added link is a handshake
+>   on the globe, so that noise was visible. A real disconnect now leaves the globe one covering report later
+>   (typically the next call that includes either endpoint, up to one sweep cycle, about 30 min). Measured over a
+>   2 h soak with this rule (747 calls): 7.3% of removed links came back within 10 minutes (16.2% within 30). What
+>   churn remains comes mostly from a few queried hosts (5.230.173.205 and .206, every port) whose copies of the
+>   reporters' lists hold far more links than other nodes' copies: a call to one of them adds 2,400 to 3,900 links
+>   where a typical call adds about 250, and the next covering reports from other nodes remove them again.
+>   `bidirectional` still means both latest reports list each other.
 > - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
 >   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
 > - **Mempool classification.** The socket `tx` push carries no fluxnode type, no OP_RETURN and no size. Its
@@ -358,17 +412,17 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 
 | Method & path | Returns |
 |---|---|
-| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job, and `attributions` (third-party data credits the UI must show, for example `{name: "DB-IP", text: "IP Geolocation by DB-IP", url: "https://db-ip.com", license: "CC BY 4.0", license_url, scope, version}` while the GeoIP database is loaded or nodes carry its data; an empty list otherwise; typed optional for older servers) |
+| `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job, and `attributions` (third-party data credits the UI must show, for example `{name: "DB-IP", text: "IP Geolocation by DB-IP", url: "https://db-ip.com", license: "CC BY 4.0", license_url, scope, version}` while the GeoIP database is loaded or nodes carry its data; an empty list otherwise; typed optional for older servers), and `next_payees` (B6: `{height, payees: [{tier, node, address}]}`, the same shape as the live `next_payees` message, holding the predicted payees of block `tip + 1`; the restored queue heads right after a restart; absent before any payee is known and typed optional for older servers). Clients seed their next-payout state from it and let a live `next_payees` for a newer height, or for the same height with a later `seq`, replace it |
 | `GET /nodes.bin` | **binary columnar node snapshot** (§7), feeds the globe + tables |
 | `GET /mesh.bin` | binary P2P mesh: header + `u32 edge_count` + `u32 a[]`, `u32 b[]` (NodeIds, a<b, deduped) + `u8 flags[]` (bit0 bidirectional, bit1 cross-continent); refreshed per PeerCrawl sweep |
 | `GET /nodes/{id}/peers` | the node's peers with geo, for selection-reveal |
-| `GET /nodes?…` | JSON node table with filters/sort/pagination (`tier`, `status`, `country`, `org`, `q`, `sort`, `cursor`) |
+| `GET /nodes?…` | JSON node table with filters/sort/pagination (`tier`, `status`, `country`, `org`, `q`, `sort`, `cursor`). Rows carry `city` and `region` (`null` when unknown). `total` counts the rows matching the filters: unfiltered, every tracked node (`listed_count`, see Node counts below) |
 | `GET /nodes/{id\|ip\|outpoint}` | full node detail: record, geo, hw, versions, rank + payment ETA, hosted apps, recent events |
 | `GET /nodes/{id}/history?from&to` | status timeline, uptime %, events |
 | `GET /nodes/{id}/payments?cursor` | payment history |
 | `GET /apps` / `GET /apps/{name}` | app index / full app: normalized spec, components, instances (node ids), history |
 | `GET /apps/{name}/history` | spec versions with diffs |
-| `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates |
+| `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates. The summary's counts are defined under Node counts below |
 | `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
 | `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations) |
@@ -381,6 +435,28 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine) |
 
 Everything else serves the embedded web app (SPA fallback to `index.html`, immutable caching for hashed assets).
+
+> **Node counts (B6).** One headline number: `NetworkSummary.node_count` (bootstrap `network`, `/network/summary`,
+> the live `stats` message) is the count of **confirmed** nodes, i.e. fluxd's deterministic list and the
+> `getfluxnodecount` total. The server also tracks nodes that are not in that list yet or any more, and shows them on
+> the globe with their status, so `nodes.bin` (header `count`) and the unfiltered `GET /nodes` `total` hold more rows.
+> The summary names the difference: `listed_count` (every tracked row = `nodes.bin` rows = unfiltered `/nodes`
+> `total`) = `node_count` + `started_count` (start mined, not confirmed: fluxd's start list) + `dos_count` (fluxd's
+> DOS list) + `expired_count` (predicted expired by the block path, dropped by the next reconcile, at most 10 min).
+> Measured on 3106: `node_count` 6,725 and `listed_count` 6,729 (2 started, 2 DOS). Before B6 a DOS entry never
+> left the model, so the difference also grew with every DOS ban (fixed: it leaves at `added + 720`). A
+> view that says "N nodes" shows `node_count` (or counts `status == confirmed` rows of `nodes.bin`, the same number);
+> `listed_count` is only for a "rows on the map" or "including pending" label.
+>
+> **Request log (B6).** A request slower than 1 s is logged at `warn` with `method`, `route` (the matched route
+> pattern), `path` (only for unmatched routes), `query` (first 256 bytes), `status` and `ms`. The slow requests seen
+> under normal use are the explorer proxies that wait on upstream (`/address/{addr}` about 1.3 s on Insight, several
+> `/blocks/{h}` at once queued behind the per-host rate limit, 0.2 to 1.2 s). The hot endpoints answer from memory
+> in under 1 ms (bootstrap, nodes.bin, mesh.bin, apps, summary, network views) to about 5 ms (`/nodes` pages, node
+> detail by endpoint). Two hot paths were fixed: the detail of a recent block (`/blocks/{h}` for the newest 32) is
+> built from the copy the BlockDecoder already fetched (`EngineHandle::recent_raw_block`) instead of a second
+> `getblock` (155 ms before, under 1 ms now), and node detail no longer waits for the hosted-apps map rebuild (every
+> 30 s a request paid about 35 ms reading every app record); a stale map is served while one task rebuilds it.
 
 ## 7. Binary node snapshot — `nodes.bin` (format v1)
 
@@ -464,6 +540,11 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
     version rollout milestones, large transfers). The UI renders these; it never parses free text.
 - Heartbeats: ping every 20 s. Slow consumers are dropped when their per-connection queue (1,024) is full.
   Clients reconnect with jittered backoff and `since_seq`.
+- **Feed items are delivered at least once (B6).** After a resync the client resumes from the lower of the
+  bootstrap's and `nodes.bin`'s seq (`nodes.bin` is rebuilt only when nodes change, so it lags), and the replay
+  can re-deliver `feed` items the client already holds. The server emits one item per event (an app message is
+  applied once, keyed by its message hash); the client keeps the highest `feed` seq it pushed and skips any at
+  or below it, resetting that mark when `server.started_ms` changes (seqs restart with the server).
 
 **Rank contract (payment queue).** Ranks are never streamed per node per block (that would be ~6.7k changes
 every 30 s). Each tier's queue is a strict rotation, so clients maintain ranks deterministically:

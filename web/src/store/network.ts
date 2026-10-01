@@ -204,6 +204,12 @@ export class NetworkStore {
   price: PriceInfo | null = null;
   tip: TipInfo | null = null;
   nextPayees: NextPayees | null = null;
+  /** Seq of the bootstrap or live message `nextPayees` came from. */
+  private nextPayeesSeq = 0;
+  /** Highest `feed` seq pushed to the ring. */
+  private feedSeq = 0;
+  /** Server run the seq marks above belong to (seqs restart with the server). */
+  private seqServerStart: number | null = null;
   freshness: ReadonlyMap<string, JobFreshness> = new Map();
   server: ServerInfo | null = null;
   /** True while the server serves restored state (upstream stale). */
@@ -360,7 +366,16 @@ export class NetworkStore {
     });
   }
 
+  /** Seqs restart with the server: forget the seq marks of an earlier server run. */
+  private noteServer(startedMs: number): void {
+    if (this.seqServerStart === startedMs) return;
+    this.seqServerStart = startedMs;
+    this.feedSeq = 0;
+    this.nextPayeesSeq = 0;
+  }
+
   private applyBootstrap(b: BootstrapDto): void {
+    this.noteServer(b.server.started_ms);
     this.bootstrapSeq = b.seq;
     this.server = b.server;
     this.stale = b.stale;
@@ -377,7 +392,17 @@ export class NetworkStore {
     this.apps.clear();
     for (const a of b.apps) this.apps.set(a.name, a);
     this.freshness = new Map(b.freshness.map((f) => [f.job, f]));
-    this.touch(Slice.Blocks | Slice.Apps | Slice.Summary | Slice.Price | Slice.Freshness | Slice.Tip);
+    let slices = Slice.Blocks | Slice.Apps | Slice.Summary | Slice.Price | Slice.Freshness | Slice.Tip;
+    // Seed the next payees so a fresh page shows them before the next block. A live
+    // `next_payees` held for a newer height, or for the same height from a later seq, wins.
+    const np = b.next_payees;
+    const cur = this.nextPayees;
+    if (np && (!cur || np.height > cur.height || (np.height === cur.height && b.seq >= this.nextPayeesSeq))) {
+      this.nextPayees = { height: np.height, payees: np.payees, receivedMs: b.generated_ms };
+      this.nextPayeesSeq = b.seq;
+      slices |= Slice.NextPayees;
+    }
+    this.touch(slices);
   }
 
   /** Loads the full mesh (mesh.bin). */
@@ -444,6 +469,7 @@ export class NetworkStore {
           break;
         case 'next_payees':
           this.nextPayees = { height: msg.height, payees: msg.payees, receivedMs };
+          this.nextPayeesSeq = msg.seq;
           this.touch(Slice.NextPayees);
           break;
         case 'app_pending':
@@ -489,6 +515,10 @@ export class NetworkStore {
           this.touch(Slice.Summary);
           break;
         case 'feed':
+          // A resume after a resync replays from the snapshot's seq, the lower of the bootstrap's
+          // and nodes.bin's, so it can re-deliver feed items the ring already holds.
+          if (msg.seq <= this.feedSeq) break;
+          this.feedSeq = msg.seq;
           this.feed.push({
             seq: msg.seq,
             observedMs: msg.observed_ms,
@@ -503,6 +533,7 @@ export class NetworkStore {
           this.touch(Slice.Feed);
           break;
         case 'hello':
+          this.noteServer(msg.server.started_ms);
           this.server = msg.server;
           this.setTip(msg.tip);
           break;

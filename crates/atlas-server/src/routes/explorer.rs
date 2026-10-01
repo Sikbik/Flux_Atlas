@@ -178,7 +178,14 @@ pub async fn block(
         (BlockId::Height(h), None) => h.to_string(),
         (BlockId::Hash(x), None) => x.to_hex(),
     };
-    let upstream: Result<Arc<BlockView>, ApiError> = if stored.is_some() {
+    // A recent block comes from the copy the BlockDecoder already fetched (no upstream call).
+    let raw = stored
+        .as_ref()
+        .and_then(|(b, _, _)| s.engine.recent_raw_block(&b.hash))
+        .and_then(|raw| crate::explorer::block_view(&raw).ok());
+    let upstream: Result<Arc<BlockView>, ApiError> = if let Some(view) = raw {
+        Ok(Arc::new(view))
+    } else if stored.is_some() {
         // The store has the block: only the full tx list comes from upstream, best effort.
         match tokio::time::timeout(Duration::from_secs(4), s.explorer.block(Some(ip), key)).await {
             Ok(r) => r,

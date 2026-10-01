@@ -62,6 +62,30 @@ describe('NetworkStore snapshot', () => {
     expect(s.loaded).toBe(true);
   });
 
+  it('seeds next payees from the bootstrap; live messages for the same or a newer height replace them', () => {
+    const s = new NetworkStore();
+    const boot = {
+      ...bootstrap(100),
+      next_payees: { height: 2_996_915, payees: [{ tier: 'stratus' as const, node: 30, address: 'a' }] },
+    };
+    s.loadSnapshot({ bootstrap: boot, nodes: syntheticNodesBin(10, 100) });
+    expect(s.nextPayees?.height).toBe(2_996_915);
+    expect(s.nextPayees?.payees[0]?.node).toBe(30);
+    s.apply(
+      live('next_payees', 101, { height: 2_996_915, payees: [{ tier: 'stratus', node: 31, address: 'b' }] }),
+      1,
+    );
+    expect(s.nextPayees?.payees[0]?.node).toBe(31);
+    // A resync body older than the live value does not roll it back.
+    s.loadSnapshot({ bootstrap: { ...boot, seq: 100 }, nodes: syntheticNodesBin(10, 100) });
+    expect(s.nextPayees?.payees[0]?.node).toBe(31);
+    s.apply(
+      live('next_payees', 103, { height: 2_996_916, payees: [{ tier: 'stratus', node: 32, address: 'c' }] }),
+      2,
+    );
+    expect(s.nextPayees?.height).toBe(2_996_916);
+  });
+
   it('notifies once per batch with the slices touched', () => {
     const s = new NetworkStore();
     const seen: StoreChange[] = [];
@@ -241,6 +265,31 @@ describe('other slices', () => {
     }
     expect(s.feed.size).toBe(500);
     expect(s.feed.newest()?.seq).toBe(799);
+  });
+
+  it('keeps one feed item when a resume after a resync replays it, until the server restarts', () => {
+    const s = loaded();
+    const renewed = (seq: number) =>
+      live('feed', seq, {
+        kind: 'app_renewed',
+        ts_ms: 5,
+        text_key: 'feed.app_renewed',
+        refs: [{ kind: 'app', name: 'dragonwilds1790459719613' }],
+        params: {},
+      });
+    s.apply(renewed(205));
+    // nodes.bin lags the bootstrap, so the snapshot's resume seq sits below the item held.
+    s.loadSnapshot({ bootstrap: bootstrap(206), nodes: syntheticNodesBin(200, 203) });
+    expect(s.seq).toBe(203);
+    s.apply(renewed(205));
+    expect(s.feed.size).toBe(1);
+    // A restarted server numbers from the start again; its items are new.
+    s.loadSnapshot({
+      bootstrap: { ...bootstrap(9), server: { ...bootstrap(9).server, started_ms: 2 } },
+      nodes: syntheticNodesBin(200, 9),
+    });
+    s.apply(renewed(10));
+    expect(s.feed.size).toBe(2);
   });
 
   it('applies mesh snapshots and deltas', () => {

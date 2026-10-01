@@ -1,6 +1,6 @@
 // Bindings: the live runtime and the URL drive the globe engine; the globe's own input (clicks,
 // hover, the moon) comes back out as intents for the router. Pure TypeScript, no React and no
-// three.js: the engine is reached through `GlobeTarget` (a structural subset of `GlobeEngine`), so the
+// three.js: the engine is reached through `GlobeTarget` (target.ts, a structural subset of `GlobeEngine`), so the
 // whole module is unit-tested with a fake engine (bindings.test.ts).
 //
 //   NetworkStore snapshot            -> engine.setNodes (keyed by node id: store rows are unordered)
@@ -14,6 +14,7 @@
 //   `/host/$ip`                      -> engine.flyTo the host's site, close enough that it fans out
 //   `/ambient`                       -> engine.setMode('ambient') (the moon blends to orbit, 900 ms)
 //   watched nodes                    -> engine.setWatched
+//   the time machine (`setArchive`)  -> engine.setNodes with a past node table; live changes wait
 //   the choreographer                -> runtime.setEffectSink(sink): every live animation
 //   engine select / hover / moon     -> intents (navigate) and hover state (tooltips)
 //
@@ -25,77 +26,14 @@ import { NodeFlag } from '../api/nodesBin';
 import type { EffectSink } from '../choreo/effects';
 import { type NetworkStore, Slice, type StoreChange } from '../store/network';
 import { NodeField, type NodeTable, Reach } from '../store/nodeTable';
-import type { LabelAnchor, LabelAnchorInput, ScreenPoint } from './engine/GlobeEngine';
-import type { MoonState } from './engine/moon/moon';
-import type {
-  ArtDirection,
-  EngineEvents,
-  EngineMode,
-  EngineStats,
-  NodeColumns,
-  NodeDelta,
-  NodeFilter,
-  PickInfo,
-  QualityLevel,
-} from './engine/types';
+import type { NodeColumns, NodeDelta, NodeFilter, PickInfo } from './engine/types';
+import type { GlobeTarget } from './target';
 
 // -------------------------------------------------------------------------------------------------
-// The engine surface the app uses
+// The engine surface the app uses: `GlobeTarget` (./target.ts)
 // -------------------------------------------------------------------------------------------------
 
-/** The part of `GlobeEngine` the app talks to (bindings, canvas, anchors). */
-export interface GlobeTarget {
-  readonly sink: EffectSink;
-  readonly stats: EngineStats;
-  readonly reduced: boolean;
-  setNodes(cols: NodeColumns, opts?: { animate?: boolean; intro?: boolean }): void;
-  updateNodes(delta: NodeDelta): void;
-  setMesh(a: ArrayLike<number>, b: ArrayLike<number>): void;
-  updateMesh(delta: {
-    addA?: ArrayLike<number>;
-    addB?: ArrayLike<number>;
-    removeA?: ArrayLike<number>;
-    removeB?: ArrayLike<number>;
-  }): void;
-  setMeshMode(mode: 'off' | 'selection' | 'flow'): void;
-  setFilter(filter: NodeFilter | null, allowIds?: ArrayLike<number> | null): void;
-  setWatched(ids: ArrayLike<number>): void;
-  select(id: number | null, opts?: { fly?: boolean; alt?: number; silent?: boolean }): void;
-  setHover(id: number | null): void;
-  flyTo(
-    lat: number,
-    lon: number,
-    alt?: number,
-    opts?: { tilt?: number; heading?: number; duration?: number },
-  ): Promise<boolean>;
-  showAppConstellation(ids: ArrayLike<number> | null, opts?: { name?: string; fly?: boolean }): void;
-  clearAppConstellation(): void;
-  setMode(mode: EngineMode): void;
-  /** Eases back to the home view (no pitch, north up, the home zoom, framed in the free area). */
-  home(): Promise<boolean>;
-  setMoon(opts: {
-    on?: boolean;
-    mode?: 'auto' | 'companion' | 'orbit';
-    scale?: number;
-    padTop?: number;
-  }): void;
-  moonState(): MoonState;
-  moonClick(): void;
-  setBeat(v: number): void;
-  setMoonStatus(status: 'live' | 'late' | 'offline' | 'archive'): void;
-  seedMoonChain(blocks: readonly { height: number; time: number }[]): void;
-  setInset(inset: { left: number; right: number; top: number; bottom: number }, ms?: number): void;
-  setArtDirection(art: ArtDirection): void;
-  setQuality(level: QualityLevel): void;
-  setReduced(reduced: boolean): void;
-  nodeInfo(id: number): PickInfo | null;
-  projectNode(id: number, out: ScreenPoint): boolean;
-  project(lat: number, lon: number, radius: number, out: ScreenPoint): boolean;
-  setLabelAnchors(list: readonly LabelAnchorInput[]): void;
-  labelAnchors(): readonly LabelAnchor[];
-  notifyKey(): void;
-  on<K extends keyof EngineEvents>(type: K, cb: (payload: EngineEvents[K]) => void): () => void;
-}
+export type { GlobeTarget } from './target';
 
 // -------------------------------------------------------------------------------------------------
 // Ids across the boundary
@@ -412,6 +350,13 @@ export interface GlobeBinding {
   resolveKey(key: string): number | null;
   /** The site of a host IP (first located node on it), for tethers and the camera. */
   hostSite(ip: string): { lat: number; lon: number } | null;
+  /**
+   * The archive view (time machine). While a node table is set the engine shows it instead of the
+   * live nodes: live node and mesh changes are held back, effects are detached and the moon's status
+   * is `archive`. Setting another table swaps the picture (nodes join and leave with the engine's
+   * cross-fade); `null` leaves the archive and brings the live table, mesh, filter and effects back.
+   */
+  setArchive(table: NodeTable | null): void;
   dispose(): void;
 }
 
@@ -438,6 +383,8 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
   let shownApp: string | null = null;
   let flownHost: string | null = null;
   let appRequest = 0;
+  /** A past node table on screen (time machine), or null while the globe follows the live store. */
+  let archive: NodeTable | null = null;
 
   const keyOf = (id: number): string => {
     const i = t.indexOf(id);
@@ -562,6 +509,8 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
 
   const onChange = (change: StoreChange) => {
     if (disposed) return;
+    // The archive owns the engine's nodes: live changes are not applied (leaving it reloads them).
+    if (archive) return;
     let nodesMoved = false;
     if (change.nodes) {
       applyNodeChanges(change.nodes);
@@ -604,7 +553,7 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
 
   const applyFilter = () => {
     if (!view) return;
-    const { filter, allow } = filterFor(view.filter, t, watched);
+    const { filter, allow } = filterFor(view.filter, archive ?? t, watched);
     engine.setFilter(filter, allow);
   };
 
@@ -682,6 +631,44 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
     if (view?.filter.watched) applyFilter();
   };
 
+  /** Stops holding the moon in its archive state (frame listener). */
+  let releaseMoon: (() => void) | null = null;
+
+  const setArchive = (table: NodeTable | null) => {
+    if (disposed) return;
+    if (table) {
+      const entering = archive === null;
+      archive = table;
+      if (entering) {
+        // The present stops talking to the globe: no live effects, no mesh, and the moon knows.
+        deps.setEffectSink(null);
+        engine.setMoonStatus('archive');
+        // The canvas sets the moon's status whenever the live feed flips between live, late and
+        // offline; while the archive shows, that must not bring the ring back.
+        releaseMoon = engine.on('frame', () => engine.setMoonStatus('archive'));
+        engine.setMesh(new Uint32Array(0), new Uint32Array(0));
+        if (selected !== null) {
+          engine.select(null, { silent: true });
+          selected = null;
+        }
+      }
+      engine.setNodes(columnsFromTable(table, null, hosts), { animate: engineHasNodes, intro: false });
+      engineHasNodes = true;
+      applyFilter();
+      return;
+    }
+    if (archive === null) return;
+    archive = null;
+    releaseMoon?.();
+    releaseMoon = null;
+    engine.setMoonStatus('live');
+    deps.setEffectSink(shiftSink(engine.sink));
+    loadAll();
+    if (store.mesh.size) loadMesh();
+    applyFilter();
+    if (!chainSeeded && store.loaded) seedChain();
+  };
+
   // ---- engine events ----------------------------------------------------------------------
 
   const offs = [
@@ -731,11 +718,14 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
     keyOf,
     resolveKey,
     hostSite,
+    setArchive,
     dispose() {
       if (disposed) return;
       disposed = true;
       unsubscribe();
       for (const off of offs) off();
+      releaseMoon?.();
+      releaseMoon = null;
       for (const h of timers) cancel(h);
       timers.clear();
       deps.setEffectSink(null);

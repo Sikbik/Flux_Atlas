@@ -86,21 +86,33 @@ pub async fn counts(ctx: JobCtx) {
     }
 }
 
-/// `getstartlist` and `getdoslist` every 60 s as cross-checks.
-pub async fn lists(ctx: JobCtx) {
+/// `getstartlist` and `getdoslist` every 60 s as cross-checks. The reducer pokes `soon` after a
+/// block that started nodes with an unknown payment address (no block transaction carries it):
+/// the start list is then fetched 25 s later (past the daemon's 20 s cache) and cache-busted, so
+/// the address is known before a typical confirm a few blocks later.
+pub async fn lists(ctx: JobCtx, soon: Arc<Notify>) {
     let iv = ctx.cfg.lists_interval;
     if !ctx.sleep(Duration::from_secs(25)).await {
         return;
     }
+    let mut fresh = false;
     loop {
-        match ctx
-            .call(
+        let started = if fresh {
+            ctx.call(
+                Upstream::FluxOs,
+                "getstartlist",
+                ctx.clients.fluxos.start_list_fresh(),
+            )
+            .await
+        } else {
+            ctx.call(
                 Upstream::FluxOs,
                 "getstartlist",
                 ctx.clients.fluxos.start_list(),
             )
             .await
-        {
+        };
+        match started {
             Ok(v) => {
                 if !ctx.send(Obs::StartList(v)).await {
                     return;
@@ -108,24 +120,35 @@ pub async fn lists(ctx: JobCtx) {
             }
             Err(e) => ctx.fail("start_dos_lists", &e),
         }
-        match ctx
-            .call(
-                Upstream::FluxOs,
-                "getdoslist",
-                ctx.clients.fluxos.dos_list(),
-            )
-            .await
-        {
-            Ok(v) => {
-                if !ctx.send(Obs::DosList(v)).await {
-                    return;
+        if !fresh {
+            match ctx
+                .call(
+                    Upstream::FluxOs,
+                    "getdoslist",
+                    ctx.clients.fluxos.dos_list(),
+                )
+                .await
+            {
+                Ok(v) => {
+                    if !ctx.send(Obs::DosList(v)).await {
+                        return;
+                    }
                 }
+                Err(e) => ctx.fail("start_dos_lists", &e),
             }
-            Err(e) => ctx.fail("start_dos_lists", &e),
+            ctx.next("start_dos_lists", iv);
         }
-        ctx.next("start_dos_lists", iv);
-        if !ctx.sleep(iv).await {
+        let t = Instant::now();
+        let Some(poked) = ctx.wait_poked(&soon, iv).await else {
             return;
+        };
+        fresh = false;
+        if poked {
+            if !ctx.sleep(Duration::from_secs(25)).await {
+                return;
+            }
+            // A poke shortly before the regular poll folds into it.
+            fresh = t.elapsed() + Duration::from_secs(10) < iv;
         }
     }
 }

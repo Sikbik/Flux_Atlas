@@ -1,0 +1,15 @@
+/* The rich list: the locked-in-nodes cell of a row, a small meter beside its percentage. */
+
+.ex-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  width: 100%;
+}
+
+.ex-locked .ui-meter {
+  flex: 1 1 auto;
+  min-width: 40px;
+  max-width: 96px;
+}

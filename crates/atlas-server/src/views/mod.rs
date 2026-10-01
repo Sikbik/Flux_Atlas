@@ -23,7 +23,7 @@ use atlas_core::codec::nodes_bin::{NodeBinInput, encode_nodes_bin};
 use atlas_core::emission::{PON_TARGET_SPACING_S, tier_payout};
 use atlas_core::ids::{Collateral, Hash32, NodeId, Outpoint};
 use atlas_core::net::NodeEndpoint;
-use atlas_core::node::windows::EXPIRATION_BLOCKS;
+use atlas_core::node::windows::expiry_height;
 use atlas_core::{Amount, NodeRecord, Tier, now_ms};
 use atlas_engine::{EngineHandle, Published};
 use compact_str::CompactString;
@@ -306,11 +306,12 @@ impl Views {
         (base + u64::from(blocks) * BLOCK_MS).max(now)
     }
 
-    /// Blocks until the node expires without a new confirm.
+    /// Blocks until the block that drops the node if no confirm arrives first (1 = the next
+    /// block; fluxd drops it at `last_confirmed + 641`, see `windows::expiry_height`).
     pub fn expires_in(&self, n: &NodeRecord) -> Option<u32> {
         let tip = self.tip_height()?;
         let last = n.last_confirmed_height.or(n.confirmed_height)?;
-        Some((last + EXPIRATION_BLOCKS).saturating_sub(tip))
+        Some(expiry_height(last).saturating_sub(tip))
     }
 
     pub fn node_ref(&self, id: NodeId) -> Option<NodeRef> {
@@ -393,6 +394,8 @@ pub fn node_row(n: &NodeRecord) -> NodeRow {
         payment_address: n.payment_address.to_string(),
         country_code: g.and_then(|g| non_empty(&g.country_code)),
         country: g.and_then(|g| non_empty(&g.country)),
+        city: g.and_then(|g| non_empty(&g.city)),
+        region: g.and_then(|g| non_empty(&g.region)),
         org: g.and_then(|g| non_empty(&g.org)),
         lat: loc.map(|g| g.lat),
         lon: loc.map(|g| g.lon),
@@ -501,6 +504,7 @@ pub fn bootstrap_dto(v: &Views) -> BootstrapDto {
         apps: p.apps.to_vec(),
         freshness: Vec::new(),
         attributions: Some(p.attributions.to_vec()),
+        next_payees: atlas_engine::publish::next_payees_msg(tip.unwrap_or(0), &p.next_payees),
     }
 }
 

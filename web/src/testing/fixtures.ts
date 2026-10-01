@@ -54,6 +54,10 @@ export function syntheticNodesBin(count = 6_724, seq = 100): NodesBin {
 export function summary(height: number, extra: Partial<NetworkSummary> = {}): NetworkSummary {
   return {
     node_count: 6_724,
+    listed_count: 6_731,
+    started_count: 4,
+    dos_count: 3,
+    expired_count: 0,
     host_count: 2_655,
     tiers: { cumulus: 3_378, nimbus: 1_582, stratus: 1_764, total: 6_724 },
     country_count: 60,

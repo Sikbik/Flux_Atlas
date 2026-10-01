@@ -262,7 +262,8 @@ const OVERRIDES: Record<ArtDirection, Partial<GlobeTokens>> = {
     atmoNight: '#1f3fb0',
     bloom: 0.46,
   },
-  // Vector display: hard coastlines, hot seam, stronger bloom and fringing.
+  // Vector display: hard coastlines, a twilight band, stronger bloom and fringing. Its light stays in the
+  // brand's blues (the terminator and the dusk were magenta, which is not a Flux colour).
   neon: {
     space: '#02030a',
     ocean: '#03050f',
@@ -270,9 +271,9 @@ const OVERRIDES: Record<ArtDirection, Partial<GlobeTokens>> = {
     landNight: '#0f5a8c',
     coast: '#3be6ff',
     graticule: '#2a4fd0',
-    terminator: '#ff4fd8',
+    terminator: '#86a1da',
     atmoDay: '#2a6bff',
-    atmoDusk: '#ff3fb0',
+    atmoDusk: '#4f7ad4',
     atmoNight: '#2a1aa8',
     bloom: 0.62,
     chroma: 0.00028,

@@ -7,4 +7,12 @@ import type { Tier } from "./Tier";
 /**
  * Node table row.
  */
-export type NodeRow = { id: NodeId, outpoint: Outpoint, endpoint: string | null, tier: Tier, status: NodeStatus, rank: number | null, payment_address: string, country_code: string | null, country: string | null, org: string | null, lat: number | null, lon: number | null, app_count: number, added_height: number, last_paid_height: number | null, last_confirmed_height: number | null, flux_os: string | null, arcane: boolean | null, reachable: boolean | null, };
+export type NodeRow = { id: NodeId, outpoint: Outpoint, endpoint: string | null, tier: Tier, status: NodeStatus, rank: number | null, payment_address: string, country_code: string | null, country: string | null, 
+/**
+ * City (local DB-IP City Lite, or the stats lookup); `None` when unknown.
+ */
+city: string | null, 
+/**
+ * Region or state; `None` when unknown.
+ */
+region: string | null, org: string | null, lat: number | null, lon: number | null, app_count: number, added_height: number, last_paid_height: number | null, last_confirmed_height: number | null, flux_os: string | null, arcane: boolean | null, reachable: boolean | null, };

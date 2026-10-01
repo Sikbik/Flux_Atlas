@@ -4,6 +4,7 @@ import type { BlockLite } from "./BlockLite";
 import type { DataAttribution } from "./DataAttribution";
 import type { JobFreshness } from "./JobFreshness";
 import type { NetworkSummary } from "./NetworkSummary";
+import type { NextPayeesMsg } from "./NextPayeesMsg";
 import type { ServerInfo } from "./ServerInfo";
 import type { TierStats } from "./TierStats";
 
@@ -27,4 +28,11 @@ blocks: Array<BlockLite>, apps: Array<AppIndexEntry>, freshness: Array<JobFreshn
  * Third-party data credits the UI must show (About view); an empty list when none
  * applies. Always sent by this server; optional for older servers.
  */
-attributions?: Array<DataAttribution>, };
+attributions?: Array<DataAttribution>, 
+/**
+ * The predicted payees of the next block (the queue heads, or `currentwinner` when it
+ * disagreed), as the latest live `next_payees` message carried them, so a fresh page shows
+ * them before the next block. Absent before the first block is known (and from older
+ * servers). A live `next_payees` for the same or a newer height replaces it.
+ */
+next_payees?: NextPayeesMsg, };

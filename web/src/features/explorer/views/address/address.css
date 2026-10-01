@@ -1,0 +1,109 @@
+/* Address view: the payout lanes, the node map and the little that tables need. */
+
+/* What a row of the history says: a direction glyph and a word. Gains and losses are tinted, and the
+   words and signs carry the meaning, never the colour alone. */
+.ex-what {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-2);
+}
+
+.ex-what svg {
+  flex: none;
+}
+
+.ex-what[data-dir="in"] svg,
+.ex-what[data-dir="payout"] svg {
+  color: var(--div-pos);
+}
+
+.ex-what[data-dir="out"] svg {
+  color: var(--div-neg);
+}
+
+.ex-utxo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-3);
+}
+
+/* ---- node map ---------------------------------------------------------------------------------- */
+
+.ex-nodemap {
+  margin: 0;
+  padding: var(--space-5);
+  border-radius: var(--r-lg);
+  background: var(--ink-1);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.ex-nodemap figcaption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-xs);
+}
+
+/* ---- payout lanes ------------------------------------------------------------------------------ */
+
+.ex-strip-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.ex-lane__label {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.ex-lane__label b {
+  margin-left: auto;
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+}
+
+.ex-dot {
+  cursor: pointer;
+}
+
+.ex-dot:focus-visible {
+  outline: none;
+}
+
+.ex-dot__hit {
+  fill: transparent;
+}
+
+.ex-dot__halo {
+  fill: var(--c);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.5);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+
+.ex-dot__dot {
+  fill: var(--c);
+  stroke: var(--ink-0);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.ex-dot[data-hot] .ex-dot__halo {
+  opacity: 0.28;
+  transform: none;
+}
+
+.ex-dot:focus-visible .ex-dot__dot {
+  stroke: var(--accent-200);
+  stroke-width: 2;
+}

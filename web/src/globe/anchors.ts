@@ -14,7 +14,10 @@
 //
 // Placements (`place`) move an element to an anchor; tethers (`tether`) route an SVG path from one
 // anchor to another with one 45 degree elbow. Labels in a `group` are collision-culled in priority
-// order and kept out of the moon's clearance circle (design 7.7).
+// order and kept out of the moon's clearance circle (design 7.7). A grouped label may also keep inside a
+// region (`clip`: the globe's free area, so never under the frame's panels) and off dense clusters of
+// nodes (`avoidNodes`): it then takes the first clear seat of a short column above its point, glides
+// between seats, and fades in and out instead of popping.
 
 import type { LabelAnchor, LabelAnchorInput, ScreenPoint } from './engine/GlobeEngine';
 import type { MoonState } from './engine/moon/moon';
@@ -26,6 +29,14 @@ export type Anchor =
   | { kind: 'element'; el: Element | null; fx?: number; fy?: number; dx?: number; dy?: number }
   | { kind: 'point'; x: number; y: number };
 
+/** A rectangle in viewport CSS px. */
+export interface ClipRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 /** The engine calls the anchor system needs (a subset of `GlobeEngine`). */
 export interface AnchorEngine {
   setLabelAnchors(list: readonly LabelAnchorInput[]): void;
@@ -33,6 +44,10 @@ export interface AnchorEngine {
   projectNode(id: number, out: ScreenPoint): boolean;
   moonState(): MoonState;
   on(type: 'frame', cb: () => void): () => void;
+  /** The free area the chrome leaves (canvas CSS px), for `clip: 'free'`. */
+  framing?(): { free: ClipRect };
+  /** Visible nodes in a box (canvas CSS px), for `avoidNodes`. */
+  nodeDensity?(): { count(x0: number, y0: number, x1: number, y1: number): number };
 }
 
 /** A resolved anchor for this frame (viewport CSS pixels). */
@@ -42,6 +57,8 @@ export interface AnchorPoint {
   visible: boolean;
   /** 1 facing the camera, 0 at the limb (world and node anchors; 1 otherwise). */
   facing: number;
+  /** 0..1: how present a clipped or node-avoiding label is (it fades in and out); 1 for every other placement. */
+  presence: number;
 }
 
 export interface PlaceOptions {
@@ -57,6 +74,17 @@ export interface PlaceOptions {
   fade?: boolean;
   /** Called after each update with the resolved point (for custom drawing). */
   onUpdate?: (p: AnchorPoint) => void;
+  /**
+   * Grouped labels: keep the whole box inside a region, or hide it. `'free'` is the globe's free area (the
+   * viewport less the frame's bars and docked panels); a rect or a getter is in viewport CSS px.
+   */
+  clip?: 'free' | ClipRect | (() => ClipRect | null);
+  /**
+   * Grouped labels: keep the box off dense clusters of nodes. `true` allows 2 nodes under the box, a number
+   * sets the allowance. The label tries its own seat, then one and two box heights higher; when every
+   * seat covers the nodes it fades out.
+   */
+  avoidNodes?: boolean | number;
 }
 
 export interface Handle {
@@ -76,6 +104,9 @@ interface Placement {
   lastShown: boolean;
   lastOpacity: number;
   p: AnchorPoint;
+  /** The seat (a lift above the anchor, px) the label is gliding to, and where it is now. */
+  seat: number;
+  seatGoal: number;
 }
 
 interface Tether {
@@ -87,7 +118,15 @@ interface Tether {
   lastD: string;
 }
 
-const node = (): AnchorPoint => ({ x: 0, y: 0, visible: false, facing: 1 });
+const node = (): AnchorPoint => ({ x: 0, y: 0, visible: false, facing: 1, presence: 1 });
+
+/** Nodes a label may cover when `avoidNodes` is `true`. */
+const NODE_ALLOWANCE = 2;
+/** The seat glides this share of the way each frame; presence fades in or out over 8 frames. */
+const SEAT_EASE = 0.22;
+const PRESENCE_STEP = 0.125;
+
+const easesIn = (o: PlaceOptions): boolean => o.avoidNodes !== undefined || o.clip !== undefined;
 
 export class AnchorSystem {
   private engine: AnchorEngine | null = null;
@@ -131,7 +170,10 @@ export class AnchorSystem {
       lastShown: true,
       lastOpacity: 1,
       p: node(),
+      seat: 0,
+      seatGoal: 0,
     };
+    if (easesIn(opts)) p.p.presence = 0;
     this.placements.add(p);
     if (anchor.kind === 'world') this.worldDirty = true;
     el.style.visibility = 'hidden';
@@ -284,7 +326,11 @@ export class AnchorSystem {
     }
   }
 
-  /** Collision culling per group, in priority order; the moon's clearance circle is a cull region. */
+  /**
+   * Collision culling per group, in priority order; the moon's clearance circle is a cull region. A label
+   * with `clip` or `avoidNodes` takes the first seat that is clear of all of them (its current seat first,
+   * so it does not hop) and is hidden when none is.
+   */
   private cull(): void {
     const groups = new Map<string, Placement[]>();
     for (const p of this.placements) {
@@ -298,38 +344,75 @@ export class AnchorSystem {
       list.push(p);
     }
     if (groups.size === 0) return;
-    const m = this.engine?.moonState();
+    const e = this.engine;
+    const m = e?.moonState();
     const mx = m ? m.x + this.canvasLeft : 0;
     const my = m ? m.y + this.canvasTop : 0;
     const mr = m?.visible ? m.r + 8 : -1;
+    const ox = this.canvasLeft;
+    const oy = this.canvasTop;
+    let free: ClipRect | null | undefined;
+    let density: { count(x0: number, y0: number, x1: number, y1: number): number } | null | undefined;
     for (const list of groups.values()) {
       list.sort((a, b) => (a.opts.priority ?? 0) - (b.opts.priority ?? 0));
       const boxes = this.boxes;
       boxes.length = 0;
       for (const p of list) {
-        const x = p.p.x + (p.opts.dx ?? 0);
-        const y = p.p.y + (p.opts.dy ?? 0);
+        const o = p.opts;
+        const x = p.p.x + (o.dx ?? 0);
+        const y0 = p.p.y + (o.dy ?? 0);
         const w = p.w || 60;
         const h = p.h || 16;
-        if (p.opts.avoidMoon !== false && mr > 0) {
-          const cx = Math.max(x, Math.min(mx, x + w));
-          const cy = Math.max(y, Math.min(my, y + h));
-          if ((cx - mx) ** 2 + (cy - my) ** 2 < mr * mr) {
-            p.p.visible = false;
+        let clip: ClipRect | null = null;
+        if (o.clip === 'free') {
+          if (free === undefined) {
+            const f = e?.framing?.().free ?? null;
+            free = f ? { x: f.x + ox, y: f.y + oy, w: f.w, h: f.h } : null;
+          }
+          clip = free;
+        } else if (typeof o.clip === 'function') clip = o.clip();
+        else if (o.clip) clip = o.clip;
+        let allow = -1;
+        if (o.avoidNodes !== undefined && o.avoidNodes !== false) {
+          if (density === undefined) density = e?.nodeDensity?.() ?? null;
+          if (density) allow = o.avoidNodes === true ? NODE_ALLOWANCE : o.avoidNodes;
+        }
+        const step = h + 6;
+        const seats = allow >= 0 ? 3 : 1;
+        // The current seat first (with one node of slack, so a label does not hop on a stray), then in order.
+        const cur = Math.min(seats - 1, Math.max(0, Math.round(-p.seatGoal / step)));
+        let chosen = -1;
+        for (let k = -1; k < seats && chosen < 0; k++) {
+          const i = k < 0 ? cur : k;
+          if (k >= 0 && i === cur) continue;
+          const y = y0 - i * step;
+          if (o.avoidMoon !== false && mr > 0) {
+            const cx = Math.max(x, Math.min(mx, x + w));
+            const cy = Math.max(y, Math.min(my, y + h));
+            if ((cx - mx) ** 2 + (cy - my) ** 2 < mr * mr) continue;
+          }
+          if (clip && (x < clip.x || y < clip.y || x + w > clip.x + clip.w || y + h > clip.y + clip.h))
             continue;
+          let hit = false;
+          for (let b = 0; b < boxes.length; b += 4) {
+            if (x < boxes[b + 2]! && x + w > boxes[b]! && y < boxes[b + 3]! && y + h > boxes[b + 1]!) {
+              hit = true;
+              break;
+            }
           }
-        }
-        let hit = false;
-        for (let k = 0; k < boxes.length; k += 4) {
-          if (x < boxes[k + 2]! && x + w > boxes[k]! && y < boxes[k + 3]! && y + h > boxes[k + 1]!) {
-            hit = true;
-            break;
+          if (hit) continue;
+          if (density && allow >= 0) {
+            const n = density.count(x - 3 - ox, y - 2 - oy, x + w + 3 - ox, y + h + 2 - oy);
+            if (n > allow + (k < 0 ? 1 : 0)) continue;
           }
+          chosen = i;
         }
-        if (hit) {
+        if (chosen < 0) {
           p.p.visible = false;
           continue;
         }
+        p.seatGoal = -chosen * step;
+        const y = y0 + p.seatGoal;
         boxes.push(x - 4, y - 2, x + w + 4, y + h + 2);
       }
     }
@@ -337,25 +420,34 @@ export class AnchorSystem {
 
   private write(p: Placement): void {
     const pt = p.p;
-    const show = pt.visible;
+    let show = pt.visible;
+    if (easesIn(p.opts)) {
+      // Fades in and out; while it fades out it stays where it was.
+      pt.presence = Math.min(1, Math.max(0, pt.presence + (pt.visible ? PRESENCE_STEP : -PRESENCE_STEP)));
+      show = pt.presence > 0;
+      if (pt.visible) {
+        p.seat = pt.presence <= PRESENCE_STEP ? p.seatGoal : p.seat + (p.seatGoal - p.seat) * SEAT_EASE;
+        if (Math.abs(p.seatGoal - p.seat) < 0.25) p.seat = p.seatGoal;
+      }
+    } else pt.presence = show ? 1 : 0;
     if (show !== p.lastShown) {
       p.el.style.visibility = show ? '' : 'hidden';
       p.lastShown = show;
     }
-    if (show) {
+    if (pt.visible) {
       const x = Math.round((pt.x + (p.opts.dx ?? 0)) * 2) / 2;
-      const y = Math.round((pt.y + (p.opts.dy ?? 0)) * 2) / 2;
+      const y = Math.round((pt.y + (p.opts.dy ?? 0) + p.seat) * 2) / 2;
       if (x !== p.lastX || y !== p.lastY) {
         p.el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
         p.lastX = x;
         p.lastY = y;
       }
-      if (p.opts.fade ?? p.anchor.kind === 'world') {
-        const o = Math.round(Math.min(1, Math.max(0, pt.facing / 0.25)) * 20) / 20;
-        if (o !== p.lastOpacity) {
-          p.el.style.opacity = String(o);
-          p.lastOpacity = o;
-        }
+    }
+    if (show && (p.opts.fade ?? p.anchor.kind === 'world')) {
+      const o = Math.round(Math.min(1, Math.max(0, pt.facing / 0.25)) * pt.presence * 20) / 20;
+      if (o !== p.lastOpacity) {
+        p.el.style.opacity = String(o);
+        p.lastOpacity = o;
       }
     }
     p.opts.onUpdate?.(pt);

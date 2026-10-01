@@ -75,12 +75,15 @@ function PlaceLabel({ place, priority, kind }: { place: Place; priority: number;
       // Centred above the point: the box the anchor system culls is the box the eye sees.
       dx: -Math.round(w / 2),
       dy: LABEL_DY,
+      // Never under the frame's panels, never on top of a dense cluster of nodes (anchors.ts).
+      clip: 'free',
+      avoidNodes: true,
       // The label's own fade: toward the limb like the anchor system's, and out under the top chrome.
       fade: false,
       onUpdate: (p) => {
         const el = ref.current;
         if (!el) return;
-        const o = labelOpacity(p.facing, p.y + LABEL_DY, clearance.top);
+        const o = Math.round(labelOpacity(p.facing, p.y + LABEL_DY, clearance.top) * p.presence * 20) / 20;
         if (o !== lastOpacity.current) {
           lastOpacity.current = o;
           el.style.opacity = String(o);

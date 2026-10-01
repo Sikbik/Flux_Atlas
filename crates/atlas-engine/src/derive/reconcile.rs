@@ -15,7 +15,7 @@ use atlas_core::{Amount, Collateral, NodeId, NodeStatus, Tier};
 use atlas_flux::models::daemon::PendingNodeEntry;
 use atlas_flux::models::nodes::ListedNode;
 
-use crate::state::queue::{CLASS_PAID, key_of};
+use crate::state::queue::{QKey, key_of};
 use crate::state::{NetworkState, Tick, is_listed, mask};
 
 const RC: DeltaCause = DeltaCause::Reconcile;
@@ -32,14 +32,28 @@ pub struct ReconcileReport {
     pub removed: u32,
     /// Field differences between model and list (bug signals), by field.
     pub diffs: BTreeMap<&'static str, u32>,
-    /// Nodes whose queue rank the model had wrong.
+    /// Nodes the model had in the wrong order: listed nodes whose position among the nodes
+    /// queued in their tier both before and after the reconcile changed. Joins and leaves shift
+    /// ranks too, but they are membership diffs (counted in `diffs`), not order errors.
     pub rank_diffs: u32,
+    /// Adjacent list positions (by upstream rank) whose model keys are out of order: the key
+    /// rule itself disagrees with fluxd. Also counted in `diffs` as `queue_order`.
+    pub order_diffs: u32,
     /// Nodes skipped because the model already applied newer blocks to them.
     pub skipped_newer: u32,
     /// Payouts of blocks above the list height attributed only now (their block arrived
     /// before its payees were known).
     pub reattributed: u32,
+    /// Fields the model did not know yet (empty or unknown) and took from the list. Not bug
+    /// signals: no block carries them (for example the payment address of a node that started
+    /// and confirmed between two start-list polls).
+    pub filled: BTreeMap<&'static str, u32>,
+    /// The first few differences in detail (`node field model list`), for the log.
+    pub samples: Vec<String>,
 }
+
+/// Differences kept in detail per reconcile.
+const SAMPLES: usize = 12;
 
 impl ReconcileReport {
     pub fn total_diffs(&self) -> u32 {
@@ -48,6 +62,16 @@ impl ReconcileReport {
 
     fn diff(&mut self, field: &'static str) {
         *self.diffs.entry(field).or_default() += 1;
+    }
+
+    fn fill(&mut self, field: &'static str) {
+        *self.filled.entry(field).or_default() += 1;
+    }
+
+    fn sample(&mut self, f: impl FnOnce() -> String) {
+        if self.samples.len() < SAMPLES {
+            self.samples.push(f());
+        }
     }
 }
 
@@ -85,7 +109,8 @@ fn reattribute_recent_payouts(st: &mut NetworkState, tick: &mut Tick, list_heigh
             {
                 e.rec.last_paid_height = Some(h);
                 e.touched = e.touched.max(h);
-                st.queue.upsert(id, p.tier, (h, CLASS_PAID, 0));
+                let key = key_of(&e.rec);
+                st.queue.upsert(id, p.tier, key);
                 st.nodes.touch_persist(id);
                 tick.node_changed(RC, id, mask::PAID);
             }
@@ -158,6 +183,63 @@ fn fill_unknown(st: &mut NetworkState, id: NodeId, n: &ListedNode) -> u16 {
     m
 }
 
+/// Each tier's queue, in payment order.
+fn tier_orders(st: &NetworkState) -> Vec<Vec<NodeId>> {
+    Tier::ALL
+        .iter()
+        .map(|t| {
+            st.queue
+                .tier(*t)
+                .map(|q| q.iter().collect())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// Checks fluxd's queue order directly: among the confirmed nodes the list is current for
+/// (`skipped` holds the ones newer blocks changed), a lower upstream rank must mean a lower model
+/// key. Returns the adjacent pairs that break it (each a bug signal in the key rule).
+fn order_diffs(
+    st: &NetworkState,
+    list_rank: &HashMap<NodeId, u32>,
+    skipped: &HashSet<NodeId>,
+    samples: &mut Vec<String>,
+) -> u32 {
+    let mut by_tier: [Vec<(u32, QKey, NodeId)>; 3] = Default::default();
+    for (id, rank) in list_rank {
+        if skipped.contains(id) {
+            continue;
+        }
+        if let Some(r) = st.nodes.rec(*id)
+            && r.status == NodeStatus::Confirmed
+            && let Some(i) = r.tier.index()
+        {
+            by_tier[i].push((*rank, key_of(r), *id));
+        }
+    }
+    let mut n = 0;
+    for v in &mut by_tier {
+        v.sort_unstable_by_key(|x| x.0);
+        for w in v.windows(2) {
+            if w[0].1 >= w[1].1 {
+                n += 1;
+                if samples.len() < SAMPLES {
+                    samples.push(format!(
+                        "order {} (rank {}, key {:?}) not before {} (rank {}, key {:?})",
+                        w[0].2.0,
+                        w[0].0,
+                        (w[0].1.0, w[0].1.1),
+                        w[1].2.0,
+                        w[1].0,
+                        (w[1].1.0, w[1].1.1)
+                    ));
+                }
+            }
+        }
+    }
+    n
+}
+
 /// Reconciles the model with a full node list.
 pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) -> ReconcileReport {
     let now = tick.now_ms;
@@ -170,6 +252,7 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
     let l = rep.list_height;
     let armed = st.expiry_armed && !rep.initial;
     let ranks_before: HashMap<NodeId, u32> = st.queue.ranks().collect();
+    let orders_before = tier_orders(st);
     let keys_before: HashMap<NodeId, (u32, u8)> = ranks_before
         .keys()
         .filter_map(|id| st.queue.key(*id).map(|k| (*id, (k.0, k.1))))
@@ -211,7 +294,8 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
                     if r.$field != v {
                         if check {
                             rep.diff($name);
-                            tracing::debug!(node = id.0, field = $name, model = ?r.$field, list = ?v, "reconcile field diff");
+                            let model = r.$field.clone();
+                            rep.sample(|| format!("{} {} {:?} {:?}", id.0, $name, model, v));
                         }
                         r.$field = v;
                         m |= $bit;
@@ -222,9 +306,17 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
                 adopt!(tier, n.tier, "tier", mask::TIER);
             }
             if r.payment_address != n.payment_address {
-                if check {
+                if r.payment_address.is_empty() {
+                    rep.fill("payment_address");
+                } else if check {
                     rep.diff("payment_address");
-                    tracing::debug!(node = id.0, model = %r.payment_address, list = %n.payment_address, status = ?old_status, "reconcile field diff payment_address");
+                    let model = r.payment_address.clone();
+                    rep.sample(|| {
+                        format!(
+                            "{} payment_address {model} {} ({})",
+                            id.0, n.payment_address, n.outpoint
+                        )
+                    });
                 }
                 r.payment_address.clone_from(&n.payment_address);
             }
@@ -283,6 +375,12 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
                 } else {
                     "status"
                 });
+                rep.sample(|| {
+                    format!(
+                        "{} status {old:?} -> Confirmed (last_confirmed {:?}, list height {l})",
+                        id.0, n.last_confirmed_height
+                    )
+                });
             }
             m |= mask::STATUS;
         }
@@ -324,12 +422,18 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
         .collect();
     for (id, status, last_conf) in gone {
         let expired = status == NodeStatus::Expired
-            || last_conf.is_some_and(|c| l.saturating_sub(c) >= windows::EXPIRATION_BLOCKS);
+            || last_conf.is_some_and(|c| windows::is_expired_at(c, l));
         if status == NodeStatus::Confirmed && armed {
             rep.diff(if expired {
                 "expiry_missed"
             } else {
                 "missing_upstream"
+            });
+            rep.sample(|| {
+                format!(
+                    "{} unlisted (last_confirmed {last_conf:?}, list height {l})",
+                    id.0
+                )
             });
         }
         st.queue.remove(id);
@@ -368,8 +472,8 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
         rep.removed += 1;
     }
 
-    // Queue: adopt the list order (upstream rank as the tie-break) for every node the list is
-    // current for; nodes changed by newer blocks keep their model key.
+    // Queue: every confirmed node by fluxd's key, which is a function of the (now reconciled)
+    // record; nodes changed by newer blocks carry those blocks' heights.
     let ids = st.nodes.ids();
     for id in ids {
         let Some(r) = st.nodes.rec(id) else { continue };
@@ -377,30 +481,50 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
             st.queue.remove(id);
             continue;
         }
-        let tier = r.tier;
-        if skipped.contains(&id) || !seen.contains(&id) {
-            let queued = st.queue.tier(tier).is_some_and(|q| q.contains(id));
-            if !queued {
-                let key = key_of(r, u32::MAX);
-                st.queue.upsert(id, tier, key);
-            }
-        } else {
-            let key = key_of(r, list_rank.get(&id).copied().unwrap_or(u32::MAX));
-            st.queue.upsert(id, tier, key);
-        }
+        let (tier, key) = (r.tier, key_of(r));
+        st.queue.upsert(id, tier, key);
     }
     rep.reattributed = reattribute_recent_payouts(st, tick, l);
     st.apply_ranks();
     if !rep.initial {
-        for (id, r) in st.queue.ranks() {
-            if seen.contains(&id) && ranks_before.get(&id).is_some_and(|b| *b != r) {
-                rep.rank_diffs += 1;
+        // Order errors only: positions among the nodes queued in the same tier both before and
+        // after. A join or a leave shifts everyone behind it, but those are membership changes
+        // (counted above as status or missing diffs, and streamed to clients as additions and
+        // removals), not a wrong order.
+        let order_after: Vec<Vec<NodeId>> = tier_orders(st);
+        for (t, after) in order_after.iter().enumerate() {
+            let before = &orders_before[t];
+            let in_after: HashSet<NodeId> = after.iter().copied().collect();
+            let in_before: HashSet<NodeId> = before.iter().copied().collect();
+            let b: Vec<NodeId> = before
+                .iter()
+                .copied()
+                .filter(|id| in_after.contains(id))
+                .collect();
+            let a: Vec<NodeId> = after
+                .iter()
+                .copied()
+                .filter(|id| in_before.contains(id))
+                .collect();
+            for (pos, (x, y)) in b.iter().zip(&a).enumerate() {
+                if x != y && seen.contains(y) {
+                    rep.rank_diffs += 1;
+                    let id = *y;
+                    let key = keys_before.get(&id).copied();
+                    let up = list_rank.get(&id).copied();
+                    let was = ranks_before.get(&id).copied();
+                    rep.sample(|| {
+                        format!(
+                            "{} order: position {pos} held {} before (rank was {was:?}, list rank {up:?}, key before {key:?})",
+                            id.0, x.0
+                        )
+                    });
+                }
             }
-            if let (Some(b), Some(k)) = (keys_before.get(&id), st.queue.key(id))
-                && (k.0, k.1) != *b
-            {
-                tracing::debug!(node = id.0, before = ?b, after = ?(k.0, k.1), rank_before = ?ranks_before.get(&id), rank = r, "reconcile queue key diff");
-            }
+        }
+        rep.order_diffs = order_diffs(st, &list_rank, &skipped, &mut rep.samples);
+        if rep.order_diffs > 0 {
+            *rep.diffs.entry("queue_order").or_default() += rep.order_diffs;
         }
     }
     st.expiry_armed = true;
@@ -500,6 +624,11 @@ pub fn apply_dos_list(st: &mut NetworkState, tick: &mut Tick, list: &[PendingNod
             continue;
         };
         let status = st.nodes.rec(id).map_or(NodeStatus::Unknown, |r| r.status);
+        if let Some(n) = st.nodes.get_mut(id)
+            && n.rec.added_height == 0
+        {
+            n.rec.added_height = e.added_height;
+        }
         if matches!(status, NodeStatus::Confirmed | NodeStatus::Dos) {
             continue;
         }
@@ -521,6 +650,32 @@ pub fn apply_dos_list(st: &mut NetworkState, tick: &mut Tick, list: &[PendingNod
         } else {
             tick.node_added(RC, id);
         }
+    }
+    // DOS entries whose ban is over (the block path removes them at `added + 720`; this catches
+    // the ones a jump or a restart skipped, and entries without a known start height). A list
+    // up to a minute stale still holds every entry younger than that, so only bans that ended
+    // are dropped.
+    let listed: HashSet<atlas_core::Outpoint> = list.iter().filter_map(outpoint).collect();
+    let ended: Vec<NodeId> = st
+        .nodes
+        .listed()
+        .filter(|e| {
+            e.rec.status == NodeStatus::Dos
+                && !listed.contains(&e.rec.outpoint)
+                && (e.rec.added_height == 0 || tip >= windows::dos_end_height(e.rec.added_height))
+        })
+        .map(|e| e.rec.id)
+        .collect();
+    for id in ended {
+        st.nodes.set_status(id, NodeStatus::Departed, now);
+        tick.event(
+            Event::NodeRemoved {
+                node: id,
+                reason: RemovalReason::Dos,
+            },
+            None,
+        );
+        tick.node_removed(RC, id);
     }
     diffs
 }
