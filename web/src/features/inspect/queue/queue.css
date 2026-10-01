@@ -30,6 +30,24 @@
   line-height: var(--lh-normal);
 }
 
+/* A link in a note reads like the kit's entity links: accent, underlined on hover. */
+.ix-q-note a:not(.ui-entity) {
+  border-radius: var(--r-xs);
+  color: var(--accent-400);
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.ix-q-note a:not(.ui-entity):hover {
+  color: var(--accent-300);
+  text-decoration: underline;
+}
+
+.ix-q-note a:not(.ui-entity):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 /* ---- the lead: rings, and beside them (one tier) the list --------------------------------------- */
 
 .ix-q-main {

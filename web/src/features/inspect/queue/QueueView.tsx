@@ -2,12 +2,14 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { CircleHelp, ListOrdered, WifiOff } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useConnection, useNetwork, useRuntime } from '../../../app/context';
-import { EmptyState, EntityLink, Section, Skeleton } from '../../../ui';
+import { formatInt } from '../../../lib/format';
+import { EmptyState, EntityLink, Section, Skeleton, tierLabel } from '../../../ui';
 import { positionOf, QUEUE_TIERS, type QueueTier } from '../derive/queue';
 import { readNodeLive, useNodeLive, useQueues, useResolvedId, useTipAnchor } from '../sources/live';
 import { type NodeHit, usePhaseLoop } from '../sources/queueFeed';
 import { Callout } from '../ui/callout';
 import { Fold } from '../ui/fold';
+import { QueueLink } from '../ui/links';
 import { NodeFinder } from '../ui/NodeFinder';
 import { useOpenSet } from '../ui/openset';
 import { LaneRow } from './Belts';
@@ -48,17 +50,32 @@ const NOT_QUEUED: Record<string, string> = {
   departed: 'it has left the network',
 };
 
-/** Said when the selected node is in no queue, so a selection that shows nothing on a ring is explained. */
-function SelectionNote({ id }: { id: number }) {
+/**
+ * Said when the selected node shows nothing on the rings in view, so a selection that marks no ring is
+ * explained: the node is in no queue, or (in a single-tier view) in another tier's.
+ */
+function SelectionNote({ id, focus }: { id: number; focus: QueueTier | null }) {
   const queues = useQueues();
   const node = useNodeLive(id);
-  if (!node || positionOf(queues, id)) return null;
+  if (!node) return null;
+  const pos = positionOf(queues, id);
+  const who = (
+    <EntityLink kind="node" value={node.endpoint || String(node.id)}>
+      {node.endpoint || `Node ${node.id}`}
+    </EntityLink>
+  );
+  if (!pos) {
+    return (
+      <p className="ix-q-note">
+        {who} is not in a payment queue: {NOT_QUEUED[node.status] ?? 'its place in line is not known yet'}.
+      </p>
+    );
+  }
+  if (focus === null || pos.tier === focus) return null;
   return (
     <p className="ix-q-note">
-      <EntityLink kind="node" value={node.endpoint || String(node.id)}>
-        {node.endpoint || `Node ${node.id}`}
-      </EntityLink>{' '}
-      is not in a payment queue: {NOT_QUEUED[node.status] ?? 'its place in line is not known yet'}.
+      {who} is in the {tierLabel(pos.tier)} queue, place {formatInt(pos.position + 1)} of{' '}
+      {formatInt(pos.size)}. <QueueLink tier={pos.tier}>Open the {tierLabel(pos.tier)} ring</QueueLink>
     </p>
   );
 }
@@ -153,7 +170,7 @@ export function QueueView({ tier }: { tier?: QueueTier }) {
           label="Find a node in the payment queues"
           placeholder="Find a node by IP, port or id"
         />
-        {sel.id !== null ? <SelectionNote id={sel.id} /> : null}
+        {sel.id !== null ? <SelectionNote id={sel.id} focus={focus} /> : null}
         <LiveNote />
       </div>
 
