@@ -169,5 +169,18 @@ describe('payoutEvents', () => {
     expect(events.map((e) => e.role)).toEqual(['nimbus', 'nimbus']);
     expect(events[0]!.t).toBeLessThan(events[1]!.t);
     expect(events[0]!.sats).toBe(350_000_000n);
+    expect(events[0]!.n).toBe(2);
+  });
+
+  it('keeps one event per paying output, so two payouts in one block stay distinct', () => {
+    const both = tx('a5', 5, {
+      kind: 'coinbase',
+      inputs: [{ coinbase: true, prev_txid: null, prev_vout: null, address: null, value: null }],
+      outputs: [o(0, ME, '9.00000000'), o(1, 't1Cum', '1.00000000'), o(2, ME, '3.50000000')],
+      height: 2_997_005,
+    });
+    const events = payoutEvents([both], ME);
+    expect(events).toHaveLength(2);
+    expect(new Set(events.map((e) => `${e.txid}:${e.n}`)).size).toBe(2);
   });
 });

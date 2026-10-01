@@ -1,0 +1,345 @@
+/* Address view: payout lanes, node map, lists. */
+
+.ex-strip-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.ex-lane__label {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.ex-lane__label b {
+  margin-left: auto;
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+}
+
+.ex-dot {
+  cursor: pointer;
+}
+
+.ex-dot:focus-visible {
+  outline: none;
+}
+
+.ex-dot__hit {
+  fill: transparent;
+}
+
+.ex-dot__halo {
+  fill: var(--c);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.5);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+
+.ex-dot__dot {
+  fill: var(--c);
+  stroke: var(--ink-0);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.ex-dot[data-hot] .ex-dot__halo {
+  opacity: 0.28;
+  transform: none;
+}
+
+.ex-dot:focus-visible .ex-dot__dot {
+  stroke: var(--accent-200);
+  stroke-width: 2;
+}
+
+.ex-tierlabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ex-entity-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin: var(--space-5) 0 0;
+  color: var(--text-3);
+  text-wrap: pretty;
+}
+
+/* The nodes line on the overview: a few counts, one sentence, one way in. */
+.ex-teaser {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-7);
+}
+
+.ex-teaser__tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+}
+
+.ex-teaser__tier {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
+}
+
+.ex-teaser__tier b {
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-md) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-teaser__text {
+  flex: 1 1 220px;
+  margin: 0;
+  color: var(--text-3);
+  text-wrap: pretty;
+}
+
+.ex-teaser > button {
+  margin-left: auto;
+}
+
+.ex-nodemap {
+  margin: 0;
+  padding: var(--space-5);
+  border-radius: var(--r-lg);
+  background: var(--ex-card);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.ex-nodemap figcaption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-xs);
+}
+
+/* ---- transaction rows -------------------------------------------------------------------------- */
+
+.ex-atx {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  height: 100%;
+  padding: 0 var(--space-4);
+  margin-inline: calc(var(--space-4) * -1);
+  border-radius: var(--r-md);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ex-atx:hover {
+  background: var(--ink-1);
+}
+
+.ex-atx__tile {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  color: var(--text-2);
+}
+
+.ex-atx[data-dir="in"] .ex-atx__tile,
+.ex-atx[data-dir="payout"] .ex-atx__tile {
+  color: var(--div-pos);
+  background: color-mix(in oklab, var(--div-pos) 14%, var(--ink-1));
+}
+
+.ex-atx[data-dir="out"] .ex-atx__tile {
+  color: var(--div-neg);
+  background: color-mix(in oklab, var(--div-neg) 12%, var(--ink-1));
+}
+
+.ex-atx[data-tier] .ex-atx__tile {
+  color: var(--tier);
+  background: var(--tier-soft);
+  box-shadow: inset 0 0 0 1px var(--tier-line);
+}
+
+.ex-atx__main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ex-atx__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ex-atx__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.ex-atx__label {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.ex-atx__sub {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.ex-atx__sub a {
+  pointer-events: auto;
+}
+
+.ex-atx__side {
+  position: relative;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  font-size: var(--fs-sm);
+}
+
+.ex-atx__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ex-atx-foot {
+  margin: var(--space-4) 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+@container ex (max-width: 460px) {
+  .ex-atx {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: var(--space-4);
+  }
+
+  .ex-atx__label {
+    display: none;
+  }
+}
+
+/* ---- node rows --------------------------------------------------------------------------------- */
+
+.ex-nrow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-5);
+  height: 100%;
+  padding: 0 var(--space-4);
+  margin-inline: calc(var(--space-4) * -1);
+  border-radius: var(--r-md);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ex-nrow:hover {
+  background: var(--ink-1);
+}
+
+.ex-nrow__main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ex-nrow__sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ex-nrow__paid {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+@container ex (max-width: 560px) {
+  .ex-nrow {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+
+  .ex-nrow__paid {
+    display: none;
+  }
+}
+
+/* ---- unspent outputs --------------------------------------------------------------------------- */
+
+.ex-utxo-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0 0 var(--space-5);
+  color: var(--text-3);
+}
+
+.ex-utxo-sum strong {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+}
+
+.ex-utxo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  height: 100%;
+  padding: 0 var(--space-4);
+  margin-inline: calc(var(--space-4) * -1);
+  border-radius: var(--r-md);
+}
+
+.ex-utxo:hover {
+  background: var(--ink-1);
+}
+
+.ex-utxo__main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ex-utxo__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}

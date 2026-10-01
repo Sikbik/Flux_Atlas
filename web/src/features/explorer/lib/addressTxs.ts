@@ -164,6 +164,8 @@ export interface PayoutEvent {
   t: number;
   height: number;
   txid: string;
+  /** Output index in the coinbase: one address can be paid by several outputs of the same block. */
+  n: number;
   role: PayoutRole;
   sats: bigint;
 }
@@ -181,6 +183,7 @@ export function payoutEvents(txsNewestFirst: readonly TxDetailDto[], addr: strin
         t: tx.time_ms,
         height: tx.height,
         txid: tx.txid,
+        n: o.n,
         role: classifyOutput(tx.height, o.address, sats),
         sats,
       });
