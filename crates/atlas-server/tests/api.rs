@@ -710,6 +710,32 @@ async fn timeline_and_state_at() {
     assert!((bin.lat[located] - g.lat).abs() < 1e-4);
     assert!((bin.lon[located] - g.lon).abs() < 1e-4);
     assert_eq!(bin.tier[located], listed[located].tier as u8);
+    // Ranks are not recorded by keyframes: the column is absent, not zero-filled. The rest of
+    // the format-2 keyframe columns are there, with the recorded values.
+    use atlas_core::codec::nodes_bin::kind;
+    assert!(!bin.has(kind::RANK));
+    for k in [
+        kind::VERSION,
+        kind::CORES,
+        kind::LAST_PAID,
+        kind::APP_COUNT,
+        kind::FLAGS,
+    ] {
+        assert!(bin.has(k), "column {k}");
+    }
+    let with_hw = listed.iter().position(|n| n.hw.is_some()).unwrap();
+    assert_eq!(
+        bin.cores[with_hw],
+        listed[with_hw].hw.as_ref().unwrap().cores
+    );
+    let with_version = listed
+        .iter()
+        .position(|n| n.versions.flux_os.is_some())
+        .unwrap();
+    assert_eq!(
+        bin.versions[bin.version_idx[with_version] as usize],
+        listed[with_version].versions.flux_os.as_deref().unwrap()
+    );
 
     // Same t: served from cache with the same ETag; If-None-Match gives 304.
     let again = get(&e.app, &format!("/api/v1/timeline/state?t={at}")).await;

@@ -314,7 +314,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
 | `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. `/mempool` lists the gateway `getrawmempool` set (exact sizes); each tx is classified by the engine with the block classifier (see MempoolStream in 3.2), falling back to what this process saw on the live stream; `kind` is `unknown` only when the tx could not be fetched yet |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
-| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; columns keyframes do not record, such as rank and hardware, are 0; cached 60 s per t) |
+| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; cached 60 s per t). Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |
 | `GET /ws` | WebSocket live stream (§8) |
 | `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops |
@@ -328,6 +328,11 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > (0 = not queued); index 0 means "unknown" in the country/org/version/location tables; `mesh.bin` uses the
 > same sectioned container (magic `FXMS`) instead of bare arrays. Golden file:
 > `crates/atlas-core/tests/golden/nodes.bin` + `nodes.expected.json`.
+> **A missing column means "not recorded"**: unknown for every row, never zeros. Producers that lack a column
+> leave it out (`encode_nodes_bin_without`; `/timeline/state` does so for `rank`, and for `last_paid`, `app_count`
+> and `flags` without a format-2 keyframe). Decoders default missing columns so old readers keep working, and
+> expose which columns were present (Rust `NodesBin::has`, web `NodesBin.present` / `hasColumn`); a reader must
+> not show a defaulted column as data.
 
 Little-endian and columnar. Every section starts on an 8-byte boundary, so the client can wrap sections as
 typed-array views with zero copying.

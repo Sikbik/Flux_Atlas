@@ -159,6 +159,8 @@ dependencies = [
  "bytes",
  "flate2",
  "mimalloc",
+ "postcard",
+ "redb",
  "serde",
  "serde_json",
  "tempfile",

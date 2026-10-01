@@ -243,6 +243,17 @@ fn snap_node(i: u32) -> SnapNode {
         country_code: "DE".into(),
         country: "Germany".into(),
         org: "Hetzner".into(),
+        city: "Falkenstein".into(),
+        flux_os: Some("6.4.0".into()),
+        hw: Some(crate::timemachine::SnapHw {
+            cores: 8,
+            ram_gb: 32,
+            ssd_gb: 240,
+        }),
+        last_paid: None,
+        app_count: 0,
+        arcane: Some(false),
+        first_seen_ms: 1,
     }
 }
 
@@ -331,14 +342,175 @@ fn time_machine_reconstruction() {
     // Before any keyframe: replay from the start.
     let s = state_at(&store, 500).unwrap();
     assert!(s.nodes.is_empty());
-    // Binary form decodes.
+    // Binary form decodes; ranks are not recorded, so the column is absent (not zeros).
+    use atlas_core::codec::nodes_bin::{decode_nodes_bin, kind};
     let bin = state_at(&store, 3_500).unwrap().to_nodes_bin(9);
-    assert_eq!(
-        atlas_core::codec::nodes_bin::decode_nodes_bin(&bin)
-            .unwrap()
-            .len(),
-        3
-    );
+    let d = decode_nodes_bin(&bin).unwrap();
+    assert_eq!(d.len(), 3);
+    assert!(!d.has(kind::RANK));
+    assert!(d.has(kind::VERSION) && d.has(kind::CORES) && d.has(kind::LAST_PAID));
+    assert_eq!(d.versions[d.version_idx[0] as usize], "6.4.0");
+    assert_eq!(d.cores[0], 8);
+    // Node 4 joined after the keyframe: its hardware and version are unknown (0 / index 0).
+    assert_eq!((d.cores[2], d.version_idx[2]), (0, 0));
+    assert_eq!(d.locations[d.loc[0] as usize].city, "Falkenstein");
+}
+
+#[test]
+fn time_machine_replays_versions_hardware_payments_and_apps() {
+    use atlas_core::codec::nodes_bin::{decode_nodes_bin, flags, kind};
+    use atlas_core::node::{Hardware, Versions};
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("d.redb")).unwrap();
+    let mut b = WriteBatch::new();
+    b.put_snapshot(
+        1_000,
+        &NetworkSnapshot {
+            ts_ms: 1_000,
+            tip_height: 100,
+            nodes: (1..=2).map(snap_node).collect(),
+        },
+    )
+    .unwrap();
+    b.push_event(env(
+        2_000,
+        Event::NodeVersionChanged {
+            node: NodeId(1),
+            versions: Box::new(Versions {
+                flux_os: Some("6.5.0".into()),
+                ..Versions::default()
+            }),
+        },
+    ));
+    b.push_event(env(
+        2_000,
+        Event::NodeHardwareChanged {
+            node: NodeId(2),
+            hardware: Box::new(Hardware {
+                cores: 16,
+                ram_gb: 64.0,
+                ssd_gb: 1_000.0,
+                ..Hardware::default()
+            }),
+        },
+    ));
+    b.push_event(env(
+        2_000,
+        Event::NodePaid {
+            node: Some(NodeId(2)),
+            tier: Tier::Nimbus,
+            address: "t1x".into(),
+            amount: Amount::from_flux(3),
+            height: 105,
+        },
+    ));
+    let ep1 = snap_node(1).endpoint.unwrap();
+    b.push_event(env(
+        2_000,
+        Event::AppInstanceStarted {
+            app: "web".into(),
+            node: None,
+            endpoint: ep1,
+        },
+    ));
+    let mut blk = fixture_block("flux/daemon_getblock_2996916_verbosity2.json").summary;
+    blk.height = 110;
+    b.push_event(env(2_500, Event::BlockAdded(Box::new(blk))));
+    store.commit(b).unwrap();
+
+    let s = state_at(&store, 3_000).unwrap();
+    assert!(s.detail);
+    assert_eq!(s.tip_height, 110);
+    assert_eq!(s.nodes[0].flux_os.as_deref(), Some("6.5.0"));
+    assert_eq!(s.nodes[0].app_count, 1, "instance resolved by endpoint");
+    assert_eq!(s.nodes[1].hw.map(|h| h.cores), Some(16));
+    assert_eq!(s.nodes[1].last_paid, Some(105));
+    let d = decode_nodes_bin(&s.to_nodes_bin(0)).unwrap();
+    assert!(d.has(kind::FLAGS) && d.has(kind::APP_COUNT) && d.has(kind::LAST_PAID));
+    assert!(!d.has(kind::RANK));
+    assert_eq!(d.last_paid, vec![0, 105]);
+    assert_eq!(d.app_count, vec![1, 0]);
+    assert_ne!(d.node_flags[0] & flags::HAS_APPS, 0);
+    assert_ne!(d.node_flags[1] & flags::RECENTLY_PAID, 0);
+    assert_eq!(d.ram_gb[1], 64);
+}
+
+#[test]
+fn time_machine_reads_format_1_keyframes_without_inventing_columns() {
+    use atlas_core::codec::nodes_bin::{decode_nodes_bin, kind};
+    // The format-1 keyframe shape, written as the engine wrote it before format 2.
+    #[derive(serde::Serialize)]
+    struct V1Node {
+        id: NodeId,
+        outpoint: Outpoint,
+        tier: Tier,
+        status: NodeStatus,
+        endpoint: Option<NodeEndpoint>,
+        lat: Option<f32>,
+        lon: Option<f32>,
+        country_code: String,
+        country: String,
+        org: String,
+    }
+    #[derive(serde::Serialize)]
+    struct V1 {
+        ts_ms: u64,
+        tip_height: u32,
+        nodes: Vec<V1Node>,
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v1.redb");
+    {
+        let raw = postcard::to_allocvec(&V1 {
+            ts_ms: 1_000,
+            tip_height: 7,
+            nodes: (1..=2)
+                .map(|i| {
+                    let n = snap_node(i);
+                    V1Node {
+                        id: n.id,
+                        outpoint: n.outpoint,
+                        tier: n.tier,
+                        status: n.status,
+                        endpoint: n.endpoint,
+                        lat: n.lat,
+                        lon: n.lon,
+                        country_code: n.country_code,
+                        country: n.country,
+                        org: n.org,
+                    }
+                })
+                .collect(),
+        })
+        .unwrap();
+        let mut blob = vec![1u8];
+        blob.extend(zstd::bulk::compress(&raw, 3).unwrap());
+        // Let the store lay out its schema, then write the legacy blob under it.
+        drop(Store::open(&path).unwrap());
+        let db = redb::Database::open(&path).unwrap();
+        let w = db.begin_write().unwrap();
+        {
+            let def: redb::TableDefinition<'_, u64, &[u8]> =
+                redb::TableDefinition::new("snapshots");
+            let mut t = w.open_table(def).unwrap();
+            t.insert(1_000u64, blob.as_slice()).unwrap();
+        }
+        w.commit().unwrap();
+    }
+    let store = Store::open(&path).unwrap();
+    let s = state_at(&store, 2_000).unwrap();
+    assert!(!s.detail);
+    assert_eq!(s.nodes.len(), 2);
+    assert_eq!(s.nodes[0].country_code, "DE");
+    assert_eq!(s.nodes[0].flux_os, None);
+    let d = decode_nodes_bin(&s.to_nodes_bin(0)).unwrap();
+    for k in [kind::RANK, kind::LAST_PAID, kind::APP_COUNT, kind::FLAGS] {
+        assert!(
+            !d.has(k),
+            "column {k} was not recorded by a format-1 keyframe"
+        );
+    }
+    assert_eq!(d.version_idx, vec![0, 0], "unknown version");
 }
 
 #[test]

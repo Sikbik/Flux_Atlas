@@ -451,6 +451,24 @@ impl Store {
 
     // ---- snapshots --------------------------------------------------------------------------
 
+    /// The newest snapshot taken at or before `ts_ms` as `(ts, format version, postcard
+    /// bytes)`, decompressed but not decoded, whatever its format version (for readers of
+    /// legacy snapshot shapes).
+    pub fn snapshot_blob_at_or_before(&self, ts_ms: u64) -> Result<Option<(u64, u8, Vec<u8>)>> {
+        self.read(|txn| {
+            let t = txn.open_table(tables::SNAPSHOTS)?;
+            let Some(item) = t.range(..=ts_ms)?.next_back() else {
+                return Ok(None);
+            };
+            let (k, v) = item?;
+            let bytes = v.value();
+            let (&version, _) = bytes
+                .split_first()
+                .ok_or(StoreError::Truncated { what: "blob" })?;
+            Ok(Some((k.value(), version, codec::unpack_blob(bytes)?)))
+        })
+    }
+
     /// The newest snapshot taken at or before `ts_ms`, with its timestamp.
     pub fn snapshot_at_or_before<T: DeserializeOwned>(
         &self,

@@ -105,6 +105,14 @@ pub(crate) fn encode_blob<T: Serialize>(value: &T, version: u8) -> Result<Vec<u8
     Ok(out)
 }
 
+/// Decompresses a blob written by [`encode_blob`] (any version) into its postcard bytes.
+pub(crate) fn unpack_blob(bytes: &[u8]) -> Result<Vec<u8>> {
+    let (_, body) = bytes
+        .split_first()
+        .ok_or(StoreError::Truncated { what: "blob" })?;
+    zstd::stream::decode_all(body).map_err(StoreError::Compression)
+}
+
 /// Decodes a blob written by [`encode_blob`], checking the version byte.
 pub(crate) fn decode_blob<T: DeserializeOwned>(bytes: &[u8], version: u8) -> Result<T> {
     let body = check_version(bytes, version, "blob")?;
