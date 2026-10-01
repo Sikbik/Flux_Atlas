@@ -113,7 +113,7 @@ draws it as `.wm-drop-zone`.
 | `windowRect(state, id)` | the resolved on-screen rect: docked slot (right edge of the workspace, `dockWidth` wide, full height), workspace when maximized, the sheet on the phone, else `rect` |
 | `visibleWindows(state)` | framed, non-minimized windows bottom to top; on the phone only the sheet (the focused window) |
 | `dockedWindow(state)`, `topmost(state)`, `windowOfType(state, type)`, `minimizedWindows(state)` | |
-| `globeInset(state)` | `{ left, right, top, bottom }` for `engine.setInset`: the workspace edges, plus the docked width + 24 on the right, plus a left-floating explorer, queue or analytics window's right edge + 24 on the left (design 3.2). Phone: the bottom is the sheet's top edge |
+| `globeInset(state)` | `{ left, right, top, bottom }` for `engine.setInset`: the workspace edges, plus the docked width + 24 on the right, plus a left-floating explorer, queue or analytics window's right edge + 24 on the left (design 3.2). A floating window counts only while the free area left after it stays at least the planet's minimum width (2 x minFit x the home radius); otherwise it floats over the globe. A maximized window counts for nothing. Phone: the bottom is the sheet's top edge |
 | `snapPreview(state)` | drop zone while dragging |
 
 ## Store and persistence
