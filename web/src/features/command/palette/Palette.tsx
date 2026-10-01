@@ -46,6 +46,18 @@ const ENTER_AFTER_MS = 320;
 
 const PLACEHOLDER = 'Search nodes, apps, blocks, addresses, or type a command';
 
+/**
+ * The top of `node` within `root`, summed through the positioned ancestors in between: rows sit inside
+ * positioned groups, so a row's own offsetTop counts from its group. Layout offsets, so the panel's
+ * open transform does not skew them.
+ */
+function offsetWithin(node: HTMLElement, root: HTMLElement): number {
+  let y = 0;
+  for (let n: HTMLElement | null = node; n && n !== root; n = n.offsetParent as HTMLElement | null)
+    y += n.offsetTop;
+  return y;
+}
+
 /** A hint button acts without taking focus from the field, so typing carries on where it was. */
 const keepFocus = (e: React.MouseEvent) => e.preventDefault();
 
@@ -204,7 +216,7 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
     if (modelChanged) hl.style.transition = 'none';
     hl.style.opacity = '1';
     hl.style.height = `${el.offsetHeight}px`;
-    hl.style.transform = `translateY(${el.offsetTop}px)`;
+    hl.style.transform = `translateY(${offsetWithin(el, sizer)}px)`;
     if (modelChanged) {
       void hl.offsetHeight;
       window.requestAnimationFrame(() => {
@@ -214,8 +226,9 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
     // Scroll the row into view (and its group heading when it is the group's first row).
     const group = el.closest<HTMLElement>('[role="group"]');
     const isFirst = group?.querySelector('[role="option"]') === el;
-    const top = isFirst && group ? group.offsetTop : el.offsetTop;
-    const bottom = el.offsetTop + el.offsetHeight + 14;
+    const rowTop = offsetWithin(el, list);
+    const top = isFirst && group ? offsetWithin(group, list) : rowTop;
+    const bottom = rowTop + el.offsetHeight + 14;
     const viewH = Math.min(sizer.offsetHeight, list.clientHeight || sizer.offsetHeight);
     if (top < list.scrollTop) list.scrollTop = Math.max(0, top - 4);
     else if (bottom > list.scrollTop + viewH) list.scrollTop = bottom - viewH;
