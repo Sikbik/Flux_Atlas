@@ -15,8 +15,8 @@ import {
   useLayerParam,
   withLayer,
 } from '../../features/chrome/layers';
+import { computePlaces } from '../../features/chrome/placelabels';
 import { useGlobeEngine } from '../../globe';
-import { computePlaces } from '../../globe/overlays';
 import { formatInt } from '../../lib/format';
 import { GLOBE_ARTS, type GlobeArtPref, useUi } from '../../store/ui';
 import { snapWindow } from '../wm/arrange';

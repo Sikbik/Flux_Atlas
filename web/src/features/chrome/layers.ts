@@ -7,8 +7,8 @@
 
 import { useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { useGlobeEngine } from '../../globe';
 import { meshModeFor } from '../../globe/bindings';
+import { useGlobeEngine } from '../../globe/context';
 
 export type LayerKey = 'labels' | 'terminator' | 'lights' | 'clouds' | 'towers';
 export type MeshMode = 'off' | 'selection' | 'flow';
