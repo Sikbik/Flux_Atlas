@@ -268,10 +268,7 @@ button.evt-link:focus-visible {
 
 /* ---- a burst ----------------------------------------------------------------------------------------- */
 
-.evt-burst {
-  height: 40px;
-}
-
+/* A row like the others (two lines, 50 px, so the summary has the whole width), set apart by its dashed edges. */
 .evt-burst .evt-link {
   align-items: center;
   padding-block: 0;
@@ -280,21 +277,6 @@ button.evt-link:focus-visible {
 
 .evt-burst .ei {
   --ev: var(--text-2);
-}
-
-.evt-burst .t {
-  display: inline;
-}
-
-.evt-burst .sub {
-  display: inline;
-  margin-left: 8px;
-}
-
-.evt-burst .evt-main {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .evt-open {
