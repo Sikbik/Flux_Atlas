@@ -230,7 +230,7 @@ function AppBody() {
   const ramGb = detail.totals.ram_mb / 1024;
 
   const steps = lifecycleSteps({
-    pending: stage.pendingUpdate ? 'update waiting' : 'mined',
+    pending: 'mined',
     confirmed: `block ${formatInt(detail.height)}`,
     installing:
       installing > 0
@@ -241,8 +241,8 @@ function AppBody() {
     running: `${running} of ${target}`,
   });
   const at = ['pending', 'confirmed', 'installing', 'running'].indexOf(stage.stage);
-  // A running app needs no lifecycle diagram; one that is not, or has an update on its way, does.
-  const showSteps = stage.stage !== 'running' || stage.pendingUpdate;
+  // A running app needs no lifecycle diagram (an update on its way is a chip); one that is not running does.
+  const showSteps = stage.stage !== 'running';
 
   return (
     <article className="ix ix-app" data-stage={stage.stage} aria-label={`App ${detail.display_name}`}>
@@ -271,6 +271,14 @@ function AppBody() {
         ) : (
           <StatusChip status="pending" label="Pending" size="sm" />
         )}
+        {stage.pendingUpdate ? (
+          <StatusChip
+            status="pending"
+            label="Update waiting"
+            size="sm"
+            title="A new specification is broadcast and waits for its payment to be mined"
+          />
+        ) : null}
         {spec.enterprise ? (
           <Chip size="sm" icon={ShieldCheck} title="The specification is encrypted">
             Enterprise
@@ -307,7 +315,7 @@ function AppBody() {
                       : `Located at ${plural(points.length, 'place')}`}
                 </b>
                 <span>
-                  {formatInt(running)} of {formatInt(target)} instances
+                  {formatInt(running)} of {plural(target, 'instance')}
                 </span>
               </>
             }
