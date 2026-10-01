@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computePosition, parsePlacement, spaceOn } from './position';
+import { computePosition, intersect, isOutOfView, parsePlacement, spaceOn } from './position';
 
 const viewport = { width: 1000, height: 800 };
 const anchor = { left: 400, top: 300, width: 100, height: 30 };
@@ -80,5 +80,34 @@ describe('placement helpers', () => {
     expect(spaceOn('bottom', anchor, viewport, 6, 8)).toBe(800 - 330 - 6 - 8);
     expect(spaceOn('left', anchor, viewport, 6, 8)).toBe(400 - 6 - 8);
     expect(spaceOn('right', anchor, viewport, 6, 8)).toBe(1000 - 500 - 6 - 8);
+  });
+});
+
+describe('visibility helpers', () => {
+  const visible = { left: 0, top: 0, width: 1000, height: 800 };
+
+  it('intersects overlapping boxes and collapses disjoint ones', () => {
+    expect(
+      intersect({ left: 0, top: 0, width: 100, height: 100 }, { left: 50, top: 60, width: 100, height: 100 }),
+    ).toEqual({
+      left: 50,
+      top: 60,
+      width: 50,
+      height: 40,
+    });
+    const none = intersect(
+      { left: 0, top: 0, width: 10, height: 10 },
+      { left: 20, top: 20, width: 10, height: 10 },
+    );
+    expect(none.width).toBe(0);
+    expect(none.height).toBe(0);
+  });
+
+  it('keeps an anchor that is partly on screen and flags one scrolled fully out', () => {
+    expect(isOutOfView({ left: 100, top: -10, width: 80, height: 30 }, visible)).toBe(false);
+    expect(isOutOfView({ left: 100, top: -40, width: 80, height: 30 }, visible)).toBe(true);
+    expect(isOutOfView({ left: 100, top: 790, width: 80, height: 30 }, visible)).toBe(false);
+    expect(isOutOfView({ left: 100, top: 800, width: 80, height: 30 }, visible)).toBe(true);
+    expect(isOutOfView({ left: 1000, top: 100, width: 80, height: 30 }, visible)).toBe(true);
   });
 });

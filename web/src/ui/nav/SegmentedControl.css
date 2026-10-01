@@ -5,7 +5,8 @@
 .ui-seg {
   --ui-seg-pad: 3px;
   --ui-seg-gap: 2px;
-  --ui-seg-h: 26px;
+  /* The pill: the ladder height less the padding and border of the capsule. */
+  --ui-seg-h: calc(var(--ui-h-md) - var(--ui-seg-pad) * 2 - 2px);
   position: relative;
   display: inline-grid;
   grid-auto-flow: column;
@@ -23,7 +24,7 @@
 }
 
 .ui-seg[data-size="sm"] {
-  --ui-seg-h: 22px;
+  --ui-seg-h: calc(var(--ui-h-sm) - var(--ui-seg-pad) * 2 - 2px);
 }
 
 .ui-seg[data-full] {
@@ -132,15 +133,14 @@
   cursor: not-allowed;
 }
 
-/* Touch: 44 px control, 36 px segments (the capsule's padding makes up the rest of the target). */
+/* Touch: the ladder makes the capsule 44 px; the text steps up a size. */
 @media (pointer: coarse) {
-  .ui-seg,
-  .ui-seg[data-size="sm"] {
-    --ui-seg-h: 36px;
-  }
-
   .ui-seg__opt {
     font-size: var(--fs-sm);
+  }
+
+  .ui-seg__opt::after {
+    inset: calc((var(--ui-seg-h) - var(--touch-min)) / 2) -1px;
   }
 }
 

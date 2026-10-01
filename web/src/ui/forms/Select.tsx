@@ -61,7 +61,7 @@ export interface SelectProps<T extends string = string> extends SelectAttrs {
   hint?: ReactNode;
   /** Error message: marks the control invalid and replaces the hint. */
   error?: ReactNode;
-  /** `md` is 38 px (44 px on touch); `sm` is 32 px for toolbars and table filters. */
+  /** `md` is 36 px (44 px on touch); `sm` is 30 px for toolbars and table filters. */
   size?: 'md' | 'sm';
   /** Data options (hashes, addresses, heights): IBM Plex Mono, tabular. */
   mono?: boolean;

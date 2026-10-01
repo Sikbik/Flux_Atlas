@@ -80,6 +80,18 @@
   --ui-lit: inset 0 1px 0 color-mix(in oklab, var(--hot) 8%, transparent);
   /* Contact shadow under a raised surface (no outer spread, so neighbours stay clean). */
   --ui-contact: 0 12px 24px -20px color-mix(in oklab, var(--void) 92%, transparent);
+
+  /* The control height ladder: Button, IconButton, SegmentedControl, TextField, SearchField and Select
+     share two heights, so any mix of them in a row lines up. 44 px on touch. */
+  --ui-h-sm: 30px;
+  --ui-h-md: 36px;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --ui-h-sm: var(--touch-min);
+    --ui-h-md: var(--touch-min);
+  }
 }
 
 /* The one entrance the kit uses itself: a plain fade, for content that replaces a placeholder. The

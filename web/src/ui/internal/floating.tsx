@@ -12,7 +12,14 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { computePosition, type Placement, type PositionResult } from './position';
+import {
+  type Box,
+  computePosition,
+  intersect,
+  isOutOfView,
+  type Placement,
+  type PositionResult,
+} from './position';
 
 /** Renders children into `document.body` (nothing on the server). */
 export function Portal({ children }: { children: ReactNode }) {
@@ -50,16 +57,31 @@ function same(a: PositionResult | null, b: PositionResult): boolean {
   return !!a && a.left === b.left && a.top === b.top && a.placement === b.placement;
 }
 
+const CLIPS = /auto|scroll|hidden|clip/;
+
+/** The part of the viewport an element can show in: the viewport less what scrolling ancestors clip. */
+function visibleRegion(el: HTMLElement): Box {
+  let region: Box = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const s = getComputedStyle(p);
+    if (!CLIPS.test(s.overflowX) && !CLIPS.test(s.overflowY)) continue;
+    const r = p.getBoundingClientRect();
+    region = intersect(region, { left: r.left, top: r.top, width: r.width, height: r.height });
+  }
+  return region;
+}
+
 /**
  * Keeps a floating element positioned against its anchor, re-measuring on scroll, resize and size
  * changes of either element. The layer is hidden until its first measurement so it never flashes
- * at the wrong place.
+ * at the wrong place, and while its anchor is scrolled out of view.
  */
 export function useFloatingPosition(opts: FloatingOptions): FloatingResult {
   const { open, anchor, placement, offset, matchWidth } = opts;
   const [el, setEl] = useState<HTMLElement | null>(null);
   const [pos, setPos] = useState<PositionResult | null>(null);
   const [anchorWidth, setAnchorWidth] = useState<number | null>(null);
+  const [away, setAway] = useState(false);
 
   useLayoutEffect(() => {
     const anchorEl = resolve(anchor);
@@ -70,6 +92,10 @@ export function useFloatingPosition(opts: FloatingOptions): FloatingResult {
     const update = () => {
       const a = anchorEl.getBoundingClientRect();
       if (matchWidth) setAnchorWidth(a.width);
+      // An anchor scrolled out of view takes its layer with it, instead of leaving it clamped to an edge.
+      setAway(
+        isOutOfView({ left: a.left, top: a.top, width: a.width, height: a.height }, visibleRegion(anchorEl)),
+      );
       const next = computePosition({
         anchor: { left: a.left, top: a.top, width: a.width, height: a.height },
         floating: { width: el.offsetWidth, height: el.offsetHeight },
@@ -96,7 +122,7 @@ export function useFloatingPosition(opts: FloatingOptions): FloatingResult {
     position: 'fixed',
     left: pos?.left ?? 0,
     top: pos?.top ?? 0,
-    visibility: pos ? 'visible' : 'hidden',
+    visibility: pos && !away ? 'visible' : 'hidden',
     ...(matchWidth && anchorWidth !== null ? { minWidth: anchorWidth } : null),
   };
   return { floatingRef: setEl, style, placement: pos?.placement ?? null };

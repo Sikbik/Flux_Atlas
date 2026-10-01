@@ -12,7 +12,7 @@ export type ButtonSize = 'sm' | 'md';
 export interface ButtonProps extends ComponentPropsWithRef<'button'> {
   /** `primary` (chamfered, one per view), `secondary` (default), `ghost` or `danger`. */
   variant?: ButtonVariant;
-  /** `md` is 32 px (36 px for primary); `sm` is 26 px. */
+  /** `md` is 36 px; `sm` is 30 px for toolbars and headers (both 44 px on touch). */
   size?: ButtonSize;
   /** Fully rounded ends. */
   pill?: boolean;
@@ -76,7 +76,7 @@ export interface IconButtonProps extends Omit<ComponentPropsWithRef<'button'>, '
   /** Accessible name; also the title. Required because the button has no visible text. */
   label: string;
   variant?: Exclude<ButtonVariant, 'primary'>;
-  /** `md` is a 32 px square; `sm` is 26 px. */
+  /** `md` is a 36 px square; `sm` is 30 px (both 44 px on touch). */
   size?: ButtonSize;
 }
 

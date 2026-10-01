@@ -29,7 +29,7 @@ export type SegmentedControlProps<T extends string = string> = SegmentedLabel &
     value: T;
     /** Called with the value the user picked. */
     onChange: (value: T) => void;
-    /** `md` has 26 px segments (a 34 px control); `sm` has 22 px segments. */
+    /** `md` is a 36 px control; `sm` is 30 px (both 44 px on touch). */
     size?: 'sm' | 'md';
     /** Stretch to the container's width, segments sharing it equally. */
     fullWidth?: boolean;

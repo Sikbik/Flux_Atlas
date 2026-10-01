@@ -261,3 +261,16 @@
 :root:is([data-motion="reduced"], [data-motion="off"]) .ui-ts[data-state="ready"] .ui-ts__foot {
   animation: none;
 }
+
+/* Touch: a legend toggle is 32 px to look at and 44 px to hit. */
+@media (pointer: coarse) {
+  .ui-ts__legend-item {
+    position: relative;
+  }
+
+  .ui-ts__legend-item::after {
+    content: "";
+    position: absolute;
+    inset: -6px -2px;
+  }
+}

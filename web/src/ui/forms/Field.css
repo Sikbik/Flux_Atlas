@@ -44,7 +44,7 @@
 /* The control chrome, shared by the text input (a div around the input) and the select trigger (a
    button). */
 .ui-field__box {
-  --ui-field-h: 38px;
+  --ui-field-h: var(--ui-h-md);
   position: relative;
   display: flex;
   align-items: center;
@@ -68,8 +68,18 @@
 }
 
 .ui-field__box[data-size="sm"] {
-  --ui-field-h: 32px;
+  --ui-field-h: var(--ui-h-sm);
   padding: 0 var(--space-4);
+}
+
+/* A button in the trailing slot sits inset: 8 px shorter than the field, inside its border. */
+.ui-field .ui-field__box > .ui-button {
+  height: calc(var(--ui-field-h) - 8px);
+  border-radius: var(--r-sm);
+}
+
+.ui-field .ui-field__box > .ui-button[data-icon-only] {
+  width: calc(var(--ui-field-h) - 8px);
 }
 
 /* :where keeps hover at the lowest specificity, so focus and error borders always win over it. */

@@ -187,3 +187,10 @@
 :root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__label {
   transition: none;
 }
+
+/* Touch: rows that act are 44 px tall. */
+@media (pointer: coarse) {
+  .ui-barlist__row:where([data-kind="link"], [data-kind="button"]) {
+    min-height: var(--touch-min);
+  }
+}

@@ -43,9 +43,7 @@ import './DataTable.css';
 export const VIRTUALIZE_THRESHOLD = 200;
 /** Viewport height assumed before the first measurement (and where nothing can be measured). */
 const FALLBACK_VIEWPORT = 600;
-/** Rows below this index get an entry stagger step (`--stagger`, capped at `--stagger-max`). */
-const STAGGER_ROWS = 8;
-/** How long the entry stagger stays armed after mount or after skeleton rows resolve, ms. */
+/** How long `data-enter` stays set after mount or after skeleton rows resolve (the rows fade in), ms. */
 const ENTER_MS = 900;
 
 const INTERACTIVE =
@@ -104,7 +102,6 @@ function DataRowImpl<Row>({
       data-fresh={fresh || undefined}
       data-striped={striped || undefined}
       data-link={linkable || undefined}
-      style={index < STAGGER_ROWS ? ({ '--ui-i': index } as CSSProperties) : undefined}
     >
       {columns.map((c, ci) => {
         const node = c.cell

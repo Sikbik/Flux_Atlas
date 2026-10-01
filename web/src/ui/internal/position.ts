@@ -127,3 +127,19 @@ export function computePosition(input: PositionInput): PositionResult {
     maxWidth: Math.max(0, viewport.width - padding * 2),
   };
 }
+
+/** The overlap of two boxes (zero-sized, at `a`'s corner, when they do not touch). */
+export function intersect(a: Box, b: Box): Box {
+  const left = Math.max(a.left, b.left);
+  const top = Math.max(a.top, b.top);
+  const right = Math.min(a.left + a.width, b.left + b.width);
+  const bottom = Math.min(a.top + a.height, b.top + b.height);
+  return right > left && bottom > top
+    ? { left, top, width: right - left, height: bottom - top }
+    : { left: a.left, top: a.top, width: 0, height: 0 };
+}
+
+/** Whether `anchor` has scrolled completely out of the `visible` region (nothing of it is on screen). */
+export function isOutOfView(anchor: Box, visible: Box): boolean {
+  return intersect(anchor, visible).width === 0 || intersect(anchor, visible).height === 0;
+}

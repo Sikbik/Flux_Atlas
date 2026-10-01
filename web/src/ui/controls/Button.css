@@ -7,7 +7,7 @@
   justify-content: center;
   gap: var(--space-4);
   flex: none;
-  height: 32px;
+  height: var(--ui-h-md);
   padding: 0 var(--space-6);
   border: 1px solid var(--line-2);
   border-radius: var(--r-md);
@@ -46,7 +46,7 @@
 }
 
 .ui-button[data-size="sm"] {
-  height: 26px;
+  height: var(--ui-h-sm);
   padding: 0 var(--space-5);
   border-radius: var(--r-sm);
 }
@@ -56,12 +56,12 @@
 }
 
 .ui-button[data-icon-only] {
-  width: 32px;
+  width: var(--ui-h-md);
   padding: 0;
 }
 
 .ui-button[data-icon-only][data-size="sm"] {
-  width: 26px;
+  width: var(--ui-h-sm);
 }
 
 /* Ghost: no fill until hovered. */
@@ -95,7 +95,6 @@
 
 /* Primary: the shape is a pseudo-element so the focus outline is not clipped by the chamfer. */
 .ui-button[data-variant="primary"] {
-  height: 36px;
   padding: 0 var(--space-7);
   border: 0;
   border-radius: 0;
@@ -105,7 +104,6 @@
 }
 
 .ui-button[data-variant="primary"][data-size="sm"] {
-  height: 30px;
   padding: 0 var(--space-6);
 }
 

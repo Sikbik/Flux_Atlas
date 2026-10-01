@@ -31,7 +31,7 @@ export interface TextFieldProps extends Omit<ComponentPropsWithRef<'input'>, 'si
   kbd?: readonly string[];
   /** Data input: IBM Plex Mono, tabular, no spellcheck (hashes, addresses, IPs, amounts). */
   mono?: boolean;
-  /** `md` is 38 px (16 px text on touch); `sm` is 32 px for toolbars and table filters. */
+  /** `md` is 36 px (44 px with 16 px text on touch); `sm` is 30 px for toolbars and table filters. */
   size?: 'md' | 'sm';
   /** Keep the message line's height when there is no hint or error, so an error does not shift the layout. */
   reserveMessage?: boolean;
@@ -40,7 +40,7 @@ export interface TextFieldProps extends Omit<ComponentPropsWithRef<'input'>, 'si
 }
 
 /**
- * A single-line text field: label, a 38 px control with an optional leading icon, prefix, suffix, key
+ * A single-line text field: label, a 36 px control with an optional leading icon, prefix, suffix, key
  * caps and trailing slot, and a hint or error line below. Works controlled (`value`) or uncontrolled
  * (`defaultValue`) like a native input, and passes every other input attribute through.
  */

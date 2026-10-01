@@ -125,6 +125,21 @@ button.ui-chip:focus-visible {
   animation: ui-chip-spin 1s linear infinite;
 }
 
+/* Touch: a toggle chip is 32 px to look at and 44 px to hit (the slop is invisible and does not
+   change the layout). */
+@media (pointer: coarse) {
+  button.ui-chip {
+    position: relative;
+    min-height: 32px;
+  }
+
+  button.ui-chip::after {
+    content: "";
+    position: absolute;
+    inset: -6px -2px;
+  }
+}
+
 /* The caps badge: the one ALL CAPS style in the product, status badges only (design 5.3). */
 .ui-chip[data-variant="badge"] {
   --ui-chip-h: 20px;

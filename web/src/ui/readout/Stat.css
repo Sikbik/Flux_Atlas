@@ -181,12 +181,12 @@ button.ui-stat:focus-visible {
     color-mix(in oklab, var(--accent-400) 26%, transparent)
   );
   -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(var(--ink-0) 0 0) content-box,
+    linear-gradient(var(--ink-0) 0 0);
   -webkit-mask-composite: xor;
   mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(var(--ink-0) 0 0) content-box,
+    linear-gradient(var(--ink-0) 0 0);
   mask-composite: exclude;
   pointer-events: none;
 }
@@ -231,6 +231,18 @@ button.ui-stat:focus-visible {
   top: auto;
   right: 18px;
   bottom: 18px;
+}
+
+/* The hero's trend sits at the bottom right, so its label needs no room for it. */
+.ui-stat[data-hero][data-spark] .ui-stat__label {
+  padding-right: 0;
+}
+
+/* A hero in a one-column grid is too narrow to hold the figure's caption and a trend side by side. */
+@container (max-width: 259px) {
+  .ui-stat[data-hero] .ui-stat__spark {
+    display: none;
+  }
 }
 
 .ui-stat[data-hero]:focus-visible {

@@ -9,9 +9,9 @@
      --ui-table-cols    grid-template-columns (set by the component)
      --ui-table-min     narrowest width before horizontal scroll (set by the component)
      --ui-table-row-h   row height (set by the component)
-     --ui-table-head-h  header height                                                 default 32px (40px on coarse pointers)
+     --ui-table-head-h  header height                                                 default 32px (44px on coarse pointers)
      --ui-row-bg        a row's current background (internal, per row state)
-     --ui-i, --ui-shift entry stagger index and live-insert slide distance (internal) */
+     --ui-shift         live-insert slide distance (internal) */
 
 :where(.ui-table) {
   --ui-table-bg: var(--ink-0);
@@ -309,10 +309,10 @@
   animation: ui-table-shift var(--dur-enter) var(--ease-out) both;
 }
 
-/* First paint of data: rows rise in, staggered by --stagger, at most --stagger-max steps. */
+/* First paint of data: the rows fade in together as the skeleton fades out. `data-enter` is also an
+   attach point for the Flux motion primitives. */
 .ui-table[data-enter] .ui-table__row:not([data-skeleton]) {
-  animation: ui-table-in var(--dur-base) var(--ease-out) both;
-  animation-delay: calc(min(var(--ui-i, 8), var(--stagger-max)) * var(--stagger));
+  animation: ui-table-fade var(--dur-base) var(--ease-out) both;
 }
 
 /* ---- Cells ------------------------------------------------------------------------------------ */
@@ -412,9 +412,7 @@
   inset: 0 0 auto;
   z-index: 5;
   pointer-events: none;
-  /* Long enough to outlast the row stagger, so the skeleton never fades before the last row has risen. */
-  animation: ui-table-ghost calc(var(--dur-base) + var(--stagger-max) * var(--stagger)) var(--ease-in-out)
-    forwards;
+  animation: ui-table-ghost var(--dur-base) var(--ease-in-out) forwards;
 }
 
 .ui-table__empty {
@@ -443,7 +441,7 @@
 
 @media (pointer: coarse) {
   .ui-table {
-    --ui-table-head-h: 40px;
+    --ui-table-head-h: var(--touch-min);
   }
 }
 
@@ -468,13 +466,6 @@
   }
 }
 
-@keyframes ui-table-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
 @keyframes ui-table-fade {
   from {
     opacity: 0;
@@ -493,11 +484,6 @@
     animation-name: ui-table-fade;
   }
 
-  :root:not([data-motion="full"]) .ui-table[data-enter] .ui-table__row:not([data-skeleton]) {
-    animation-name: ui-table-fade;
-    animation-delay: 0s;
-  }
-
   :root:not([data-motion="full"]) .ui-table__shifter[data-shift] {
     animation: none;
   }
@@ -509,11 +495,6 @@
 
 :root[data-motion="reduced"] .ui-table__row[data-fresh] {
   animation-name: ui-table-fade;
-}
-
-:root[data-motion="reduced"] .ui-table[data-enter] .ui-table__row:not([data-skeleton]) {
-  animation-name: ui-table-fade;
-  animation-delay: 0s;
 }
 
 :root[data-motion="reduced"] .ui-table__shifter[data-shift] {

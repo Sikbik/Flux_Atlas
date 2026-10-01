@@ -98,9 +98,17 @@
   max-width: 100%;
 }
 
+/* Head, gap and tail are inline, so a drag-select copies the value without line breaks. When the
+   cell is narrower than head and tail, the end of the line gives way (an ellipsis) instead of the
+   text running under the copy button. */
 .ui-hash__text {
   position: relative;
+  display: inline-block;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
   white-space: nowrap;
   user-select: text;
   cursor: text;
@@ -124,6 +132,8 @@
 }
 
 .ui-hash[data-full] .ui-hash__text {
+  display: inline;
+  overflow: visible;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-all;
@@ -168,4 +178,19 @@
 
 .ui-reltime {
   color: var(--text-3);
+}
+
+/* ---- touch ------------------------------------------------------------------------------------ */
+
+/* An entity link on its own line is a 17 px strip of text; give it an invisible 29 px band to hit. */
+@media (pointer: coarse) {
+  .ui-entity {
+    position: relative;
+  }
+
+  .ui-entity::after {
+    content: "";
+    position: absolute;
+    inset: -6px -2px;
+  }
 }

@@ -4,14 +4,14 @@
 .ui-tabs {
   /* The window accent (`data-accent` sets --accent on the window); Flux blue shade 2 otherwise. */
   --ui-tabs-accent: var(--accent, var(--accent-400));
-  --ui-tabs-h: 34px;
+  --ui-tabs-h: var(--ui-h-md);
   --ui-tabs-fade: 28px;
   position: relative;
   min-width: 0;
 }
 
 .ui-tabs[data-size="sm"] {
-  --ui-tabs-h: 32px;
+  --ui-tabs-h: var(--ui-h-sm);
 }
 
 /* Overflow: the strip scrolls sideways without a scrollbar and fades toward the hidden side. */

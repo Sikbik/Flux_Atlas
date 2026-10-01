@@ -428,3 +428,16 @@
     display: inline;
   }
 }
+
+/* Touch: an invisible band makes the disclosure row a 44 px target without moving the thread. */
+@media (pointer: coarse) {
+  .ui-tl__head[data-expandable] {
+    position: relative;
+  }
+
+  .ui-tl__head[data-expandable]::after {
+    content: "";
+    position: absolute;
+    inset: -8px 0;
+  }
+}

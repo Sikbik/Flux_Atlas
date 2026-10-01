@@ -149,3 +149,10 @@
 .ui-section[data-flush] > .ui-section__head {
   padding-inline: var(--ui-section-px);
 }
+
+/* Touch: the fold toggle is a 44 px target. */
+@media (pointer: coarse) {
+  .ui-section__toggle {
+    min-height: var(--touch-min);
+  }
+}

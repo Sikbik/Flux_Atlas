@@ -43,7 +43,7 @@ export type TabsProps<T extends string = string> = TabsLabel &
     value: T;
     /** Called with the id of the tab the user picked. */
     onChange: (id: T) => void;
-    /** `md` is 34 px (page and inspector tabs); `sm` is 32 px with a heavier label (window tabs). */
+    /** `md` is 36 px (page and inspector tabs); `sm` is 30 px with a heavier label (window tabs). */
     size?: 'md' | 'sm';
     /** `auto` selects on arrow keys (default); `manual` only moves focus, Enter or Space selects. */
     activation?: 'auto' | 'manual';
