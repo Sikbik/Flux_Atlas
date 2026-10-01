@@ -311,6 +311,25 @@ export function GlobeCanvas() {
     return () => mq.removeEventListener('change', apply);
   }, [engine, motion]);
 
+  // ---- the home control: any in-app link to the bare globe (the lockup, the dock's Globe) --------
+  // Activating one is an explicit "home": the camera eases back to the home view, whether the link
+  // navigates (closing a window) or not (already at `/`, which the router treats as a no-op).
+  useEffect(() => {
+    if (!engine) return;
+    const onClick = (ev: MouseEvent) => {
+      if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey)
+        return;
+      const a = (ev.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!a || (a.target && a.target !== '_self')) return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin || url.pathname !== '/') return;
+      // After the router has applied the navigation (the binding sees the bare view first).
+      setTimeout(() => handles.binding.get()?.home(), 0);
+    };
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, [engine, handles]);
+
   // ---- keyboard: M is the moon's click (About Flux); every key wakes the screensaver --------
   useEffect(() => {
     if (!engine) return;

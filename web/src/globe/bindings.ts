@@ -71,6 +71,8 @@ export interface GlobeTarget {
   showAppConstellation(ids: ArrayLike<number> | null, opts?: { name?: string; fly?: boolean }): void;
   clearAppConstellation(): void;
   setMode(mode: EngineMode): void;
+  /** Eases back to the home view (no pitch, north up, the home zoom, framed in the free area). */
+  home(): Promise<boolean>;
   setMoon(opts: {
     on?: boolean;
     mode?: 'auto' | 'companion' | 'orbit';
@@ -400,6 +402,8 @@ export interface GlobeBindingDeps {
 export interface GlobeBinding {
   /** Applies the URL's view (call on every location change; unchanged parts are skipped). */
   setView(view: GlobeView): void;
+  /** The home control: back to the home view (explore only). */
+  home(): void;
   /** Watched nodes (store ids): the engine's dashed ring, and the `watched` filter. */
   setWatched(ids: readonly number[]): void;
   /** The canonical key of a node for URLs: `ip:port`, else the id. */
@@ -410,6 +414,9 @@ export interface GlobeBinding {
   hostSite(ip: string): { lat: number; lon: number } | null;
   dispose(): void;
 }
+
+/** Focus routes that fly the camera; leaving one for the bare globe goes home. */
+const CAMERA_FOCUS = new Set<GlobeFocus['kind']>(['node', 'host', 'app']);
 
 /** Altitude (globe radii) the camera flies to for a host, close enough for the stack to fan out. */
 export const HOST_ALT = 0.22;
@@ -657,10 +664,16 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
     const prev = view;
     view = next;
     if (!prev || prev.ambient !== next.ambient) engine.setMode(next.ambient ? 'ambient' : 'explore');
-    if (!prev || prev.layers !== next.layers) engine.setMeshMode(meshModeFor(next.layers));
+    // Leaving ambient re-asserts the URL's layers: the director runs its own mesh flow and restores
+    // what it saved on entry, which need not be what this URL asks for.
+    const leftAmbient = !!prev?.ambient && !next.ambient;
+    if (!prev || prev.layers !== next.layers || leftAmbient) engine.setMeshMode(meshModeFor(next.layers));
     if (!prev || !sameFilter(prev.filter, next.filter)) applyFilter();
     if (!prev || !sameFocus(prev.focus, next.focus) || prev.sel.join(',') !== next.sel.join(','))
       applyFocus(false);
+    // Back to the bare globe from a route that moved the camera (a node, a host, an app): home.
+    if (prev && !next.ambient && next.focus.kind === 'none' && CAMERA_FOCUS.has(prev.focus.kind))
+      void engine.home();
   };
 
   const setWatched = (ids: readonly number[]) => {
@@ -711,6 +724,9 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
 
   return {
     setView,
+    home() {
+      if (!disposed && !view?.ambient) void engine.home();
+    },
     setWatched,
     keyOf,
     resolveKey,
