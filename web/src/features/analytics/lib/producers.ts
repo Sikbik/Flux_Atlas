@@ -6,6 +6,8 @@ export type ProducerTier = 'cumulus' | 'nimbus' | 'stratus';
 
 export interface SampleBlock {
   height: number;
+  /** Block time, unix ms: the confirmed set of that moment is the one that could have produced it. */
+  timeMs: number;
   /** Node id of the producer, when the chain explorer knows it. */
   producer: number | null;
 }
@@ -17,6 +19,8 @@ export interface ProducerTally {
   /** Blocks with a known tier: the sample the comparison is made on. */
   known: number;
   total: number;
+  /** Block times of the known blocks, newest first as given: what the expectation is summed over. */
+  knownTimes: number[];
 }
 
 export function tallyProducers(
@@ -24,14 +28,19 @@ export function tallyProducers(
   tierOf: (nodeId: number) => ProducerTier | null,
 ): ProducerTally {
   const counts: Record<ProducerTier, number> = { cumulus: 0, nimbus: 0, stratus: 0 };
+  const knownTimes: number[] = [];
   let unknown = 0;
   for (const b of blocks) {
     const tier = b.producer === null ? null : tierOf(b.producer);
-    if (tier === null) unknown++;
-    else counts[tier]++;
+    if (tier === null) {
+      unknown++;
+    } else {
+      counts[tier]++;
+      knownTimes.push(b.timeMs);
+    }
   }
   const known = counts.cumulus + counts.nimbus + counts.stratus;
-  return { counts, unknown, known, total: known + unknown };
+  return { counts, unknown, known, total: known + unknown, knownTimes };
 }
 
 /**

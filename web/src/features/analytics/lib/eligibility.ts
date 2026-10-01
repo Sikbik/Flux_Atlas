@@ -55,6 +55,30 @@ export function sampleTimes(
   return out;
 }
 
+/**
+ * Keeps the recorded sets that look like the whole network. A recording can begin before the node list
+ * has loaded, and a set of a handful of nodes is a partial read, not the network: a set with fewer than
+ * `minShare` of the reference total (today's confirmed nodes) is dropped. With no reference, all stay.
+ */
+export function usableSets(
+  samples: readonly EligibleSample[],
+  reference: TierCounts,
+  minShare = 0.5,
+): EligibleSample[] {
+  const floor = sumCounts(reference) * minShare;
+  return samples.filter((s) => sumCounts(s.counts) >= floor);
+}
+
+/** How many of the blocks fall at or after the earliest recorded set (the rest are judged by it too). */
+export function blocksCovered(blockTimesMs: readonly number[], samples: readonly EligibleSample[]): number {
+  if (samples.length === 0) return 0;
+  let earliest = Number.POSITIVE_INFINITY;
+  for (const s of samples) earliest = Math.min(earliest, s.t);
+  let n = 0;
+  for (const t of blockTimesMs) if (t >= earliest) n++;
+  return n;
+}
+
 /** The sample nearest to `timeMs` (the earlier one on a tie), or null without samples. */
 export function nearestSample(samples: readonly EligibleSample[], timeMs: number): EligibleSample | null {
   let best: EligibleSample | null = null;

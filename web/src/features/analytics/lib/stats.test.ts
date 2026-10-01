@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { chiSquare, chiSquareP, fairness, hhi, hhiBand, nakamoto, pareto, wilson, Z } from './stats';
+import {
+  chiSquare,
+  chiSquareP,
+  deviation,
+  fairness,
+  hhi,
+  hhiBand,
+  mostOff,
+  nakamoto,
+  pareto,
+  wilson,
+  Z,
+} from './stats';
 
 describe('nakamoto', () => {
   it('counts the smallest set holding more than half', () => {
@@ -151,6 +163,53 @@ describe('fairness', () => {
 
   it('uses z = 1.96 for 95% intervals', () => {
     expect(Z[95]).toBeCloseTo(1.96, 2);
+  });
+});
+
+describe('deviation and mostOff', () => {
+  const n = 3000;
+  // Cumulus mints 6.8% fewer blocks than its half of the nodes; the other two are near expectation.
+  const out = fairness(
+    [
+      { key: 'stratus', label: 'Stratus', nodes: 1762, produced: 840 },
+      { key: 'nimbus', label: 'Nimbus', nodes: 1581, produced: 750 },
+      { key: 'cumulus', label: 'Cumulus', nodes: 3375, produced: 1410 },
+    ],
+    6718,
+    n,
+    { ciZ: Z[99], flagZ: Z[99] },
+  );
+
+  it('states the observed share as a fraction above or below the expected share', () => {
+    const cum = out.find((r) => r.key === 'cumulus')!;
+    const d = deviation(cum)!;
+    expect(d.rel).toBeCloseTo(cum.producedShare / cum.nodeShare - 1, 10);
+    expect(d.rel).toBeLessThan(0);
+    // The interval of the observed share carries over: it contains the deviation, and it is ordered.
+    expect(d.lo).toBeLessThan(d.rel);
+    expect(d.hi).toBeGreaterThan(d.rel);
+  });
+
+  it('has no deviation when nothing was expected', () => {
+    expect(deviation({ nodeShare: 0, producedShare: 0.1, lo: 0, hi: 0.2 })).toBeNull();
+  });
+
+  it('picks the flagged row furthest from its expectation', () => {
+    const worst = mostOff(out);
+    expect(worst?.key).toBe('cumulus');
+    expect(worst?.verdict).toBe('below');
+  });
+
+  it('picks nothing when no row is flagged', () => {
+    const calm = fairness(
+      [
+        { key: 'a', label: 'A', nodes: 50, produced: 505 },
+        { key: 'b', label: 'B', nodes: 50, produced: 495 },
+      ],
+      100,
+      1000,
+    );
+    expect(mostOff(calm)).toBeNull();
   });
 });
 

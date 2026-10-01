@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  blocksCovered,
   confirmedCounts,
   type EligibleSample,
   expectedByBlock,
   nearestSample,
   sampleTimes,
   sumCounts,
+  usableSets,
 } from './eligibility';
 
 describe('confirmedCounts', () => {
@@ -75,5 +77,37 @@ describe('expectedByBlock', () => {
   it('skips a block when no node was eligible', () => {
     const e = expectedByBlock([0], [], { cumulus: 0, nimbus: 0, stratus: 0 });
     expect(sumCounts(e.expected)).toBe(0);
+  });
+});
+
+describe('usableSets', () => {
+  const today = { cumulus: 3375, nimbus: 1581, stratus: 1762 };
+  const set = (t: number, c: number, n: number, s: number): EligibleSample => ({
+    t,
+    counts: { cumulus: c, nimbus: n, stratus: s },
+  });
+
+  it('drops a partial read from before the node list loaded', () => {
+    const kept = usableSets([set(0, 3, 3, 4), set(1, 3385, 1575, 1763)], today);
+    expect(kept.map((x) => x.t)).toEqual([1]);
+  });
+  it('keeps a network that drifted a little', () => {
+    expect(usableSets([set(0, 3000, 1500, 1700)], today)).toHaveLength(1);
+  });
+  it('keeps everything when there is no reference to judge by', () => {
+    expect(usableSets([set(0, 3, 3, 4)], { cumulus: 0, nimbus: 0, stratus: 0 })).toHaveLength(1);
+  });
+});
+
+describe('blocksCovered', () => {
+  const sets: EligibleSample[] = [
+    { t: 500, counts: { cumulus: 1, nimbus: 1, stratus: 1 } },
+    { t: 900, counts: { cumulus: 1, nimbus: 1, stratus: 1 } },
+  ];
+  it('counts the blocks from the earliest recorded set on', () => {
+    expect(blocksCovered([100, 400, 500, 700, 1000], sets)).toBe(3);
+  });
+  it('is 0 with no recorded sets', () => {
+    expect(blocksCovered([100, 200], [])).toBe(0);
   });
 });

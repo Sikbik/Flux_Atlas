@@ -131,6 +131,28 @@ export function fairness(
   });
 }
 
+/**
+ * How far a row's observed share sits from its expected share, as a fraction of the expected share
+ * (-0.07 is "7% fewer blocks than expected"), with the interval of the observed share carried over the
+ * same way. Null when nothing was expected.
+ */
+export function deviation(
+  r: Pick<FairnessRow, 'nodeShare' | 'producedShare' | 'lo' | 'hi'>,
+): { rel: number; lo: number; hi: number } | null {
+  if (r.nodeShare <= 0) return null;
+  return { rel: r.producedShare / r.nodeShare - 1, lo: r.lo / r.nodeShare - 1, hi: r.hi / r.nodeShare - 1 };
+}
+
+/** The flagged row furthest from its expectation, or null when none is flagged. */
+export function mostOff(rows: readonly FairnessRow[]): FairnessRow | null {
+  let best: FairnessRow | null = null;
+  for (const r of rows) {
+    if (r.verdict === 'within') continue;
+    if (best === null || Math.abs(r.z) > Math.abs(best.z)) best = r;
+  }
+  return best;
+}
+
 /** Chi-square statistic of observed producer counts against node shares (degrees of freedom k - 1). */
 export function chiSquare(
   rows: readonly FairnessInput[],
