@@ -1,0 +1,724 @@
+/* Charts as instruments: thin marks, light instead of boxes, hairline precision, data in Plex Mono.
+   Everything reads the design tokens; colours of marks arrive as custom properties (`--c`) so text
+   never wears a data colour. Motion uses transform, opacity and clip-path with the design's easing,
+   and stands still under reduced motion. */
+
+.vz-fig {
+  --vz-surface: var(--ink-1);
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+
+.vz-fig[data-stale] {
+  opacity: 0.55;
+}
+
+/* ---- legend ----------------------------------------------------------------------------------- */
+
+.vz-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.vz-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--hit-min);
+  padding: 0 var(--space-4) 0 var(--space-3);
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.vz-legend-item:disabled {
+  cursor: default;
+}
+
+.vz-legend-item:not(:disabled):hover {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--text-1);
+}
+
+.vz-legend-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.vz-legend-item[data-active] {
+  color: var(--text-1);
+  background: rgb(255 255 255 / 0.08);
+}
+
+.vz-legend-item[data-dim] {
+  opacity: 0.5;
+}
+
+.vz-legend-val {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+  color: var(--text-1);
+  font-size: 11.5px;
+}
+
+/* a short stroke of the series colour: the key of lines, areas and tooltips alike */
+.vz-key {
+  flex: none;
+  width: 14px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--c, var(--text-3));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--c, transparent) 55%, transparent);
+}
+
+/* ---- plot ------------------------------------------------------------------------------------- */
+
+.vz-chart {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.vz-svg {
+  display: block;
+  overflow: visible;
+}
+
+.vz-grid line {
+  stroke: var(--viz-grid);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.vz-grid text,
+.vz-xaxis text {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  fill: var(--viz-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.vz-xaxis line {
+  stroke: var(--viz-axis);
+  shape-rendering: crispEdges;
+}
+
+.vz-marks text {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  fill: var(--text-2);
+}
+
+.vz-xaxis [data-major] text {
+  fill: var(--text-2);
+}
+
+.vz-line {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.vz-series {
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+
+.vz-data {
+  animation: vz-reveal calc(var(--dur-slower) * 2) var(--ease-out-expo) both;
+}
+
+@keyframes vz-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.vz-marks line {
+  stroke: rgb(255 255 255 / 0.26);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.vz-marks [data-tone="accent"] line {
+  stroke: var(--accent-400);
+}
+
+.vz-marks [data-tone="warn"] line {
+  stroke: var(--status-warn);
+}
+
+.vz-dot {
+  stroke: var(--vz-surface);
+  stroke-width: 2;
+}
+
+.vz-ends .vz-dot {
+  filter: drop-shadow(0 0 5px currentColor);
+}
+
+.vz-pulse {
+  fill: none;
+  stroke-width: 1.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vz-ping 2.4s var(--ease-out) infinite;
+}
+
+@keyframes vz-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+
+.vz-cross {
+  stroke: rgb(255 255 255 / 0.3);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+/* the focusable, pointer-aware plot (a slider over the points) */
+.vz-overlay {
+  position: absolute;
+  cursor: crosshair;
+  touch-action: pan-y;
+  outline: none;
+  border-radius: var(--r-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vz-overlay[data-selectable] {
+  cursor: pointer;
+}
+
+.vz-overlay:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent-400);
+}
+
+/* ---- tooltip: glass, values lead, names follow -------------------------------------------------- */
+
+.vz-tip {
+  position: absolute;
+  z-index: 4;
+  min-width: 164px;
+  max-width: 260px;
+  padding: var(--space-4) var(--space-5) var(--space-4);
+  border-radius: var(--r-md);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  transform: translateX(14px);
+  animation: vz-tip-in var(--dur-fast) var(--ease-out) both;
+}
+
+.vz-tip[data-side="left"] {
+  transform: translateX(calc(-100% - 14px));
+}
+
+@keyframes vz-tip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.vz-tip-head {
+  margin-bottom: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.vz-tip ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.vz-tip li {
+  display: grid;
+  grid-template-columns: 14px auto 1fr;
+  align-items: center;
+  column-gap: var(--space-3);
+  font-size: var(--fs-xs);
+}
+
+.vz-tip li[data-dim] {
+  opacity: 0.5;
+}
+
+.vz-tip-name {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.vz-tip li[data-hot] .vz-tip-name {
+  color: var(--text-1);
+}
+
+.vz-tip-val {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+  color: var(--text-1);
+  font-size: 12.5px;
+  justify-self: end;
+}
+
+.vz-tip-total {
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-1);
+}
+
+.vz-tip-hint {
+  margin-top: var(--space-4);
+  font-size: 11px;
+  color: var(--accent-300);
+}
+
+/* ---- footer and the table twin ----------------------------------------------------------------- */
+
+.vz-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  min-height: 24px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.vz-summary {
+  min-width: 0;
+}
+
+.vz-toggle {
+  flex: none;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.vz-toggle:hover {
+  color: var(--text-1);
+  background: rgb(255 255 255 / 0.06);
+}
+
+.vz-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.vz-table-wrap {
+  max-height: 240px;
+  overflow: auto;
+  border-radius: var(--r-md);
+  background: var(--ink-0);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.vz-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.vz-table caption {
+  padding: var(--space-4) var(--space-5);
+  text-align: left;
+  color: var(--text-3);
+}
+
+.vz-table th,
+.vz-table td {
+  padding: var(--space-2) var(--space-5);
+  text-align: right;
+  font-family: var(--font-mono);
+  font-weight: var(--fw-regular);
+  white-space: nowrap;
+  border-top: 1px solid var(--line-1);
+}
+
+.vz-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--ink-0);
+  color: var(--text-3);
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: 11px;
+}
+
+.vz-table tbody th {
+  text-align: left;
+  color: var(--text-2);
+}
+
+.vz-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* ---- bar list ---------------------------------------------------------------------------------- */
+
+.vz-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.vz-bar-row {
+  --c: var(--viz-1);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label value"
+    "track track";
+  align-items: baseline;
+  column-gap: var(--space-5);
+  row-gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  margin-inline: calc(var(--space-4) * -1);
+  border-radius: var(--r-md);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.vz-bar-row[data-interactive] {
+  cursor: pointer;
+}
+
+.vz-bar-row[data-interactive]:hover {
+  background: rgb(255 255 255 / 0.05);
+}
+
+.vz-bar-row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.vz-bar-row[data-selected] {
+  background: var(--accent-soft);
+}
+
+.vz-bar-row[data-dim] {
+  opacity: 0.45;
+}
+
+.vz-bar-label {
+  grid-area: label;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-1);
+}
+
+.vz-bar-label > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vz-bar-sub {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.vz-bar-value {
+  grid-area: value;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.vz-bar-value strong {
+  font-weight: var(--fw-medium);
+  color: var(--text-1);
+}
+
+.vz-bar-track {
+  grid-area: track;
+  position: relative;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: rgb(255 255 255 / 0.06);
+  overflow: hidden;
+}
+
+.vz-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 55%, transparent), var(--c));
+  transform-origin: left center;
+  transform: scaleX(var(--w, 0));
+  transition: transform var(--dur-slower) var(--ease-out-expo);
+}
+
+.vz-bar-cum {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: rgb(255 255 255 / 0.55);
+}
+
+.vz-bars-rule {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: var(--space-2) 0;
+  font-size: 11px;
+  color: var(--accent-300);
+}
+
+.vz-bars-rule::before,
+.vz-bars-rule::after {
+  content: "";
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-400));
+  flex: 1;
+  opacity: 0.6;
+}
+
+.vz-bars-rule::after {
+  background: linear-gradient(270deg, transparent, var(--accent-400));
+}
+
+/* ---- sparkline, meter, histogram ---------------------------------------------------------------- */
+
+.vz-spark {
+  display: block;
+  overflow: visible;
+}
+
+.vz-spark path.line {
+  fill: none;
+  stroke: var(--c, var(--viz-1));
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.vz-spark circle {
+  fill: var(--c, var(--viz-1));
+  stroke: var(--vz-surface, var(--ink-1));
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px var(--c, var(--viz-1)));
+}
+
+.vz-meter {
+  --c: var(--accent-500);
+  position: relative;
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  overflow: hidden;
+}
+
+.vz-meter > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--accent-600), var(--accent-400));
+  transform-origin: left center;
+  transform: scaleX(var(--w, 0));
+  transition: transform var(--dur-slower) var(--ease-out-expo);
+}
+
+.vz-meter > b {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--hot);
+  box-shadow: 0 0 8px var(--hot-glow);
+}
+
+.vz-hist-bar {
+  fill: var(--viz-1);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.vz-hist-bar[data-dim] {
+  opacity: 0.35;
+}
+
+.vz-hist-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.vz-hist-hit:hover + .vz-hist-bar,
+.vz-hist-hit:focus-visible + .vz-hist-bar {
+  fill: var(--accent-300);
+}
+
+/* ---- dot map ---------------------------------------------------------------------------------- */
+
+.vz-map-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.vz-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.vz-map-land {
+  fill: none;
+  stroke: rgb(134 161 218 / 0.3);
+  stroke-linecap: round;
+  opacity: 0;
+  transition: opacity var(--dur-slower) var(--ease-out);
+}
+
+.vz-map-land[data-ready] {
+  opacity: 1;
+}
+
+.vz-map-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.vz-map-halo {
+  fill: var(--c, var(--viz-1));
+  fill-opacity: 0;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.7);
+  transition:
+    fill-opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.vz-map-halo[data-on] {
+  fill-opacity: 0.2;
+  transform: scale(1);
+}
+
+.vz-map-site {
+  fill: var(--c, var(--viz-1));
+  fill-opacity: 0.82;
+  stroke: var(--ink-1);
+  stroke-width: 1.2;
+  pointer-events: none;
+  transition: fill-opacity var(--dur-fast) var(--ease-out);
+}
+
+.vz-map-site[data-hot] {
+  fill-opacity: 1;
+}
+
+.vz-map-site[data-dim] {
+  fill-opacity: 0.4;
+}
+
+g[role="button"]:focus-visible {
+  outline: none;
+}
+
+g[role="button"]:focus-visible .vz-map-site {
+  stroke: var(--accent-200);
+  stroke-width: 2;
+}
+
+/* ---- reduced motion ---------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .vz-pulse {
+    animation: none;
+    opacity: 0;
+  }
+  :root:not([data-motion="full"]) .vz-data,
+  :root:not([data-motion="full"]) .vz-tip {
+    animation: none;
+  }
+  :root:not([data-motion="full"]) .vz-bar-fill,
+  :root:not([data-motion="full"]) .vz-meter > i {
+    transition: none;
+  }
+}
+
+:root[data-motion="reduced"] .vz-pulse,
+:root[data-motion="off"] .vz-pulse {
+  animation: none;
+  opacity: 0;
+}
+
+:root[data-motion="reduced"] .vz-data,
+:root[data-motion="off"] .vz-data,
+:root[data-motion="reduced"] .vz-tip,
+:root[data-motion="off"] .vz-tip {
+  animation: none;
+}
+
+:root[data-motion="reduced"] .vz-bar-fill,
+:root[data-motion="off"] .vz-bar-fill,
+:root[data-motion="reduced"] .vz-meter > i,
+:root[data-motion="off"] .vz-meter > i {
+  transition: none;
+}
