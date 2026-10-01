@@ -1022,10 +1022,11 @@ impl Reducer {
             if *ts >= cutoff {
                 continue;
             }
+            // The history only carries tier counts: every other series stays unknown.
             let row = MetricsRow {
                 ts_ms: *ts,
-                tier_counts: *c,
-                node_count: c.iter().sum(),
+                tier_counts: Some(*c),
+                node_count: Some(c.iter().sum()),
                 samples: 1,
                 ..MetricsRow::default()
             };
@@ -1294,68 +1295,85 @@ impl Reducer {
         let mut dos = 0;
         let (mut cores, mut ram, mut storage, mut ssd) = (0u32, 0f64, 0f64, 0f64);
         let (mut lc, mut lr, mut ls) = (0f64, 0f64, 0f64);
+        // Unknown is never 0: a gauge is recorded only once its source reported for at least
+        // one node (or its job ran at least once). Otherwise it stays `None`.
+        let (mut any_node, mut any_hw, mut any_locked) = (false, false, false);
+        let (mut any_geo, mut any_arcane, mut any_reach) = (false, false, false);
         for e in self.st.nodes.listed() {
+            any_node = true;
             match e.rec.status {
                 NodeStatus::Confirmed => {
                     if e.at_risk {
                         at_risk += 1;
                     }
                     if let Some(h) = &e.rec.hw {
+                        any_hw = true;
                         cores += u32::from(h.cores);
                         ram += f64::from(h.ram_gb);
                         storage += f64::from(h.total_storage_gb);
                         ssd += f64::from(h.ssd_gb);
                     }
                     if let Some([c, r, st]) = e.locked {
+                        any_locked = true;
                         lc += c;
                         lr += r;
                         ls += st;
                     }
+                    any_geo |= e.rec.geo.is_some();
+                    any_arcane |= e.rec.arcane.is_some();
+                    any_reach |= e.rec.reachable.is_some();
                 }
                 NodeStatus::Started => started += 1,
                 NodeStatus::Dos => dos += 1,
                 _ => {}
             }
         }
+        let fr = self.fresh();
+        let mempool_known = fr.has_succeeded("mempool_stream");
+        let pending_known = fr.has_succeeded("app_pending") || !self.st.apps.pending.is_empty();
+        let mesh_known = fr.has_succeeded("topology_sweep") || self.st.mesh.edge_count() > 0;
+        let tip_known = self.st.tip.is_some();
+        let catalog = self.st.apps.catalog_loaded;
+        let placement = self.st.apps.placement_loaded;
+        let armed = self.st.expiry_armed;
         let iv = std::mem::take(&mut self.st.interval);
+        let known = |k: bool, v: u32| k.then_some(v);
         let row = MetricsRow {
             ts_ms: now - now % 60_000,
-            tip_height: self.st.tip_height(),
-            node_count: s.node_count,
-            tier_counts: [s.tiers.cumulus, s.tiers.nimbus, s.tiers.stratus],
-            host_count: s.host_count,
-            country_count: s.country_count,
-            arcane_count: s.arcane_count,
-            unreachable_count: s.unreachable_count,
-            app_count: s.app_count,
-            instance_count: s.instance_count,
-            pending_app_count: self.st.apps.pending.len() as u32,
-            total_cores: cores,
-            total_ram_gb: ram.round() as u64,
-            total_storage_gb: storage.round() as u64,
-            supply: s.supply.as_ref().map_or(Amount::ZERO, |x| x.total),
-            price_usd: s.price.as_ref().map_or(0.0, |p| p.usd),
-            mempool_size: s.mempool_size,
-            mesh_edge_count: self.st.mesh.edge_count() as u32,
-            block_count: iv.blocks,
-            tx_count: iv.txs,
-            node_tx_count: iv.node_txs,
-            fees: iv.fees,
-            payouts: iv.payouts,
-            avg_block_time_ms: if iv.block_intervals > 0 {
-                (iv.block_interval_sum_ms / u64::from(iv.block_intervals)) as u32
-            } else {
-                0
-            },
+            tip_height: self.st.tip.as_ref().map(|t| t.height),
+            node_count: known(any_node, s.node_count),
+            tier_counts: any_node.then_some([s.tiers.cumulus, s.tiers.nimbus, s.tiers.stratus]),
+            host_count: known(any_node, s.host_count),
+            country_count: known(any_geo, s.country_count),
+            arcane_count: known(any_arcane, s.arcane_count),
+            unreachable_count: known(any_reach, s.unreachable_count),
+            app_count: known(catalog, s.app_count),
+            instance_count: known(placement, s.instance_count),
+            pending_app_count: known(pending_known, self.st.apps.pending.len() as u32),
+            total_cores: known(any_hw, cores),
+            total_ram_gb: any_hw.then_some(ram.round() as u64),
+            total_storage_gb: any_hw.then_some(storage.round() as u64),
+            supply: s.supply.as_ref().map(|x| x.total),
+            price_usd: s.price.as_ref().map(|p| p.usd),
+            mempool_size: known(mempool_known, s.mempool_size),
+            mesh_edge_count: known(mesh_known, self.st.mesh.edge_count() as u32),
+            // Interval counters only mean something while the chain is followed.
+            block_count: known(tip_known, iv.blocks),
+            tx_count: known(tip_known, iv.txs),
+            node_tx_count: known(tip_known, iv.node_txs),
+            fees: tip_known.then_some(iv.fees),
+            payouts: tip_known.then_some(iv.payouts),
+            avg_block_time_ms: (iv.block_intervals > 0)
+                .then(|| (iv.block_interval_sum_ms / u64::from(iv.block_intervals)) as u32),
             samples: 1,
-            provider_count: s.provider_count,
-            at_risk_count: at_risk,
-            started_count: started,
-            dos_count: dos,
-            total_ssd_gb: ssd.round() as u64,
-            locked_cores: lc,
-            locked_ram_gb: lr,
-            locked_storage_gb: ls,
+            provider_count: known(any_geo, s.provider_count),
+            at_risk_count: known(armed, at_risk),
+            started_count: known(any_node, started),
+            dos_count: known(any_node, dos),
+            total_ssd_gb: any_hw.then_some(ssd.round() as u64),
+            locked_cores: any_locked.then_some(lc),
+            locked_ram_gb: any_locked.then_some(lr),
+            locked_storage_gb: any_locked.then_some(ls),
         };
         if self.fresh {
             let mut b = WriteBatch::new();

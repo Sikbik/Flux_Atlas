@@ -82,6 +82,11 @@ impl Freshness {
         });
     }
 
+    /// True once `job` succeeded at least once since startup.
+    pub fn has_succeeded(&self, job: &str) -> bool {
+        self.with(|m| m.get(job).is_some_and(|e| e.last_ok_ms.is_some()))
+    }
+
     pub fn next(&self, job: &'static str, at_ms: u64) {
         self.with(|m| m.entry(job).or_default().next_run_ms = Some(at_ms));
     }

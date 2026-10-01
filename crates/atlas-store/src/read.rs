@@ -444,7 +444,7 @@ impl Store {
         self.read(|txn| {
             let t = txn.open_table(def)?;
             scan(t.range(from..=to_ms)?, Order::Asc, usize::MAX, |_, v| {
-                codec::decode(v.value())
+                codec::decode_metrics(v.value())
             })
         })
     }

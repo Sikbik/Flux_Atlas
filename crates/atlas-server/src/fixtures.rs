@@ -737,11 +737,11 @@ pub fn seed_store(store: &Store, f: &Fixture) -> anyhow::Result<()> {
     for m in 0..180u64 {
         b.put_metrics_1m(MetricsRow {
             ts_ms: minute0 - m * MINUTE_MS,
-            tip_height: f.tip - m as u32 * 2,
-            node_count: s.node_count - (m % 3) as u32,
-            tier_counts: [s.tiers.cumulus, s.tiers.nimbus, s.tiers.stratus],
-            block_count: 2,
-            avg_block_time_ms: 30_000,
+            tip_height: Some(f.tip - m as u32 * 2),
+            node_count: Some(s.node_count - (m % 3) as u32),
+            tier_counts: Some([s.tiers.cumulus, s.tiers.nimbus, s.tiers.stratus]),
+            block_count: Some(2),
+            avg_block_time_ms: Some(30_000),
             samples: 1,
             ..MetricsRow::default()
         });
@@ -750,10 +750,10 @@ pub fn seed_store(store: &Store, f: &Fixture) -> anyhow::Result<()> {
     for hr in 0..72u64 {
         b.put_metrics_1h(MetricsRow {
             ts_ms: hour0 - hr * HOUR_MS,
-            tip_height: f.tip - hr as u32 * 120,
-            node_count: s.node_count,
-            block_count: 120,
-            avg_block_time_ms: 30_000,
+            tip_height: Some(f.tip - hr as u32 * 120),
+            node_count: Some(s.node_count),
+            block_count: Some(120),
+            avg_block_time_ms: Some(30_000),
             samples: 60,
             ..MetricsRow::default()
         });
