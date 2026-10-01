@@ -435,20 +435,29 @@ function PulseCard({ mode }: { mode: PulseMode }) {
         <b>Pulse</b>
         {offline ? <span className="pulse-stale">offline</span> : null}
         {compact ? null : (
-          <fieldset className="filters">
-            <legend className="sr-only">Filter events</legend>
-            {PULSE_FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                className={filter === f.id ? 'on' : undefined}
-                aria-pressed={filter === f.id}
-                onClick={() => setFilter(f.id)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </fieldset>
+          <>
+            {/* Quiet at rest: the filters show when the pointer or focus is in the card; until then a
+                filter other than All keeps its name showing, so a partial feed is never a surprise. */}
+            {filter === 'all' ? null : (
+              <span className="filter-now" aria-hidden="true">
+                {PULSE_FILTERS.find((f) => f.id === filter)?.label}
+              </span>
+            )}
+            <fieldset className="filters">
+              <legend className="sr-only">Filter events</legend>
+              {PULSE_FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={filter === f.id ? 'on' : undefined}
+                  aria-pressed={filter === f.id}
+                  onClick={() => setFilter(f.id)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </fieldset>
+          </>
         )}
       </header>
       {waiting > 0 ? (

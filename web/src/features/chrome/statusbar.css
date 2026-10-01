@@ -137,6 +137,36 @@ button.sb-left {
   min-width: 3.4ch;
 }
 
+/* Quiet at rest: every path that is keeping up is one 5 px light (fresh green, aging grey, unknown hollow);
+   the words come back for a path that is stale or dead, and the hover card has every age. */
+.sb-leds {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sb-led {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+
+.sb-led[data-state="fresh"] {
+  background: var(--status-ok);
+  opacity: 0.85;
+}
+
+.sb-led[data-state="unknown"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--text-4);
+}
+
+.sb-leds:empty {
+  display: none;
+}
+
 /* The tip chip carries the next-block progress: a hairline track that fills over the 30 s interval. */
 .sb-tipchip {
   gap: 7px;
@@ -226,13 +256,6 @@ button.sb-left {
   color: var(--text-2);
 }
 
-.sb-dot-sep {
-  width: 2px;
-  height: 2px;
-  border-radius: 50%;
-  background: var(--text-4);
-}
-
 .sb-price {
   display: inline-flex;
   align-items: center;
@@ -318,10 +341,7 @@ button.sb-left {
 }
 
 @media (max-width: 1279px) {
-  .sb-fresh:nth-of-type(n + 5),
-  .sb-build {
-    display: none;
-  }
+  .sb-build,
   .sb-prog {
     display: none;
   }

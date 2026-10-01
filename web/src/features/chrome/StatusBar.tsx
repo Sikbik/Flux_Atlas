@@ -1,7 +1,8 @@
-// The status bar (design 8.8): 28 px of glass at the foot of the screen. Left: the connection chip and one
-// freshness chip per ingest path, with the tip's height, age and the next-block progress. Right: the
-// reward-cut chip, network totals with the tier split, the price, the clock when the top bar has hidden
-// its own, and the build label. Hovering or focusing the left or right group opens the detail behind it.
+// The status bar (design 8.8): 28 px of glass at the foot of the screen, quiet at rest. Left: the connection
+// chip, the tip's height, age and next-block progress, and one small light per other ingest path (a path
+// that is stale or dead steps forward as a chip in words). Right: the reward-cut chip, the node count with
+// the tier split, the price, the clock when the top bar has hidden its own, and the build label. Hovering
+// or focusing either group opens the detail behind it: every age, every source, every total.
 
 import { type Ref, useMemo } from 'react';
 import { useNetwork, usePrice, useRuntime, useSummary, useTip } from '../../app/context';
@@ -23,6 +24,9 @@ function ageText(r: PathReading): string {
 }
 
 const STATE_WORD: Partial<Record<PathReading['state'], string>> = { stale: 'stale', dead: 'dead' };
+
+/** A path that is not keeping up says so in words; one that is stays a quiet light. */
+const needsWords = (r: PathReading): boolean => r.state === 'stale' || r.state === 'dead';
 
 export function StatusBar({ ref }: { ref?: Ref<HTMLElement> }) {
   return (
@@ -78,15 +82,21 @@ function StatusLeft() {
                 <i key={tip?.height ?? 0} style={{ '--since': Math.round(since) } as React.CSSProperties} />
               </span>
             </span>
-          ) : (
+          ) : needsWords(r) ? (
             <span key={r.id} className="sb-fresh" data-state={r.state}>
               <i className="sb-dot" aria-hidden="true" />
               <span>{r.label}</span>
               <span className="sb-age">{ageText(r)}</span>
               {STATE_WORD[r.state] ? <em>{STATE_WORD[r.state]}</em> : null}
             </span>
-          ),
+          ) : null,
         )}
+        {/* Quiet at rest: a path that is keeping up is one small light; the hover card has every age. */}
+        <span className="sb-leds" aria-hidden="true">
+          {readings.map((r) =>
+            r.id === 'tip' || needsWords(r) ? null : <i key={r.id} className="sb-led" data-state={r.state} />,
+          )}
+        </span>
       </button>
     </HoverCard>
   );
@@ -240,20 +250,6 @@ function Totals() {
             <Odometer value={summary?.node_count ?? null} />
           </b>{' '}
           nodes
-        </span>
-        <span className="sb-dot-sep" aria-hidden="true" />
-        <span>
-          <b>
-            <Odometer value={summary?.host_count ?? null} />
-          </b>{' '}
-          hosts
-        </span>
-        <span className="sb-dot-sep" aria-hidden="true" />
-        <span>
-          <b>
-            <Odometer value={summary?.app_count ?? null} />
-          </b>{' '}
-          apps
         </span>
       </span>
     </HoverCard>

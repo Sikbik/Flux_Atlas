@@ -44,6 +44,7 @@
 }
 
 .pulse-head {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -72,6 +73,32 @@
   margin: 0 0 0 auto;
   padding: 0;
   border: 0;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+/* Quiet at rest: the filters appear with the pointer or focus, and the name of a filter in force stays. */
+.pulse:hover .filters,
+.pulse:focus-within .filters,
+.pulse[data-frozen] .filters {
+  opacity: 1;
+}
+
+.filter-now {
+  position: absolute;
+  right: 14px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  color: var(--text-1);
+  font-size: var(--fs-2xs);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.pulse:hover .filter-now,
+.pulse:focus-within .filter-now,
+.pulse[data-frozen] .filter-now {
+  opacity: 0;
 }
 
 .filters button {
