@@ -3,8 +3,6 @@
 
 import { lazy } from 'react';
 
-export { WeatherView } from '../app/placeholders/views';
-
 export const NodeView = lazy(() =>
   import('../features/inspect/node/NodeView').then((m) => ({ default: m.NodeView })),
 );
@@ -27,6 +25,10 @@ export const QueueView = lazy(() =>
 
 export const OperatorView = lazy(() =>
   import('../features/inspect/operator/OperatorView').then((m) => ({ default: m.OperatorView })),
+);
+
+export const WeatherView = lazy(() =>
+  import('../features/inspect/weather/WeatherView').then((m) => ({ default: m.WeatherView })),
 );
 
 /**

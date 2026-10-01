@@ -1,0 +1,119 @@
+/* Network weather (F3): a panel over the globe, and the glows on the globe that mark where trouble gathers.
+   Kit components carry the content; these are the panel's own surface and the glow. */
+
+/* The weather is a layer, not a window: it sits in the shell's page slot over the globe, so it wears the
+   glass material and the window's radius. Its width is set here because the container (`ix`) cannot size itself. */
+.ix-weather {
+  width: min(440px, calc(100vw - var(--dock-w) - var(--space-10)));
+  padding-bottom: var(--space-4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-xl);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-pop);
+  overflow: clip;
+}
+
+.shell[data-layout="phone"] .ix-weather {
+  width: 100%;
+}
+
+/* The freshness chip and the close button share the header's top right, which never folds away. */
+.ix-head-aside {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ix-where {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ix-where-hint {
+  margin: 0;
+}
+
+/* The page slot lives in the shell's stage, which stacks below the globe's HUD layer, so place labels and the
+   glows would paint over the panel. While the weather is open, the stage is lifted to window level. */
+.shell-stage:has(> .shell-page > .ix-weather) {
+  z-index: var(--z-window);
+}
+
+/* The verdict word: a status dot and the word, on the title's own line. */
+.ix-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.ix-verdict[data-level="storm"] {
+  color: var(--status-crit);
+}
+
+.ix-verdict[data-level="unsettled"] {
+  color: var(--status-warn);
+}
+
+/* ---- the glow on the globe ----------------------------------------------------------------------- */
+
+/* The anchor system positions the label (a zero-size box at the surface point) and fades it near the
+   limb; the glow is a child centred on that point. */
+.ix-haze {
+  pointer-events: none;
+}
+
+.ix-haze-disc {
+  --ix-haze-hue: var(--status-warn);
+  position: absolute;
+  left: calc(var(--ix-haze) / -2);
+  top: calc(var(--ix-haze) / -2);
+  display: grid;
+  place-items: center;
+  width: var(--ix-haze);
+  height: var(--ix-haze);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--ix-haze-hue) 54%, transparent) 0%,
+    color-mix(in oklab, var(--ix-haze-hue) 28%, transparent) 36%,
+    color-mix(in oklab, var(--ix-haze-hue) 6%, transparent) 62%,
+    transparent 72%
+  );
+  animation: ix-haze-breathe 5.2s var(--ease-in-out, ease-in-out) infinite;
+}
+
+.ix-haze-disc[data-level="storm"] {
+  --ix-haze-hue: var(--status-crit);
+}
+
+.ix-haze-n {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.8);
+}
+
+@keyframes ix-haze-breathe {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ix-haze-disc {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ix-haze-disc {
+  animation: none;
+}
