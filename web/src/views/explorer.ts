@@ -3,7 +3,11 @@
 
 import { lazy } from 'react';
 
-export { AnalyticsView, RichListView, TimeMachineView } from '../app/placeholders/views';
+export { TimeMachineView } from '../app/placeholders/views';
+
+export const AnalyticsView = lazy(() =>
+  import('../features/analytics/views/AnalyticsView').then((m) => ({ default: m.AnalyticsView })),
+);
 
 export const BlockView = lazy(() =>
   import('../features/explorer/views/BlockView').then((m) => ({ default: m.BlockView })),
@@ -19,4 +23,7 @@ export const MempoolView = lazy(() =>
 );
 export const SupplyView = lazy(() =>
   import('../features/explorer/views/SupplyView').then((m) => ({ default: m.SupplyView })),
+);
+export const RichListView = lazy(() =>
+  import('../features/explorer/views/RichListView').then((m) => ({ default: m.RichListView })),
 );

@@ -1,0 +1,316 @@
+/* Analytics: a sticky tab strip, then a headline, then one instrument. */
+
+.an-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: color-mix(in oklab, var(--ink-0) 86%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+}
+
+/* A tab opens with its answer, so the head sits right under the strip. */
+.an-root .ex-head {
+  padding-top: var(--space-6);
+}
+
+.an-split {
+  display: grid;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@container ex (min-width: 880px) {
+  .an-split {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+}
+
+.an-note {
+  margin: var(--space-5) 0 0;
+  color: var(--text-3);
+  text-wrap: pretty;
+}
+
+.an-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-5);
+}
+
+/* ---- capacity ------------------------------------------------------------------------------------ */
+
+.an-caps {
+  display: grid;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.an-cap {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.an-cap__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.an-cap__name {
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
+}
+
+.an-cap__total {
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-xl) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.an-cap__tiers {
+  display: flex;
+  gap: 2px;
+  height: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.an-cap__seg {
+  flex-basis: 0;
+  min-width: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: var(--tier-ink);
+  cursor: pointer;
+  opacity: 0.9;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    filter var(--dur-base) var(--ease-out);
+}
+
+.an-cap__seg:hover,
+.an-cap__seg[data-on] {
+  opacity: 1;
+  filter: brightness(1.15);
+}
+
+.an-cap__tiers:has([data-on]) .an-cap__seg:not([data-on]) {
+  opacity: 0.35;
+}
+
+.an-cap__seg:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.an-cap__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-7);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1.3 var(--font-sans);
+}
+
+.an-cap__legend strong {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+/* ---- economics ----------------------------------------------------------------------------------- */
+
+.an-yields,
+.an-fairs {
+  display: grid;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.an-yield {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.an-yield__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.an-yield__tier {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
+}
+
+.an-yield__apy {
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-xl) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.an-yield__apy small {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.an-yield .vz-meter {
+  height: 8px;
+}
+
+.an-yield__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-7);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1.3 var(--font-sans);
+}
+
+.an-yield__facts strong {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+/* ---- fairness ------------------------------------------------------------------------------------ */
+
+.an-fair {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.an-fair__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-6);
+}
+
+.an-fair__tier {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 96px;
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
+}
+
+.an-fair__nums {
+  flex: 1 1 auto;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1.3 var(--font-sans);
+}
+
+.an-fair__nums strong {
+  color: var(--text-1);
+  font-size: var(--fs-md);
+}
+
+.an-fair__nums span {
+  margin-left: var(--space-4);
+}
+
+.an-fair__plot {
+  position: relative;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background:
+    linear-gradient(var(--line-1), var(--line-1)) center / 100% 1px no-repeat,
+    var(--ink-1);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.an-fair__whisker {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: var(--tier-ink);
+  opacity: 0.45;
+}
+
+.an-fair__expected {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-1);
+  box-shadow: 0 0 0 2px var(--ink-1);
+}
+
+.an-fair__dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--tier-ink);
+  box-shadow: 0 0 0 2px var(--ink-1);
+}
+
+.an-fair[data-verdict="above"] .an-fair__dot,
+.an-fair[data-verdict="below"] .an-fair__dot {
+  box-shadow:
+    0 0 0 2px var(--ink-1),
+    0 0 0 4px var(--status-warn);
+}
+
+.an-fair__scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-4);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+}
+
+.an-facts {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+}
+
+.an-facts > div {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.an-facts dt {
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.an-facts dd {
+  margin: 0;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+@container ex (min-width: 700px) {
+  .an-facts > div {
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+}
+
+/* A figure inside a section that should not read as a card. */
+.an-plain {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
