@@ -86,6 +86,7 @@ const measure = (page) =>
       engine: true,
       lost: e.renderer.getContext().isContextLost(),
       frames: s.frames,
+      fps: s.fps,
       generation: s.generation,
       dpr: window.devicePixelRatio,
       vw: innerWidth,
@@ -147,7 +148,7 @@ async function check(page, label, { rest = true, extra } = {}) {
   if (why.length) failures.push(`${label}: ${why.join('; ')}`);
   const gap = m.engine ? (m.railTop - (m.cy + m.r)).toFixed(0) : '-';
   console.log(
-    `${why.length ? 'FAIL' : 'ok  '} ${label.padEnd(34)} ${m.engine ? `${m.vw}x${m.vh}@${m.dpr}` : ''} c=(${m.cx?.toFixed(0)},${m.cy?.toFixed(0)}) r=${m.r?.toFixed(0)} gap=${gap} tilt=${m.tilt?.toFixed(2)} gen=${m.generation}${why.length ? `  <- ${why.join('; ')}` : ''}`,
+    `${why.length ? 'FAIL' : 'ok  '} ${label.padEnd(34)} ${m.engine ? `${m.vw}x${m.vh}@${m.dpr}` : ''} c=(${m.cx?.toFixed(0)},${m.cy?.toFixed(0)}) r=${m.r?.toFixed(0)} gap=${gap} tilt=${m.tilt?.toFixed(2)} gen=${m.generation} fps=${m.fps?.toFixed(0)}${why.length ? `  <- ${why.join('; ')}` : ''}`,
   );
   if (shots) {
     const name = label.replace(/[^a-z0-9.-]+/gi, '_');
@@ -194,6 +195,23 @@ async function middleDoubleClick(page, x0, y0) {
 
 const tiltHome = (m) => (Math.abs(m.tilt) > 0.01 ? [`tilt ${m.tilt.toFixed(3)} after home`] : []);
 
+/** Waits (up to 8 s) for the camera to come to rest: flights are frame-stepped, so a loaded machine is slower. */
+const settle = (page, min = 1200) =>
+  page.waitForTimeout(min).then(() =>
+    page
+      .waitForFunction(
+        () => {
+          const r = window.__atlasGlobe?.engine.rig;
+          return (
+            !!r && !r.isFlying && Math.abs(r.tilt - r.tiltD) < 0.004 && Math.abs(r.range - r.rangeD) < 0.004
+          );
+        },
+        null,
+        { timeout: 8000 },
+      )
+      .catch(() => {}),
+  );
+
 for (const dpr of dprs) {
   const w = Math.round(devW / dpr);
   const h = Math.round(devH / dpr);
@@ -204,10 +222,10 @@ for (const dpr of dprs) {
   await page.waitForTimeout(300);
   await check(page, `${tag} pitch-held`, { rest: false });
   await page.mouse.up({ button: 'middle' });
-  await page.waitForTimeout(1800);
+  await settle(page, 1800);
   await check(page, `${tag} pitch-rest`);
   await middleDoubleClick(page, at.x, at.y);
-  await page.waitForTimeout(1800);
+  await settle(page);
   await check(page, `${tag} home`, { extra: tiltHome });
   await context.close();
 }
@@ -290,7 +308,7 @@ if (!flag('quick')) {
   await page.mouse.up({ button: 'middle' });
   await page.waitForTimeout(800);
   await page.click('[aria-label="Globe (G)"]').catch(() => failures.push('no Globe launcher'));
-  await page.waitForTimeout(2000);
+  await settle(page);
   await check(page, 'home control', {
     extra: (m) => [
       ...tiltHome(m),
