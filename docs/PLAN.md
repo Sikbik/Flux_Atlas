@@ -30,7 +30,7 @@ commits at each milestone. Status values: done, running, queued.
 ## Phase 3 — Features (parallel)
 | WP | Owner | Boundary | Acceptance |
 |---|---|---|---|
-| B2 Engine & ingest (running, worktree) | Opus | `crates/atlas-engine` | runs against the live API for 30+ min with no errors; events derived correctly (unit tests from fixture pairs); metrics/snapshots/time machine persist and reload; peer crawl respects the SSRF guard and rate limits; memory stays flat |
+| B2 Engine & ingest (done; 90-min live soak clean, merging via I1) | Opus | `crates/atlas-engine` | runs against the live API for 30+ min with no errors; events derived correctly (unit tests from fixture pairs); metrics/snapshots/time machine persist and reload; peer crawl respects the SSRF guard and rate limits; memory stays flat |
 | B3 API server + live hub (done, merged 62bb028) | Opus | `crates/atlas-server` | every §6 endpoint is implemented and tested; pre-built bodies with ETag/compression; WS protocol incl. replay/resync; search resolution; explorer proxy cache; SPA embed; `oha` p99 < 5 ms on hot endpoints |
 | F2 Shell & signature moments | Sonnet | `web/src/shell/**`, `web/src/ui/**` | boot sequence on real load progress; windows (drag/snap/stack/minimize); dock; ⌘K palette; terminal; toasts; achievements; ambient mode; phone layout |
 | F3 Inspectors | Sonnet | `web/src/features/{node,app,operator}/**` | node + app inspectors, app constellation, operator view, watchlist |
@@ -39,7 +39,7 @@ commits at each milestone. Status values: done, running, queued.
 ## Phase 4 — Integration & hardening
 | WP | Owner | Scope |
 |---|---|---|
-| I1 Integration | Opus | real backend ↔ frontend end to end, contract mismatches, perf passes (backend + globe FPS) |
+| I1 Integration (running, worktree) | Opus | merge B2, wire watch hooks/config/timeline, ingest-off tests, client rank rules, live E2E against the real network |
 | Q1 Visual QA & polish | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
 | X1 Review | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
 
