@@ -5,12 +5,14 @@
 // or focusing either group opens the detail behind it: every age, every source, every total. The cards are
 // their own chunks (lazyCard), fetched when the pointer or focus nears a chip.
 
+import { History } from 'lucide-react';
 import type { ComponentPropsWithRef } from 'react';
 import { useNetwork, usePrice, useRuntime, useSummary, useTip } from '../../app/context';
-import { formatAge, formatDuration, formatHeight, UNKNOWN } from '../../lib/format';
+import { formatAge, formatDuration, formatHeight, formatInt, UNKNOWN } from '../../lib/format';
 import { useNow } from '../../lib/useClock';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import { AnimatedNumber, cx, HoverCard, LiveDot, TierGlyph } from '../../ui';
+import { tMinus, tMinusSpoken, useArchive } from './archive';
 import { UtcClock, useBlockSince } from './Beat';
 import { useRewardCut } from './data';
 import { type PathReading, readPaths } from './freshness';
@@ -57,7 +59,14 @@ function StatusLeft() {
   const view = useLiveView();
   const jobs = useNetwork((s) => s.freshness);
   const tip = useTip();
-  const { since } = useBlockSince();
+  const { since, sec } = useBlockSince();
+  // While the archive shows, the tip is the archived moment's (and "T-" how long before now it was); the block timer
+  // and the freshness verdict are about the present, so they rest. The connection and the other paths stay: they are
+  // the live feed's own state, and still true.
+  const at = useArchive((m) => (m ? m.at : null));
+  const archivedTip = useArchive((m) => (m ? m.tip : null));
+  const archived = at !== null;
+  const minus = at === null ? null : tMinus(now - at);
   const readings = readPaths({
     nowMs: now,
     jobs,
@@ -65,16 +74,17 @@ function StatusLeft() {
     tipAnchorMs: clock.lastBlockInfo?.anchorMs ?? null,
   });
   const conn = view.status === 'live' && view.tone === 'ok' ? 'WebSocket' : null;
+  const label = 'Connection and data freshness';
   return (
-    <HoverCard
-      placement="top-start"
-      label="Connection and data freshness"
-      content={() => <statusCard.Card readings={readings} />}
-    >
+    <HoverCard placement="top-start" label={label} content={() => <statusCard.Card readings={readings} />}>
       <button
         type="button"
         className="sb-group sb-left"
-        aria-label="Connection and data freshness"
+        aria-label={
+          at === null
+            ? label
+            : `${label}. Archive view, tip ${archivedTip === null ? UNKNOWN.toLowerCase() : formatHeight(archivedTip)}, ${tMinusSpoken(now - at)}`
+        }
         onPointerEnter={statusCard.preload}
         onFocus={statusCard.preload}
       >
@@ -87,19 +97,31 @@ function StatusLeft() {
         </span>
         {readings.map((r) =>
           r.id === 'tip' ? (
-            <span key={r.id} className="sb-fresh sb-tipchip" data-state={r.state}>
+            <span
+              key={r.id}
+              className="sb-fresh sb-tipchip"
+              data-state={archived ? 'archive' : r.state}
+              data-testid="tip-chip"
+            >
               <i className="sb-dot" aria-hidden="true" />
               <span>tip</span>
-              {tip ? (
+              {archived ? (
+                <b className="sb-arch">{archivedTip === null ? UNKNOWN : formatHeight(archivedTip)}</b>
+              ) : tip ? (
                 <b>
                   <AnimatedNumber value={tip.height} format={formatHeight} font="mono" maxHz={0} />
                 </b>
               ) : null}
-              <span className="sb-age">{ageText(r)}</span>
-              {STATE_WORD[r.state] ? <em>{STATE_WORD[r.state]}</em> : null}
-              <span className="sb-prog" aria-hidden="true">
-                <i key={tip?.height ?? 0} style={{ '--since': Math.round(since) } as React.CSSProperties} />
-              </span>
+              <span className="sb-age">{archived ? minus : ageText(r)}</span>
+              {!archived && STATE_WORD[r.state] ? <em>{STATE_WORD[r.state]}</em> : null}
+              {archived ? null : (
+                <span className="sb-prog" aria-hidden="true">
+                  <i
+                    key={tip?.height ?? 0}
+                    style={{ '--since': Math.round(since), '--sec': sec } as React.CSSProperties}
+                  />
+                </span>
+              )}
             </span>
           ) : needsWords(r) ? (
             <span key={r.id} className="sb-fresh" data-state={r.state}>
@@ -165,10 +187,24 @@ function RewardCutChip() {
 function Totals() {
   const summary = useSummary();
   const tiers = summary?.tiers;
+  // While the archive shows, the node count is the archived moment's (undefined: the present; null: not recorded).
+  // The tier split and the card behind it are the present's, so they step aside instead of disagreeing with it.
+  const archivedNodes = useArchive((m) => (m ? m.nodes : undefined));
+  const archived = archivedNodes !== undefined;
   return (
-    <HoverCard placement="top" label="Network totals" content={() => <totalsCard.Card />} disabled={!summary}>
-      <span className="sb-totals" onPointerEnter={totalsCard.preload}>
-        {tiers ? (
+    <HoverCard
+      placement="top"
+      label="Network totals"
+      content={() => <totalsCard.Card />}
+      disabled={!summary || archived}
+    >
+      <span
+        className="sb-totals"
+        data-archive={archived ? '' : undefined}
+        data-testid="nodes-total"
+        onPointerEnter={totalsCard.preload}
+      >
+        {tiers && !archived ? (
           <span className="sb-tiers">
             {TIER_ORDER.map((t) => (
               <span key={t} className="sb-tier" data-tier={t}>
@@ -180,11 +216,17 @@ function Totals() {
             ))}
           </span>
         ) : null}
-        <span>
+        <span className="sb-nodes">
+          {archived ? <History className="sb-hist" size={11} strokeWidth={1.5} aria-hidden="true" /> : null}
           <b>
-            <AnimatedNumber value={summary?.node_count ?? null} font="mono" />
+            {archived ? (
+              formatInt(archivedNodes)
+            ) : (
+              <AnimatedNumber value={summary?.node_count ?? null} font="mono" />
+            )}
           </b>{' '}
           nodes
+          {archived ? <span className="sr-only"> in the archive view</span> : null}
         </span>
       </span>
     </HoverCard>

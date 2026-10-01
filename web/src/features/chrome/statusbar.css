@@ -207,9 +207,21 @@ button.sb-left {
   }
 }
 
-:root[data-motion="reduced"] .sb-prog i,
-:root[data-motion-off] .sb-prog i {
+:root[data-motion="reduced"] .sb-prog i {
   animation-timing-function: steps(30, end);
+}
+
+/* Off: nothing runs. The fill is drawn from --sec, the whole seconds into the interval, which the chip writes once a
+   second: the same steps, with no animation. */
+:root:is([data-motion="off"], [data-motion-off]) .sb-prog i {
+  animation: none;
+  transform: scaleX(calc(min(var(--sec, 0), 30) / 30));
+}
+
+/* The rail's next-block chip draws the same fill from the same keyframes, and steps with the second under Off too. */
+:root:is([data-motion="off"], [data-motion-off]) .blk.ghost .bar i {
+  animation: none;
+  transform: scaleX(calc(min(var(--sec, 0), 30) / 30));
 }
 
 /* ---- right group ----------------------------------------------------------------------------- */
@@ -290,6 +302,25 @@ button.sb-left {
 .sb-build {
   color: var(--text-4);
   font-family: var(--font-mono);
+}
+
+/* While the time machine shows a past moment (the Beat is a "t minus" readout, archive.ts) the tip chip carries that
+   moment's tip and how long before now it was, in the archive's cool grey, with no block timer; the node count beside
+   the totals does the same with a clock face. The words and numbers say it; the grey only agrees. */
+.sb-fresh[data-state="archive"],
+.sb-fresh[data-state="archive"] b,
+.sb-totals[data-archive] b {
+  color: var(--accent-time);
+}
+
+.sb-fresh[data-state="archive"] .sb-dot {
+  background: var(--accent-time);
+}
+
+.sb-hist {
+  margin-right: 4px;
+  vertical-align: -1px;
+  color: var(--accent-time);
 }
 
 /* ---- hover cards ------------------------------------------------------------------------------ */
