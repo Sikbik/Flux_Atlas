@@ -280,3 +280,23 @@ export function compactTick(v: number): string {
   }
   return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2)));
 }
+
+/**
+ * Axis labels that carry exactly the precision the tick step needs: with a 10,000 step around ten
+ * million the labels read 10.16M, 10.17M, 10.18M (not three times "10.2M").
+ */
+export function compactTickAt(v: number, step: number): string {
+  const safeStep = step > 0 ? step : Math.abs(v) || 1;
+  const a = Math.max(Math.abs(v), safeStep);
+  for (const { v: base, s } of SUFFIX) {
+    if (a >= base) {
+      const unitStep = safeStep / base;
+      let d = 0;
+      while (d < 4 && Math.abs(unitStep * 10 ** d - Math.round(unitStep * 10 ** d)) > 1e-6) d++;
+      return `${(v / base).toFixed(d)}${s}`;
+    }
+  }
+  let d = 0;
+  while (d < 4 && Math.abs(safeStep * 10 ** d - Math.round(safeStep * 10 ** d)) > 1e-6) d++;
+  return v.toFixed(d);
+}

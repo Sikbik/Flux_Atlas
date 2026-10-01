@@ -12,7 +12,7 @@ import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { formatInt, formatUtcDateTime } from '../../../lib/format';
 import {
   areaPath,
-  compactTick,
+  compactTickAt,
   extent,
   linear,
   linePath,
@@ -58,7 +58,7 @@ export interface TimeChartProps {
   yMin?: number | 'auto';
   yMax?: number;
   yFormat?: (v: number) => string;
-  yTickFormat?: (v: number) => string;
+  yTickFormat?: (v: number, step: number) => string;
   xFormat?: (t: number) => string;
   marks?: readonly ChartMark[];
   selected?: string | null;
@@ -88,7 +88,7 @@ export function TimeChart(props: TimeChartProps) {
     mode = 'line',
     height = 240,
     yFormat = (v: number) => formatInt(Math.round(v)),
-    yTickFormat = compactTick,
+    yTickFormat = compactTickAt,
     xFormat = (x: number) => formatUtcDateTime(x),
     marks = [],
     selected = null,
@@ -154,6 +154,7 @@ export function TimeChart(props: TimeChartProps) {
       y,
       xs,
       ticks: ticks.ticks.filter((v) => v >= yDomain[0] - 1e-9 && v <= yDomain[1] + 1e-9),
+      tickStep: ticks.step,
       tops,
       bottoms,
       t0,
@@ -318,7 +319,7 @@ export function TimeChart(props: TimeChartProps) {
                   <g key={v}>
                     <line x1={M.left} x2={M.left + plotW} y1={geo.y(v)} y2={geo.y(v)} />
                     <text x={M.left - 8} y={geo.y(v)} dy="0.32em" textAnchor="end">
-                      {yTickFormat(v)}
+                      {yTickFormat(v, geo.tickStep)}
                     </text>
                   </g>
                 ))}

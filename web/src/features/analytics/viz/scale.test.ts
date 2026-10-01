@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   areaPath,
   compactTick,
+  compactTickAt,
   extent,
   linear,
   linePath,
@@ -146,5 +147,23 @@ describe('extent and compactTick', () => {
     expect(compactTick(430_000_000)).toBe('430M');
     expect(compactTick(1_500_000_000)).toBe('1.5B');
     expect(compactTick(0.25)).toBe('0.25');
+  });
+});
+
+describe('compactTickAt', () => {
+  it('keeps the digits the step needs', () => {
+    expect(compactTickAt(10_160_000, 10_000)).toBe('10.16M');
+    expect(compactTickAt(10_170_000, 10_000)).toBe('10.17M');
+    expect(compactTickAt(12_500, 2_500)).toBe('12.5K');
+    expect(compactTickAt(15_000, 5_000)).toBe('15K');
+    expect(compactTickAt(2_000_000, 500_000)).toBe('2.0M');
+    expect(compactTickAt(2_500_000, 500_000)).toBe('2.5M');
+  });
+
+  it('handles small and fractional values', () => {
+    expect(compactTickAt(0, 0.5)).toBe('0.0');
+    expect(compactTickAt(1.5, 0.5)).toBe('1.5');
+    expect(compactTickAt(40, 20)).toBe('40');
+    expect(compactTickAt(0.0025, 0.0005)).toBe('0.0025');
   });
 });

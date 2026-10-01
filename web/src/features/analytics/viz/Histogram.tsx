@@ -2,7 +2,7 @@
 // a tooltip per column and keyboard focus on each. Bins can be selected (a click-through).
 
 import { useId, useMemo, useRef, useState } from 'react';
-import { compactTick, linear, niceTicks } from './scale';
+import { compactTickAt, linear, niceTicks } from './scale';
 import { useSize } from './useSize';
 import './viz.css';
 
@@ -57,7 +57,7 @@ export function Histogram({
     const t = niceTicks(0, max, Math.max(2, Math.round(plotH / 44)));
     const y = linear([0, t.max], [M.top + plotH, M.top]);
     const band = plotW / Math.max(1, bins.length);
-    return { y, ticks: t.ticks, band };
+    return { y, ticks: t.ticks, step: t.step, band };
   }, [bins, plotH, plotW]);
   const every = labelEvery ?? Math.max(1, Math.ceil(bins.length / Math.max(2, Math.floor(plotW / 54))));
   const thick = Math.min(24, Math.max(3, geo.band - 2));
@@ -78,7 +78,7 @@ export function Histogram({
                 <g key={v}>
                   <line x1={M.left} x2={M.left + plotW} y1={geo.y(v)} y2={geo.y(v)} />
                   <text x={M.left - 8} y={geo.y(v)} dy="0.32em" textAnchor="end">
-                    {compactTick(v)}
+                    {compactTickAt(v, geo.step)}
                   </text>
                 </g>
               ))}
