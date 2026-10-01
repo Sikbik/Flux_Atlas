@@ -51,14 +51,7 @@ function CardFoot({
           <EntityLink kind="node" value={node.endpoint || String(node.id)}>
             {node.endpoint || `Node ${node.id}`}
           </EntityLink>
-          <IconButton
-            size="sm"
-            variant="ghost"
-            icon={X}
-            label="Clear the selection"
-            onClick={onClear}
-            className="ix-q-foot-x"
-          />
+          <IconButton size="sm" variant="ghost" icon={X} label="Clear the selection" onClick={onClear} />
         </div>
       </div>
     );

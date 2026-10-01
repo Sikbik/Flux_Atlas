@@ -33,7 +33,7 @@ export function Callout({
       </span>
       <div className="ix-callout-t">
         <b>{title}</b>
-        {children ? <span className="ix-callout-b">{children}</span> : null}
+        {children ? <span>{children}</span> : null}
         {actions ? <span className="ix-callout-a">{actions}</span> : null}
       </div>
     </div>

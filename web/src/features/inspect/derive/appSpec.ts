@@ -144,11 +144,6 @@ export function appExpiry(
   };
 }
 
-/** The default lifetime of a spec that does not set `expire`, in Proof of Node blocks (22,000 x 4). */
-export const DEFAULT_LIFETIME_BLOCKS = 88_000;
-/** Height at which blocks became 30 seconds (Proof of Node); earlier specs counted 2-minute blocks. */
-export const PON_HEIGHT = 2_020_000;
-
 // ---- lifecycle -------------------------------------------------------------------------------------
 
 export type AppStage = 'pending' | 'confirmed' | 'installing' | 'running';
@@ -183,6 +178,3 @@ export function appStage(i: AppStageInput): AppStageInfo {
   if (i.installing > 0) return { ...base, stage: 'installing', pendingUpdate };
   return { ...base, stage: 'confirmed', pendingUpdate };
 }
-
-/** Index of a stage on the four-step stepper. */
-export const APP_STAGES: readonly AppStage[] = ['pending', 'confirmed', 'installing', 'running'];

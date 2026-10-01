@@ -67,7 +67,7 @@ export function HistoryPanel({ name }: { name: string }) {
 
 function RevisionSkeleton() {
   return (
-    <article className="ix ix-app ix-revision" aria-busy="true" aria-label="Loading the spec revision">
+    <article className="ix ix-app" aria-busy="true" aria-label="Loading the spec revision">
       <div className="ix-skel-head">
         <Skeleton w={96} h={12} />
         <Skeleton w="52%" h={24} />
@@ -157,7 +157,7 @@ export function AppHistoryView({ name, n }: { name: string; n: number }) {
     item.type === 'updated' && item.versionFrom !== null && item.versionFrom !== item.versionTo;
 
   return (
-    <article className="ix ix-app ix-revision" aria-label={`${display}, spec revision ${n}`}>
+    <article className="ix ix-app" aria-label={`${display}, spec revision ${n}`}>
       <ViewHeader
         kind={
           <EntityLink kind="app" value={name} icon={ChevronLeft}>
