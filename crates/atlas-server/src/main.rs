@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use atlas_server::config::{
-    DEFAULT_DB_CACHE_MB, EngineOverrides, ServeConfig, apply_upstream_rps, parse_duration,
-    parse_intervals, parse_switch, socket_url_for,
+    DEFAULT_BIND, DEFAULT_DB_CACHE_MB, DEFAULT_HEALTHCHECK_ADDR, EngineOverrides, ServeConfig,
+    apply_upstream_rps, parse_duration, parse_intervals, parse_switch, socket_url_for,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -31,10 +31,23 @@ enum Cmd {
     Serve(Box<ServeArgs>),
     /// Probe a running server's `/healthz`; exit status 0 when healthy (container HEALTHCHECK).
     Healthcheck {
-        #[arg(long, env = "ATLAS_HEALTHCHECK_ADDR", default_value = "127.0.0.1:3000")]
+        #[arg(long, env = "ATLAS_HEALTHCHECK_ADDR", default_value = DEFAULT_HEALTHCHECK_ADDR)]
         addr: SocketAddr,
         #[arg(long, default_value_t = 3)]
         timeout_s: u64,
+    },
+    /// Print the database file size and per-table sizes (rows, bytes) from redb's table
+    /// stats, then the disk use of every entry in the data directory (`atlas.redb`, `geoip/`).
+    /// The table report needs the server stopped (redb locks the file); the directory listing
+    /// does not. A running server reports table sizes in `/metrics/prometheus`
+    /// (`atlas_store_table_*`).
+    DbStats {
+        /// Directory holding `atlas.redb`.
+        #[arg(long, env = "ATLAS_DATA_DIR", default_value = "/data")]
+        data_dir: PathBuf,
+        /// Compact the file first (reclaims free pages) and report how long it took.
+        #[arg(long)]
+        compact: bool,
     },
     /// Write the TypeScript API bindings (ts-rs) into a directory.
     ExportTypes {
@@ -46,7 +59,7 @@ enum Cmd {
 #[derive(Args, Debug)]
 struct ServeArgs {
     /// Listen address.
-    #[arg(long, env = "ATLAS_BIND", default_value = "0.0.0.0:3000")]
+    #[arg(long, env = "ATLAS_BIND", default_value = DEFAULT_BIND)]
     bind: SocketAddr,
     /// Directory holding the database.
     #[arg(long, env = "ATLAS_DATA_DIR", default_value = "/data")]
@@ -103,6 +116,10 @@ struct ServeArgs {
     /// Maximum concurrent WebSocket connections per client IP.
     #[arg(long, env = "ATLAS_WS_MAX_PER_IP", default_value_t = 16)]
     ws_max_per_ip: u32,
+    /// Disk budget of the database file in MiB: retention prunes the oldest history and
+    /// compacts once the file nears it. Default sized for the 10 GiB Flux volume.
+    #[arg(long, env = "ATLAS_DISK_BUDGET_MB", default_value_t = atlas_store::DEFAULT_DISK_BUDGET_MB)]
+    disk_budget_mb: u64,
     /// Protocol ping cadence for WebSocket clients (`20s`).
     #[arg(long, env = "ATLAS_WS_PING", value_parser = parse_duration_arg)]
     ws_ping: Option<Duration>,
@@ -151,6 +168,7 @@ fn serve_config(a: ServeArgs) -> ServeConfig {
         backfill_days: Some(a.backfill_days),
         backfill_rps: a.backfill_rps,
         socket_urls,
+        disk_budget_mb: Some(a.disk_budget_mb.max(64)),
     };
     cfg.db_cache_mb = a.db_cache_mb.max(1);
     cfg.server.trust_proxy = a.trust_proxy;
@@ -197,6 +215,7 @@ fn main() -> ExitCode {
                     Duration::from_secs(timeout_s),
                 ))
             }),
+        Cmd::DbStats { data_dir, compact } => db_stats(&data_dir, compact),
         Cmd::ExportTypes { out } => atlas_core::export_typescript(&out)
             .map(|()| eprintln!("wrote TypeScript bindings to {}", out.display()))
             .map_err(anyhow::Error::from),
@@ -206,6 +225,95 @@ fn main() -> ExitCode {
         Err(e) => {
             eprintln!("atlas: {e:#}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+/// `atlas db-stats [--compact]` on a database no server has open.
+fn db_stats(data_dir: &std::path::Path, compact: bool) -> anyhow::Result<()> {
+    let db = data_dir.join("atlas.redb");
+    let path = db.as_path();
+    let locked = |e: &dyn std::fmt::Display| {
+        anyhow::anyhow!(
+            "reading {}: {e} (stop the server first: redb locks the file)",
+            path.display()
+        )
+    };
+    anyhow::ensure!(path.exists(), "no database at {}", path.display());
+    if compact {
+        let before = atlas_store::FileUsage::of(path)?;
+        let store = atlas_store::Store::open(path).map_err(|e| locked(&e))?;
+        let started = std::time::Instant::now();
+        store.compact()?;
+        drop(store);
+        let after = atlas_store::FileUsage::of(path)?;
+        println!(
+            "compacted in {:.1} s: {:.1} MiB -> {:.1} MiB on disk",
+            started.elapsed().as_secs_f64(),
+            before.disk_bytes as f64 / 1_048_576.0,
+            after.disk_bytes as f64 / 1_048_576.0
+        );
+    }
+    // The directory listing needs no lock, so it prints even while a server holds the file.
+    let tables = atlas_store::db_stats_at(path).map_err(|e| locked(&e));
+    if let Ok(st) = &tables {
+        print!("{}\n{}\n", path.display(), st.render());
+    }
+    // Everything on the volume: the database plus the GeoIP files (live, previous month,
+    // staging during an update).
+    let mib = |b: u64| b as f64 / 1_048_576.0;
+    let entries = atlas_store::dir_usage(data_dir)?;
+    let total: u64 = entries.iter().map(|(_, u)| u.disk_bytes).sum();
+    println!("{} on disk: {:.1} MiB", data_dir.display(), mib(total));
+    for (name, u) in &entries {
+        println!(
+            "  {name:<28} {:>10.1} MiB on disk ({:.1} MiB length)",
+            mib(u.disk_bytes),
+            mib(u.len_bytes)
+        );
+    }
+    tables.map(drop)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use clap::CommandFactory as _;
+
+    use super::*;
+
+    #[test]
+    fn cli_is_well_formed() {
+        Cli::command().debug_assert();
+    }
+
+    /// One process, one port: the server listens on 0.0.0.0:3000 unless told otherwise, and
+    /// the container health probe targets that same port on loopback.
+    #[test]
+    fn default_port_is_3000() {
+        assert_eq!(DEFAULT_BIND, "0.0.0.0:3000");
+        assert_eq!(DEFAULT_HEALTHCHECK_ADDR, "127.0.0.1:3000");
+        let bind: SocketAddr = DEFAULT_BIND.parse().unwrap();
+        let probe: SocketAddr = DEFAULT_HEALTHCHECK_ADDR.parse().unwrap();
+        assert_eq!(bind.port(), probe.port());
+        assert!(bind.ip().is_unspecified());
+        assert!(probe.ip().is_loopback());
+
+        // The parsed CLI defaults (skipped when the environment overrides them).
+        if std::env::var_os("ATLAS_BIND").is_none() {
+            let Cmd::Serve(a) = Cli::try_parse_from(["atlas", "serve"]).unwrap().cmd else {
+                panic!("expected serve");
+            };
+            assert_eq!(a.bind, bind);
+            assert_eq!(serve_config(*a).bind, bind);
+        }
+        if std::env::var_os("ATLAS_HEALTHCHECK_ADDR").is_none() {
+            let Cmd::Healthcheck { addr, .. } =
+                Cli::try_parse_from(["atlas", "healthcheck"]).unwrap().cmd
+            else {
+                panic!("expected healthcheck");
+            };
+            assert_eq!(addr, probe);
         }
     }
 }

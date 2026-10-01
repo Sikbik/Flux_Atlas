@@ -15,20 +15,27 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 mod batch;
+mod budget;
 mod codec;
 mod error;
 mod read;
 mod records;
 mod retention;
+mod stats;
 mod store;
 mod tables;
 
 pub use batch::{SNAPSHOT_FORMAT_VERSION, WriteBatch};
+pub use budget::{
+    BudgetReport, DEFAULT_DISK_BUDGET_MB, DiskBudget, History, HistoryRetention, Pressure,
+    PruneCounts, PruneOutcome, bytes_per_row, prune_oldest_first,
+};
 pub use error::{Result, StoreError};
 pub use records::{
     CommitStats, DAY_MS, EventKey, HOUR_MS, MINUTE_MS, MeshChangeRecord, MeshEdgeRecord,
     MeshReporter, MetricsRow, Order, Resolution,
 };
 pub use retention::{RetentionPolicy, RetentionReport};
+pub use stats::{DbStats, FileUsage, TableSize, db_stats_at, dir_usage};
 pub use store::{SCHEMA_VERSION, Store, StoreOptions};
 pub use tables::meta_keys;

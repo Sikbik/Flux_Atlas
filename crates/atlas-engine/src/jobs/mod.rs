@@ -151,6 +151,20 @@ impl JobCtx {
         (!self.stopping()).then_some(poked)
     }
 
+    /// Runs a store read on the blocking pool. Store calls block while a compaction holds
+    /// the database exclusively; on a 1-CPU runtime with one worker thread a direct call would
+    /// stall every task (live fan-out included) for that long.
+    pub async fn store_read<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&atlas_store::Store) -> atlas_store::Result<T> + Send + 'static,
+    ) -> Option<T> {
+        let store = self.handle.store().clone();
+        tokio::task::spawn_blocking(move || f(&store))
+            .await
+            .ok()
+            .and_then(Result::ok)
+    }
+
     /// Runs an upstream call and counts it by host.
     pub async fn call<T>(
         &self,

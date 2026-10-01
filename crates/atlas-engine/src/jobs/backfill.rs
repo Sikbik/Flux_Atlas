@@ -32,13 +32,17 @@ pub async fn run(ctx: JobCtx) {
         return;
     }
     let bf = ctx.cfg.backfill.clone();
-    if bf.history_stats && meta_get(&ctx, meta::BACKFILL_HISTORY_DONE).is_none() {
+    if bf.history_stats && meta_get(&ctx, meta::BACKFILL_HISTORY_DONE).await.is_none() {
         history(&ctx).await;
     }
     if !ctx.sleep(Duration::from_secs(15)).await {
         return;
     }
-    if bf.app_messages && meta_get(&ctx, meta::BACKFILL_APP_MESSAGES_DONE).is_none() {
+    if bf.app_messages
+        && meta_get(&ctx, meta::BACKFILL_APP_MESSAGES_DONE)
+            .await
+            .is_none()
+    {
         app_messages(&ctx).await;
     }
     if bf.block_days > 0 {
@@ -46,8 +50,8 @@ pub async fn run(ctx: JobCtx) {
     }
 }
 
-fn meta_get(ctx: &JobCtx, key: &str) -> Option<u64> {
-    ctx.handle.store().meta_u64(key).ok().flatten()
+async fn meta_get(ctx: &JobCtx, key: &'static str) -> Option<u64> {
+    ctx.store_read(move |s| s.meta_u64(key)).await.flatten()
 }
 
 async fn history(ctx: &JobCtx) {
@@ -219,14 +223,14 @@ async fn blocks(ctx: &JobCtx, days: u32, rps: f64) {
     let pause = Duration::from_secs_f64(1.0 / rps.clamp(0.1, 4.0));
     // Wait until the first live block fixed the floor.
     let floor = loop {
-        if let Some(f) = meta_get(ctx, meta::LIVE_FLOOR) {
+        if let Some(f) = meta_get(ctx, meta::LIVE_FLOOR).await {
             break f as u32;
         }
         if !ctx.sleep(Duration::from_secs(30)).await {
             return;
         }
     };
-    let target = if let Some(t) = meta_get(ctx, meta::BACKFILL_BLOCKS_TARGET) {
+    let target = if let Some(t) = meta_get(ctx, meta::BACKFILL_BLOCKS_TARGET).await {
         t as u32
     } else {
         let t = floor.saturating_sub(days * BLOCKS_PER_DAY);
@@ -238,8 +242,9 @@ async fn blocks(ctx: &JobCtx, days: u32, rps: f64) {
             .await;
         t
     };
-    let mut h =
-        meta_get(ctx, meta::BACKFILL_BLOCKS_CURSOR).map_or(floor.saturating_sub(1), |c| c as u32);
+    let mut h = meta_get(ctx, meta::BACKFILL_BLOCKS_CURSOR)
+        .await
+        .map_or(floor.saturating_sub(1), |c| c as u32);
     tracing::info!(from = h, to = target, "block backfill running");
     let mut chunk = Vec::with_capacity(BLOCK_CHUNK);
     let mut failures = 0u32;
@@ -247,7 +252,12 @@ async fn blocks(ctx: &JobCtx, days: u32, rps: f64) {
         if ctx.stopping() {
             return;
         }
-        if ctx.handle.store().block(h).ok().flatten().is_some() {
+        if ctx
+            .store_read(move |s| s.block(h))
+            .await
+            .flatten()
+            .is_some()
+        {
             h -= 1;
             continue;
         }

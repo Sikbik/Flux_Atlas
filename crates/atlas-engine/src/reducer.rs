@@ -309,6 +309,7 @@ impl Reducer {
                 {
                     return;
                 }
+                tick.block_received_ms = Some(received_ms);
                 let rep = apply_block(&mut self.st, tick, &block, discontinuous);
                 let (mut exact, mut fallback, mut none) = (0, 0, 0);
                 for a in &rep.attributions {
@@ -1252,11 +1253,15 @@ impl Reducer {
         }
 
         let mut first_seq: Option<u64> = None;
+        let received = tick.block_received_ms;
         let mut emit = |this: &mut Self, body: LiveBody, event_ms: Option<u64>| -> u64 {
             let t = live_kind(&body);
             if let (LiveBody::Block(b), Some(_)) = (&body, event_ms) {
-                this.stats()
-                    .block_latency(now_ms() as i64 - b.time_ms as i64);
+                let now = now_ms() as i64;
+                this.stats().block_latency(now - b.time_ms as i64);
+                if let Some(r) = received {
+                    this.stats().pipeline_latency(now - r as i64);
+                }
             }
             let m = this.handle.emit(event_ms, body);
             this.stats().live(t);

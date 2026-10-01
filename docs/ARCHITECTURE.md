@@ -16,7 +16,7 @@
 | Hot API latency | p99 < 5 ms for snapshot endpoints (served from memory, pre-serialized, pre-compressed) |
 | **Live-first** | Every change reaches browsers as an event, animated as it happens. Freshness tiers: T1 ≤ 3 s (blocks, producer, payouts, node heartbeats/starts, mempool), T2 ≤ 60 s (app deploys/updates, instance placement, node-list reconciliation), T3 continuous rolling crawl (peers, reachability, benchmarks, installed apps; each host revisited ≤ 20 min, and updates stream out per host, never as a batch) |
 | Frontend perf | 60 fps globe at 1440p with 15k nodes + 200 arcs + 50 pulses; first meaningful paint < 2 s |
-| Footprint | one self-contained binary (API + embedded web app) + one data dir; < 250 MB RSS; fits the Flux app spec (1 vCPU / 1 GB / 5 GB) |
+| Footprint | one self-contained binary (API + embedded web app) + one data dir, one process, one port (3000); fits the live Flux app spec (1 vCPU / 2,500 MB RAM / 10 GB disk) with wide headroom, measured in section 11 |
 | Upstream etiquette | bounded req/s, conditional requests where possible, failover, no hammering of individual nodes |
 | Resilience | serves the last-known state instantly on restart; degrades gracefully when upstream is down |
 
@@ -37,7 +37,7 @@ crates/
 web/                       # React 19 + TypeScript + Vite frontend
 labs/globe/                # standalone globe/ambient renderer lab (ported into web/src/globe)
 docs/                      # ARCHITECTURE.md, PLAN.md, research/, design/
-deploy/                    # Dockerfile, flux_app_spec.json, docker-compose.yml
+deploy/                    # Dockerfile (+ Dockerfile.dockerignore), flux_app_spec.json
 ```
 
 The v1 dirs (`backend/`, `frontend/`, root Dockerfile/compose/spec) stay until the v2 cut-over (PLAN phase 5),
@@ -401,9 +401,68 @@ it runs (the 60 MB download plus the 127 MB staging file), so the peak is about 
 month to month (2026-08 was 61.7 MB compressed, 2026-09 60.3 MB).
 
 A retention task runs hourly: prune `metrics_1m` older than 30 d, roll up `metrics_1h`, keep hourly
-snapshots for 30 d, then daily keyframes forever. `compact()` runs weekly. **Time machine:** state at `t` =
+snapshots for 30 d, then daily keyframes for a year (section 5.1). `compact()` runs weekly. **Time machine:** state at `t` =
 nearest snapshot ≤ `t` + replay of `events` in (snapshot_ts, t]. Target < 50 ms per reconstruction; cache
 recent reconstructions.
+
+### 5.1 Retention, disk budget and compaction (D1)
+
+The Flux app gets a 10 GB volume. Every history table has a retention tier, and a disk budget guard bounds
+the file whatever the rates do (`crates/atlas-store/src/budget.rs`, run hourly by the maintenance job):
+
+Growth is measured on the constrained soak (section 11.1): bytes per row from `atlas db-stats` after the full
+7-day backfill (page bytes including B-tree fragmentation, so conservative), rows per day from the live rate in
+the 31 minutes after the backfill finished (2,832 blocks a day at 30 s spacing).
+
+| Tier | Tables | Keep | Product use | B/row | Rows per day | MB per day | Steady state |
+|---|---|---|---|---|---|---|---|
+| State | `meta`, `node_ids`(+`_rev`), `node_state`, `apps`, `mesh_edges`, `pending_app_messages`, `geo_cache` (7 d TTL) | current | everything live | | | ~0.2 (new node ids) | 20 MB, +80 MB a year of node ids |
+| Blocks | `blocks`, `block_hash`, `block_payouts` | 365 d | explorer block list, producer, payouts | 511 + 53 + 3 x 106 | 2,880 | 2.5 | 930 MB |
+| Payments | `payments` | 730 d | node payment history, earnings | 23 | 8,600 | 0.2 | 145 MB |
+| Node txs | `node_txs`, `node_txs_by_node` | 90 d | heartbeat timeline, lifecycle | 231 + 15 | 43,800 | 10.8 | 970 MB |
+| Global events | `events` | 30 d | feed, time machine replay | 100 | 70,500 | 7.1 | 210 MB |
+| Node events | `node_events` | 90 d | node history | 139 | 54,000 | 7.5 | 675 MB |
+| Mesh changes | `mesh_events` | 7 d | topology history | 6,450 to 8,590 | 6,900 to 13,000 | 44 to 111 | 310 to 780 MB |
+| Snapshots | `snapshots` | hourly 30 d, then daily keyframes 365 d | time machine | 525 KB | 24 | 12.6 | 380 + 190 MB |
+| Metrics | `metrics_1m` / `metrics_1h` | 30 d / forever | charts | 160 / 96 | 1,440 / 24 | 0.23 / 0.002 | 7 MB / +1 MB a year |
+| App history | `app_messages`(+`_by_app`) | forever | app spec history (from the six-year bootstrap) | 768 + 91 | ~190 | 0.16 | 58 MB, +60 MB a year |
+| App timelines | `app_events` | forever | app timelines | 175 | 2,300 | 0.4 | +150 MB a year |
+
+**The guard.** `ATLAS_DISK_BUDGET_MB` (default 6,144 MiB. The 10 GB volume is 9.3 GiB, a little less after
+ext4 metadata; the budget leaves about 3 GiB for redb's copy-on-write pages between commits, its growth steps,
+and the GeoIP files, which live beside the database in `geoip/` and are not counted against the budget). Hourly,
+after the age tiers:
+
+1. Measure the file (allocated blocks, O(1)). Under 90% of the budget: done.
+2. Over it: walk the table pages (`db_stats`). If the live data is under 75%, the file is mostly free pages:
+   compact.
+3. Otherwise prune oldest-first: delete the oldest day of every history table (events, node and mesh events,
+   snapshots, app events, blocks with their hash and payout rows, payments, node txs, app messages), estimate
+   the freed bytes from each table's bytes per row, and repeat until the estimate is under 75%; then compact.
+   It never prunes the newest 7 days and never touches current state; if 7 days do not fit, it logs an error
+   asking for a larger budget.
+
+Unit tests cover the marks, the oldest-first stepping, the 7-day floor and the height/time estimates; store
+tests run the tiers and the guard on a real database.
+
+**Compaction.** `redb::Database::compact` needs no live read transactions, so `Store::compact` takes the
+database write lock: readers and the store writer wait while it runs. Measured: 0.2 s for the 7-day soak file (257 MiB long, 197 MiB allocated, to 196 MiB), 0.8 s for a 95 MiB file after a restart, 0.1 s for 128 MiB. It runs
+weekly, after a guard prune, and offline with `atlas db-stats --compact`. Between compactions redb reuses
+freed pages, so once the tiers prune as fast as ingest writes, the file stops growing; compaction only hands
+the slack back to the filesystem. redb grows the file in steps (doubling up to its 4 GiB region size, then a
+region at a time) but the tail stays sparse until written, so the guard measures allocated blocks, not length.
+Store reads from async jobs go through `spawn_blocking`, so a compaction never stalls the 1-CPU runtime.
+
+**Projection.** With every tier full (one year in) the database holds about **4.6 GB** (4.1 GB with the quieter mesh
+rate), then grows about 0.35 GB a year from the tables kept for longer or forever (payments to two years, app
+history, app timelines, node ids). It reaches the guard's high-water mark (90% of 6 GiB, 5.8 GB) about four
+years in; from then on the guard trims the oldest history (in practice the year-old blocks, payments, keyframes and app
+history, since the shorter tiers hold nothing that old) and the file
+holds between 75% and 90% of the budget. The volume then holds at most the 6 GiB budget plus the GeoIP files
+(255 MB, 445 MB during a monthly update), about **6.9 GB of the 10 GB**. During the first week (the 7-day
+backfill fills in about 4.7 hours at 1.5 blocks a second) the file was 257 MiB long and 197 MiB allocated,
+with 186 MiB in table pages; the largest tables were `node_txs` (60 MiB), `app_messages` (52 MiB) and
+`mesh_events` (21 MiB).
 
 ## 6. HTTP API (atlas-server) — `/api/v1`
 
@@ -610,18 +669,122 @@ web/src/
 
 ## 10. Build, deploy, quality gates
 
-- `deploy/Dockerfile`: node stage (build web) → rust stage (build `atlas` with embedded dist, `--release`,
-  LTO thin, `codegen-units=1`) → `gcr.io/distroless/cc-debian12` runtime, non-root, volume `/data`.
-  `atlas healthcheck` subcommand for Docker HEALTHCHECK.
-- `deploy/flux_app_spec.json`: Flux app spec (see legacy spec; ports/containerData [TBD research: current spec version & port rules]).
+- `deploy/Dockerfile` (section 11): node stage (`npm ci`, `npm run build`) → rust stage (static musl build of
+  `atlas` with the embedded dist, `--release`, LTO thin, `codegen-units=1`) → `scratch` runtime with the
+  binary, the CA bundle and `/app/backend/data`. `atlas healthcheck` is the Docker HEALTHCHECK.
+- `deploy/flux_app_spec.json`: the live v8 spec of the Flux app `atlas` (section 11).
 - Config: env vars (each also a flag; full table in `crates/atlas-server/README.md`): `ATLAS_BIND` (default
-  `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`), `ATLAS_INGEST` (`1`; `0` serves stored state only),
-  `ATLAS_BACKFILL_DAYS` (7), `ATLAS_BACKFILL_RPS` (1.5), `ATLAS_DB_CACHE_MB` (32), `ATLAS_INTERVALS`
+  `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`; the image sets `/app/backend/data`), `ATLAS_INGEST` (`1`; `0`
+  serves stored state only), `ATLAS_BACKFILL_DAYS` (7), `ATLAS_BACKFILL_RPS` (1.5), `ATLAS_DB_CACHE_MB` (32),
+  `ATLAS_DISK_BUDGET_MB` (6144), `ATLAS_INTERVALS`
   (`job=duration,...` per-job interval overrides), `ATLAS_FLUX_API`, `ATLAS_EXPLORER_API`, `ATLAS_STATS_API`,
   `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_AUTO` (`1`; DB-IP City Lite download), `ATLAS_GEOIP_DB` (path of an operator-managed `.mmdb`
   instead of the downloaded one), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
   `ATLAS_CLIENT_RPS` / `ATLAS_CLIENT_BURST`, `ATLAS_WS_MAX_CONNECTIONS` / `ATLAS_WS_MAX_PER_IP` / `ATLAS_WS_PING`,
-  `ATLAS_LOG`. The web smoke targets a running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).
+  `ATLAS_LOG`, `ATLAS_HEALTHCHECK_ADDR` (`127.0.0.1:3000`, for `atlas healthcheck`). The web smoke targets a
+  running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).
 - Gates. Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. Web: `tsc --noEmit`,
   `biome check`, `vitest run`, Playwright smoke. Perf: an ingest-cycle benchmark on the full raw node dump, `oha`
   load test on `/api/v1/nodes.bin` and `/bootstrap`, globe FPS via the team shot tool `--gpu --fps`.
+
+## 11. Deployment: the live Flux app `atlas`
+
+v2 ships as an update of the live Flux app `atlas` (PLAN phase 5). `deploy/flux_app_spec.json` is its live
+v8 spec with a new description only: one component `atlas`, image `littlestache/flux-atlas:latest`, public
+port 33889 → container port **3000**, `containerData` `/app/backend/data`, no environment parameters, no
+commands, 1 CPU, 2,500 MB RAM, 10 GB disk, 2 instances. Re-read
+`GET https://api.runonflux.io/apps/appspecifications/atlas` before deploying.
+
+**One process, one port.** The container runs one process, `atlas serve`, which opens exactly one listening
+socket: TCP `0.0.0.0:3000` (`ATLAS_BIND`). The web app, `/api/v1/*`, the `/ws` upgrade, `/healthz`, `/readyz`
+and `/metrics/prometheus` all share it. There is no metrics exporter, admin or debug port and no UDP
+listener. Upstream traffic (the FluxOS gateway, the two Insight socket.io connections, stats, CoinGecko,
+SSRF-guarded node probes) is outbound only and needs no inbound port. Proven three ways:
+
+- `crates/atlas-server/tests/one_port.rs` runs the real `serve` path (store, engine with ingest off, router) on
+  one ephemeral port, loads the SPA index and a deep link, an API route, `/metrics/prometheus`, a `/ws`
+  upgrade and `/healthz` on it, then audits the test process's sockets (`/proc/self/fd` against
+  `/proc/self/net/{tcp,tcp6,udp,udp6,raw,raw6}`): exactly one listening socket, no UDP or raw sockets.
+- `default_port_is_3000` in `src/main.rs` pins `ATLAS_BIND` to `0.0.0.0:3000` and the healthcheck to
+  `127.0.0.1:3000`.
+- The constrained container with live ingest, 200 WebSocket clients and HTTP load, inspected from a sidecar in
+  its network namespace (`ss -ltnup`): one listener, `tcp 0.0.0.0:3000`, nothing else; the only other sockets
+  are the established inbound clients on 3000 and four or five outbound connections to upstream port 443. The GeoIP run (merged image)
+  shows the same single listener.
+
+**Image** (`deploy/Dockerfile`, build from the repository root with
+`docker build -f deploy/Dockerfile -t flux-atlas .`; the context is filtered by `deploy/Dockerfile.dockerignore`
+to 7.5 MB):
+
+1. `node:26-alpine`: `npm ci` from the lockfile, `npm run build`, source maps dropped.
+2. `rust:1.97-alpine`: a fully static musl release build of `atlas` embedding `web/dist` (rust-embed). mimalloc
+   is the global allocator, so musl's malloc is not on the hot path.
+3. `scratch`: the binary, the CA bundle (rustls verifies upstream TLS against it) and `/app/backend/data`.
+   34 MB unpacked, 14.5 MB compressed (`docker images` shows 49 MB, the unpacked and compressed layers together). No shell, no package manager, no libc to patch. A glibc build on
+   `distroless/cc` would add 43 MB for nothing the server uses.
+
+The spec passes no environment and no commands, so the image defaults are the production configuration:
+`ENTRYPOINT atlas`, `CMD serve`, `ATLAS_BIND=0.0.0.0:3000`, `ATLAS_DATA_DIR=/app/backend/data`, `ATLAS_LOG=info`,
+`EXPOSE 3000` only, `VOLUME /app/backend/data`, and `HEALTHCHECK` running `atlas healthcheck` (a raw HTTP probe
+of `/healthz`, so the image needs no curl).
+
+**Runtime user: root.** FluxOS bind-mounts a host directory at `containerData`, created by root and not
+writable by others. Tested on a root-owned ext4 volume: as uid 65532 the server fails with `Permission denied`
+creating `atlas.redb`; as root it works. A start-as-root-then-drop scheme would need a shell or a privilege
+helper in the image; the scratch image has neither, so there is nothing to escalate with and the process only
+writes `/app/backend/data`.
+
+**Volume layout.** Everything lives under `/app/backend/data`: `atlas.redb` (state, cursors, history; bounded
+by `ATLAS_DISK_BUDGET_MB`, section 5.1) and `geoip/` (DB-IP City Lite, section 3.2: 127 MB live, about 255 MB
+with the previous month kept, about 445 MB while a monthly update stages). With the spec's defaults the server
+downloads the GeoIP database about 30 s after start, so the container needs outbound HTTPS to
+`download.db-ip.com`; without it the server runs and cities stay unknown. `atlas db-stats` lists both.
+
+**Persistence.** State, cursors and history live in `/app/backend/data/atlas.redb`. Verified: after
+`docker restart` (and after a new container on the same volume) the engine restores nodes, apps, mesh and
+the tip, serves them within a second, and the block backfill resumes from its stored cursor instead of
+starting over. The GeoIP database survives a restart too: the restarted container maps the stored file
+(`geoip: database mapped`, 2026-09) and downloads nothing.
+
+### 11.1 Resource budget, measured
+
+Two runs of the release image under the spec's limits (`docker run --cpus=1 --memory=2500m`, a fresh
+root-owned 10 GiB ext4 volume, live ingest against mainnet, default configuration):
+
+- **Soak** (5.2 h, 2026-10-01 02:54 to 08:05 UTC): 200 WebSocket clients subscribed to every topic, 20 HTTP
+  requests a second over `/bootstrap`, `nodes.bin`, `/apps` and `/blocks`, and the full 7-day block backfill
+  (20,159 blocks, finished after 4.7 h), sampled every minute (RSS, cgroup memory and CPU, latency, publish
+  times, table sizes). Built before GeoIP merged.
+- **GeoIP confirmation** (17 min, with GeoIP merged): the same limits and load on a fresh volume; the DB-IP
+  City Lite database downloaded and installed 39 s after start and enriched 6,664 nodes.
+
+| Resource | Spec | Measured | Headroom |
+|---|---|---|---|
+| CPU | 1 vCPU | soak: mean 3.3% of one core, busiest minute 8.0%, cgroup throttling at most 2.2% of a minute; GeoIP run: busiest 15 s 20.8% (startup) | over 10x |
+| Memory | 2,500 MB | RSS 380 to 480 MB through the soak (407 to 477 MB from minute 120 on, 418 to 463 MB after the backfill), peak 557 MB at startup (parsing the permanent app messages); cgroup total with page cache up to 655 MB, all of it reclaimable; GeoIP adds 0 to 9 MB RssFile (clean, droppable) and no heap | 4.5x on the peak |
+| Disk | 10 GB | first week 197 MiB allocated (257 MiB long) plus 121 MiB GeoIP; levels off at about 4.6 GB in a year, bounded at 6 GiB by the guard, 6.9 GB worst case with GeoIP staging (section 5.1) | over 3 GB |
+| Block latency | p99 under 3 s | upstream Insight push to the last of 200 clients: p50 164 ms, p90 270 ms, p99 344 ms, max 1.83 s (617 blocks); server emit to last client p99 28 ms; block header time to emit p50 1.05 s, p99 2.81 s | |
+| HTTP | | 93,000 requests per endpoint, 0 errors, p50 1.2 to 1.9 ms, worst minute p99 42 ms | |
+
+**Memory.** RSS climbs during the first two hours while the bounded structures fill, then holds: the two replay
+rings reach their 16 MiB caps (`atlas_replay_ring_bytes`), the mesh settles around 140,000 edges, and the
+rest is the live network model and the published bodies. Every cache is bounded by bytes, not entries: the
+explorer proxy caches (66 MiB in total), the metrics and timeline caches (16 and 24 MiB) and the replay rings
+(16 MiB each); `atlas_cache_bytes` and `atlas_replay_ring_bytes` report them. The soak load did not touch the
+explorer caches, so the worst case adds their 106 MiB to the measured plateau: under 600 MB with 200
+clients. A WebSocket client costs about 47 KB (8 KiB read and 16 KiB write buffers; measured +14 MB for 300
+extra clients). redb's page cache is capped at 32 MB (`ATLAS_DB_CACHE_MB`).
+
+**CPU and latency.** Block messages go out from the reducer as soon as a block is applied; publishing (body
+rebuild and compression) runs on its own thread, at most 0.39 s per publish in the soak, and never blocks the
+hot path (emit to last client stayed under 80 ms). When the gateway cannot serve a block it just announced
+("Can't read block from disk"), the chain job retries the tip at 0.3, 0.7, 1.2, 2, 3 and 4.5 s unless a newer
+tip arrives (`TIP_RETRY_MS`); before that fix one such block reached clients 30 s late, after it the worst
+block took 1.85 s from push to emit.
+
+**First boot.** On a fresh volume the payee queue rotates correctly from the first block: blocks at or below
+the list height are attributed from the list's `last_paid_height` (`reattribute_recent_payouts`), so
+`reattributed=3` named the three payees of the block the list was fetched at. The soak attributed 1,863 live
+payouts exactly, 0 by fallback, 0 currentwinner mismatches; the counter's 3 unattributed are that first block's payees, counted
+when it was applied before the list arrived and named by the reattribution, and the rank check (globe ranks against the server's queue, every block) matched 39 of 39
+blocks after the first boot and 21 of 21 after the backfill.

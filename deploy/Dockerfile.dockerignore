@@ -1,0 +1,16 @@
+# Build context for deploy/Dockerfile (BuildKit reads <Dockerfile>.dockerignore before the root
+# .dockerignore). Allow-list: only what the build stages copy.
+*
+!Cargo.toml
+!Cargo.lock
+!crates/
+!web/
+crates/**/target
+web/node_modules
+web/dist
+web/dist-*
+web/test-results
+web/e2e/artifacts
+web/**/*.tsbuildinfo
+**/*.log
+**/.DS_Store

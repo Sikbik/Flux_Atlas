@@ -560,6 +560,8 @@ pub struct Tick {
     pub publish_now: bool,
     /// Something changed that should be published (coalesced).
     pub publish: bool,
+    /// When the tip push of the block applied in this tick arrived (pipeline latency).
+    pub block_received_ms: Option<u64>,
 }
 
 impl Tick {

@@ -95,6 +95,8 @@ pub struct EngineStats {
     pub block_latency_ms: Vec<i64>,
     /// Socket `block` push time minus block time (ms).
     pub tip_latency_ms: Vec<i64>,
+    /// Tip push received to `block` message emitted (ms): fetch, decode and reduce.
+    pub pipeline_latency_ms: Vec<i64>,
     /// Reconciles run and total field diffs found (bug signals).
     pub reconciles: u64,
     pub reconcile_diffs: u64,
@@ -133,6 +135,32 @@ pub struct EngineStats {
     pub publish_seconds: Histogram,
     /// Unexpected internal errors (should stay 0).
     pub internal_errors: u64,
+    /// Retention, disk budget and compaction (maintenance job).
+    pub storage: StorageStatus,
+}
+
+/// What the maintenance job last did to the database.
+#[derive(Debug, Clone, Default)]
+pub struct StorageStatus {
+    pub budget_bytes: u64,
+    /// Maintenance passes completed, and the last one's end (unix ms) and duration.
+    pub maintenance_runs: u64,
+    pub maintenance_at_ms: u64,
+    pub maintenance_ms: u64,
+    /// Rows removed by the age-based retention tiers (all tables, cumulative).
+    pub retention_rows: u64,
+    /// Disk budget guard verdicts (`ok`, `compacted`, `pruned`), cumulative.
+    pub guard_actions: BTreeMap<&'static str, u64>,
+    /// Rows the guard removed, cumulative.
+    pub guard_rows: u64,
+    pub compactions: u64,
+    /// Duration of the last compaction (ms): the store is exclusively locked meanwhile.
+    pub compaction_ms: u64,
+    /// `(table, rows, bytes)` from the last full size report, largest first.
+    pub tables: Vec<(String, u64, u64)>,
+    /// When that report was taken (unix ms) and how long the page walk took (ms).
+    pub tables_at_ms: u64,
+    pub tables_walk_ms: u64,
 }
 
 const LATENCY_KEEP: usize = 4096;
@@ -212,6 +240,10 @@ impl StatsCell {
 
     pub fn tip_latency(&self, ms: i64) {
         self.with(|s| push_bounded(&mut s.tip_latency_ms, ms));
+    }
+
+    pub fn pipeline_latency(&self, ms: i64) {
+        self.with(|s| push_bounded(&mut s.pipeline_latency_ms, ms));
     }
 
     pub fn job_error(&self, job: &'static str) {

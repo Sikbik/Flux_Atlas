@@ -27,6 +27,14 @@ pub struct ServeConfig {
 /// Default redb page cache (MiB).
 pub const DEFAULT_DB_CACHE_MB: usize = 32;
 
+/// Default listen address (`ATLAS_BIND`). The only port the process opens: the Flux app spec
+/// maps its public port to container port 3000.
+pub const DEFAULT_BIND: &str = "0.0.0.0:3000";
+
+/// Default address `atlas healthcheck` probes (`ATLAS_HEALTHCHECK_ADDR`): the server's port
+/// on loopback, from inside the container.
+pub const DEFAULT_HEALTHCHECK_ADDR: &str = "127.0.0.1:3000";
+
 impl ServeConfig {
     /// Defaults for a bind address and data directory.
     pub fn new(bind: SocketAddr, data_dir: PathBuf) -> Self {
@@ -86,6 +94,11 @@ pub struct WsConfig {
     /// Most node ids / app names honored in one `sub`.
     pub max_watch_nodes: usize,
     pub max_watch_apps: usize,
+    /// Per-connection read buffer. Clients only send small `sub` / `pong` messages; the
+    /// library default (128 KiB, allocated up front) cost about 180 KiB of RSS per connection.
+    pub read_buffer: usize,
+    /// Per-connection write buffer target (frames are flushed once it fills).
+    pub write_buffer: usize,
 }
 
 impl Default for WsConfig {
@@ -100,6 +113,8 @@ impl Default for WsConfig {
             max_message_bytes: 64 * 1024,
             max_watch_nodes: 64,
             max_watch_apps: 16,
+            read_buffer: 8 * 1024,
+            write_buffer: 16 * 1024,
         }
     }
 }
@@ -201,6 +216,8 @@ pub struct EngineOverrides {
     pub backfill_rps: Option<f64>,
     /// Insight socket endpoints (`wss://.../socket.io/?EIO=3&transport=websocket`).
     pub socket_urls: Vec<String>,
+    /// Disk budget of the database file in MiB (`ATLAS_DISK_BUDGET_MB`).
+    pub disk_budget_mb: Option<u64>,
 }
 
 /// Interval override keys accepted by `ATLAS_INTERVALS` (`key=duration,...`). Freshness job
@@ -281,6 +298,9 @@ impl EngineOverrides {
         }
         if !self.socket_urls.is_empty() {
             ing.socket.urls.clone_from(&self.socket_urls);
+        }
+        if let Some(mb) = self.disk_budget_mb {
+            ing.disk_budget = atlas_store::DiskBudget::from_mb(mb);
         }
         unapplied
     }
@@ -406,6 +426,7 @@ mod tests {
             replay_capacity: Some(100),
             ingest: Some(false),
             backfill_days: Some(2),
+            disk_budget_mb: Some(2048),
             ..EngineOverrides::default()
         };
         let mut cfg = EngineConfig::default();
@@ -416,6 +437,11 @@ mod tests {
         assert_eq!(cfg.replay_capacity, 100);
         assert!(!cfg.ingest.enabled);
         assert_eq!(cfg.ingest.backfill.block_days, 2);
+        assert_eq!(cfg.ingest.disk_budget.budget_bytes, 2048 << 20);
+        assert_eq!(
+            EngineConfig::default().ingest.disk_budget.budget_bytes,
+            atlas_store::DEFAULT_DISK_BUDGET_MB << 20
+        );
         assert!((cfg.ingest.backfill.blocks_per_second - DEFAULT_BACKFILL_RPS).abs() < 1e-9);
         assert_eq!(left, vec!["bogus".to_owned()]);
     }

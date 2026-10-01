@@ -75,15 +75,42 @@ impl ReconcileReport {
     }
 }
 
-/// Attributes the payouts of recent blocks above the list height that were applied before their
-/// payees were known (a first boot applies the tip block before the first node list lands), and
-/// moves those payees to the back of their queues. Clients never rotated them (their `block`
-/// message named no node), so the rank corrections after this tick bring them in line.
+/// The listed node of `tier` paid to `address` whose last payment is exactly `height`, if
+/// exactly one matches.
+fn paid_at(
+    st: &NetworkState,
+    tier: atlas_core::Tier,
+    address: &str,
+    height: u32,
+) -> Option<NodeId> {
+    let mut found = None;
+    for e in st.nodes.listed() {
+        if e.rec.tier == tier
+            && e.rec.last_paid_height == Some(height)
+            && e.rec.payment_address == address
+        {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(e.rec.id);
+        }
+    }
+    found
+}
+
+/// Attributes the payouts of recent blocks that were applied before their payees were known (a
+/// first boot applies the tip block before the first node list lands).
+///
+/// - Above the list height, the payee is the queue head; it moves to the back of its queue.
+///   Clients never rotated it (their `block` message named no node), so the rank corrections
+///   after this tick bring them in line.
+/// - At or below the list height, the list already counts the payment: the payee is the node
+///   it reports paid at exactly that height, and the queue is already right.
 fn reattribute_recent_payouts(st: &mut NetworkState, tick: &mut Tick, list_height: u32) -> u32 {
     let heights: Vec<u32> = st
         .recent
         .iter()
-        .filter(|b| b.height > list_height && b.payouts.iter().any(|p| p.node.is_none()))
+        .filter(|b| b.payouts.iter().any(|p| p.node.is_none()))
         .map(|b| b.height)
         .collect();
     let mut n = 0;
@@ -95,6 +122,14 @@ fn reattribute_recent_payouts(st: &mut NetworkState, tick: &mut Tick, list_heigh
         let mut changed = false;
         for p in &mut block.payouts {
             if p.node.is_some() {
+                continue;
+            }
+            if h <= list_height {
+                if let Some(id) = paid_at(st, p.tier, &p.address, h) {
+                    p.node = Some(id);
+                    changed = true;
+                    n += 1;
+                }
                 continue;
             }
             let (Some(id), _) = crate::derive::block::attribute(st, None, p.tier, &p.address)
