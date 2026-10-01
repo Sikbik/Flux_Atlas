@@ -8,7 +8,7 @@ import type { NodeStatus } from '../../../api/generated/NodeStatus';
 import { STATUS_CODES } from '../../../api/nodesBin';
 import { parseEndpoint } from '../../../lib/format';
 import { type NodeTable, Reach } from '../../../store/nodeTable';
-import { blocksSinceConfirm, isAtRisk } from './expiry';
+import { blocksSinceConfirm, CHECKIN, isAtRisk } from './expiry';
 import { fluxPerDay, positionOf, QUEUE_TIERS, type QueueSnapshot, type QueueTier } from './queue';
 import { type VersionStanding, versionStanding } from './versions';
 
@@ -25,6 +25,8 @@ export interface FleetNode {
   atRisk: boolean;
   /** Position in the tier queue (0 = next block), null when not queued. */
   position: number | null;
+  /** Height of the last payment, null when none is known. */
+  lastPaid: number | null;
   version: string | null;
   cores: number;
   ramGb: number;
@@ -37,6 +39,8 @@ export interface FleetNode {
   /** Steady-state FLUX per day (an estimate), null when the tier payout is unknown. */
   perDay: number | null;
   paymentAddress: string | null;
+  /** False when the live table does not know the node: it left the list, or the list is not loaded. */
+  present: boolean;
 }
 
 export type TierPayouts = Partial<Record<QueueTier, number>>;
@@ -90,6 +94,7 @@ export function buildFleet(
       sinceConfirm: since,
       atRisk: isAtRisk(since),
       position: pos ? pos.position : null,
+      lastPaid: known && t.lastPaid[i]! > 0 ? t.lastPaid[i]! : (r.last_paid_height ?? null),
       version: version || null,
       cores: known ? t.cores[i]! : 0,
       ramGb: known ? t.ramGb[i]! : 0,
@@ -101,8 +106,161 @@ export function buildFleet(
       lon: r.lon,
       perDay: payout !== undefined && size > 0 ? fluxPerDay(payout, size) : null,
       paymentAddress: r.payment_address || null,
+      present: known,
     };
   });
+}
+
+const stubRow = (id: number): NodeRow => ({
+  id,
+  outpoint: '',
+  endpoint: null,
+  tier: 'unknown',
+  status: 'unknown',
+  rank: null,
+  payment_address: '',
+  country_code: null,
+  country: null,
+  org: null,
+  lat: null,
+  lon: null,
+  app_count: 0,
+  added_height: 0,
+  last_paid_height: null,
+  last_confirmed_height: null,
+  flux_os: null,
+  arcane: null,
+  reachable: null,
+});
+
+/**
+ * A fleet from node ids alone (the watchlist): every fact comes from the live table. A node the table
+ * no longer knows stays in the list as `present: false`, so a watched node that left shows as gone
+ * instead of silently disappearing.
+ */
+export function buildWatchFleet(
+  ids: readonly number[],
+  t: NodeTable,
+  q: QueueSnapshot,
+  tip: number | null,
+  payouts: TierPayouts,
+): FleetNode[] {
+  return buildFleet(ids.map(stubRow), t, q, tip, payouts);
+}
+
+// ---- health -----------------------------------------------------------------------------------------
+
+/**
+ * One word for how a node is doing, for the status grid and the counts:
+ * `ok` confirmed and checking in; `risk` needs a look (at risk of expiry, or the sweep cannot reach it);
+ * `down` offline, DoS listed or past expiry; `pending` not confirmed yet or unknown; `gone` off the list.
+ */
+export type FleetState = 'ok' | 'risk' | 'down' | 'pending' | 'gone';
+
+export const FLEET_STATES: readonly FleetState[] = ['ok', 'risk', 'down', 'pending', 'gone'];
+
+export function fleetState(n: FleetNode): FleetState {
+  if (!n.present || n.status === 'departed') return 'gone';
+  if (n.status === 'expired') return 'gone';
+  if (n.status === 'dos' || n.status === 'offline') return 'down';
+  if (n.sinceConfirm !== null && n.sinceConfirm >= CHECKIN.expire) return 'down';
+  if (n.status === 'confirmed') return n.atRisk || n.reachable === false ? 'risk' : 'ok';
+  return 'pending';
+}
+
+export function stateCounts(nodes: readonly FleetNode[]): Record<FleetState, number> {
+  const out: Record<FleetState, number> = { ok: 0, risk: 0, down: 0, pending: 0, gone: 0 };
+  for (const n of nodes) out[fleetState(n)]++;
+  return out;
+}
+
+export type AttentionKind = 'expired' | 'at_risk' | 'unreachable' | 'dos';
+
+export interface Attention {
+  kind: AttentionKind;
+  nodes: FleetNode[];
+}
+
+/**
+ * Nodes that need a look, grouped worst first: past expiry, at risk of expiry (closest to expiring
+ * first), DoS listed, unreachable. A node appears in the first group it qualifies for only.
+ */
+export function attention(nodes: readonly FleetNode[]): Attention[] {
+  const expired: FleetNode[] = [];
+  const atRisk: FleetNode[] = [];
+  const dos: FleetNode[] = [];
+  const unreachable: FleetNode[] = [];
+  for (const n of nodes) {
+    if (!n.present || n.status === 'departed') continue;
+    if (n.status === 'expired' || (n.sinceConfirm !== null && n.sinceConfirm >= CHECKIN.expire)) {
+      expired.push(n);
+    } else if (n.status === 'dos') dos.push(n);
+    else if (n.atRisk) atRisk.push(n);
+    else if (n.reachable === false && (n.status === 'confirmed' || n.status === 'offline'))
+      unreachable.push(n);
+  }
+  atRisk.sort((a, b) => (b.sinceConfirm ?? 0) - (a.sinceConfirm ?? 0));
+  const out: Attention[] = [];
+  if (expired.length) out.push({ kind: 'expired', nodes: expired });
+  if (atRisk.length) out.push({ kind: 'at_risk', nodes: atRisk });
+  if (dos.length) out.push({ kind: 'dos', nodes: dos });
+  if (unreachable.length) out.push({ kind: 'unreachable', nodes: unreachable });
+  return out;
+}
+
+// ---- geometry ---------------------------------------------------------------------------------------
+
+const toRad = (d: number) => (d * Math.PI) / 180;
+const toDeg = (r: number) => (r * 180) / Math.PI;
+
+export interface Centroid {
+  lat: number;
+  lon: number;
+  /** Largest angular distance (radians) from the centre to a node. */
+  spread: number;
+  /** How many nodes had a place. */
+  count: number;
+}
+
+/** The centre of a fleet on the sphere (unit-vector mean) and how far it reaches. Null without places. */
+export function fleetCentroid(nodes: readonly { lat: number | null; lon: number | null }[]): Centroid | null {
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  let count = 0;
+  for (const n of nodes) {
+    if (n.lat === null || n.lon === null || !Number.isFinite(n.lat) || !Number.isFinite(n.lon)) continue;
+    const la = toRad(n.lat);
+    const lo = toRad(n.lon);
+    x += Math.cos(la) * Math.cos(lo);
+    y += Math.cos(la) * Math.sin(lo);
+    z += Math.sin(la);
+    count++;
+  }
+  if (count === 0) return null;
+  const norm = Math.hypot(x, y, z);
+  // Opposite sides of the planet cancel out; fall back to the first node's place then.
+  if (norm < 1e-9) {
+    const first = nodes.find((n) => n.lat !== null && n.lon !== null);
+    return first ? { lat: first.lat as number, lon: first.lon as number, spread: Math.PI, count } : null;
+  }
+  const cx = x / norm;
+  const cy = y / norm;
+  const cz = z / norm;
+  let spread = 0;
+  for (const n of nodes) {
+    if (n.lat === null || n.lon === null || !Number.isFinite(n.lat) || !Number.isFinite(n.lon)) continue;
+    const la = toRad(n.lat);
+    const lo = toRad(n.lon);
+    const dot = cx * Math.cos(la) * Math.cos(lo) + cy * Math.cos(la) * Math.sin(lo) + cz * Math.sin(la);
+    spread = Math.max(spread, Math.acos(Math.max(-1, Math.min(1, dot))));
+  }
+  return { lat: toDeg(Math.asin(cz)), lon: toDeg(Math.atan2(cy, cx)), spread, count };
+}
+
+/** Camera range (globe radii) that frames a fleet of the given angular spread. */
+export function flyRangeFor(spread: number): number {
+  return Math.max(0.5, Math.min(3.4, 0.45 + spread * 2.4));
 }
 
 /** Soonest payout first, tiers interleaved (every tier pays one node per block); unqueued nodes last. */
