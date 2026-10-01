@@ -540,6 +540,11 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
     version rollout milestones, large transfers). The UI renders these; it never parses free text.
 - Heartbeats: ping every 20 s. Slow consumers are dropped when their per-connection queue (1,024) is full.
   Clients reconnect with jittered backoff and `since_seq`.
+- **Feed items are delivered at least once (B6).** After a resync the client resumes from the lower of the
+  bootstrap's and `nodes.bin`'s seq (`nodes.bin` is rebuilt only when nodes change, so it lags), and the replay
+  can re-deliver `feed` items the client already holds. The server emits one item per event (an app message is
+  applied once, keyed by its message hash); the client keeps the highest `feed` seq it pushed and skips any at
+  or below it, resetting that mark when `server.started_ms` changes (seqs restart with the server).
 
 **Rank contract (payment queue).** Ranks are never streamed per node per block (that would be ~6.7k changes
 every 30 s). Each tier's queue is a strict rotation, so clients maintain ranks deterministically:

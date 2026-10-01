@@ -267,6 +267,31 @@ describe('other slices', () => {
     expect(s.feed.newest()?.seq).toBe(799);
   });
 
+  it('keeps one feed item when a resume after a resync replays it, until the server restarts', () => {
+    const s = loaded();
+    const renewed = (seq: number) =>
+      live('feed', seq, {
+        kind: 'app_renewed',
+        ts_ms: 5,
+        text_key: 'feed.app_renewed',
+        refs: [{ kind: 'app', name: 'dragonwilds1790459719613' }],
+        params: {},
+      });
+    s.apply(renewed(205));
+    // nodes.bin lags the bootstrap, so the snapshot's resume seq sits below the item held.
+    s.loadSnapshot({ bootstrap: bootstrap(206), nodes: syntheticNodesBin(200, 203) });
+    expect(s.seq).toBe(203);
+    s.apply(renewed(205));
+    expect(s.feed.size).toBe(1);
+    // A restarted server numbers from the start again; its items are new.
+    s.loadSnapshot({
+      bootstrap: { ...bootstrap(9), server: { ...bootstrap(9).server, started_ms: 2 } },
+      nodes: syntheticNodesBin(200, 9),
+    });
+    s.apply(renewed(10));
+    expect(s.feed.size).toBe(2);
+  });
+
   it('applies mesh snapshots and deltas', () => {
     const s = loaded();
     s.loadMesh(
