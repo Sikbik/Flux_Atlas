@@ -8,5 +8,4 @@ export const SearchResultsView = lazy(() => import('../features/command/results/
 export const TerminalView = lazy(() => import('../features/command/terminal/TerminalView'));
 export const SettingsView = lazy(() => import('../features/settings/SettingsView'));
 export const AboutView = lazy(() => import('../features/settings/about/AboutView'));
-
-export { AmbientView } from '../app/placeholders/views';
+export const AmbientView = lazy(() => import('../features/ambient/AmbientView'));

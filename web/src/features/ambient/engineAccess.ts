@@ -11,3 +11,8 @@ export type AmbientEngine = Pick<GlobeEngine, 'nameOf' | 'ambient' | 'playEgg' |
 export function asAmbientEngine(t: GlobeTarget | null): AmbientEngine | null {
   return t as unknown as AmbientEngine | null;
 }
+
+/** The whole engine, for the sound score, which is built on it. */
+export function asGlobeEngine(t: GlobeTarget | null): GlobeEngine | null {
+  return t as unknown as GlobeEngine | null;
+}

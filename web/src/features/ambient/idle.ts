@@ -35,6 +35,8 @@ let started: (() => void) | null = null;
 /** Starts the watch once; returns a stop function (calling it again after a stop starts afresh). */
 export function startIdleWatch(router: AnyRouter): () => void {
   if (started) return started;
+  // Starting counts as a sign of life: the shell has just come back (from ambient mode, or a first paint).
+  lastInput = Date.now();
   let timer: number | null = null;
 
   const onInput = (e: Event) => {

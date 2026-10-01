@@ -24,6 +24,8 @@ const DISSOLVE_IN_MS = 520;
 
 let remembered: string | null = null;
 let ambientIndex: number | null = null;
+/** How the current ambient run was started by the app; null when the page was opened (or linked) straight onto /ambient. */
+let routedVia: AmbientVia | null = null;
 let entryTimer: number | null = null;
 let entryVia: AmbientVia | null = null;
 let phaseTimer: number | null = null;
@@ -80,6 +82,7 @@ export function enterAmbient(router: AnyRouter, via: AmbientVia = 'manual'): voi
     entryVia = null;
     if (isAmbientPath(router)) return;
     remembered = hrefWithoutPalette(router);
+    routedVia = via;
     void router.navigate({ to: '/ambient' } as never).then(() => {
       ambientIndex = currentHistoryIndex(router);
       setPhase(null);
@@ -95,6 +98,11 @@ export function enterAmbient(router: AnyRouter, via: AmbientVia = 'manual'): voi
   entryTimer = window.setTimeout(go, DISSOLVE_OUT_MS);
 }
 
+/** How the ambient view now on screen was entered: by the app, or as a kiosk (a page load or a link onto /ambient). */
+export function ambientVia(): AmbientVia {
+  return routedVia ?? 'kiosk';
+}
+
 /** The ambient view tells this module it is on screen, so a direct entry (dock, reload) can still leave by going back. */
 export function adoptAmbientEntry(router: AnyRouter): void {
   if (ambientIndex === null) ambientIndex = currentHistoryIndex(router);
@@ -105,6 +113,7 @@ export function exitAmbient(router: AnyRouter): void {
   if (!isAmbientPath(router)) return;
   const was = remembered;
   remembered = null;
+  routedVia = null;
   track({ type: 'ambient', action: 'exit', via: 'manual' });
   // The chrome mounts invisible and fades in once the route has resolved.
   setPhase('hold', 1800);
