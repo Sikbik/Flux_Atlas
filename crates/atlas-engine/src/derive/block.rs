@@ -450,7 +450,7 @@ fn tier_of(st: &NetworkState, id: NodeId) -> Tier {
     st.nodes.rec(id).map_or(Tier::Unknown, |r| r.tier)
 }
 
-fn attribute(
+pub(crate) fn attribute(
     st: &NetworkState,
     expected: Option<&[(Tier, Option<NodeId>, String)]>,
     tier: Tier,

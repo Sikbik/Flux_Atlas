@@ -434,6 +434,7 @@ impl Reducer {
                         added = rep.added,
                         removed = rep.removed,
                         skipped_newer = rep.skipped_newer,
+                        reattributed = rep.reattributed,
                         "reconcile found differences (bug signal)"
                     );
                 } else {
@@ -443,6 +444,7 @@ impl Reducer {
                         added = rep.added,
                         removed = rep.removed,
                         initial = rep.initial,
+                        reattributed = rep.reattributed,
                         "reconcile clean"
                     );
                 }

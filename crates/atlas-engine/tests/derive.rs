@@ -456,6 +456,49 @@ fn reconcile_diff_counts_bug_signals() {
 }
 
 #[test]
+fn first_boot_block_before_the_list_is_attributed_by_the_reconcile() {
+    // The heads the list puts first in each tier: the payees of block 2,996,916.
+    let seeded = common::seeded();
+    let heads: Vec<NodeId> = Tier::ALL
+        .iter()
+        .map(|t| seeded.queue.head(*t).unwrap())
+        .collect();
+    let outpoints: Vec<Outpoint> = heads
+        .iter()
+        .map(|h| seeded.nodes.rec(*h).unwrap().outpoint)
+        .collect();
+
+    // First boot: the tip block lands before the first node list, so nobody is attributed.
+    let mut st = NetworkState::default();
+    let d = common::block("flux/daemon_getblock_2996916_verbosity2.json");
+    let mut tick = Tick::new(NOW);
+    apply_block(&mut st, &mut tick, &d, false);
+    assert!(block_msg(&tick).payouts.iter().all(|p| p.node.is_none()));
+
+    // The initial reconcile (list at 2,996,914) attributes them and rotates them to the back.
+    let mut tick = Tick::new(NOW);
+    let rep = reconcile(&mut st, &mut tick, &common::node_list());
+    assert_eq!(rep.reattributed, 3);
+    for (tier, op) in Tier::ALL.iter().zip(&outpoints) {
+        let (id, _) = st.nodes.intern(*op, NOW);
+        let r = st.nodes.rec(id).unwrap();
+        assert_eq!(r.last_paid_height, Some(2_996_916));
+        let q = st.queue.tier(*tier).unwrap();
+        assert_eq!(q.iter().last(), Some(id), "{tier} payee at the back");
+        assert_ne!(q.head(), Some(id));
+        assert_eq!(r.rank, Some(q.len() as u32 - 1));
+    }
+    let blk = st.recent.iter().find(|b| b.height == 2_996_916).unwrap();
+    assert!(blk.payouts.iter().all(|p| p.node.is_some()));
+    // A second pass has nothing left to attribute.
+    let mut tick = Tick::new(NOW);
+    assert_eq!(
+        reconcile(&mut st, &mut tick, &common::node_list()).reattributed,
+        0
+    );
+}
+
+#[test]
 fn stats_round_diff_ignores_zero_placeholders() {
     let rows: Vec<atlas_flux::models::stats::StatsNodeRow> =
         common::envelope("flux/stats_fluxinfo.json");

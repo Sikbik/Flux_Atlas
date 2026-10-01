@@ -15,7 +15,7 @@ use atlas_core::{Amount, Collateral, NodeId, NodeStatus, Tier};
 use atlas_flux::models::daemon::PendingNodeEntry;
 use atlas_flux::models::nodes::ListedNode;
 
-use crate::state::queue::key_of;
+use crate::state::queue::{CLASS_PAID, key_of};
 use crate::state::{NetworkState, Tick, is_listed, mask};
 
 const RC: DeltaCause = DeltaCause::Reconcile;
@@ -36,6 +36,9 @@ pub struct ReconcileReport {
     pub rank_diffs: u32,
     /// Nodes skipped because the model already applied newer blocks to them.
     pub skipped_newer: u32,
+    /// Payouts of blocks above the list height attributed only now (their block arrived
+    /// before its payees were known).
+    pub reattributed: u32,
 }
 
 impl ReconcileReport {
@@ -46,6 +49,54 @@ impl ReconcileReport {
     fn diff(&mut self, field: &'static str) {
         *self.diffs.entry(field).or_default() += 1;
     }
+}
+
+/// Attributes the payouts of recent blocks above the list height that were applied before their
+/// payees were known (a first boot applies the tip block before the first node list lands), and
+/// moves those payees to the back of their queues. Clients never rotated them (their `block`
+/// message named no node), so the rank corrections after this tick bring them in line.
+fn reattribute_recent_payouts(st: &mut NetworkState, tick: &mut Tick, list_height: u32) -> u32 {
+    let heights: Vec<u32> = st
+        .recent
+        .iter()
+        .filter(|b| b.height > list_height && b.payouts.iter().any(|p| p.node.is_none()))
+        .map(|b| b.height)
+        .collect();
+    let mut n = 0;
+    for h in heights {
+        let Some(pos) = st.recent.iter().position(|b| b.height == h) else {
+            continue;
+        };
+        let mut block = st.recent[pos].clone();
+        let mut changed = false;
+        for p in &mut block.payouts {
+            if p.node.is_some() {
+                continue;
+            }
+            let (Some(id), _) = crate::derive::block::attribute(st, None, p.tier, &p.address)
+            else {
+                continue;
+            };
+            p.node = Some(id);
+            changed = true;
+            n += 1;
+            if let Some(e) = st.nodes.get_mut(id)
+                && e.rec.last_paid_height.is_none_or(|lp| lp < h)
+            {
+                e.rec.last_paid_height = Some(h);
+                e.touched = e.touched.max(h);
+                st.queue.upsert(id, p.tier, (h, CLASS_PAID, 0));
+                st.nodes.touch_persist(id);
+                tick.node_changed(RC, id, mask::PAID);
+            }
+        }
+        if changed {
+            tick.batch.put_block(block.clone());
+            st.recent[pos] = block;
+            st.blocks_dirty = true;
+        }
+    }
+    n
 }
 
 /// Reconciles the model with a full node list.
@@ -284,6 +335,7 @@ pub fn reconcile(st: &mut NetworkState, tick: &mut Tick, list: &[ListedNode]) ->
             st.queue.upsert(id, tier, key);
         }
     }
+    rep.reattributed = reattribute_recent_payouts(st, tick, l);
     st.apply_ranks();
     if !rep.initial {
         for (id, r) in st.queue.ranks() {
