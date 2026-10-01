@@ -1,9 +1,16 @@
 //! HTTP infrastructure: one pooled reqwest client (rustls, HTTP/2, gzip/br/zstd), a per-host
 //! token bucket plus concurrency semaphore, retries with jittered exponential backoff,
 //! `Retry-After` handling, per-request timeouts and response-size caps.
+//!
+//! **Lanes.** Each [`HttpClient`] belongs to one [`Lane`] with its own per-host gates. The
+//! ingest lane is the engine's; the interactive lane ([`HttpClient::lane`]) serves user-driven
+//! lookups (the explorer) with a smaller budget per host. The two share the connection pool
+//! only, so a queue of user requests never delays an ingest request: an ingest request waits
+//! for its own gate alone.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -37,6 +44,36 @@ impl HostPolicy {
             concurrency,
         }
     }
+
+    /// The tighter of two policies, field by field.
+    #[must_use]
+    pub fn min(self, other: Self) -> Self {
+        Self {
+            rps: self.rps.min(other.rps),
+            burst: self.burst.min(other.burst),
+            concurrency: self.concurrency.min(other.concurrency),
+        }
+    }
+}
+
+/// Which budget a client draws from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Lane {
+    /// The engine's ingest: chain, nodes, apps, stats. Owns the main per-host budget.
+    Ingest,
+    /// User-driven lookups (explorer): a small budget of its own per host and its own circuit
+    /// breakers, so users can neither use the ingest's tokens nor trip its breakers.
+    Interactive,
+}
+
+impl Lane {
+    /// Metric label.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ingest => "ingest",
+            Self::Interactive => "interactive",
+        }
+    }
 }
 
 /// Client-wide configuration.
@@ -62,6 +99,56 @@ pub struct HttpConfig {
     pub node_policy: HostPolicy,
     /// Per-host overrides, keyed by host name (for example `api.runonflux.io`).
     pub host_policies: HashMap<String, HostPolicy>,
+    /// Interactive lane: policy for hosts without an interactive override. The lane's policy
+    /// for a host is never looser than the ingest policy for that host.
+    pub interactive_default_policy: HostPolicy,
+    /// Interactive lane: per-host overrides.
+    pub interactive_host_policies: HashMap<String, HostPolicy>,
+    /// Interactive lane: total attempts per request (capped by [`Self::attempts`]).
+    pub interactive_attempts: u32,
+}
+
+impl HttpConfig {
+    /// Ingest-lane policy of `host`.
+    pub fn policy_for(&self, host: &str) -> HostPolicy {
+        self.host_policies
+            .get(host)
+            .copied()
+            .unwrap_or(self.default_policy)
+    }
+
+    /// Interactive-lane policy of `host`: its interactive policy, never looser than the ingest
+    /// policy of the same host (an `ATLAS_UPSTREAM_RPS` cut applies to both lanes).
+    pub fn interactive_policy_for(&self, host: &str) -> HostPolicy {
+        self.interactive_host_policies
+            .get(host)
+            .copied()
+            .unwrap_or(self.interactive_default_policy)
+            .min(self.policy_for(host))
+    }
+
+    /// This configuration as seen by `lane`: the interactive lane gets its own host policies
+    /// (resolved per host against the ingest ones) and fewer attempts.
+    fn for_lane(&self, lane: Lane) -> Self {
+        match lane {
+            Lane::Ingest => self.clone(),
+            Lane::Interactive => {
+                let mut hosts: Vec<&String> = self.host_policies.keys().collect();
+                hosts.extend(self.interactive_host_policies.keys());
+                let host_policies = hosts
+                    .into_iter()
+                    .map(|h| (h.clone(), self.interactive_policy_for(h)))
+                    .collect();
+                Self {
+                    default_policy: self.interactive_default_policy.min(self.default_policy),
+                    node_policy: self.interactive_default_policy.min(self.node_policy),
+                    host_policies,
+                    attempts: self.interactive_attempts.clamp(1, self.attempts.max(1)),
+                    ..self.clone()
+                }
+            }
+        }
+    }
 }
 
 impl Default for HttpConfig {
@@ -77,6 +164,18 @@ impl Default for HttpConfig {
             host_policies.insert(h.to_owned(), HostPolicy::new(4, 4, 4));
         }
         host_policies.insert("api.coingecko.com".to_owned(), HostPolicy::new(1, 1, 1));
+        // User lookups: the gateway's budget is the scarcest (the ingest's T1 path lives on
+        // it), so users get 1 request a second there; the Insight mirrors carry most explorer
+        // pages (tx, address) and get 2 a second each.
+        let mut interactive_host_policies = HashMap::new();
+        interactive_host_policies.insert("api.runonflux.io".to_owned(), HostPolicy::new(1, 2, 2));
+        for h in [
+            "explorer.runonflux.io",
+            "explorer2.runonflux.io",
+            "explorer.flux.zelcore.io",
+        ] {
+            interactive_host_policies.insert(h.to_owned(), HostPolicy::new(2, 4, 2));
+        }
         Self {
             user_agent: format!(
                 "flux-atlas/{} (+https://github.com/Sikbik/Flux_Atlas)",
@@ -93,6 +192,9 @@ impl Default for HttpConfig {
             default_policy: HostPolicy::new(4, 4, 4),
             node_policy: HostPolicy::new(2, 2, 2),
             host_policies,
+            interactive_default_policy: HostPolicy::new(1, 2, 2),
+            interactive_host_policies,
+            interactive_attempts: 2,
         }
     }
 }
@@ -158,30 +260,77 @@ pub enum Fetched {
 struct HostGate {
     limiter: DefaultDirectRateLimiter,
     sem: Semaphore,
+    counters: Arc<HostCounters>,
 }
 
 impl HostGate {
-    fn new(p: HostPolicy) -> Self {
+    fn new(p: HostPolicy, counters: Arc<HostCounters>) -> Self {
         let rps = NonZeroU32::new(p.rps.max(1)).unwrap_or(NonZeroU32::MIN);
         let burst = NonZeroU32::new(p.burst.max(1)).unwrap_or(NonZeroU32::MIN);
         Self {
             limiter: RateLimiter::direct(Quota::per_second(rps).allow_burst(burst)),
             sem: Semaphore::new(p.concurrency.max(1)),
+            counters,
         }
     }
 }
 
-/// Shared HTTP client. Cheap to clone.
+/// Request counters of one host label in one lane.
+#[derive(Debug, Default)]
+struct HostCounters {
+    ok: AtomicU64,
+    err: AtomicU64,
+    /// Requests waiting for a gate permit or token right now.
+    waiting: AtomicI64,
+}
+
+/// Metric label of direct node requests (one label for every node, so labels stay bounded).
+pub const NODE_HOST_LABEL: &str = "direct-node";
+
+/// Counters of one host label in one lane, for metrics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostLaneStats {
+    /// Upstream host name, or [`NODE_HOST_LABEL`].
+    pub host: String,
+    /// HTTP attempts that got an answer (2xx or 304).
+    pub ok: u64,
+    /// HTTP attempts that failed (transport, timeout, non-success status, oversize body).
+    pub err: u64,
+    /// Requests queued for this host's gate right now.
+    pub waiting: u64,
+}
+
+/// Counts a request as waiting for its gate until dropped.
+struct Waiting<'a>(&'a AtomicI64);
+
+impl<'a> Waiting<'a> {
+    fn enter(c: &'a AtomicI64) -> Self {
+        c.fetch_add(1, Ordering::Relaxed);
+        Self(c)
+    }
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// Shared HTTP client. Cheap to clone; clones share gates and counters.
 #[derive(Clone)]
 pub struct HttpClient {
     inner: reqwest::Client,
     cfg: Arc<HttpConfig>,
+    lane: Lane,
     gates: Arc<Mutex<HashMap<String, Arc<HostGate>>>>,
+    /// Counters per host label (bounded: configured hosts plus [`NODE_HOST_LABEL`]).
+    counters: Arc<Mutex<BTreeMap<String, Arc<HostCounters>>>>,
 }
 
 impl std::fmt::Debug for HttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HttpClient")
+            .field("lane", &self.lane)
             .field("cfg", &self.cfg)
             .finish_non_exhaustive()
     }
@@ -205,36 +354,76 @@ impl HttpClient {
                 url: String::new(),
                 message: e.to_string(),
             })?;
-        Ok(Self {
+        Ok(Self::assemble(inner, cfg, Lane::Ingest))
+    }
+
+    fn assemble(inner: reqwest::Client, cfg: HttpConfig, lane: Lane) -> Self {
+        Self {
             inner,
             cfg: Arc::new(cfg),
+            lane,
             gates: Arc::new(Mutex::new(HashMap::new())),
-        })
+            counters: Arc::new(Mutex::new(BTreeMap::new())),
+        }
+    }
+
+    /// A client for `lane` that shares this client's connection pool (TLS sessions, idle
+    /// connections) but has its own per-host gates and counters, built from the lane's
+    /// policies in this client's configuration.
+    #[must_use]
+    pub fn lane(&self, lane: Lane) -> Self {
+        Self::assemble(self.inner.clone(), self.cfg.for_lane(lane), lane)
+    }
+
+    /// The lane this client draws from.
+    pub fn lane_kind(&self) -> Lane {
+        self.lane
     }
 
     pub fn config(&self) -> &HttpConfig {
         &self.cfg
     }
 
-    fn gate(&self, key: &str, policy: HostPolicy) -> Arc<HostGate> {
+    /// Request counters per host label of this lane, sorted by host.
+    pub fn lane_stats(&self) -> Vec<HostLaneStats> {
+        let map = self
+            .counters
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.iter()
+            .map(|(host, c)| HostLaneStats {
+                host: host.clone(),
+                ok: c.ok.load(Ordering::Relaxed),
+                err: c.err.load(Ordering::Relaxed),
+                waiting: u64::try_from(c.waiting.load(Ordering::Relaxed)).unwrap_or(0),
+            })
+            .collect()
+    }
+
+    fn counters_for(&self, label: &str) -> Arc<HostCounters> {
+        let mut map = self
+            .counters
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.entry(label.to_owned()).or_default().clone()
+    }
+
+    fn gate(&self, key: &str, label: &str, policy: HostPolicy) -> Arc<HostGate> {
         let mut map = self
             .gates
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        map.entry(key.to_owned())
-            .or_insert_with(|| Arc::new(HostGate::new(policy)))
-            .clone()
+        if let Some(g) = map.get(key) {
+            return g.clone();
+        }
+        let g = Arc::new(HostGate::new(policy, self.counters_for(label)));
+        map.insert(key.to_owned(), g.clone());
+        g
     }
 
     fn gate_for_url(&self, url: &Url) -> Arc<HostGate> {
         let host = url.host_str().unwrap_or_default();
-        let policy = self
-            .cfg
-            .host_policies
-            .get(host)
-            .copied()
-            .unwrap_or(self.cfg.default_policy);
-        self.gate(host, policy)
+        self.gate(host, host, self.cfg.policy_for(host))
     }
 
     /// GET with rate limiting, retries and size cap. `opts.if_none_match` enables 304 handling.
@@ -266,7 +455,11 @@ impl HttpClient {
         opts: &RequestOpts,
     ) -> Result<Body> {
         let url = node_url(ep, path_and_query)?;
-        let gate = self.gate(&format!("node:{}", ep.endpoint().ip), self.cfg.node_policy);
+        let gate = self.gate(
+            &format!("node:{}", ep.endpoint().ip),
+            NODE_HOST_LABEL,
+            self.cfg.node_policy,
+        );
         // The default cap applies to crawl-style reads; failover reads of global endpoints
         // (for example the 4 MB node list) opt in to a larger explicit cap.
         let max = opts.max_bytes.unwrap_or(self.cfg.max_node_body_bytes);
@@ -295,13 +488,21 @@ impl HttpClient {
                 set_cache_bust(&mut url);
             }
             let result = {
+                let waiting = Waiting::enter(&gate.counters.waiting);
                 let _permit = gate.sem.acquire().await.map_err(|_| FluxError::Transport {
                     url: url.to_string(),
                     message: "semaphore closed".to_owned(),
                 })?;
                 gate.limiter.until_ready().await;
+                drop(waiting);
                 self.attempt(&url, opts, max).await
             };
+            let counter = if result.is_ok() {
+                &gate.counters.ok
+            } else {
+                &gate.counters.err
+            };
+            counter.fetch_add(1, Ordering::Relaxed);
             match result {
                 Ok(f) => return Ok(f),
                 Err(e) if e.is_retryable() && attempt + 1 < attempts => {

@@ -26,6 +26,11 @@ pub enum FluxError {
     RateLimited { retry_after: Option<Duration> },
     #[error("response exceeds {limit} bytes")]
     TooLarge { limit: usize },
+    /// A healthy upstream answered, but the answer is larger than this call accepts (for
+    /// example the UTXO set of a very large address). A property of the request, not of the
+    /// upstream: not retried, not failed over, and not counted against the circuit breaker.
+    #[error("{what}: the answer exceeds {limit} bytes")]
+    AnswerTooLarge { what: &'static str, limit: usize },
     /// FluxOS answered `{"status":"error"}` (usually with HTTP 200).
     #[error("upstream error {code:?} {name:?}: {message}")]
     Upstream {
@@ -55,6 +60,7 @@ impl FluxError {
             // FluxOS daemon errors such as "Block height out of range" are answers, not faults.
             Self::Upstream { .. }
             | Self::TooLarge { .. }
+            | Self::AnswerTooLarge { .. }
             | Self::Parse { .. }
             | Self::Blocked(_)
             | Self::BadUrl(_)
@@ -72,6 +78,7 @@ impl FluxError {
             | Self::Parse { .. } => true,
             Self::Status { status, .. } => *status >= 500 || *status == 429,
             Self::Upstream { .. }
+            | Self::AnswerTooLarge { .. }
             | Self::Blocked(_)
             | Self::BadUrl(_)
             | Self::NoHealthyUpstream(_) => false,

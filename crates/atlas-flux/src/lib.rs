@@ -22,4 +22,5 @@ pub use clients::{
     StatsClient,
 };
 pub use error::{FluxError, Result};
+pub use http::Lane;
 pub use ssrf::GuardedEndpoint;

@@ -87,7 +87,19 @@ Environment: the Rust toolchain lives in `~/.cargo/bin` (`export PATH="$HOME/.ca
   (per-endpoint overrides for big payloads).
 - A per-upstream `governor` token bucket (default ≤ 4 req/s to `api.runonflux.io`) plus a concurrency
   semaphore.
-- Retries: 3 attempts, jittered exponential backoff; never retry 4xx except 429 (honor `Retry-After`).
+- **Two lanes (X1 M2).** The engine's ingest lane owns that budget. User-driven lookups (the explorer)
+  use an **interactive lane** (`Clients::interactive`): the same connection pool, but separate per-host
+  gates (gateway 1 req/s, burst 2, 2 concurrent; each Insight mirror 2 req/s, burst 4, 2 concurrent;
+  never looser than the ingest policy of the host) and separate circuit breakers. A queue of user
+  requests therefore never delays an ingest request, and user faults never open an ingest breaker.
+  The interactive lane uses the primaries only (the gateway, the Insight mirrors): user reads never fail
+  over to community nodes, and while every primary's circuit is open it fails fast (503) instead of
+  retrying a failing upstream. Prometheus: `atlas_upstream_lane_requests_total{lane,host,result}`,
+  `atlas_upstream_lane_waiting{lane,host}`, `atlas_upstream_circuit_open{lane,set,upstream}`.
+  The Insight UTXO list is capped at 4 MiB (the explorer's UTXO cache size); a larger set is a
+  definitive answer (no mirror failover, no breaker fault). Input path segments `.` and `..` are
+  refused before any request.
+- Retries: 3 attempts (2 on the interactive lane), jittered exponential backoff; never retry 4xx except 429 (honor `Retry-After`).
 - **Failover pool:** the primary is `https://api.runonflux.io`. The secondaries are healthy FluxOS nodes picked
   from the current node list (`http://<ip>:<apiport>`), health-scored and rotated. A response is only accepted
   if its chain height is within ±2 of the best known tip (this guards against stale nodes).
