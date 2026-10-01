@@ -1,7 +1,8 @@
 /* The Beat, the Live chip and the clock (design 8.4, 4.2). The ring and the top-bar light are CSS
    animations on transform and opacity only, started at the right offset by a negative delay
    (--since, ms into the block interval) and remounted per block. Under reduced motion they tick once a
-   second instead of sweeping. */
+   second instead of sweeping; under Off they run no animation at all and are drawn from --sec (the whole
+   seconds into the interval, which the component writes once a second): the same state, as steps. */
 
 :root {
   --beat-ms: 30000ms;
@@ -272,6 +273,47 @@ a.beat:hover {
   animation: none;
 }
 
+/* ---- Off: nothing moves (design 6.6) ------------------------------------------------------------------------ */
+
+/* The ring and its head are placed from --sec, 12 degrees a second, with no animation and no tween: the half rings
+   turn in over 15 s each, the head goes round in 30, and the core brightens from 35% to full. */
+:root:is([data-motion="off"], [data-motion-off]) .beat-half-r .beat-arc {
+  animation: none;
+  transform: rotate(calc(-180deg + 12deg * min(var(--sec, 0), 15)));
+}
+
+:root:is([data-motion="off"], [data-motion-off]) .beat-half-l .beat-arc {
+  animation: none;
+  transform: rotate(calc(12deg * max(var(--sec, 0) - 15, 0)));
+}
+
+:root:is([data-motion="off"], [data-motion-off]) .beat-head {
+  animation: none;
+  transform: rotate(calc(12deg * min(var(--sec, 0), 30)));
+}
+
+:root:is([data-motion="off"], [data-motion-off]) .beat-core {
+  animation: none;
+  opacity: calc(0.35 + 0.65 * min(var(--sec, 0), 30) / 30);
+}
+
+/* ---- the archive: a "t minus" readout (design 6.4 L) ---------------------------------------------------------- */
+
+/* A still ring in the archive's cool grey: twelve dashes where the block timer was, and a clock face in the middle.
+   Nothing runs and nothing counts to a block; the present is somewhere else. */
+.beat-ring[data-phase="archive"] .beat-track {
+  background: repeating-conic-gradient(from -9deg, var(--accent-time) 0 18deg, transparent 18deg 30deg);
+  opacity: 0.75;
+}
+
+.beat-hist {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -6.5px 0 0 -6.5px;
+  color: var(--accent-time);
+}
+
 .beat-txt {
   display: grid;
   min-width: 5.7rem;
@@ -397,4 +439,10 @@ a.beat:hover {
   to {
     transform: translateX(0);
   }
+}
+
+/* Off: the light is placed from --sec, a thirtieth of the bar a second, and does not travel. */
+:root:is([data-motion="off"], [data-motion-off]) .topbar-light {
+  animation: none;
+  transform: translateX(calc(-100% + 100% * min(var(--sec, 0), 30) / 30));
 }

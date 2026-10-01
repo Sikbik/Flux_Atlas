@@ -12,11 +12,12 @@ import {
   useRuntime,
   useSummary,
 } from '../../app/context';
-import { formatBytes, formatDuration, formatHeight, UNKNOWN } from '../../lib/format';
+import { formatBytes, formatDuration, formatHeight, formatInt, UNKNOWN } from '../../lib/format';
 import { useAgo, useBeat, useNow } from '../../lib/useClock';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import { AnimatedNumber, LiveDot, TierGlyph } from '../../ui';
-import { BeatRing, UtcClock, useBeatView } from './Beat';
+import { useArchive } from './archive';
+import { archiveBlock, BeatRing, UtcClock, useBeatView, useReturned } from './Beat';
 import { useNodeKey, usePayoutLines, useRewardCut } from './data';
 import { readPaths, worstState } from './freshness';
 import { TIER_LABEL, TIER_ORDER } from './glyphs';
@@ -43,15 +44,39 @@ export function LivePanel() {
   );
 }
 
-/** The newest block with the ring that counts to the next one, and what is waiting to go into it. */
+/**
+ * The newest block with the ring that counts to the next one, and what is waiting to go into it. While the archive
+ * shows, the "t minus" readout in its place: how long before now the moment is, and the block the chain stood at.
+ */
 function LatestBlock() {
-  const { height, sub, phase, since } = useBeatView();
+  const { height, sub, phase, since, sec, archive } = useBeatView();
+  const returned = useReturned(archive !== null);
   const weight = mempoolWeight(useMempoolEntries());
   const waiting = weight.count > 0 ? ` · ${waitingText(weight, formatBytes)} waiting` : '';
+  if (archive) {
+    const block = archiveBlock(archive.tip);
+    return (
+      <section className="lp-card lp-block" aria-label="Archive view">
+        <div className="lp-block-link">
+          <span className="lp-ring">
+            <BeatRing height={null} since={0} sec={0} phase="archive" archive />
+          </span>
+          <span className="lp-block-text">
+            <small>Archive view</small>
+            <b aria-hidden="true">{archive.minus}</b>
+            <span className="lp-line" data-phase="archive" aria-hidden="true">
+              {block}
+            </span>
+            <span className="sr-only">{`${archive.spoken}, ${block}`}</span>
+          </span>
+        </div>
+      </section>
+    );
+  }
   const body = (
     <>
       <span className="lp-ring">
-        <BeatRing height={height} since={since} phase={phase} />
+        <BeatRing height={height} since={since} sec={sec} phase={phase} returned={returned} />
       </span>
       <span className="lp-block-text">
         <small>Latest block</small>
@@ -187,25 +212,35 @@ function Network() {
   const behind = readings.filter((r) => r.state === 'stale' || r.state === 'dead').map((r) => r.label);
   const tone =
     worst === 'fresh' ? 'ok' : worst === 'aging' ? 'pending' : worst === 'unknown' ? 'off' : 'warn';
+  // While the archive shows, the node count is the archived moment's (undefined: the present; null: not recorded),
+  // and the tiers, which the archive does not carry here, step aside rather than disagree with it.
+  const archivedNodes = useArchive((m) => (m ? m.nodes : undefined));
+  const archived = archivedNodes !== undefined;
   return (
     <section className="lp-card lp-net" aria-labelledby="lp-net">
       <h3 id="lp-net">Network</h3>
-      <p className="lp-tiers">
-        {TIER_ORDER.map((t) => (
-          <span key={t} className="lp-tier" data-tier={t}>
-            <TierGlyph tier={t} size={14} label={`${TIER_LABEL[t]} nodes`} />
-            <b>
-              <AnimatedNumber value={tiers ? tiers[t] : null} font="mono" />
-            </b>
-            <small>{TIER_LABEL[t]}</small>
-          </span>
-        ))}
-      </p>
+      {archived ? null : (
+        <p className="lp-tiers">
+          {TIER_ORDER.map((t) => (
+            <span key={t} className="lp-tier" data-tier={t}>
+              <TierGlyph tier={t} size={14} label={`${TIER_LABEL[t]} nodes`} />
+              <b>
+                <AnimatedNumber value={tiers ? tiers[t] : null} font="mono" />
+              </b>
+              <small>{TIER_LABEL[t]}</small>
+            </span>
+          ))}
+        </p>
+      )}
       <dl className="lp-facts">
         <div>
-          <dt>Nodes</dt>
-          <dd>
-            <AnimatedNumber value={summary?.node_count ?? null} font="mono" />
+          <dt>{archived ? 'Nodes then' : 'Nodes'}</dt>
+          <dd data-archive={archived ? '' : undefined}>
+            {archived ? (
+              formatInt(archivedNodes)
+            ) : (
+              <AnimatedNumber value={summary?.node_count ?? null} font="mono" />
+            )}
           </dd>
         </div>
         {price ? (

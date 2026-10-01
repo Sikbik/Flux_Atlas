@@ -135,7 +135,8 @@
     transform var(--dur-fast) var(--ease-out);
 }
 
-.phone-header .beat-core {
+.phone-header .beat-core,
+.phone-header .beat-hist {
   transition: scale var(--dur-base) var(--ease-in-out) 240ms;
 }
 
@@ -148,7 +149,8 @@
   scale: 1;
 }
 
-.phone-header[data-parked] .beat-core {
+.phone-header[data-parked] .beat-core,
+.phone-header[data-parked] .beat-hist {
   scale: 0;
   transition-delay: 0ms;
 }
@@ -186,7 +188,8 @@
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .phone-header::before,
   :root:not([data-motion="full"]) .phone-header .beat-ring,
-  :root:not([data-motion="full"]) .phone-header .beat-core {
+  :root:not([data-motion="full"]) .phone-header .beat-core,
+  :root:not([data-motion="full"]) .phone-header .beat-hist {
     transition: none;
   }
 }
@@ -194,8 +197,10 @@
 :root[data-motion="reduced"] .phone-header::before,
 :root[data-motion="reduced"] .phone-header .beat-ring,
 :root[data-motion="reduced"] .phone-header .beat-core,
+:root[data-motion="reduced"] .phone-header .beat-hist,
 :root[data-motion-off] .phone-header::before,
 :root[data-motion-off] .phone-header .beat-ring,
-:root[data-motion-off] .phone-header .beat-core {
+:root[data-motion-off] .phone-header .beat-core,
+:root[data-motion-off] .phone-header .beat-hist {
   transition: none;
 }
