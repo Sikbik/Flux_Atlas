@@ -37,6 +37,7 @@ pub struct JobRx {
     pub geo: mpsc::Receiver<(IpAddr, bool)>,
     pub reconcile: Arc<Notify>,
     pub catalog: Arc<Notify>,
+    pub lists: Arc<Notify>,
 }
 
 /// Creates the reducer-to-job command channels.
@@ -46,6 +47,7 @@ pub fn commands() -> (JobCmds, JobRx) {
     let (geo_tx, geo) = mpsc::channel(16_384);
     let reconcile = Arc::new(Notify::new());
     let catalog = Arc::new(Notify::new());
+    let lists = Arc::new(Notify::new());
     (
         JobCmds {
             payees: payees_tx,
@@ -53,6 +55,7 @@ pub fn commands() -> (JobCmds, JobRx) {
             geo: geo_tx,
             reconcile: Arc::clone(&reconcile),
             catalog: Arc::clone(&catalog),
+            lists: Arc::clone(&lists),
         },
         JobRx {
             payees,
@@ -60,6 +63,7 @@ pub fn commands() -> (JobCmds, JobRx) {
             geo,
             reconcile,
             catalog,
+            lists,
         },
     )
 }
@@ -135,6 +139,18 @@ impl JobCtx {
         }
     }
 
+    /// Like [`Self::wait`], and tells which ended it: `Some(true)` for the notification,
+    /// `Some(false)` for the timeout, `None` when shutting down.
+    pub async fn wait_poked(&self, n: &Notify, d: Duration) -> Option<bool> {
+        let mut s = self.shutdown.clone();
+        let poked = tokio::select! {
+            () = n.notified() => true,
+            () = tokio::time::sleep(d) => false,
+            () = stopped(&mut s) => return None,
+        };
+        (!self.stopping()).then_some(poked)
+    }
+
     /// Runs an upstream call and counts it by host.
     pub async fn call<T>(
         &self,
@@ -178,6 +194,7 @@ pub fn spawn_all(ctx: &JobCtx, rx: JobRx, recent: Vec<(u32, BlockHash)>) -> Vec<
         geo,
         reconcile,
         catalog,
+        lists,
     } = rx;
     vec![
         tokio::spawn(chain::run(ctx.for_job("chain"), recent)),
@@ -192,7 +209,7 @@ pub fn spawn_all(ctx: &JobCtx, rx: JobRx, recent: Vec<(u32, BlockHash)>) -> Vec<
         tokio::spawn(apps::chain_feed(ctx.for_job("app_chain_feed"), chain_feed)),
         tokio::spawn(registry::reconcile(ctx.for_job("node_registry"), reconcile)),
         tokio::spawn(registry::counts(ctx.for_job("node_count"))),
-        tokio::spawn(registry::lists(ctx.for_job("start_dos_lists"))),
+        tokio::spawn(registry::lists(ctx.for_job("start_dos_lists"), lists)),
         tokio::spawn(market::price(ctx.for_job("price"))),
         tokio::spawn(market::supply(ctx.for_job("supply"))),
         tokio::spawn(stats_round::run(ctx.for_job("stats_round"))),

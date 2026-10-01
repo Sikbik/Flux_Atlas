@@ -40,7 +40,8 @@ pub enum RemovalReason {
     CollateralSpent,
     /// Dropped from the list for an unknown reason.
     Missing,
-    /// Moved to the DOS list.
+    /// Moved to the DOS list, or (for a node already there) its DOS ban ended and fluxd
+    /// forgot the collateral.
     Dos,
 }
 

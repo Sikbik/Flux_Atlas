@@ -367,6 +367,16 @@ impl FluxOsClient {
         .await
     }
 
+    /// [`Self::start_list`] past the gateway's apicache (`?nc=`), for the poll right after a
+    /// block with new starts (the daemon's own 20 s cache still applies).
+    pub async fn start_list_fresh(&self) -> Result<Vec<PendingNodeEntry>> {
+        let opts = RequestOpts {
+            cache_bust: true,
+            ..RequestOpts::default()
+        };
+        self.get("getstartlist", "daemon/getstartlist", &opts).await
+    }
+
     /// Nodes banned for failing to confirm.
     pub async fn dos_list(&self) -> Result<Vec<PendingNodeEntry>> {
         self.get("getdoslist", "daemon/getdoslist", &RequestOpts::default())

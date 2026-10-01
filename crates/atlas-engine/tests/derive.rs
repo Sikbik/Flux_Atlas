@@ -225,7 +225,8 @@ fn rank_contract_rotation_and_corrections() {
     let q = st.queue.tier(Tier::Stratus).unwrap();
     let ids: Vec<NodeId> = q.iter().take(3).collect();
     let r = st.nodes.rec(ids[0]).unwrap().clone();
-    st.queue.upsert(ids[0], Tier::Stratus, (u32::MAX, 0, 0));
+    st.queue
+        .upsert(ids[0], Tier::Stratus, (u32::MAX, 0, [0; 32], 0));
     let fixes = rank_corrections(&mut st, &[]);
     assert!(fixes.contains(&ids[0]) && fixes.contains(&ids[1]) && fixes.contains(&ids[2]));
     assert_eq!(st.nodes.rec(ids[1]).unwrap().rank, Some(0));
@@ -403,7 +404,8 @@ fn expiry_at_risk_and_dos_derivation() {
     let mut st = common::seeded();
     let node = id_of(&st, "4fc1db993815", 0); // last confirmed 2,996,465
     let d = common::block("flux/daemon_getblock_2996916_verbosity2.json");
-    // Move the block far enough: 2,996,465 + 560 = at risk, + 640 = expired.
+    // Move the block far enough: 2,996,465 + 560 = at risk, + 641 = expired (fluxd still lists
+    // the node at + 640).
     let mut at_risk = d.clone();
     at_risk.summary.height = 2_996_465 + 565;
     let mut tick = Tick::new(NOW);
@@ -413,8 +415,19 @@ fn expiry_at_risk_and_dos_derivation() {
             .iter()
             .any(|(e, _)| matches!(e, Event::NodeAtRisk { node: n, .. } if *n == node))
     );
+    let mut last_block = d.clone();
+    last_block.summary.height = 2_996_465 + 640;
+    let mut tick = Tick::new(NOW);
+    apply_block(&mut st, &mut tick, &last_block, false);
+    assert!(
+        !tick
+            .events
+            .iter()
+            .any(|(e, _)| matches!(e, Event::NodeExpired { node: n, .. } if *n == node))
+    );
+    assert_eq!(st.nodes.rec(node).unwrap().status, NodeStatus::Confirmed);
     let mut expired = d.clone();
-    expired.summary.height = 2_996_465 + 640;
+    expired.summary.height = 2_996_465 + 641;
     let mut tick = Tick::new(NOW);
     apply_block(&mut st, &mut tick, &expired, false);
     assert!(
@@ -428,6 +441,263 @@ fn expiry_at_risk_and_dos_derivation() {
     let mut tick = Tick::new(NOW);
     apply_block(&mut st, &mut tick, &expired, true);
     assert_eq!(tick.count("node_expired"), 0);
+}
+
+/// A confirmed node with the given heights (real collateral `txid:0`).
+fn put_confirmed(
+    st: &mut NetworkState,
+    txid: &str,
+    tier: Tier,
+    confirmed: u32,
+    last_confirmed: u32,
+    last_paid: Option<u32>,
+) -> NodeId {
+    let op = Outpoint::new(Hash32::from_hex(txid).unwrap(), 0);
+    let (id, _) = st.nodes.intern(op, NOW);
+    {
+        let e = st.nodes.get_mut(id).unwrap();
+        e.rec.tier = tier;
+        e.rec.added_height = confirmed - 2;
+        e.rec.confirmed_height = Some(confirmed);
+        e.rec.last_confirmed_height = Some(last_confirmed);
+        e.rec.last_paid_height = last_paid;
+        e.rec.payment_address = format!("t1{}", &txid[..8]).into();
+    }
+    st.nodes.set_status(id, NodeStatus::Confirmed, NOW);
+    let key = atlas_engine::state::queue::key_of(st.nodes.rec(id).unwrap());
+    st.queue.upsert(id, tier, key);
+    id
+}
+
+/// The deterministic list as fluxd would print it from the model (confirmed nodes only).
+fn list_from_model(st: &NetworkState) -> Vec<atlas_flux::models::nodes::ListedNode> {
+    st.nodes
+        .listed()
+        .filter(|e| e.rec.status == NodeStatus::Confirmed)
+        .map(|e| atlas_flux::models::nodes::ListedNode {
+            outpoint: e.rec.outpoint,
+            endpoint: e.rec.endpoint,
+            tier: e.rec.tier,
+            status: NodeStatus::Confirmed,
+            payment_address: e.rec.payment_address.clone(),
+            pubkey: e.rec.pubkey.clone(),
+            rank: e.rec.rank,
+            added_height: e.rec.added_height,
+            confirmed_height: e.rec.confirmed_height,
+            last_confirmed_height: e.rec.last_confirmed_height,
+            last_paid_height: e.rec.last_paid_height,
+            active_since_ms: e.rec.active_since_ms,
+            last_paid_ms: None,
+            collateral_amount: None,
+        })
+        .collect()
+}
+
+/// A block at `height` with no transactions or payouts of its own.
+fn empty_block(height: u32) -> atlas_flux::decode::DecodedBlock {
+    let mut d = common::block("flux/daemon_getblock_2996916_verbosity2.json");
+    d.summary.height = height;
+    d.summary.payouts.clear();
+    d.node_txs.clear();
+    d.transfers.clear();
+    d.app_payments.clear();
+    d.spent.clear();
+    d
+}
+
+#[test]
+fn expiry_boundary_matches_fluxd_real_case() {
+    // B5 soak, 3105, 2026-10-01 03:38:57Z: "reconcile found differences (bug signal)
+    // list_height=2997871 diffs={"expiry_mispredicted": 1} rank_diffs=352". The node was
+    // c6ec3309...:0 (Nimbus, last confirmed 2,997,231, last paid 2,997,529). The engine expired
+    // it with the block 2,997,871 (= 2,997,231 + 640), the list at 2,997,871 still held it, and
+    // the next block expired it again. fluxd drops a node at the first block H with
+    // `last_confirmed < H - 640` (fluxnode.cpp GetUndoDataForExpiredConfirmFluxnodes), so the
+    // block 2,997,872. Verified live as well: 7feb2f4f...:0 (last confirmed 2,997,359) was
+    // listed at 2,997,999 and gone at 2,998,000.
+    let mut st = NetworkState {
+        expiry_armed: true,
+        ..NetworkState::default()
+    };
+    let node = put_confirmed(
+        &mut st,
+        "c6ec3309423478b744c3db3a86e05a7d2263a5c577143707106035fea8f80757",
+        Tier::Nimbus,
+        2_936_250,
+        2_997_231,
+        Some(2_997_529),
+    );
+    // Neighbours queued around it, and one that confirmed in the list's last block (so the list
+    // height is 2,997,871).
+    put_confirmed(
+        &mut st,
+        "0ab0111a01e66656a46e20a27a94a0169169572a06add3ed8b562a9e10505eb6",
+        Tier::Nimbus,
+        2_936_751,
+        2_997_814,
+        Some(2_996_479),
+    );
+    put_confirmed(
+        &mut st,
+        "edc30fae3fb415a9fc3aeb1a31c56f7a7b783ce1ab0a2b69227533783e20d425",
+        Tier::Nimbus,
+        2_157_023,
+        2_997_871,
+        Some(2_997_692),
+    );
+    st.apply_ranks();
+    let mut tick = Tick::new(NOW);
+    apply_block(&mut st, &mut tick, &empty_block(2_997_871), false);
+    assert_eq!(tick.count("node_expired"), 0);
+    assert_eq!(st.nodes.rec(node).unwrap().status, NodeStatus::Confirmed);
+    assert_eq!(st.nodes.rec(node).unwrap().rank, Some(1));
+
+    // The list at 2,997,871 still holds it: the reconcile is clean.
+    let list = list_from_model(&st);
+    assert!(
+        list.iter()
+            .any(|n| n.outpoint == st.nodes.rec(node).unwrap().outpoint)
+    );
+    let mut tick = Tick::new(NOW);
+    let rep = reconcile(&mut st, &mut tick, &list);
+    assert_eq!(rep.list_height, 2_997_871);
+    assert_eq!(rep.total_diffs(), 0, "{rep:?}");
+    assert_eq!(rep.diffs.get("expiry_mispredicted"), None);
+
+    // The block 2,997,872 drops it; the list at that height no longer has it.
+    let mut tick = Tick::new(NOW);
+    apply_block(&mut st, &mut tick, &empty_block(2_997_872), false);
+    assert!(
+        tick.events.iter().any(
+            |(e, _)| matches!(e, Event::NodeExpired { node: n, predicted: true } if *n == node)
+        )
+    );
+    assert_eq!(st.nodes.rec(node).unwrap().status, NodeStatus::Expired);
+    let mut list = list_from_model(&st);
+    // The list's height: a node confirmed in 2,997,872.
+    list[0].last_confirmed_height = Some(2_997_872);
+    let mut tick = Tick::new(NOW);
+    let rep = reconcile(&mut st, &mut tick, &list);
+    assert_eq!(rep.removed, 1);
+    assert_eq!(rep.diffs.get("expiry_mispredicted"), None);
+    assert_eq!(rep.diffs.get("last_confirmed_height"), Some(&1));
+    assert_eq!(rep.rank_diffs, 0, "{rep:?}");
+    assert_eq!(st.nodes.rec(node).unwrap().status, NodeStatus::Departed);
+}
+
+#[test]
+fn queue_ties_follow_fluxd_outpoint_order() {
+    // Live list, height 2,997,987: never-paid Cumulus nodes confirmed in the same block are
+    // ranked by fluxd's COutPoint order (txid bytes reversed, then vout), not by the hex text.
+    // 2,996,110: cca52c03...ed55 (rank 1406) before 3c858d2b...6fea (rank 1407).
+    // 2,996,126: f593e4db...bc3b (rank 1424) before 09701dd2...82a4 (rank 1425).
+    let mut st = NetworkState::default();
+    let first_110 = put_confirmed(
+        &mut st,
+        "cca52c03b90da1fbb1b49a4ea97242441bf933f24b1bf88e44575f351419ed55",
+        Tier::Cumulus,
+        2_996_110,
+        2_997_621,
+        None,
+    );
+    let second_110 = put_confirmed(
+        &mut st,
+        "3c858d2b7c77ec2134ca5d4ca87b719850c68ab99d4b3309f793b29bd8ac6fea",
+        Tier::Cumulus,
+        2_996_110,
+        2_997_621,
+        None,
+    );
+    let first_126 = put_confirmed(
+        &mut st,
+        "f593e4db9a613d66f7c306f8f84fb92fdb9f615a1309a6e303b8dd21614abc3b",
+        Tier::Cumulus,
+        2_996_126,
+        2_997_638,
+        None,
+    );
+    let second_126 = put_confirmed(
+        &mut st,
+        "09701dd2db5c0b201dd9d71826dc1281b3c6f9cf261ddc346b38e40c8e2782a4",
+        Tier::Cumulus,
+        2_996_126,
+        2_997_638,
+        None,
+    );
+    // A node paid at 2,996,110 queues after the never-paid nodes confirmed at that height.
+    let paid_110 = put_confirmed(
+        &mut st,
+        "0000000000000000000000000000000000000000000000000000000000000001",
+        Tier::Cumulus,
+        2_000_000,
+        2_997_600,
+        Some(2_996_110),
+    );
+    let order: Vec<NodeId> = st.queue.tier(Tier::Cumulus).unwrap().iter().collect();
+    assert_eq!(
+        order,
+        vec![first_110, second_110, paid_110, first_126, second_126]
+    );
+    // A restart rebuilds the same order from the records alone.
+    let mut q = atlas_engine::state::queue::PaymentQueue::default();
+    q.rebuild(st.nodes.listed().map(|e| &e.rec));
+    let rebuilt: Vec<NodeId> = q.tier(Tier::Cumulus).unwrap().iter().collect();
+    assert_eq!(rebuilt, order);
+}
+
+#[test]
+fn dos_window_and_ban_end_match_fluxd() {
+    let mut st = common::seeded();
+    let started = id_of(&st, "5da658c1ec44", 0);
+    st.queue.remove(started);
+    st.nodes.set_status(started, NodeStatus::Started, NOW);
+    st.nodes.get_mut(started).unwrap().rec.added_height = 2_997_000;
+    let step = |st: &mut NetworkState, h: u32| {
+        let mut tick = Tick::new(NOW);
+        apply_block(st, &mut tick, &empty_block(h), false);
+        tick
+    };
+    // CheckForExpiredStartTx: DOS at exactly added + 240.
+    step(&mut st, 2_997_239);
+    assert_eq!(st.nodes.rec(started).unwrap().status, NodeStatus::Started);
+    let tick = step(&mut st, 2_997_240);
+    assert_eq!(tick.count("node_dosed"), 1);
+    assert_eq!(st.nodes.rec(started).unwrap().status, NodeStatus::Dos);
+    // GetUndoDataForExpiredFluxnodeDosScores: the ban ends at added + 720.
+    step(&mut st, 2_997_719);
+    assert_eq!(st.nodes.rec(started).unwrap().status, NodeStatus::Dos);
+    let tick = step(&mut st, 2_997_720);
+    assert_eq!(st.nodes.rec(started).unwrap().status, NodeStatus::Departed);
+    assert!(
+        tick.node_delta(DeltaCause::Block)
+            .unwrap()
+            .removed
+            .contains(&started)
+    );
+}
+
+#[test]
+fn reconcile_fills_an_unknown_payment_address_without_a_bug_signal() {
+    let mut st = common::seeded();
+    let list = common::node_list();
+    // A node that started and confirmed between two start-list polls: no address yet.
+    let a = id_of(&st, "5da658c1ec44", 0);
+    st.nodes.get_mut(a).unwrap().rec.payment_address = "".into();
+    // A real mismatch stays a bug signal, with its detail.
+    let b = id_of(&st, "0772379987b1", 0);
+    st.nodes.get_mut(b).unwrap().rec.payment_address = "t1Wrong".into();
+    let mut tick = Tick::new(NOW);
+    let rep = reconcile(&mut st, &mut tick, &list);
+    assert_eq!(rep.filled.get("payment_address"), Some(&1));
+    assert_eq!(rep.diffs.get("payment_address"), Some(&1));
+    assert!(
+        rep.samples
+            .iter()
+            .any(|s| s.contains("payment_address t1Wrong")),
+        "{:?}",
+        rep.samples
+    );
+    assert!(!st.nodes.rec(a).unwrap().payment_address.is_empty());
 }
 
 #[test]

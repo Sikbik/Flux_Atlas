@@ -15,7 +15,7 @@ use atlas_core::node::windows;
 use atlas_core::{Amount, NodeId, NodeStatus, Tier};
 use atlas_flux::decode::DecodedBlock;
 
-use crate::state::queue::{CLASS_CONFIRMED, CLASS_PAID};
+use crate::state::queue::key_of;
 use crate::state::{NetworkState, Tick, mask, tx_lite};
 
 /// How a payout was attributed.
@@ -88,7 +88,10 @@ pub fn apply_block(
                 e.rec.last_seen_ms = now;
                 e.touched = h;
             }
-            st.queue.upsert(id, p.tier, (h, CLASS_PAID, 0));
+            if let Some(r) = st.nodes.rec(id) {
+                let key = key_of(r);
+                st.queue.upsert(id, p.tier, key);
+            }
             // Clients rotate the payee themselves from the block's payouts (rank contract).
             st.client_ranks.rotate(id);
             st.nodes.touch_persist(id);
@@ -140,9 +143,13 @@ pub fn apply_block(
         }
         match ntx.kind {
             NodeTxKind::Start => {
+                // A start opens a new life for the collateral: fluxd builds fresh cache data
+                // (no confirm, never paid).
                 if let Some(e) = st.nodes.get_mut(id) {
                     e.rec.added_height = h;
                     e.rec.confirmed_height = None;
+                    e.rec.last_confirmed_height = None;
+                    e.rec.last_paid_height = None;
                     e.at_risk = false;
                 }
                 st.queue.remove(id);
@@ -169,9 +176,12 @@ pub fn apply_block(
                 }
             }
             NodeTxKind::InitialConfirm => {
+                // fluxd resets `nLastPaidHeight` to 0 on the initial confirm (`Flush`, the
+                // `mapAddToConfirm` loop), so the node queues by this height.
                 if let Some(e) = st.nodes.get_mut(id) {
                     e.rec.confirmed_height = Some(h);
                     e.rec.last_confirmed_height = Some(h);
+                    e.rec.last_paid_height = None;
                     e.rec.active_since_ms = Some(time_ms);
                     e.at_risk = false;
                 }
@@ -182,8 +192,9 @@ pub fn apply_block(
                 ip_change(st, tick, id, ntx.endpoint, &mut updates, time_ms);
                 let old = st.nodes.set_status(id, NodeStatus::Confirmed, now);
                 status_event(tick, id, old, NodeStatus::Confirmed, time_ms);
-                if let Some(t) = st.nodes.rec(id).map(|r| r.tier) {
-                    st.queue.upsert(id, t, (h, CLASS_CONFIRMED, i as u32));
+                if let Some(r) = st.nodes.rec(id) {
+                    let (t, key) = (r.tier, key_of(r));
+                    st.queue.upsert(id, t, key);
                 }
                 st.nodes.touch_persist(id);
                 tick.event(
@@ -227,7 +238,7 @@ pub fn apply_block(
                     .rec(id)
                     .is_some_and(|r| st.queue.tier(r.tier).is_some_and(|q| !q.contains(id)));
                 if needs_queue && let Some(r) = st.nodes.rec(id) {
-                    let key = crate::state::queue::key_of(r, i as u32);
+                    let key = key_of(r);
                     let t = r.tier;
                     st.queue.upsert(id, t, key);
                 }
@@ -539,30 +550,38 @@ fn ip_change(
     }
 }
 
-/// Expiry watch: at-risk (>= 560 blocks since the last confirm), predicted expiry (>= 640),
-/// and DOS for starts not confirmed within 240 blocks.
+/// Expiry watch at the new height `h`, at fluxd's exact boundaries (`atlas_core::node::windows`):
+/// at-risk (>= 560 blocks since the last confirm), expiry (the block `last_confirmed + 641`),
+/// DOS for a start not confirmed by `added + 240`, and the end of a DOS ban at `added + 720`.
 pub fn derive_expiry(st: &mut NetworkState, tick: &mut Tick, h: u32, t: u64) {
     let now = tick.now_ms;
     let mut at_risk = Vec::new();
     let mut expired = Vec::new();
     let mut dosed = Vec::new();
+    let mut dos_ended = Vec::new();
     for e in st.nodes.listed() {
         match e.rec.status {
             NodeStatus::Confirmed => {
-                let Some(since) = e.rec.blocks_since_confirm(h) else {
+                let (Some(last), Some(since)) =
+                    (e.rec.last_confirmed_height, e.rec.blocks_since_confirm(h))
+                else {
                     continue;
                 };
-                if since >= windows::EXPIRATION_BLOCKS {
+                if windows::is_expired_at(last, h) {
                     expired.push(e.rec.id);
                 } else if since >= windows::AT_RISK_BLOCKS && !e.at_risk {
                     at_risk.push((e.rec.id, since));
                 }
             }
             NodeStatus::Started
-                if e.rec.added_height > 0
-                    && h.saturating_sub(e.rec.added_height) > windows::START_EXPIRATION_BLOCKS =>
+                if e.rec.added_height > 0 && h >= windows::dos_height(e.rec.added_height) =>
             {
                 dosed.push(e.rec.id);
+            }
+            NodeStatus::Dos
+                if e.rec.added_height > 0 && h >= windows::dos_end_height(e.rec.added_height) =>
+            {
+                dos_ended.push(e.rec.id);
             }
             _ => {}
         }
@@ -617,6 +636,23 @@ pub fn derive_expiry(st: &mut NetworkState, tick: &mut Tick, h: u32, t: u64) {
         );
         tick.node_changed(DEV, id, mask::STATUS);
         tick.feed(FeedKind::NodeDosed, vec![FeedRef::Node { id }], &[], t);
+    }
+    // fluxd forgets a DOS entry after its ban; the collateral is no longer tracked anywhere
+    // until it starts again.
+    for id in dos_ended {
+        if let Some(e) = st.nodes.get_mut(id) {
+            e.touched = h;
+        }
+        let old = st.nodes.set_status(id, NodeStatus::Departed, now);
+        status_event(tick, id, old, NodeStatus::Departed, t);
+        tick.event(
+            Event::NodeRemoved {
+                node: id,
+                reason: RemovalReason::Dos,
+            },
+            Some(t),
+        );
+        tick.node_removed(DEV, id);
     }
 }
 

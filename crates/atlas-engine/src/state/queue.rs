@@ -1,33 +1,41 @@
 //! Local payment-queue model (PayoutAttribution, NextPayees).
 //!
-//! Verified rule (flux-api.md 3.5, rechecked against the full 6,724-node dump): within a tier the
-//! queue is ordered by ascending `max(last_paid_height, confirmed_height)`. Inside one height a
-//! node that was *confirmed* at that height comes before the node that was *paid* at it (all 145
-//! tie groups of the dump follow this). The order among several nodes confirmed in the same
-//! block is not derivable from the list; we use the order of their confirm transactions in the
-//! block, and for nodes loaded from the list we keep the upstream rank as the final tie-break.
+//! The order is fluxd's own (`FluxnodeListData::operator<` in `src/fluxnode/fluxnode.h`, applied
+//! by `FluxnodeCache::SortList` after every block that pays the tier): within a tier, ascending
+//! comparator height, which is `last_paid_height` when the node was ever paid and its
+//! `confirmed_height` otherwise. At one comparator height a never-paid node comes before a paid
+//! one, and ties inside a class go by the collateral `COutPoint` (`uint256` compares its
+//! internal bytes with `memcmp`, the reverse of the hex text, then the output index). Verified on
+//! the live list: all 145 tie groups put the never-paid nodes first, and all 30 groups with
+//! several never-paid nodes follow the outpoint order (only 6 of them would also match the hex
+//! order). The key is therefore a pure function of the record: no upstream rank and no
+//! transaction order are needed, and a restart rebuilds the exact queue.
 //!
 //! One node per tier is paid per block; the paid node moves to the back with key
-//! `(height, PAID, 0)`.
+//! `(height, PAID, outpoint)`.
 
 use std::collections::{BTreeSet, HashMap};
 
 use atlas_core::{NodeId, NodeRecord, Tier};
 
-/// Queue key: `(height, class, sub)`. `class` 0 = confirmed at `height`, 1 = paid at `height`.
-pub type QKey = (u32, u8, u32);
+/// Queue key: `(comparator height, class, txid bytes in fluxd order, vout)`. `class` 0 = never
+/// paid (queued by its confirm height), 1 = paid at `height`.
+pub type QKey = (u32, u8, [u8; 32], u32);
 
 pub const CLASS_CONFIRMED: u8 = 0;
 pub const CLASS_PAID: u8 = 1;
 
-/// Queue key of a record. `sub` breaks ties inside one `(height, class)` group.
-pub fn key_of(rec: &NodeRecord, sub: u32) -> QKey {
-    let paid = rec.last_paid_height.unwrap_or(0);
-    let conf = rec.confirmed_height.unwrap_or(0);
-    if paid > 0 && paid >= conf {
-        (paid, CLASS_PAID, sub)
-    } else {
-        (conf, CLASS_CONFIRMED, sub)
+/// Queue key of a record, exactly as fluxd sorts its payment list.
+pub fn key_of(rec: &NodeRecord) -> QKey {
+    let (txid, vout) = rec.outpoint.consensus_order();
+    match rec.last_paid_height.filter(|p| *p > 0) {
+        Some(paid) => (paid, CLASS_PAID, txid, vout),
+        None => (
+            rec.confirmed_height.unwrap_or(0),
+            CLASS_CONFIRMED,
+            txid,
+            vout,
+        ),
     }
 }
 
@@ -143,14 +151,13 @@ impl PaymentQueue {
             .flat_map(|q| q.iter().enumerate().map(|(r, id)| (id, r as u32)))
     }
 
-    /// Rebuilds all queues from records (for restore): key from heights, the stored rank as the
-    /// final tie-break.
+    /// Rebuilds all queues from records (for restore). The key is a function of the record, so
+    /// the rebuilt order is exact.
     pub fn rebuild<'a>(&mut self, records: impl Iterator<Item = &'a NodeRecord>) {
         self.clear();
         for r in records {
             if r.status == atlas_core::NodeStatus::Confirmed {
-                let sub = r.rank.unwrap_or(u32::MAX);
-                self.upsert(r.id, r.tier, key_of(r, sub));
+                self.upsert(r.id, r.tier, key_of(r));
             }
         }
     }
@@ -244,21 +251,20 @@ impl ClientRanks {
     }
 }
 
-/// Counts queue-order inversions against the verified rule over a set of records that carry
-/// upstream ranks: within each tier, sorted by rank, the key `max(last_paid, confirmed)` must
-/// never decrease.
+/// Counts queue-order inversions against fluxd's rule over a set of records that carry upstream
+/// ranks: within each tier, sorted by rank, the full key ([`key_of`]) must strictly increase.
 pub fn rank_inversions<'a>(records: impl Iterator<Item = &'a NodeRecord>) -> usize {
-    let mut by_tier: [Vec<(u32, u32)>; 3] = Default::default();
+    let mut by_tier: [Vec<(u32, QKey)>; 3] = Default::default();
     for r in records {
         if let (Some(i), Some(rank)) = (r.tier.index(), r.rank) {
-            by_tier[i].push((rank, key_of(r, 0).0));
+            by_tier[i].push((rank, key_of(r)));
         }
     }
     by_tier
         .iter_mut()
         .map(|v| {
             v.sort_unstable();
-            v.windows(2).filter(|w| w[0].1 > w[1].1).count()
+            v.windows(2).filter(|w| w[0].1 >= w[1].1).count()
         })
         .sum()
 }

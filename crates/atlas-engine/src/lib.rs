@@ -462,22 +462,8 @@ fn restore(store: &Store) -> NetworkState {
         nodes: state::NodeTable::restore(&ids, records, next),
         ..NetworkState::default()
     };
-    st.queue.rebuild(
-        st.nodes
-            .listed()
-            .map(|e| &e.rec)
-            .filter(|r| r.rank.is_some()),
-    );
-    // Queue members without a stored rank go by their heights.
-    let extra: Vec<(NodeId, atlas_core::Tier, state::queue::QKey)> = st
-        .nodes
-        .listed()
-        .filter(|e| e.rec.status == atlas_core::NodeStatus::Confirmed && e.rec.rank.is_none())
-        .map(|e| (e.rec.id, e.rec.tier, state::queue::key_of(&e.rec, u32::MAX)))
-        .collect();
-    for (id, tier, key) in extra {
-        st.queue.upsert(id, tier, key);
-    }
+    // The queue key is a function of the record (fluxd's order), so the restored queue is exact.
+    st.queue.rebuild(st.nodes.listed().map(|e| &e.rec));
     st.apply_ranks();
     st.apps = state::apps::AppTable::restore(
         ok("apps", store.apps()),
@@ -505,6 +491,21 @@ fn restore(store: &Store) -> NetworkState {
     }
     st.recent = recent.into();
     st.live_floor = ok("live floor", store.meta_u64(meta::LIVE_FLOOR)).map(|v| v as u32);
+    // A store that has been reconciled before holds a block-exact model at its tip: the blocks
+    // replayed after a restart derive expiry and DOS like live blocks, so nodes that expired
+    // during the downtime leave the queue at their real height instead of at the first
+    // reconcile (which would shift every rank behind them for clients).
+    let reconciled = ok(
+        "first ingest",
+        store.meta_u64(atlas_store::meta_keys::FIRST_INGEST_MS),
+    )
+    .is_some();
+    st.expiry_armed = reconciled
+        && st.tip.is_some()
+        && st
+            .nodes
+            .listed()
+            .any(|e| e.rec.status == atlas_core::NodeStatus::Confirmed);
     st.blocks_dirty = true;
     st.summary_dirty = true;
     tracing::info!(

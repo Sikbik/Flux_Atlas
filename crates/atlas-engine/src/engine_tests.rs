@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use atlas_core::event::{Event, EventEnvelope};
-use atlas_core::live::LiveBody;
+use atlas_core::live::{DeltaCause, LiveBody};
 use atlas_core::{Hash32, NodeEndpoint, NodeId, NodeRecord, NodeStatus, Outpoint, Tier};
 use atlas_flux::ClientsConfig;
 use atlas_flux::decode::DecodedBlock;
@@ -794,6 +794,15 @@ async fn restart_after_downtime_replays_blocks_without_rank_corrections() {
     let base = fixture_block("flux/daemon_getblock_2996916_verbosity2.json");
     let start_height = 3_000_000;
     let mut up = UpstreamQueue::new(8, start_height - 1);
+    // One node stops confirming and expires during the downtime: fluxd drops it with the block
+    // `last_confirmed + 641` = start_height + 5.
+    let doomed = up
+        .nodes
+        .iter()
+        .position(|n| n.tier == Tier::Stratus && n.rank == Some(7))
+        .unwrap();
+    up.nodes[doomed].last_confirmed_height = Some(start_height + 5 - 641);
+    let doomed_op = up.nodes[doomed].outpoint;
 
     // Before the restart: a first block, the initial list, three more blocks and a clean
     // reconcile.
@@ -824,14 +833,26 @@ async fn restart_after_downtime_replays_blocks_without_rank_corrections() {
     })
     .await;
     let stored_ranks = up.ranks();
+    let doomed_id = eng
+        .published()
+        .nodes
+        .iter()
+        .find(|r| r.outpoint == doomed_op)
+        .map(|r| r.id)
+        .unwrap();
     eng.shutdown().await;
     drop(eng);
 
-    // Downtime: four blocks are mined while the server is down.
+    // Downtime: four blocks are mined while the server is down; the doomed node expires with
+    // the second of them and leaves the upstream list.
     let missed: Vec<DecodedBlock> = (4..8)
         .map(|i| {
             let b = paying_block(&base, start_height + i, prev, up.advance());
             prev = b.summary.hash;
+            if start_height + i == start_height + 5 {
+                up.nodes.retain(|n| n.outpoint != doomed_op);
+                up.rerank();
+            }
             b
         })
         .collect();
@@ -882,14 +903,27 @@ async fn restart_after_downtime_replays_blocks_without_rank_corrections() {
     .await;
     assert_eq!(eng.stats().rank_corrections, 0, "no correction burst");
     let mut corrections = 0;
+    let mut expired_by_block = false;
     while let Ok(m) = rx.try_recv() {
         if let LiveBody::Nodes(d) = &m.body {
             corrections += d.changed.iter().filter(|c| c.rank.is_some()).count();
+            // (The catch-up and the deferred reconcile may share one tick, so the status in
+            // the block delta can already be the final `departed`.)
+            expired_by_block |= d.cause == DeltaCause::Block
+                && d.changed
+                    .iter()
+                    .any(|c| c.id == doomed_id && c.status.is_some());
         }
     }
     assert_eq!(
         corrections, 0,
         "clients rotate ranks from the block payouts alone"
+    );
+    // The replayed blocks derive expiry like live ones (the restored model is armed), so the
+    // node leaves the queue at its real height, not at the first reconcile.
+    assert!(
+        expired_by_block,
+        "the catch-up expired the node at its height"
     );
     eng.shutdown().await;
 }
