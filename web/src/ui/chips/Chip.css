@@ -1,0 +1,150 @@
+/* Chips and badges (design 8.10): 22 px pills; tier and status chips tint from the data-tier and
+   data-status remaps in tokens.css. Status and tier are never colour alone: icon or glyph plus a word. */
+
+.ui-chip {
+  --ui-chip-h: 22px;
+  --ui-chip-px: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  height: var(--ui-chip-h);
+  padding: 0 var(--ui-chip-px);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ui-chip[data-size="sm"] {
+  --ui-chip-h: 20px;
+  --ui-chip-px: 8px;
+  gap: var(--space-2);
+  font-size: 11.5px;
+}
+
+.ui-chip[data-size="lg"] {
+  --ui-chip-h: 26px;
+  --ui-chip-px: 10px;
+  gap: var(--space-3);
+}
+
+.ui-chip[data-mono] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.ui-chip > svg {
+  flex: none;
+}
+
+.ui-chip[data-tone="accent"] {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent-500) 40%, transparent);
+  color: var(--accent-300);
+}
+
+.ui-chip[data-tone="ghost"] {
+  background: transparent;
+}
+
+/* Toggle chips are buttons. */
+button.ui-chip {
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+}
+
+button.ui-chip[data-mono] {
+  font-family: var(--font-mono);
+}
+
+button.ui-chip:hover {
+  background: var(--ink-3);
+  border-color: var(--line-3);
+  color: var(--text-1);
+}
+
+button.ui-chip:active {
+  transform: scale(0.98);
+}
+
+button.ui-chip[data-selected] {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent-500) 55%, transparent);
+  color: var(--accent-200);
+}
+
+button.ui-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Tier chip: --tier-soft fill, --tier-line border, the capsule glyph in the tier colour, the word in white. */
+.ui-chip[data-tier] {
+  background: var(--tier-soft);
+  border-color: var(--tier-line);
+  color: var(--text-1);
+}
+
+/* A node that is the operator's own: a white ring and a hot glow (design 8.10). */
+.ui-chip[data-mine] {
+  box-shadow:
+    0 0 0 1px var(--hot),
+    var(--glow-hot);
+}
+
+.ui-chip__amount {
+  color: var(--tier, var(--text-2));
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status chip: --status-soft fill, a 40% status border, status-coloured icon, the word in white. */
+.ui-chip[data-status] {
+  background: var(--status-soft);
+  border-color: color-mix(in oklab, var(--status) 40%, transparent);
+  color: var(--text-1);
+}
+
+.ui-chip[data-status] > svg {
+  color: var(--status);
+}
+
+.ui-chip[data-spin] > svg {
+  animation: ui-chip-spin 1s linear infinite;
+}
+
+/* The caps badge: the one ALL CAPS style in the product, status badges only (design 5.3). */
+.ui-chip[data-variant="badge"] {
+  --ui-chip-h: 20px;
+  --ui-chip-px: 8px;
+  font: var(--fw-semibold) 10.5px / 1 var(--font-display);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+@keyframes ui-chip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-chip[data-spin] > svg {
+    animation-duration: 3s;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-chip[data-spin] > svg {
+  animation-duration: 3s;
+}
