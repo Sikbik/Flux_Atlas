@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { initialWmState, wmReduce } from '../wm/machine';
 import type { WindowRef, WmAction, WmState } from '../wm/types';
-import { dockKey, dockState, parseDockKey } from './dock';
+import { dockKey, dockState, launcherOf, parseDockKey } from './dock';
+import { LAUNCHERS } from './launchers';
 
 const V = { w: 1600, h: 900 };
 const WS = { x: 0, y: 52, w: 1600, h: 716 };
@@ -67,5 +68,28 @@ describe('dockKey', () => {
     const a = dockKey(start(), ['globe', 'nodes']);
     const b = dockKey(run(start(), { t: 'setViewport', viewport: V, workspace: WS }), ['globe', 'nodes']);
     expect(a).toBe(b);
+  });
+});
+
+describe('launcherOf', () => {
+  it('names the dock button a window opens from', () => {
+    expect(launcherOf('node')).toBe('nodes');
+    expect(launcherOf('host')).toBe('nodes');
+    expect(launcherOf('block')).toBe('explorer');
+    expect(launcherOf('tx')).toBe('explorer');
+    expect(launcherOf('queue')).toBe('queue');
+    expect(launcherOf('settings')).toBe('settings');
+    expect(launcherOf('about')).toBe('about');
+  });
+
+  it('has a launcher for every type any launcher stands for, and each type belongs to one', () => {
+    const seen = new Map<string, string>();
+    for (const [id, l] of Object.entries(LAUNCHERS)) {
+      for (const type of l.types) {
+        expect(seen.get(type), `${type} is claimed by ${seen.get(type)} and ${id}`).toBeUndefined();
+        seen.set(type, id);
+        expect(launcherOf(type)).toBe(id);
+      }
+    }
   });
 });

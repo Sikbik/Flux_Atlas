@@ -167,10 +167,11 @@ global keymap (design 10.4), not to this handler.
 
 ## The window chrome (`react.tsx`, `wm.css`)
 
-A window is a `section.wm-window[role=dialog]` wrapper (geometry, the drop shadow, the state attributes)
-around a `.wm-slab` (the material, the 1 px rim, the chamfered top right corner), plus the resize handles
-and `.wm-cut` (the hairline on the chamfer's diagonal). Inside the slab: `.wm-titlebar` (glyph disc, title,
-subtitle, freshness chip, controls), then `.wm-body`.
+A window is a `section.wm-window[role=dialog]` wrapper (geometry and the state attributes; no filter, clip,
+mask or shadow of its own) around a `.wm-shadow` (the drop shadow, a filter that follows the slab's chamfer)
+around a `.wm-slab` (the material, the 1 px rim, the chamfered top right corner), plus the resize handles and
+`.wm-cut` (the hairline on the chamfer's diagonal) as siblings of the shadow. Inside the slab: `.wm-titlebar`
+(glyph disc, title, subtitle, freshness chip, controls), then `.wm-body`.
 
 State attributes on the wrapper, for CSS and for anything that wants to attach to a window:
 `data-window-type`, `data-window-id`, `data-placement` (`docked`, `floating`, `sheet`), `data-mode`
@@ -182,7 +183,7 @@ white) or `data-tier` (a node window wears its tier). Tests and tethers find win
 | Behaviour | How |
 |---|---|
 | Open | the wrapper scales from 0.96 and fades in (`wm-open`, `--dur-slow`); reduced motion fades only |
-| Focus | the hot rim cross-fades in over the quiet one; a hairline of light passes along the top edge every 9 s (dropped in reduced motion and the lite tier) |
+| Focus | the hot rim cross-fades in over the quiet one, and one flare crosses the top edge (900 ms, `wm-flare`); an event on arrival, never a loop (the motion language drops the 9 s sweep). Reduced motion and off: no flare |
 | Drag | `scale(1.006)` and a deeper shadow; the snap zone previews as `.wm-drop-zone` |
 | Move to a new rectangle (maximise, dock, float, snap) | one FLIP of transform from the old rectangle, 340 ms, never while dragging, resizing or when the viewport changed |
 | Close | a ghost (a copy of the frame, inert, `aria-hidden`, without the identity attributes) fades and shrinks in place, 200 ms |
@@ -200,6 +201,28 @@ the layer nor the view. Frames keep the order they appeared in the DOM (`stableO
 z-index: moving a frame's element in the document would cancel a click that is half done on one of its
 controls. Pressing a control on an unfocused extra window raises it but does not make it the path's
 window, so Close and Minimise act on the window you pressed them on.
+
+### Ready for the motion language's Power-on
+
+`web/src/motion` reveals a window with a `<PowerOn>` wrapper (a circle of light that opens from the launcher,
+a shorter exit, the window kept mounted until `onExited`). The frame is built to take it:
+
+- **The wrapper is clean.** `.wm-window` has no `filter`, `clip-path`, `mask` or `box-shadow`, in every
+  placement (the phone sheet's shadow and radius live on `.wm-shadow` too), so the aperture's clip can sit on
+  it or on a wrapper around it. The chamfer mask is on `.wm-slab` and the drop shadow on `.wm-shadow`, both
+  inside.
+- **Geometry in one place.** The `left`, `top`, `width`, `height` and `zIndex` of a window are one inline
+  `style` object in `WindowFrame` (and in `PhoneSheet`). To wrap: move that object to the `PowerOn` wrapper,
+  give `.wm-window` `position: relative` and a full-size box, and keep every state attribute where it is (the
+  title bar, the rim and the tethers read them from `.wm-window`).
+- **The origin** is the dock button `[data-launcher="<id>"]`, where `<id>` is `launcherOf(win.type)`
+  (`shell/frame/dock.ts`: a node or a host opens from `nodes`, the explorer types from `explorer`, the queue from
+  `queue`, ...), or the node marker for an inspector.
+- **What goes when it lands:** the `wm-open` entrance (`animation` on `.wm-window`, and its `wm-fade` and
+  `wm-sheet-in` variants) and the exit ghost in `ghost.ts`; a leaving window then stays rendered with
+  `open={false}` until `onExited` instead of being copied.
+- **Dense zones.** The title bar is `data-fx-density="dense"`: its controls (minimise, maximise, close) get no
+  light, the window opening and closing is their answer.
 
 ### Telling the frame about a window: `useWindowMeta`
 

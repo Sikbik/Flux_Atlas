@@ -84,40 +84,42 @@ export function PhoneSheet({
           zIndex: 'var(--z-window)',
         }}
       >
-        <div className="wm-slab">
-          <button
-            type="button"
-            className="wm-grabber"
-            aria-label={`Sheet size ${snap}, switch to ${nextSnap}`}
-            {...drag.handlers}
-            onClick={() => {
-              if (!drag.wasDragged()) wm.dispatch({ t: 'setSheet', snap: nextSnap });
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-              e.preventDefault();
-              stepSheet(e.key === 'ArrowUp' ? 1 : -1);
-            }}
-          />
-          <header className="wm-titlebar" data-fx-density="dense" {...drag.handlers}>
-            <span className="wm-glyph" aria-hidden="true">
-              {glyph}
-            </span>
-            <div className="wm-heading">
-              <h2 className="wm-title" id={titleId}>
-                {title}
-              </h2>
-              {subtitle ? <small className="wm-sub">{subtitle}</small> : null}
+        <div className="wm-shadow">
+          <div className="wm-slab">
+            <button
+              type="button"
+              className="wm-grabber"
+              aria-label={`Sheet size ${snap}, switch to ${nextSnap}`}
+              {...drag.handlers}
+              onClick={() => {
+                if (!drag.wasDragged()) wm.dispatch({ t: 'setSheet', snap: nextSnap });
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                e.preventDefault();
+                stepSheet(e.key === 'ArrowUp' ? 1 : -1);
+              }}
+            />
+            <header className="wm-titlebar" data-fx-density="dense" {...drag.handlers}>
+              <span className="wm-glyph" aria-hidden="true">
+                {glyph}
+              </span>
+              <div className="wm-heading">
+                <h2 className="wm-title" id={titleId}>
+                  {title}
+                </h2>
+                {subtitle ? <small className="wm-sub">{subtitle}</small> : null}
+              </div>
+              {meta}
+              <div className="wm-controls">
+                <button type="button" className="wm-btn wm-btn-close" aria-label="Close" onClick={close}>
+                  <X size={15} strokeWidth={1.6} aria-hidden="true" />
+                </button>
+              </div>
+            </header>
+            <div className="wm-body" ref={bodyRef}>
+              {children}
             </div>
-            {meta}
-            <div className="wm-controls">
-              <button type="button" className="wm-btn wm-btn-close" aria-label="Close" onClick={close}>
-                <X size={15} strokeWidth={1.6} aria-hidden="true" />
-              </button>
-            </div>
-          </header>
-          <div className="wm-body" ref={bodyRef}>
-            {children}
           </div>
         </div>
       </section>

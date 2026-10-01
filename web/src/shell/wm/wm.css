@@ -1,8 +1,9 @@
-/* Window chrome (design 8.3). A window is a wrapper (geometry, the drop shadow, the state attributes) around
-   a slab (the material, the rim, the chamfer). The shadow sits on the wrapper because a mask would clip a
-   box-shadow; the top right corner is cut at the hexagon angle with a mask on the slab and a hairline on the
-   diagonal. Geometry (left, top, width, height, z-index) is set inline from the window manager's state.
-   Only opacity and transform ever animate. */
+/* Window chrome (design 8.3). A window is a wrapper (geometry, the state attributes) around a shadow (the drop
+   shadow) around a slab (the material, the rim, the chamfer). The wrapper carries no filter, clip, mask or
+   shadow of its own: the shadow is a wrapper because a mask would clip a box-shadow, and the motion language's
+   Power-on reveals a window with a clip that it can only put on a plain element. The top right corner is cut at
+   the hexagon angle with a mask on the slab and a hairline on the diagonal. Geometry (left, top, width, height,
+   z-index) is set inline from the window manager's state. Only opacity and transform ever animate. */
 
 .wm-layer {
   position: fixed;
@@ -16,7 +17,6 @@
   min-width: 0;
   min-height: 0;
   color: var(--text-1);
-  filter: var(--drop-window);
   pointer-events: auto;
   transform-origin: 50% 50%;
   transition: transform var(--dur-fast) var(--ease-out);
@@ -30,19 +30,26 @@
   }
 }
 
+/* The shadow follows the slab's chamfer because a drop-shadow filter reads the alpha of what is inside it. */
+.wm-shadow {
+  position: absolute;
+  inset: 0;
+  filter: var(--drop-window);
+}
+
 /* Lifted while dragged: a hair larger, a deeper shadow. */
 .wm-window[data-dragging] {
   transform: scale(1.006);
   transition: none;
+}
+
+.wm-window[data-dragging] .wm-shadow {
   filter: drop-shadow(0 40px 56px rgb(0 0 0 / 0.62)) drop-shadow(0 6px 14px rgb(0 0 0 / 0.5));
 }
 
-:root[data-perf="lite"] .wm-window {
+:root[data-perf="lite"] .wm-shadow {
+  border-radius: var(--r-xl);
   box-shadow: var(--shadow-window);
-}
-
-:root[data-perf="lite"] .wm-window[data-dragging] {
-  filter: none;
 }
 
 /* ---- the slab: material, rim and chamfer ------------------------------------------------------------- */
@@ -154,31 +161,43 @@
   opacity: 0.7;
 }
 
-/* The focused window's highlight: one slow pass of light along its top edge, every 9 s. */
+/* Focus arrival: one flare along the top edge, white at the middle and the window's accent toward the ends, over
+   900 ms (design 6.4 C). An event, not a loop: the motion language drops the 9 s sweep. Transform and opacity. */
 .wm-titlebar::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   z-index: 3;
-  width: 30%;
+  width: 100%;
   height: 1px;
   pointer-events: none;
   opacity: 0;
-  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--accent) 70%, #fff), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--accent) 80%, #fff) 22%,
+    #fff 50%,
+    color-mix(in oklab, var(--accent) 80%, #fff) 78%,
+    transparent
+  );
 }
 
 .wm-window[data-focused] .wm-titlebar::before {
-  opacity: 1;
-  animation: wm-sweep 9s linear infinite;
+  animation: wm-flare 900ms var(--ease-out) both;
 }
 
-@keyframes wm-sweep {
-  from {
-    transform: translateX(-110%);
+@keyframes wm-flare {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.3);
   }
-  to {
-    transform: translateX(430%);
+  16% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
   }
 }
 
@@ -438,10 +457,18 @@
 }
 
 .wm-window[data-placement="sheet"] {
+  animation-name: wm-sheet-in;
+}
+
+.wm-window[data-placement="sheet"] .wm-shadow {
   filter: none;
   box-shadow: 0 -14px 44px -10px rgb(0 0 0 / 0.6);
   border-radius: var(--r-2xl) var(--r-2xl) 0 0;
-  animation-name: wm-sheet-in;
+}
+
+/* Lite tier: a dragged window keeps the plain shadow of the lite tier instead of the deeper lift. */
+:root[data-perf="lite"] .wm-window[data-dragging] .wm-shadow {
+  filter: none;
 }
 
 /* The skirt: under the sheet's own edge the material goes on, so a sheet that is being pulled up (its box is
@@ -666,10 +693,4 @@
   from {
     opacity: 0;
   }
-}
-
-/* The perf tiers: the highlight sweep is a loop, so the lite tier drops it. */
-:root[data-perf="lite"] .wm-window[data-focused] .wm-titlebar::before {
-  animation: none;
-  opacity: 0;
 }

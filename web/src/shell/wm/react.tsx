@@ -325,99 +325,101 @@ function Frame({
       }}
       onPointerDownCapture={(e) => focus(!(e.target as Element).closest('.wm-controls'))}
     >
-      <div className="wm-slab">
-        {phone ? (
-          <button
-            type="button"
-            className="wm-grabber"
-            aria-label={`Sheet size ${sheet}, switch to ${nextSnap}`}
-            {...sheetDrag.handlers}
-            onClick={() => {
-              if (!sheetDrag.wasDragged()) dispatch({ t: 'setSheet', snap: nextSnap });
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-              e.preventDefault();
-              stepSheet(e.key === 'ArrowUp' ? 1 : -1);
-            }}
-          />
-        ) : null}
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: a double-click on the title bar maximises, like any desktop window; the Maximize button is the keyboard route */}
-        <header
-          className="wm-titlebar"
-          data-fx-density="dense"
-          {...(phone ? sheetDrag.handlers : dragHandlers('move', ''))}
-          onDoubleClick={(e) => {
-            if (!phone && !(e.target as HTMLElement).closest('button')) toggleMaximize();
-          }}
-        >
-          <span className="wm-glyph" aria-hidden="true">
-            <WindowGlyph type={win.type} tier={tier} size={phone ? 20 : 16} />
-          </span>
-          <div className="wm-heading">
-            <h2 className="wm-title" id={titleId} data-mono={meta?.mono || undefined}>
-              {win.title}
-            </h2>
-            {meta?.subtitle ? <small className="wm-sub">{meta.subtitle}</small> : null}
-          </div>
-          {meta?.fresh ? (
-            <Freshness
-              ts={meta.fresh.evidenceMs}
-              cadenceMs={meta.fresh.cadenceMs}
-              label={meta.fresh.label}
-              className="wm-fresh"
-            />
-          ) : null}
-          <div className="wm-controls">
-            {phone ? null : (
-              <>
-                {spec.dockable ? (
-                  <button
-                    type="button"
-                    className="wm-btn"
-                    aria-label={docked ? 'Float window' : 'Dock window'}
-                    aria-pressed={docked}
-                    onClick={() => dispatch({ t: 'toggleDock', id })}
-                  >
-                    <PanelRight size={15} strokeWidth={1.6} aria-hidden="true" />
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="wm-btn wm-btn-min"
-                  aria-label="Minimize"
-                  onClick={() => dispatch({ t: 'minimize', id })}
-                >
-                  <Minus size={15} strokeWidth={1.6} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="wm-btn wm-btn-max"
-                  aria-label={maximized ? 'Restore' : 'Maximize'}
-                  onClick={toggleMaximize}
-                >
-                  {maximized ? (
-                    <Minimize2 size={14} strokeWidth={1.6} aria-hidden="true" />
-                  ) : (
-                    <Maximize2 size={14} strokeWidth={1.6} aria-hidden="true" />
-                  )}
-                </button>
-              </>
-            )}
+      <div className="wm-shadow">
+        <div className="wm-slab">
+          {phone ? (
             <button
               type="button"
-              className="wm-btn wm-btn-close"
-              aria-label="Close"
-              onClick={() => onRequestClose(win)}
-            >
-              <X size={15} strokeWidth={1.6} aria-hidden="true" />
-            </button>
+              className="wm-grabber"
+              aria-label={`Sheet size ${sheet}, switch to ${nextSnap}`}
+              {...sheetDrag.handlers}
+              onClick={() => {
+                if (!sheetDrag.wasDragged()) dispatch({ t: 'setSheet', snap: nextSnap });
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                e.preventDefault();
+                stepSheet(e.key === 'ArrowUp' ? 1 : -1);
+              }}
+            />
+          ) : null}
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: a double-click on the title bar maximises, like any desktop window; the Maximize button is the keyboard route */}
+          <header
+            className="wm-titlebar"
+            data-fx-density="dense"
+            {...(phone ? sheetDrag.handlers : dragHandlers('move', ''))}
+            onDoubleClick={(e) => {
+              if (!phone && !(e.target as HTMLElement).closest('button')) toggleMaximize();
+            }}
+          >
+            <span className="wm-glyph" aria-hidden="true">
+              <WindowGlyph type={win.type} tier={tier} size={phone ? 20 : 16} />
+            </span>
+            <div className="wm-heading">
+              <h2 className="wm-title" id={titleId} data-mono={meta?.mono || undefined}>
+                {win.title}
+              </h2>
+              {meta?.subtitle ? <small className="wm-sub">{meta.subtitle}</small> : null}
+            </div>
+            {meta?.fresh ? (
+              <Freshness
+                ts={meta.fresh.evidenceMs}
+                cadenceMs={meta.fresh.cadenceMs}
+                label={meta.fresh.label}
+                className="wm-fresh"
+              />
+            ) : null}
+            <div className="wm-controls">
+              {phone ? null : (
+                <>
+                  {spec.dockable ? (
+                    <button
+                      type="button"
+                      className="wm-btn"
+                      aria-label={docked ? 'Float window' : 'Dock window'}
+                      aria-pressed={docked}
+                      onClick={() => dispatch({ t: 'toggleDock', id })}
+                    >
+                      <PanelRight size={15} strokeWidth={1.6} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="wm-btn wm-btn-min"
+                    aria-label="Minimize"
+                    onClick={() => dispatch({ t: 'minimize', id })}
+                  >
+                    <Minus size={15} strokeWidth={1.6} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="wm-btn wm-btn-max"
+                    aria-label={maximized ? 'Restore' : 'Maximize'}
+                    onClick={toggleMaximize}
+                  >
+                    {maximized ? (
+                      <Minimize2 size={14} strokeWidth={1.6} aria-hidden="true" />
+                    ) : (
+                      <Maximize2 size={14} strokeWidth={1.6} aria-hidden="true" />
+                    )}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="wm-btn wm-btn-close"
+                aria-label="Close"
+                onClick={() => onRequestClose(win)}
+              >
+                <X size={15} strokeWidth={1.6} aria-hidden="true" />
+              </button>
+            </div>
+          </header>
+          <div className="wm-body" ref={bodyRef}>
+            <WindowMetaContext.Provider value={sink}>
+              <Suspense fallback={null}>{content}</Suspense>
+            </WindowMetaContext.Provider>
           </div>
-        </header>
-        <div className="wm-body" ref={bodyRef}>
-          <WindowMetaContext.Provider value={sink}>
-            <Suspense fallback={null}>{content}</Suspense>
-          </WindowMetaContext.Provider>
         </div>
       </div>
       {phone || maximized ? null : docked ? (

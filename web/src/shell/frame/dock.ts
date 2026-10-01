@@ -4,7 +4,7 @@
 
 import { windowOfType } from '../wm/machine';
 import { WINDOW_SPECS } from '../wm/specs';
-import type { WmState } from '../wm/types';
+import type { WindowType, WmState } from '../wm/types';
 import { LAUNCHERS, type LauncherId } from './launchers';
 
 export type DockState = 'idle' | 'open' | 'focus' | 'min';
@@ -45,6 +45,16 @@ export function parseDockKey(key: string): Record<string, DockState> {
     if (id && st) out[id] = st as DockState;
   }
   return out;
+}
+
+/**
+ * The launcher a window of this type opens from (a block or a transaction from the Explorer, a node or a host
+ * from Nodes), or null for a type no launcher stands for. The dock writes the id on its button as
+ * `data-launcher`, so a window's origin is `document.querySelector('[data-launcher="<id>"]')`.
+ */
+export function launcherOf(type: WindowType): LauncherId | null {
+  for (const id of Object.keys(LAUNCHERS) as LauncherId[]) if (LAUNCHERS[id].types.includes(type)) return id;
+  return null;
 }
 
 export { windowOfType };
