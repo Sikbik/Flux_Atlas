@@ -59,6 +59,7 @@ import { isPagePanel } from './nav';
 import { PhoneHeader } from './PhoneHeader';
 import { PhoneTabs } from './PhoneTabs';
 import { useGlobeInsetSync, usePageEdge, useWindowRouting } from './routing';
+import { focusContent } from './skip';
 import { TopBar } from './TopBar';
 import './frame.css';
 
@@ -199,8 +200,17 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         data-boot-instant={boot === 'done' && bootInstant() ? '' : undefined}
         data-page={pagePanel ? '' : undefined}
       >
-        <a className="skip-link" href="#shell-stage">
-          Skip to the globe
+        {/* biome-ignore lint/a11y/useValidAnchor: a skip link is a link (that is what a screen reader announces); its fragment is the fallback, and it moves focus itself so the router's hash (`#all`) is left alone */}
+        <a
+          className="skip-link"
+          href="#shell-stage"
+          onClick={(e) => {
+            // To what is open, not the stage's top: the window's body, the page panel, else the globe (skip.ts).
+            e.preventDefault();
+            focusContent(wm.getState());
+          }}
+        >
+          Skip to content
         </a>
         <GlobeOverlay>
           <PlaceLabels />
