@@ -9,6 +9,7 @@ import { Activity, Boxes, Globe, type LucideIcon, Search, UserRound } from 'luci
 import { type ComponentPropsWithRef, useEffect } from 'react';
 import { useLiveView } from '../../features/chrome/live';
 import { usePhone } from '../../features/chrome/phone';
+import { TabIndicator } from '../../motion/react/TabIndicator';
 import { cx, LiveDot } from '../../ui';
 import { pressHandlers } from '../../ui/internal/press';
 import { visibleWindows, windowOfType } from '../wm/machine';
@@ -101,6 +102,8 @@ export function PhoneTabs({ className, ...rest }: ComponentPropsWithRef<'nav'>) 
           </button>
         );
       })}
+      {/* The motion language's line: it sits on the bar's top edge over the lit tab and travels to the next one. */}
+      <TabIndicator />
     </nav>
   );
 }
