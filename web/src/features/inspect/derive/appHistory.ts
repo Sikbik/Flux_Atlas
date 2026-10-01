@@ -88,12 +88,17 @@ export function parseChange(path: string): Omit<ChangeLine, 'value'> {
   };
 }
 
-/** Everything one history item is made of. Message numbers (`n`) are 1-based, like the URL. */
+/**
+ * Everything one history item is made of. `n` is the message number (1-based, every message counts);
+ * `rev` is the revision of the spec (1-based, only registrations and updates define a new one), which
+ * is what `/app/:name/history/:n` deep-links.
+ */
 export type HistoryItem =
-  | { type: 'registered'; n: number; again: boolean; entry: AppHistoryEntry }
+  | { type: 'registered'; n: number; rev: number; again: boolean; entry: AppHistoryEntry }
   | {
       type: 'updated';
       n: number;
+      rev: number;
       entry: AppHistoryEntry;
       /** Spec version of the previous message, null for the first. */
       versionFrom: number | null;
@@ -115,11 +120,13 @@ export type HistoryItem =
 export function buildHistory(entries: readonly AppHistoryEntry[]): HistoryItem[] {
   const out: HistoryItem[] = [];
   let seenRegister = false;
+  let rev = 0;
   entries.forEach((entry, i) => {
     const n = i + 1;
     const prevVersion = i > 0 ? entries[i - 1]!.spec_version : null;
     if (entry.kind === 'registered') {
-      out.push({ type: 'registered', n, again: seenRegister, entry });
+      rev++;
+      out.push({ type: 'registered', n, rev, again: seenRegister, entry });
       seenRegister = true;
       return;
     }
@@ -143,9 +150,11 @@ export function buildHistory(entries: readonly AppHistoryEntry[]): HistoryItem[]
       return;
     }
     const changes = entry.changed.map(parseChange);
+    rev++;
     out.push({
       type: 'updated',
       n,
+      rev,
       entry,
       versionFrom: prevVersion,
       versionTo: entry.spec_version,
@@ -154,6 +163,20 @@ export function buildHistory(entries: readonly AppHistoryEntry[]): HistoryItem[]
     });
   });
   return out;
+}
+
+/** The registration or update that defines revision `rev`, or null when there is none. */
+export function findRevision(items: readonly HistoryItem[], rev: number): HistoryItem | null {
+  for (const it of items)
+    if ((it.type === 'registered' || it.type === 'updated') && it.rev === rev) return it;
+  return null;
+}
+
+/** Number of spec revisions (registrations and updates) in a history. */
+export function revisionCount(items: readonly HistoryItem[]): number {
+  let n = 0;
+  for (const it of items) if (it.type !== 'renewals') n = Math.max(n, it.rev);
+  return n;
 }
 
 /** Total FLUX paid across every message, in base units. */

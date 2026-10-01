@@ -5,8 +5,10 @@ import type { AppSpec } from '../../../api/generated/AppSpec';
 import {
   buildHistory,
   currentValue,
+  findRevision,
   groupChanges,
   parseChange,
+  revisionCount,
   summarizeChanges,
   totalPaid,
   withCurrentValues,
@@ -126,6 +128,24 @@ describe('buildHistory', () => {
       ]),
     ).toBe(200_000_000n);
     expect(totalPaid([])).toBe(0n);
+  });
+
+  it('numbers revisions: renewals never define one, updates and re-registrations do', () => {
+    const items = buildHistory([
+      entry('registered', 1),
+      entry('renewed', 2),
+      entry('updated', 3, ['instances']),
+      entry('renewed', 4),
+      entry('expired', 5),
+      entry('registered', 6),
+    ]);
+    expect(revisionCount(items)).toBe(3);
+    expect(findRevision(items, 1)).toMatchObject({ type: 'registered', rev: 1, n: 1 });
+    expect(findRevision(items, 2)).toMatchObject({ type: 'updated', rev: 2, n: 3 });
+    expect(findRevision(items, 3)).toMatchObject({ type: 'registered', rev: 3, again: true });
+    expect(findRevision(items, 4)).toBeNull();
+    expect(findRevision(items, 0)).toBeNull();
+    expect(revisionCount([])).toBe(0);
   });
 });
 
