@@ -87,12 +87,14 @@ export function Tooltip({ content, children, placement = 'top', delay = 120, dis
 
   const child = children as ReactElement<Props>;
   const own = child.props;
+  const repeatsName = typeof content === 'string' && own['aria-label'] === content;
   const trigger = cloneElement(child, {
     ref: (el: HTMLElement | null) => {
       setAnchor(el);
       assignRef(own.ref, el);
     },
-    'aria-describedby': open ? id : (own['aria-describedby'] as string | undefined),
+    // A tooltip that only repeats the trigger's own accessible name adds nothing to describe.
+    'aria-describedby': open && !repeatsName ? id : (own['aria-describedby'] as string | undefined),
     onPointerEnter: (e: React.PointerEvent<HTMLElement>) => {
       (own.onPointerEnter as ((e: React.PointerEvent<HTMLElement>) => void) | undefined)?.(e);
       if (e.pointerType === 'mouse') show(delay);

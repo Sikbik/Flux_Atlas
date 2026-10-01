@@ -11,7 +11,6 @@ let fallback: EventClock | undefined;
 /** The runtime's event clock, or a shared fallback clock when no runtime is mounted. */
 export function useKitClock(): EventClock {
   try {
-    // biome-ignore lint/correctness/useHookAtTopLevel: useRuntime reads its context before it throws, so the hook order is the same on every render
     return useRuntime().clock;
   } catch {
     fallback ??= new EventClock();

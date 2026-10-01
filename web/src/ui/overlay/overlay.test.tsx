@@ -104,6 +104,24 @@ describe('Tooltip', () => {
     m.unmount();
   });
 
+  it('does not describe a trigger with text that only repeats its accessible name', () => {
+    const m = mount(
+      <Tooltip content="Pin to the dock" delay={0}>
+        <button type="button" aria-label="Pin to the dock">
+          P
+        </button>
+      </Tooltip>,
+    );
+    const b = m.container.querySelector('button');
+    if (b) pointer(b, 'pointerover', 'mouse');
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+    expect(layer('tooltip')).not.toBeNull();
+    expect(b?.hasAttribute('aria-describedby')).toBe(false);
+    m.unmount();
+  });
+
   it('keeps the trigger own handlers and attributes', () => {
     const onFocus = vi.fn();
     const m = mount(

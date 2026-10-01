@@ -22,7 +22,6 @@ export function KbdCombo({ keys, className, style }: KbdComboProps) {
     <span className={cx('ui-kbd-combo', className)} style={style}>
       <span className="ui-kbd-combo__sr">{keys.join(' plus ')}</span>
       {keys.map((k, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a key sequence is positional and can repeat a key
         <Kbd key={i} aria-hidden="true">
           {k}
         </Kbd>

@@ -4,8 +4,8 @@ import { cx } from '../internal/cx';
 import type { TierName } from '../internal/status';
 import './ViewHeader.css';
 
-/** Props of a ViewHeader: the slots below, plus `className`, `style`, `ref` and the other `<header>` attributes. */
-export interface ViewHeaderProps extends Omit<ComponentPropsWithRef<'header'>, 'title' | 'children'> {
+/** Props of a ViewHeader: the slots below, plus `className`, `style`, `ref` and the other `<div>` attributes. */
+export interface ViewHeaderProps extends Omit<ComponentPropsWithRef<'div'>, 'title' | 'children'> {
   /** The kind of thing this view is about, in sentence case ("Node", "Transaction", "Block"). Not a tracked caps eyebrow. */
   kind?: ReactNode;
   /** A glyph before the kind label (a lucide icon component). */
@@ -31,7 +31,8 @@ export interface ViewHeaderProps extends Omit<ComponentPropsWithRef<'header'>, '
 /**
  * The head of a view: a sentence-case kind label, the title, a subtitle, actions and a freshness slot,
  * over a hairline of Flux-blue light. Lays out in two columns and folds to one in a narrow window.
- * Keep it calm: one primary action at most, and put the rest in a menu.
+ * Keep it calm: one primary action at most, and put the rest in a menu. It renders a `div`, not a
+ * `header`, so a window never adds a second banner landmark to the page; the title is the heading.
  */
 export function ViewHeader({
   kind,
@@ -49,7 +50,7 @@ export function ViewHeader({
 }: ViewHeaderProps) {
   const Heading = `h${level}` as 'h1' | 'h2';
   return (
-    <header className={cx('ui-vh', className)} data-tier={tier} {...rest}>
+    <div className={cx('ui-vh', className)} data-tier={tier} {...rest}>
       <div className="ui-vh__grid">
         {kind || Icon ? (
           <div className="ui-vh__kind">
@@ -65,6 +66,6 @@ export function ViewHeader({
         {actions ? <div className="ui-vh__actions">{actions}</div> : null}
         {children ? <div className="ui-vh__meta">{children}</div> : null}
       </div>
-    </header>
+    </div>
   );
 }

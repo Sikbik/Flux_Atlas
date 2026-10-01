@@ -48,7 +48,6 @@ export function SkeletonText({
   return (
     <span aria-hidden="true" className={cx('ui-skeleton-text', className)}>
       {Array.from({ length: lines }, (_, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder lines never reorder
         <Skeleton key={i} h={lineHeight} w={i === lines - 1 && lines > 1 ? lastWidth : '100%'} />
       ))}
     </span>

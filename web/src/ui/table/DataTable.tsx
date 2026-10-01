@@ -141,7 +141,6 @@ function SkeletonRows<Row>({ columns, count }: { columns: readonly DataTableColu
   return (
     <div className="ui-table__skeleton" aria-hidden="true">
       {Array.from({ length: count }, (_, r) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder rows never reorder
         <div key={r} className="ui-table__row" data-skeleton="" data-striped={r % 2 === 1 || undefined}>
           {columns.map((c, ci) => (
             <div
@@ -322,7 +321,6 @@ export function DataTable<Row>({
   const latest = useRef({ displayed, keyOf, virtual, rowH });
   latest.current = { displayed, keyOf, virtual, rowH };
   const sortSig = sort && !manualSort ? `${sort.id}:${sort.dir}` : '';
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reads the latest props through a ref on purpose; it runs when the displayed rows change
   useLayoutEffect(() => {
     const { displayed: list, keyOf: kf, virtual: v, rowH: h } = latest.current;
     const first = list.length > 0 ? kf(list[0]!) : null;
@@ -409,7 +407,6 @@ export function DataTable<Row>({
     }
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs after the active row changes; reads the DOM by id
   useLayoutEffect(() => {
     if (!revealOnCommit.current) return;
     revealOnCommit.current = false;
