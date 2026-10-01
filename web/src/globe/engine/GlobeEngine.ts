@@ -96,6 +96,40 @@ export interface ScreenPoint {
   depth: number;
 }
 
+/** What a registered label anchor stands for (the UI decides how each kind looks). */
+export type LabelAnchorKind = 'city' | 'country' | 'hub' | 'node' | 'cluster' | 'custom';
+
+/**
+ * A world point the UI wants on screen every frame: a city or country label, a tooltip, a window
+ * tether. Either a surface position (`lat`, `lon`, lifted `alt` globe radii) or a node (`nodeId`,
+ * following its display position, so it rides the stack and fan layout).
+ */
+export interface LabelAnchorInput {
+  id: string;
+  kind?: LabelAnchorKind;
+  lat?: number;
+  lon?: number;
+  /** Height above the surface in globe radii (default 0.01). */
+  alt?: number;
+  nodeId?: number;
+  text?: string;
+}
+
+/** A registered anchor's screen projection for the current frame (CSS pixels, canvas space). */
+export interface LabelAnchor {
+  id: string;
+  kind: LabelAnchorKind;
+  text: string;
+  x: number;
+  y: number;
+  /** False when the point is behind the planet (past the limb), off screen, or its node is gone. */
+  visible: boolean;
+  /** NDC depth (-1 near to 1 far). */
+  depth: number;
+  /** Cosine between the point's surface normal and the direction to the camera: 1 facing, 0 at the limb. Labels fade with it. */
+  facing: number;
+}
+
 const FADE_OUT = 2.0;
 
 export class GlobeEngine {
@@ -1198,6 +1232,12 @@ export class GlobeEngine {
   private readonly tmpPiece = { x: 0, y: 0 };
   private readonly tmpScreen: ScreenPoint = { x: 0, y: 0, visible: false, depth: 0 };
 
+  // label anchors (labelAnchors): inputs and their per-frame projections, index aligned
+  private anchorIn: LabelAnchorInput[] = [];
+  private anchorOut: LabelAnchor[] = [];
+  private anchorFrame = -1;
+  private frameNo = 0;
+
   // ---- selection & camera -----------------------------------------------------------------
 
   /**
@@ -1902,6 +1942,104 @@ export class GlobeEngine {
     }
   }
 
+  // ---- label anchors ----------------------------------------------------------------------
+
+  /**
+   * Replaces the registered label anchors. Their screen positions are recomputed once per frame
+   * (after the camera moved, before the frame event) and read with `labelAnchors()`.
+   */
+  setLabelAnchors(list: readonly LabelAnchorInput[]): void {
+    this.anchorIn = list.slice();
+    const out: LabelAnchor[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i]!;
+      const prev = this.anchorOut[i];
+      const o: LabelAnchor = prev ?? {
+        id: '',
+        kind: 'custom',
+        text: '',
+        x: 0,
+        y: 0,
+        visible: false,
+        depth: 1,
+        facing: -1,
+      };
+      o.id = a.id;
+      o.kind = a.kind ?? (a.nodeId !== undefined ? 'node' : 'custom');
+      o.text = a.text ?? '';
+      out.push(o);
+    }
+    this.anchorOut = out;
+    this.anchorFrame = -1;
+  }
+
+  /**
+   * This frame's projections of the registered anchors, in registration order. Occlusion-culled:
+   * a point behind the planet (past the limb, with its lift) or outside the viewport is not
+   * `visible`. The array and its objects are reused; read them, do not keep them.
+   */
+  labelAnchors(): readonly LabelAnchor[] {
+    if (this.anchorFrame !== this.frameNo) this.updateLabelAnchors();
+    return this.anchorOut;
+  }
+
+  private updateLabelAnchors(): void {
+    this.anchorFrame = this.frameNo;
+    const n = this.anchorIn.length;
+    if (n === 0) return;
+    const s = this.nodes;
+    const pt = this.tmpScreen;
+    const cam = this.rig.camera.position;
+    const w = this.cssW;
+    const h = this.cssH;
+    for (let i = 0; i < n; i++) {
+      const a = this.anchorIn[i]!;
+      const o = this.anchorOut[i]!;
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      let ok = true;
+      if (a.nodeId !== undefined) {
+        const slot = s.slotOf(a.nodeId);
+        if (slot < 0 || s.alive[slot] === 0) ok = false;
+        else {
+          x = s.pos[slot * 4]!;
+          y = s.pos[slot * 4 + 1]!;
+          z = s.pos[slot * 4 + 2]!;
+        }
+      } else if (
+        a.lat !== undefined &&
+        a.lon !== undefined &&
+        Number.isFinite(a.lat) &&
+        Number.isFinite(a.lon)
+      ) {
+        const r = 1 + (a.alt ?? 0.01);
+        const la = a.lat * DEG;
+        const lo = a.lon * DEG;
+        const c = Math.cos(la);
+        x = c * Math.sin(lo) * r;
+        y = Math.sin(la) * r;
+        z = c * Math.cos(lo) * r;
+      } else ok = false;
+      if (!ok) {
+        o.visible = false;
+        o.facing = -1;
+        continue;
+      }
+      const vis = this.rig.project(x, y, z, w, h, pt);
+      const len = Math.hypot(x, y, z) || 1;
+      const dx = cam.x - x;
+      const dy = cam.y - y;
+      const dz = cam.z - z;
+      const dl = Math.hypot(dx, dy, dz) || 1;
+      o.facing = (x * dx + y * dy + z * dz) / (len * dl);
+      o.x = pt.x;
+      o.y = pt.y;
+      o.depth = pt.depth;
+      o.visible = vis && pt.x >= -40 && pt.x <= w + 40 && pt.y >= -40 && pt.y <= h + 40;
+    }
+  }
+
   // ---- projection & info ------------------------------------------------------------------
 
   /** Projects a lat/lon (and radius, default 1) to CSS pixels on the canvas. */
@@ -2398,6 +2536,7 @@ export class GlobeEngine {
       );
     }
     this.emitCamera();
+    this.frameNo++;
 
     const ms = this.sunTimeMs;
     sunVector(ms, u.uSunDir.value);
