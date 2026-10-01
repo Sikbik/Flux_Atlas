@@ -39,7 +39,7 @@ function useFreeArea(): { centre: number; width: number } {
 }
 
 /** Room the strip needs (its lead, three chips and its padding) plus a little air; under it, it steps aside. */
-const STRIP_ROOM = { wide: 610, narrow: 560 };
+const STRIP_ROOM = { wide: 650, narrow: 584 };
 
 const key = (l: PayoutLine) => `${l.tier}:${l.node ?? l.address}`;
 

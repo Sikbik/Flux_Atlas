@@ -74,7 +74,7 @@
   grid-template-columns: 13px minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
-  width: 128px;
+  width: 140px;
   height: 26px;
   padding: 0 10px 0 8px;
   border: 1px solid var(--tier-line);
@@ -183,6 +183,6 @@ a.aimchip:focus-visible {
 
 @media (max-width: 1279px) {
   .aimchip {
-    width: 112px;
+    width: 120px;
   }
 }
