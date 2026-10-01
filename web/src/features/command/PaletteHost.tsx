@@ -3,11 +3,14 @@
 // shows a stand-in panel (with a live input) until the lazy chunk arrives, and decides how closing
 // moves history: if opening pushed an entry that is still the current one, close goes back, so Back
 // and Forward walk the user's real story and a palette round trip leaves no trace.
+//
+// The panel opens and closes with the motion language's Power-on (panel variant): the slot below is the
+// element it scales, fades and runs its light along, and it calls back when the exit has played.
 
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { Search } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { effectiveMotion, useUi } from '../../store/ui';
+import { PowerOn } from '../../motion/react/PowerOn';
 import { registerPaletteCloser, takeOpenVia } from './paletteBridge';
 import { closePalette, paletteTextFromSearch } from './paletteUrl';
 import { drainTypeAhead } from './typeAhead';
@@ -22,8 +25,14 @@ export function preloadPalette(): void {
 
 type Phase = 'closed' | 'open' | 'closing';
 
-/** Matches `--dur-fast` (the panel's exit). */
-const EXIT_MS = 150;
+/**
+ * Where the panel comes from and goes back to: the middle of its own top edge, so the edge the light runs
+ * along stays put while the rest scales. Read when it opens and when it closes.
+ */
+function slotOrigin(): { x: number; y: number } | undefined {
+  const r = document.querySelector('.pal-slot')?.getBoundingClientRect();
+  return r ? { x: r.left + r.width / 2, y: r.top } : undefined;
+}
 
 const historyIndexOf = (state: unknown): number | null => {
   const i = (state as { __TSR_index?: unknown } | null | undefined)?.__TSR_index;
@@ -52,7 +61,11 @@ export function PaletteHost() {
       prevIndex.current !== null && histIndex !== null && histIndex === prevIndex.current + 1
         ? histIndex
         : null;
-    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // Reopened while the last close was still playing: focus is inside the palette, keep what it came from.
+    const from = document.activeElement;
+    if (!(from instanceof HTMLElement && from.closest('.pal-layer'))) {
+      returnFocus.current = from instanceof HTMLElement ? from : null;
+    }
     via.current = takeOpenVia();
     seed.current = '';
   }
@@ -64,14 +77,17 @@ export function PaletteHost() {
 
   const close = useCallback(() => {
     closePalette(router, pushedAt.current);
-    const el = returnFocus.current;
-    // Give focus back to what had it, unless something else took it in the meantime.
-    window.setTimeout(() => {
-      const a = document.activeElement;
-      if (el?.isConnected && (!a || a === document.body || (a as HTMLElement).closest?.('.pal-layer')))
-        el.focus({ preventScroll: true });
-    }, EXIT_MS + 40);
   }, [router]);
+
+  // The exit has played (at once when motion is off): unmount, and give focus back to what had it, unless
+  // something else took it in the meantime.
+  const exited = useCallback(() => {
+    setPhase('closed');
+    const el = returnFocus.current;
+    const a = document.activeElement;
+    if (el?.isConnected && (!a || a === document.body || (a as HTMLElement).closest?.('.pal-layer')))
+      el.focus({ preventScroll: true });
+  }, []);
 
   useEffect(() => {
     registerPaletteCloser(close);
@@ -82,59 +98,60 @@ export function PaletteHost() {
     if (!open && phase === 'open') setPhase('closing');
   }, [open, phase]);
 
-  useEffect(() => {
-    if (phase !== 'closing') return;
-    const animated = effectiveMotion(useUi.getState().motion) === 'full';
-    const t = window.setTimeout(() => setPhase('closed'), animated ? EXIT_MS : 0);
-    return () => window.clearTimeout(t);
-  }, [phase]);
-
   if (phase === 'closed') return null;
   return (
     <div className="pal-layer" data-phase={phase}>
       <div className="pal-scrim" onPointerDown={close} aria-hidden="true" />
-      <Suspense
-        fallback={
-          <div className="pal-stand" role="dialog" aria-modal="true" aria-label="Search and commands">
-            <div className="pal-stand-in">
-              <Search size={20} strokeWidth={1.9} aria-hidden="true" />
-              <input
-                // biome-ignore lint/a11y/noAutofocus: the palette exists to be typed into
-                autoFocus
-                type="text"
-                aria-label="Search or run a command"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                placeholder="Search nodes, apps, blocks, addresses, or type a command"
-                defaultValue={urlText ?? ''}
-                ref={(el) => {
-                  // Keys typed between the shortcut and this field are its first characters.
-                  if (!el) return;
-                  const early = drainTypeAhead();
-                  if (early) {
-                    el.value += early;
-                    seed.current = el.value;
-                  }
-                }}
-                onChange={(e) => {
-                  seed.current = e.target.value;
-                }}
-              />
-            </div>
-            <div className="pal-stand-body" />
-          </div>
-        }
+      <PowerOn
+        open={phase === 'open'}
+        variant="panel"
+        origin={slotOrigin}
+        onExited={exited}
+        className="pal-slot"
       >
-        <LazyPalette
-          phase={phase === 'closing' ? 'closing' : 'open'}
-          urlText={urlText}
-          seed={() => seed.current || lastText.current}
-          close={close}
-          via={via.current}
-        />
-      </Suspense>
+        <Suspense
+          fallback={
+            <div className="pal-stand" role="dialog" aria-modal="true" aria-label="Search and commands">
+              <div className="pal-stand-in">
+                <Search size={20} strokeWidth={1.9} aria-hidden="true" />
+                <input
+                  // biome-ignore lint/a11y/noAutofocus: the palette exists to be typed into
+                  autoFocus
+                  type="text"
+                  aria-label="Search or run a command"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  placeholder="Search nodes, apps, blocks, addresses, or type a command"
+                  defaultValue={urlText ?? ''}
+                  ref={(el) => {
+                    // Keys typed between the shortcut and this field are its first characters.
+                    if (!el) return;
+                    const early = drainTypeAhead();
+                    if (early) {
+                      el.value += early;
+                      seed.current = el.value;
+                    }
+                  }}
+                  onChange={(e) => {
+                    seed.current = e.target.value;
+                  }}
+                />
+              </div>
+              <div className="pal-stand-body" />
+            </div>
+          }
+        >
+          <LazyPalette
+            phase={phase === 'closing' ? 'closing' : 'open'}
+            urlText={urlText}
+            seed={() => seed.current || lastText.current}
+            close={close}
+            via={via.current}
+          />
+        </Suspense>
+      </PowerOn>
     </div>
   );
 }

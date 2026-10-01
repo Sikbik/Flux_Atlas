@@ -1,8 +1,11 @@
 // The kind chips under the palette's field. On a narrow card (a phone) the strip scrolls sideways, fades
 // toward the chips that are out of sight, and keeps the chosen chip in view when Tab walks through them.
 // The chips never take the keyboard from the input: they are `tabIndex -1` and a click hands focus back.
+// The chosen chip carries `data-selected`, which the motion language's TabIndicator follows: one line under
+// it that stretches to each new kind (the chips draw no selection mark of their own).
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { TabIndicator } from '../../../motion/react/TabIndicator';
 import { useAnimate } from '../../../ui';
 import { KIND_CHIPS, type KindChip } from './types';
 
@@ -72,7 +75,7 @@ export function KindStrip({ chip, counts, showCounts, onPick }: KindStripProps) 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `chip` is the trigger; the node is read from the DOM
   useEffect(() => {
     const strip = ref.current;
-    const on = strip?.querySelector<HTMLElement>('[data-on]');
+    const on = strip?.querySelector<HTMLElement>('[data-selected]');
     if (!strip || !on) return;
     const at = strip.getBoundingClientRect().left;
     const left = revealLeft(
@@ -96,7 +99,7 @@ export function KindStrip({ chip, counts, showCounts, onPick }: KindStripProps) 
             aria-checked={chip === k.id}
             tabIndex={-1}
             className="pal-kind"
-            data-on={chip === k.id ? '' : undefined}
+            data-selected={chip === k.id ? 'true' : undefined}
             onClick={() => onPick(k.id)}
           >
             {k.label}
@@ -104,6 +107,7 @@ export function KindStrip({ chip, counts, showCounts, onPick }: KindStripProps) 
           </button>
         );
       })}
+      <TabIndicator />
     </div>
   );
 }

@@ -3,19 +3,15 @@
 
 .pal-layer {
   --pal-list-max: min(432px, calc(100dvh - var(--pal-top) - 176px));
-  --pal-travel: -12px;
 }
 
+/* The panel sits in the layer's slot (layer.css), which carries its place and its Power-on entrance and
+   exit: the panel itself does not move. */
 .pal-panel {
-  position: absolute;
-  left: 50%;
-  top: var(--pal-top);
-  translate: -50% 0;
-  width: var(--pal-w);
-  border-radius: 20px;
+  position: relative;
+  border-radius: var(--pal-r);
   overflow: hidden;
   isolation: isolate;
-  transform-origin: 50% 0;
   color: var(--text-2);
   background:
     radial-gradient(130% 120px at 50% -34px, rgb(79 122 212 / 0.22), transparent 72%),
@@ -23,27 +19,6 @@
   box-shadow:
     var(--shadow-pop),
     0 40px 100px -30px rgb(0 0 0 / 0.9);
-  animation: pal-in var(--dur-slow) var(--ease-out-expo) both;
-}
-
-.pal-panel[data-phase="closing"] {
-  animation: pal-out var(--dur-fast) var(--ease-in) both;
-  pointer-events: none;
-}
-
-@keyframes pal-in {
-  from {
-    opacity: 0;
-    transform: translateY(calc(var(--pal-travel) * var(--motion-scale)))
-      scale(calc(1 - 0.018 * var(--motion-scale)));
-  }
-}
-
-@keyframes pal-out {
-  to {
-    opacity: 0;
-    transform: translateY(calc(-6px * var(--motion-scale))) scale(calc(1 - 0.01 * var(--motion-scale)));
-  }
 }
 
 /* The hot rim: a hairline gradient border. */
@@ -204,8 +179,7 @@
   }
 }
 
-:root[data-motion="reduced"] .pal-sweep::before,
-:root[data-motion-off] .pal-sweep::before {
+:root:is([data-motion="reduced"], [data-motion="off"]) .pal-sweep::before {
   animation: none;
   width: 100%;
   opacity: 0.5;
@@ -213,10 +187,13 @@
 
 /* ---- Kind chips and the prefix usage line ------------------------------------------------------ */
 
+/* Underline tabs, like the kit's: the chosen kind is the one the motion language's TabIndicator lines
+   (the strip is its host, so it is positioned and the line sits on its bottom edge). */
 .pal-kinds {
+  position: relative;
   display: flex;
-  gap: 6px;
-  padding: 10px 14px 4px;
+  gap: 2px;
+  padding: 8px 12px 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -261,28 +238,34 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
+  height: 30px;
   padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: var(--r-pill);
+  border: 0;
+  border-radius: var(--r-sm);
   background: none;
   color: var(--text-3);
-  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-display);
+  font: var(--fw-semibold) 12.5px / 1 var(--font-display);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition:
     color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
+    background var(--dur-fast) var(--ease-out);
 }
 
-.pal-kind:hover {
+/* Hover is light, not a box (the kit's tabs do the same): a faint ellipse rising from the baseline. */
+@media (hover: hover) {
+  .pal-kind:hover {
+    color: var(--text-1);
+    background: radial-gradient(
+      70% 100% at 50% 100%,
+      color-mix(in oklab, var(--text-1) 9%, transparent),
+      transparent 78%
+    );
+  }
+}
+
+.pal-kind[data-selected] {
   color: var(--text-1);
-}
-
-.pal-kind[data-on] {
-  background: var(--accent-soft);
-  border-color: rgb(79 122 212 / 0.35);
-  color: var(--accent-200);
 }
 
 .pal-kind:focus-visible {
@@ -295,6 +278,11 @@
   font-style: normal;
   font-variant-numeric: tabular-nums;
   opacity: 0.8;
+}
+
+.pal-kind[data-selected] i {
+  color: var(--accent-200);
+  opacity: 1;
 }
 
 .pal-usage {
@@ -446,10 +434,6 @@
 /* ---- Narrow and touch -------------------------------------------------------------------------- */
 
 @media (max-width: 719px) {
-  .pal-panel {
-    border-radius: 18px;
-  }
-
   .pal-input,
   .pal-ghost {
     font-size: 16px;
@@ -466,17 +450,13 @@
   }
 
   .pal-kind {
-    height: 32px;
+    height: 36px;
   }
 }
 
 /* Motion off: nothing travels, nothing loops. */
-:root[data-motion-off] .pal-panel {
-  animation: none;
-}
-
-:root[data-motion-off] .pal-hl,
-:root[data-motion-off] .pal-list {
+:root[data-motion="off"] .pal-hl,
+:root[data-motion="off"] .pal-list {
   transition: none;
 }
 

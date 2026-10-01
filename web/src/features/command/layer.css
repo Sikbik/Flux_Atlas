@@ -6,9 +6,18 @@
 .pal-layer {
   --pal-w: min(660px, calc(100vw - 32px));
   --pal-top: 13vh;
+  --pal-r: 20px;
+  /* The panel's exit is the motion language's Power-on exit; the scrim fades out with it. */
+  --pal-exit: var(--fx-dur-power-off, 180ms);
   position: fixed;
   inset: 0;
   z-index: var(--z-palette);
+}
+
+/* Closing: the panel is on its way out, so the layer no longer takes pointer events (a second click on the
+   scrim would close twice, and whatever is underneath is the user's again at once). */
+.pal-layer[data-phase="closing"] {
+  pointer-events: none;
 }
 
 .pal-scrim {
@@ -21,7 +30,7 @@
 }
 
 .pal-layer[data-phase="closing"] .pal-scrim {
-  animation: pal-scrim-out var(--dur-fast) var(--ease-in) both;
+  animation: pal-scrim-out var(--pal-exit) var(--ease-in) both;
 }
 
 @keyframes pal-scrim-in {
@@ -41,15 +50,22 @@
   --pal-scrim-blur: 0px;
 }
 
-/* The stand-in has the final panel's geometry and a live input, so keystrokes typed before the chunk
+/* The slot holds the panel's place and size, and it is what the motion language's Power-on (panel variant)
+   scales, fades and runs its light along: one entrance for the stand-in and the real panel alike. The
+   radius only tells that light where the corners are; nothing here clips. */
+.pal-slot {
+  position: absolute;
+  top: var(--pal-top);
+  left: calc((100% - var(--pal-w)) / 2);
+  width: var(--pal-w);
+  border-radius: var(--pal-r);
+}
+
+/* The stand-in has the final panel's size and a live input, so keystrokes typed before the chunk
    arrives are kept and the real panel replaces it without moving. */
 .pal-stand {
-  position: absolute;
-  left: 50%;
-  top: var(--pal-top);
-  translate: -50% 0;
-  width: var(--pal-w);
-  border-radius: 20px;
+  position: relative;
+  border-radius: var(--pal-r);
   overflow: hidden;
   background:
     radial-gradient(130% 120px at 50% -34px, rgb(79 122 212 / 0.22), transparent 72%),
@@ -57,7 +73,6 @@
   box-shadow:
     var(--shadow-pop),
     0 40px 100px -30px rgb(0 0 0 / 0.9);
-  animation: pal-stand-in var(--dur-slow) var(--ease-out-expo) both;
 }
 
 .pal-stand::before {
@@ -75,13 +90,6 @@
   mask:
     linear-gradient(#000 0 0) content-box exclude,
     linear-gradient(#000 0 0);
-}
-
-@keyframes pal-stand-in {
-  from {
-    opacity: 0;
-    transform: translateY(calc(-12px * var(--motion-scale))) scale(calc(1 - 0.018 * var(--motion-scale)));
-  }
 }
 
 .pal-stand-in {
@@ -115,6 +123,10 @@
 }
 
 @media (max-width: 719px) {
+  .pal-layer {
+    --pal-r: 18px;
+  }
+
   .pal-stand-in input {
     font-size: 16px;
   }
@@ -144,8 +156,8 @@ html[data-layer-labels="off"] .globe-places {
   visibility: hidden;
 }
 
-/* Motion off (Settings): no animation or transition anywhere in the command surfaces. */
-:root[data-motion-off] .pal-scrim,
-:root[data-motion-off] .pal-stand {
+/* Motion off (Settings): the scrim just appears. The panel's own entrance belongs to Power-on, which is
+   instant in this mode. */
+:root[data-motion="off"] .pal-scrim {
   animation: none;
 }
