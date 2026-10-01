@@ -1,6 +1,6 @@
 // Art direction "neon": wireframe. A near-black body with a hatched land fill, a 15 degree
-// graticule, glowing coastlines and borders drawn as screen-space ribbons, and the terminator as a
-// bright seam. The night side lights up brighter than the day side, as a vector display would.
+// graticule, glowing coastlines and borders drawn as screen-space ribbons, and the terminator as a soft
+// band of twilight in Flux blue. The night side lights up brighter than the day side, as a vector display would.
 
 import * as THREE from 'three';
 import type { AssetStore } from '../assetstore';
@@ -78,10 +78,10 @@ void main() {
   float g = gridAA(lat, 15.0) + gridAA(lon, 15.0) * poleFade;
   col += uGrat * g * (0.35 + 0.35 * night) * (1.0 - 0.6 * L);
   col += uGrat * gridAA(lat, 90.0) * 0.5 * (1.0 - 0.6 * L);
-  // Terminator seam
-  float seam = exp(-pow(mu / 0.012, 2.0)) * uTerminator;
-  col += uTermCol * seam * 1.2;
-  col += uTermCol * exp(-pow(mu / 0.06, 2.0)) * 0.06 * uTerminator;
+  // Twilight: the terminator reads as light falling away, never as a drawn line. A soft band a little
+  // into the night side (where the vector display's lines brighten) and a faint, wide falloff.
+  float dusk = exp(-pow((mu + 0.035) / 0.085, 2.0));
+  col += uTermCol * (dusk * 0.13 + exp(-pow(mu / 0.25, 2.0)) * 0.035) * uTerminator * (1.0 - 0.6 * L);
   col += uGrat * fres * 0.9;
   col *= mix(1.0, 0.72, night * 0.0);
   col += waveGlow(n) * 0.8;
