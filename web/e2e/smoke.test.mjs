@@ -734,6 +734,74 @@ test('Skip to content is the first tab stop, hidden until focused, and lands in 
   assert.deepEqual(pageErrors, []);
 });
 
+test('watched-node alerts start from the shell once the boot is over and look up what is watched; the Operator launcher opens the watchlist', {
+  timeout: 150_000,
+}, async () => {
+  const CHUNK = /\/assets\/WatchAlerts-[\w-]+\.js$/;
+  const LOOKUP = /\/api\/v1\/nodes\/(\d+)$/;
+  const until = async (done, ms) => {
+    for (let t = 0; t < ms && !done(); t += 100) await new Promise((r) => setTimeout(r, 100));
+    return done();
+  };
+  // A page on `/` that records the boot's state at the moment the alerts' chunk is asked for, and every node
+  // lookup (the alert engine asks the server for each watched node's last check-in).
+  const visit = async (watched) => {
+    const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    await context.addInitScript((ids) => {
+      if (ids.length) localStorage.setItem('atlas.ui.v1', JSON.stringify({ watched: ids }));
+    }, watched);
+    const page = await context.newPage();
+    page.on('pageerror', (e) => pageErrors.push(`watch alerts: ${e.message}`));
+    const asked = [];
+    const lookups = [];
+    await page.route(
+      (url) => CHUNK.test(url.pathname),
+      async (route) => {
+        asked.push(await page.evaluate(() => document.querySelector('.shell')?.dataset.boot ?? null));
+        await route.continue();
+      },
+    );
+    page.on('request', (r) => {
+      const m = LOOKUP.exec(new URL(r.url()).pathname);
+      if (m) lookups.push(Number(m[1]));
+    });
+    await page.goto(`${base}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+      timeout: 60_000,
+    });
+    return { context, page, asked, lookups };
+  };
+
+  // Nothing watched: the chunk comes once the boot is over (never during it) and has nothing to look up.
+  const none = await visit([]);
+  assert.equal(await until(() => none.asked.length > 0, 20_000), true, 'the alerts chunk was fetched');
+  await none.page.waitForTimeout(2000);
+  assert.deepEqual(none.asked, ['done'], 'the chunk is asked for once, after the boot');
+  assert.deepEqual(none.lookups, [], 'nothing is watched, so nothing is looked up');
+  const id = await none.page.evaluate(
+    async () => (await (await fetch('/api/v1/nodes?limit=1')).json()).items[0].id,
+  );
+  assert.equal(Number.isInteger(id), true, 'the demo network has a node to watch');
+  await none.context.close();
+
+  // One node watched: the engine looks it up, once the boot is over.
+  const watching = await visit([id]);
+  assert.equal(
+    await until(() => watching.lookups.includes(id), 20_000),
+    true,
+    'the engine looked the node up',
+  );
+  assert.deepEqual(watching.asked, ['done'], 'the chunk is asked for once, after the boot');
+
+  // The dock's Operator launcher opens the watchlist.
+  await watching.page.click('.dk[data-launcher="operator"]');
+  await watching.page.waitForFunction(() => location.pathname === '/operator/watchlist', null, {
+    timeout: 10_000,
+  });
+  await watching.context.close();
+  assert.deepEqual(pageErrors, []);
+});
+
 test("the moon parks in the phone header's Beat ring while a tall sheet covers its orbit", {
   timeout: 120_000,
 }, async () => {
