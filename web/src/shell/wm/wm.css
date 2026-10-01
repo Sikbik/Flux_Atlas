@@ -1,0 +1,247 @@
+/* Minimal window chrome for the window-manager core. Token-driven only; the shell team owns the
+   visual pass (aperture, rim sweep, glass) and restyles these classes. Geometry (left, top, width,
+   height, z-index) is set inline from the window manager's state. */
+
+.wm-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-window);
+}
+
+.wm-window {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: auto;
+  background: var(--slab-bg-solid);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-window);
+  color: var(--text-1);
+  overflow: hidden;
+}
+
+.wm-window[data-focused] {
+  border-color: var(--line-blue);
+  box-shadow: var(--shadow-window-active);
+}
+
+.wm-window[data-placement="docked"],
+.wm-window[data-mode="maximized"] {
+  border-radius: var(--r-lg);
+}
+
+.wm-window[data-placement="sheet"] {
+  border-radius: var(--r-2xl) var(--r-2xl) 0 0;
+  border-bottom: 0;
+}
+
+.wm-titlebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--window-titlebar-h);
+  padding-inline: var(--space-5) var(--space-3);
+  border-bottom: 1px solid var(--line-1);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.wm-window[data-dragging] .wm-titlebar {
+  cursor: grabbing;
+}
+
+.wm-window[data-placement="sheet"] .wm-titlebar {
+  cursor: default;
+}
+
+.wm-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wm-controls {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.wm-btn {
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+  padding: 0;
+  font: inherit;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+
+.wm-btn:hover {
+  color: var(--text-1);
+  background: var(--ink-3);
+}
+
+.wm-btn:focus-visible,
+.wm-grabber:focus-visible,
+.wm-dot:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.wm-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* Resize handles: edges 6 px, corners 12 px, inside the frame. */
+.wm-resize {
+  position: absolute;
+  touch-action: none;
+}
+
+.wm-resize[data-edge="n"],
+.wm-resize[data-edge="s"] {
+  left: 12px;
+  right: 12px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.wm-resize[data-edge="e"],
+.wm-resize[data-edge="w"] {
+  top: 12px;
+  bottom: 12px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.wm-resize[data-edge="n"] {
+  top: 0;
+}
+.wm-resize[data-edge="s"] {
+  bottom: 0;
+}
+.wm-resize[data-edge="e"] {
+  right: 0;
+}
+.wm-resize[data-edge="w"] {
+  left: 0;
+}
+
+.wm-resize[data-edge="ne"],
+.wm-resize[data-edge="nw"],
+.wm-resize[data-edge="se"],
+.wm-resize[data-edge="sw"] {
+  width: 12px;
+  height: 12px;
+}
+
+.wm-resize[data-edge="ne"] {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.wm-resize[data-edge="sw"] {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.wm-resize[data-edge="nw"] {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.wm-resize[data-edge="se"] {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.wm-window[data-placement="docked"] .wm-resize[data-edge="w"] {
+  top: 0;
+  bottom: 0;
+}
+
+/* Drop zone while a window is dragged near an edge (design 6.4 B). */
+.wm-drop-zone {
+  position: fixed;
+  pointer-events: none;
+  z-index: var(--z-window-max);
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent-400);
+  border-radius: var(--r-lg);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/* Phone sheet grabber. */
+.wm-grabber {
+  flex: none;
+  align-self: center;
+  width: var(--touch-min);
+  height: var(--space-6);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  position: relative;
+}
+
+.wm-grabber::before {
+  content: "";
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: var(--r-pill);
+  background: var(--line-3);
+}
+
+/* Minimized windows, placed by the dock. */
+.wm-dots {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.wm-dot {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-3);
+  background: var(--ink-4);
+  cursor: pointer;
+}
+
+.wm-dot:hover {
+  background: var(--accent-400);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wm-drop-zone {
+    transition: none;
+  }
+}
