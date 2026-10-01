@@ -1,0 +1,195 @@
+/* TimeSeries frame, skeleton and empty state. These styles ship with the kit's main CSS because the
+   loading, empty and error states render without loading the chart chunk; the chart's own styles
+   (uPlot overrides, legend, tooltip, data table) live in TimeSeriesImpl.css and load with it.
+
+   Consumer-settable custom property
+     --ui-ts-surface  the colour of the card behind the chart: the ring around dots and the veil
+                      that fades out when the chart first draws; default var(--ink-1)
+   Set by the component on its root
+     --ui-ts-h        the plot height in px (the `height` prop) */
+
+.ui-ts {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-ts__stage {
+  position: relative;
+  height: var(--ui-ts-h, 220px);
+}
+
+.ui-ts__plot {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-md);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.ui-ts__plot:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Refetch keeps the frame: the last render dims, nothing jumps (design 6, interaction rules). */
+.ui-ts[data-refreshing] .ui-ts__plot {
+  opacity: 0.55;
+}
+
+.ui-ts__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 32px;
+}
+
+/* ---- Skeleton: the loaded chart's geometry (44 px y axis, 28 px x axis, 10 px headroom) ---- */
+
+.ui-ts__skel {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.ui-ts__skel-plot {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 28px;
+  height: var(--ui-ts-h, 220px);
+}
+
+.ui-ts__skel-y {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 6px var(--space-4) 0 0;
+}
+
+.ui-ts__skel-y .ui-skeleton {
+  width: 26px;
+  opacity: 0.7;
+}
+
+.ui-ts__skel-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  margin: 10px 14px 0 0;
+}
+
+.ui-ts__skel-line {
+  display: block;
+  height: 1px;
+  background: var(--viz-grid);
+}
+
+/* A faint area silhouette, so the loading state already reads as a chart. */
+.ui-ts__skel-wave {
+  position: absolute;
+  inset: 18% 0 0;
+  width: auto;
+  height: auto;
+  opacity: 0.5;
+  clip-path: polygon(
+    0 66%,
+    7% 60%,
+    14% 63%,
+    22% 48%,
+    30% 52%,
+    38% 38%,
+    47% 44%,
+    55% 30%,
+    63% 36%,
+    72% 24%,
+    81% 31%,
+    90% 18%,
+    100% 22%,
+    100% 100%,
+    0 100%
+  );
+}
+
+.ui-ts__skel-x {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-right: 14px;
+}
+
+.ui-ts__skel-x .ui-skeleton {
+  width: 30px;
+  opacity: 0.7;
+}
+
+.ui-ts__skel-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.ui-ts__skel-legend .ui-skeleton,
+.ui-ts__foot > .ui-skeleton {
+  width: auto;
+}
+
+/* ---- Empty ("No data for this range", never a zero line): a dashed baseline and one sentence ---- */
+
+.ui-ts__empty {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: var(--ui-ts-h, 220px);
+  border-radius: var(--r-md);
+}
+
+.ui-ts__empty::before {
+  content: "";
+  position: absolute;
+  inset: auto 14px 28px 44px;
+  border-top: 1px dashed var(--text-4);
+  opacity: 0.55;
+}
+
+/* ---- The veil: the skeleton laid over a freshly drawn chart, fading out (loaded chart takes over) ---- */
+
+.ui-ts__veil {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border-radius: var(--r-md);
+  background: var(--ui-ts-surface, var(--ink-1));
+  pointer-events: none;
+  animation: ui-ts-veil var(--dur-slow) var(--ease-out) 60ms forwards;
+}
+
+@keyframes ui-ts-veil {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-ts__veil {
+    display: none;
+  }
+
+  :root:not([data-motion="full"]) .ui-ts__plot {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-ts__veil {
+  display: none;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-ts__plot {
+  transition: none;
+}

@@ -323,7 +323,7 @@ pub fn apply_block(
                 &[("value", t.value_out.to_string())],
                 time_ms,
             );
-            big.push(tx_lite(t.txid, t.value_out, TxKind::Transfer, 0));
+            big.push(tx_lite(t.txid, t.value_out, TxKind::Transfer, t.size));
         }
     }
     for n in &d.node_txs {

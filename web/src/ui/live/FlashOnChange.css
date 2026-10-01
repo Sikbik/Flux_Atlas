@@ -1,0 +1,201 @@
+/* FlashOnChange: a breath of light when a value changes (design 6.4 F, 6.5, 6.6).
+
+   A pseudo layer behind the content blooms to the light colour and decays over --dur-fresh. Only
+   the layer's opacity animates (compositor), and its colour is at most 12% of the light colour, so
+   it reads as light rather than as a box. A change mid-decay swaps between two identical keyframe
+   sets (data-flash a/b) so the animation restarts instead of stacking, and the element is never
+   remounted. The motion mode arrives on `data-mode`: reduced holds a steady tint for 1 s; off sets
+   no data-flash at all.
+
+   A table row cannot hold pseudo layers (the browser wraps them in anonymous cells and adds a
+   column), so on a `tr` the light is drawn on its cells instead: a flat wash on each, and the bar
+   on the first.
+
+   Local custom properties:
+     --ui-flash        the light colour (set from data-tone; override on the element for a custom hue)
+     --ui-flash-anim   the keyframes in use (internal: a, b, or the reduced-motion hold)
+     --ui-flash-dur    the duration of those keyframes (internal)
+
+   The layer sits behind the element's children: do not give children an opaque background. */
+
+.ui-flash {
+  --ui-flash: var(--accent-500);
+  position: relative;
+  isolation: isolate;
+}
+
+.ui-flash[data-inline] {
+  display: inline-block;
+}
+
+.ui-flash[data-tone="white"] {
+  --ui-flash: var(--hot);
+}
+
+.ui-flash[data-tone="up"] {
+  --ui-flash: var(--div-pos);
+}
+
+.ui-flash[data-tone="down"] {
+  --ui-flash: var(--div-neg);
+}
+
+/* ---- Layers: wash (::before) and bar (::after) ----------------------------------------------- */
+
+.ui-flash::before,
+.ui-flash::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Wash: a soft bloom, brightest in the middle of the box and feathered to nothing at its edges. */
+.ui-flash::before {
+  inset: 0;
+  border-radius: var(--r-md);
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in oklab, var(--ui-flash) 12%, transparent) 0%,
+    color-mix(in oklab, var(--ui-flash) 12%, transparent) 45%,
+    transparent 100%
+  );
+}
+
+/* Inline text and numbers get a little room around them so the bloom is not clipped to the glyphs. */
+.ui-flash[data-inline]::before {
+  inset: -4px -10px;
+}
+
+/* Bar: a list row. A 2 px bar at the left edge with a faint glow, and a wash that fades to the right. */
+.ui-flash[data-variant="bar"]::before {
+  inset: 0;
+  border-radius: 0;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--ui-flash) 12%, transparent), transparent 70%);
+}
+
+.ui-flash[data-variant="bar"]::after {
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--r-xs);
+  background: var(--ui-flash);
+  box-shadow: 0 0 10px color-mix(in oklab, var(--ui-flash) 55%, transparent);
+}
+
+/* ---- Table rows: the same layers, drawn on the cells ------------------------------------------ */
+
+tr.ui-flash::before,
+tr.ui-flash::after {
+  content: none;
+}
+
+tr.ui-flash > :is(td, th) {
+  position: relative;
+  isolation: isolate;
+}
+
+tr.ui-flash > :is(td, th)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in oklab, var(--ui-flash) 12%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+tr.ui-flash[data-variant="bar"] > :first-child::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--r-xs);
+  background: var(--ui-flash);
+  box-shadow: 0 0 10px color-mix(in oklab, var(--ui-flash) 55%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- Motion ----------------------------------------------------------------------------------- */
+
+/* Full motion: a quick bloom (the first 8%, 128 ms), then the decay. */
+.ui-flash[data-flash="a"] {
+  --ui-flash-anim: ui-flash-a;
+  --ui-flash-dur: var(--dur-fresh);
+}
+
+.ui-flash[data-flash="b"] {
+  --ui-flash-anim: ui-flash-b;
+  --ui-flash-dur: var(--dur-fresh);
+}
+
+/* Reduced motion: no decay. The tint holds steady for 1000 ms and is gone. */
+.ui-flash[data-mode="reduced"][data-flash="a"] {
+  --ui-flash-anim: ui-flash-hold-a;
+  --ui-flash-dur: 1000ms;
+}
+
+.ui-flash[data-mode="reduced"][data-flash="b"] {
+  --ui-flash-anim: ui-flash-hold-b;
+  --ui-flash-dur: 1000ms;
+}
+
+.ui-flash[data-flash]::before,
+.ui-flash[data-flash]::after,
+tr.ui-flash[data-flash] > :is(td, th)::before,
+tr.ui-flash[data-flash] > :first-child::after {
+  animation: var(--ui-flash-anim) var(--ui-flash-dur) linear both;
+}
+
+@keyframes ui-flash-a {
+  0% {
+    opacity: 0;
+    animation-timing-function: var(--ease-out);
+  }
+  8% {
+    opacity: 1;
+    animation-timing-function: var(--ease-out);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-flash-b {
+  0% {
+    opacity: 0;
+    animation-timing-function: var(--ease-out);
+  }
+  8% {
+    opacity: 1;
+    animation-timing-function: var(--ease-out);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-flash-hold-a {
+  0%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-flash-hold-b {
+  0%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

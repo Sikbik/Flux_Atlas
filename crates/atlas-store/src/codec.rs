@@ -17,7 +17,7 @@ use atlas_core::event::EventEnvelope;
 use atlas_core::node::{Geo, NodeRecord};
 
 use crate::error::{Result, StoreError};
-use crate::records::{MeshChangeRecord, MeshEdgeRecord, MetricsRow};
+use crate::records::{MeshChangeRecord, MeshEdgeRecord, MetricsRow, MetricsRowV1};
 
 /// zstd level used for snapshot blobs.
 const BLOB_ZSTD_LEVEL: i32 = 3;
@@ -55,7 +55,7 @@ stored! {
     PendingAppMessage => 1, "PendingAppMessage";
     MeshEdgeRecord => 1, "MeshEdgeRecord";
     MeshChangeRecord => 1, "MeshChangeRecord";
-    MetricsRow => 1, "MetricsRow";
+    MetricsRow => 2, "MetricsRow";
     (Geo, u64) => 1, "GeoCacheEntry";
 }
 
@@ -78,6 +78,20 @@ pub(crate) fn decode<T: Stored>(bytes: &[u8]) -> Result<T> {
     })
 }
 
+/// Decodes a metrics row: schema version 2, or version 1 upgraded on read (see
+/// [`MetricsRowV1::upgrade`]). No table rewrite is needed; the rollup rewrites hours as v2.
+pub(crate) fn decode_metrics(bytes: &[u8]) -> Result<MetricsRow> {
+    if bytes.first() == Some(&1) {
+        let body = check_version(bytes, 1, MetricsRow::NAME)?;
+        let v1: MetricsRowV1 = postcard::from_bytes(body).map_err(|source| StoreError::Decode {
+            what: MetricsRow::NAME,
+            source,
+        })?;
+        return Ok(v1.upgrade());
+    }
+    decode(bytes)
+}
+
 /// Encodes a large value as `[version] ++ zstd(postcard(value))`.
 pub(crate) fn encode_blob<T: Serialize>(value: &T, version: u8) -> Result<Vec<u8>> {
     let raw = postcard::to_allocvec(value).map_err(|source| StoreError::Encode {
@@ -89,6 +103,14 @@ pub(crate) fn encode_blob<T: Serialize>(value: &T, version: u8) -> Result<Vec<u8
     out.push(version);
     out.extend_from_slice(&packed);
     Ok(out)
+}
+
+/// Decompresses a blob written by [`encode_blob`] (any version) into its postcard bytes.
+pub(crate) fn unpack_blob(bytes: &[u8]) -> Result<Vec<u8>> {
+    let (_, body) = bytes
+        .split_first()
+        .ok_or(StoreError::Truncated { what: "blob" })?;
+    zstd::stream::decode_all(body).map_err(StoreError::Compression)
 }
 
 /// Decodes a blob written by [`encode_blob`], checking the version byte.
@@ -122,8 +144,8 @@ mod tests {
     fn value_roundtrip_and_version_byte() {
         let row = MetricsRow {
             ts_ms: 60_000,
-            node_count: 7,
-            supply: Amount::from_flux(5),
+            node_count: Some(7),
+            supply: Some(Amount::from_flux(5)),
             ..MetricsRow::default()
         };
         let bytes = encode(&row).unwrap();
@@ -142,7 +164,7 @@ mod tests {
                 found,
             }) => {
                 assert_eq!(what, "MetricsRow");
-                assert_eq!(expected, 1);
+                assert_eq!(expected, 2);
                 assert_eq!(found, 99);
             }
             other => panic!("unexpected {other:?}"),
@@ -151,6 +173,25 @@ mod tests {
             decode::<MetricsRow>(&[]),
             Err(StoreError::Truncated { .. })
         ));
+    }
+
+    #[test]
+    fn metrics_v1_rows_decode_with_unknowns() {
+        let v1 = MetricsRowV1 {
+            ts_ms: 60_000,
+            node_count: 7,
+            tier_counts: [3, 2, 2],
+            ..MetricsRowV1::default()
+        };
+        let mut bytes = vec![1u8];
+        bytes.extend(postcard::to_allocvec(&v1).unwrap());
+        let row = decode_metrics(&bytes).unwrap();
+        assert_eq!(row.node_count, Some(7));
+        assert_eq!(row.tip_height, None);
+        assert_eq!(row.price_usd, None);
+        let v2 = encode(&row).unwrap();
+        assert_eq!(v2[0], 2);
+        assert_eq!(decode_metrics(&v2).unwrap(), row);
     }
 
     #[test]

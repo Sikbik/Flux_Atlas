@@ -1,0 +1,31 @@
+/* Gallery-only layout for the live atoms section (dev tooling: nothing here ships in a product view). */
+
+.kg-live-subhead {
+  margin: var(--space-10) 0 var(--space-5);
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-md) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.kg-live-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-7);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-lg);
+  background: color-mix(in oklab, var(--ink-1) 70%, transparent);
+}
+
+.kg-live-preview__label {
+  margin-right: var(--space-3);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.kg-live-preview__label b {
+  color: var(--text-2);
+  font-weight: var(--fw-medium);
+}

@@ -232,6 +232,33 @@ fn rank_contract_rotation_and_corrections() {
     assert_eq!(st.nodes.rec(ids[0]).unwrap().tier, r.tier);
     // The model is exact again afterwards.
     assert!(rank_corrections(&mut st, &[]).is_empty());
+
+    // A node the queue drops while it stays confirmed (no status exit to tell clients): the
+    // correction carries the explicit unranked signal, `rank: null`.
+    let q = st.queue.tier(Tier::Nimbus).unwrap();
+    let ids: Vec<NodeId> = q.iter().take(2).collect();
+    st.queue.remove(ids[0]);
+    let fixes = rank_corrections(&mut st, &[]);
+    assert!(fixes.contains(&ids[0]), "dropped node is corrected");
+    assert!(fixes.contains(&ids[1]), "the node behind it moves up");
+    let rec = st.nodes.rec(ids[0]).unwrap();
+    assert_eq!(rec.status, NodeStatus::Confirmed);
+    assert_eq!(rec.rank, None);
+    let change = atlas_engine::state::node_change(rec, mask::RANK, 3_000_000, NOW);
+    assert_eq!(change.rank, Some(None));
+    let json = serde_json::to_value(&change).unwrap();
+    assert!(json["rank"].is_null() && json.as_object().unwrap().contains_key("rank"));
+    assert!(rank_corrections(&mut st, &[]).is_empty());
+
+    // Clients apply `rank: null` outside a reconcile as an exit, like a status exit: the server
+    // model mirrors it, so no correction follows.
+    let q = st.queue.tier(Tier::Cumulus).unwrap();
+    let gone = q.iter().nth(5).unwrap();
+    st.queue.remove(gone);
+    let mut b = atlas_engine::state::NodesDeltaBuilder::default();
+    b.changed.insert(gone, mask::RANK);
+    let fixes = rank_corrections(&mut st, &[(DeltaCause::Block, b)]);
+    assert!(fixes.is_empty(), "unexpected corrections {fixes:?}");
 }
 
 #[test]

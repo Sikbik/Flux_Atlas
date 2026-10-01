@@ -315,7 +315,7 @@ impl Demo {
             payouts.push((*tier, n.id, n.payment_address.to_string(), amount));
             let mut c = NodeChange::new(n.id);
             c.last_paid_height = Some(height);
-            c.rank = n.rank;
+            c.rank = n.rank.map(Some);
             changed.push(c);
         }
         // Everyone else in each queue moved up one slot.
@@ -362,7 +362,7 @@ impl Demo {
             confirms.push(n.id);
             let mut c = NodeChange::new(n.id);
             c.status = Some(NodeStatus::Confirmed);
-            c.rank = n.rank;
+            c.rank = n.rank.map(Some);
             c.last_confirmed_height = Some(height);
             changed.push(c);
             let (id, tier) = (n.id, format!("{:?}", n.tier).to_lowercase());
@@ -397,7 +397,7 @@ impl Demo {
                 txid: hash("transfer", self.tx_counter),
                 value: Amount::from_flux(self.rng.range(10_000, 250_000) as i64),
                 kind: TxKind::Transfer,
-                size: 400,
+                size: Some(400),
             };
             self.feed(
                 FeedKind::LargeTransfer,
@@ -532,7 +532,7 @@ impl Demo {
                 .filter(|n| n.rank.is_some())
                 .map(|n| {
                     let mut c = NodeChange::new(n.id);
-                    c.rank = n.rank;
+                    c.rank = n.rank.map(Some);
                     c
                 })
                 .collect();
@@ -663,7 +663,7 @@ impl Demo {
             txid: hash("mempool", self.tx_counter),
             value,
             kind,
-            size,
+            size: Some(size),
         };
         self.mempool_since_block.push(tx.clone());
         self.emit(Some(now_ms()), LiveBody::Mempool { txs: vec![tx] });

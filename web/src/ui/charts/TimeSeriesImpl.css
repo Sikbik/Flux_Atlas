@@ -1,0 +1,276 @@
+/* The lazy chart: uPlot overrides (imported after uPlot's own CSS), the legend, the glass tooltip and
+   the data table. Everything draws from tokens; uPlot's built-in grey dashed crosshair and its
+   system font are replaced here. */
+
+/* uPlot sets its own font and a min-content width; the plot box owns the size. */
+.ui-ts .uplot {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+
+/* The crosshair: one hairline that fades at both ends (implied light, not a drawn box). */
+.ui-ts .u-hz .u-cursor-x {
+  width: 1px;
+  border-right: 0;
+  background: linear-gradient(to bottom, transparent, var(--line-3) 16%, var(--line-3) 84%, transparent);
+}
+
+/* Hover points: a disc with a 2 px ring in the surface colour (both set by uPlot). */
+.ui-ts .u-cursor-pt {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-ts .u-select {
+  display: none;
+}
+
+/* ---- Tooltip: glass-strong surface, time first, then one row per series, values in Plex Mono ---- */
+
+.ui-ts__tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  min-width: 156px;
+  max-width: min(300px, 86%);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-glass), var(--shadow-inset-hi);
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-ts__tip[data-open] {
+  opacity: 1;
+}
+
+.ui-ts__tip-time {
+  margin-bottom: var(--space-3);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-ts__tip-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 20px;
+}
+
+.ui-ts__tip-key {
+  width: 12px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--ui-ts-c);
+}
+
+.ui-ts__tip-label {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Values lead (strong, high contrast); the series name follows. */
+.ui-ts__tip-value {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ui-ts__tip-value[data-unknown] {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+}
+
+/* ---- Legend: line keys, never boxes; every item is a real button ---- */
+
+.ui-ts__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-ts__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 32px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-ts__legend-item:hover {
+  background: var(--ink-2);
+  color: var(--text-1);
+}
+
+.ui-ts__legend-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ui-ts__legend-key {
+  flex: none;
+  width: 14px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--ui-ts-c);
+}
+
+/* Hidden series: a hollow key and a quieter label (the pressed state is also in aria-pressed). */
+.ui-ts__legend-item[aria-pressed="false"] {
+  color: var(--text-3);
+}
+
+.ui-ts__legend-item[aria-pressed="false"] .ui-ts__legend-key {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ui-ts-c);
+}
+
+/* ---- Data table (design 10.3): the same numbers as text ---- */
+
+.ui-ts__table-wrap {
+  max-height: 260px;
+  overflow: auto;
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--ink-0) 60%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+}
+
+.ui-ts__table-wrap:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ui-ts__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+}
+
+.ui-ts__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-3) var(--space-5);
+  background: var(--ui-ts-surface, var(--ink-1));
+  box-shadow: inset 0 -1px 0 var(--line-1);
+  color: var(--text-3);
+  font: var(--fw-semibold) 11.5px / 1.2 var(--font-display);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ui-ts__table thead th:first-child,
+.ui-ts__table tbody th {
+  text-align: left;
+}
+
+.ui-ts__table tbody th,
+.ui-ts__table td {
+  height: 28px;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--text-1);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-ts__table tbody th {
+  color: var(--text-2);
+}
+
+.ui-ts__table td {
+  text-align: right;
+}
+
+.ui-ts__table td[data-unknown] {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+}
+
+.ui-ts__table tbody tr:hover {
+  background: var(--ink-2);
+}
+
+/* ---- Entrance: the footer fades in with the chart (one crossfade, nothing pops) ---- */
+
+.ui-ts[data-state="ready"] .ui-ts__foot {
+  animation: ui-ts-in var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes ui-ts-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-ts__tip,
+  :root:not([data-motion="full"]) .ui-ts .u-cursor-pt,
+  :root:not([data-motion="full"]) .ui-ts__legend-item,
+  :root:not([data-motion="full"]) .ui-ts__legend-key {
+    transition: none;
+  }
+
+  :root:not([data-motion="full"]) .ui-ts[data-state="ready"] .ui-ts__foot {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-ts__tip,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-ts .u-cursor-pt,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-ts__legend-item,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-ts__legend-key {
+  transition: none;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-ts[data-state="ready"] .ui-ts__foot {
+  animation: none;
+}
+
+/* Touch: a legend toggle is 32 px to look at and 44 px to hit. */
+@media (pointer: coarse) {
+  .ui-ts__legend-item {
+    position: relative;
+  }
+
+  .ui-ts__legend-item::after {
+    content: "";
+    position: absolute;
+    inset: -6px -2px;
+  }
+}

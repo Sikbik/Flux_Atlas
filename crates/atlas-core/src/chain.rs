@@ -133,19 +133,26 @@ pub struct NodeTx {
     pub node: Option<NodeId>,
 }
 
-/// Classification of a mempool transaction pushed by the socket.
+/// Classification of a transaction (block or mempool). Block and mempool transactions use the
+/// same classifier (`atlas_flux::decode::classify_tx`) over the decoded daemon transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum TxKind {
     /// Ordinary value transfer.
     Transfer,
-    /// Fluxnode start or confirm (no inputs/outputs); exact kind known once mined.
+    /// Fluxnode transaction whose start/confirm type the source does not state. Mempool entries
+    /// are fetched and classified as `node_start` / `node_confirm`; the explorer socket's own
+    /// fluxnode pushes are not used (their txids do not resolve anywhere).
     NodeTx,
     NodeStart,
     NodeConfirm,
     Coinbase,
-    /// App registration or update payment (OP_RETURN with a message hash).
+    /// App registration or update payment (OP_RETURN with a message hash, paid to the app
+    /// address). Whether it registers or updates, and which app, is known once the message is
+    /// matched (pending `temporarymessages`) or mined (`permanentmessages`).
     AppMessage,
+    /// Not classified: the transaction could not be fetched (evicted, or unknown to the node
+    /// that answered).
     Unknown,
 }
 

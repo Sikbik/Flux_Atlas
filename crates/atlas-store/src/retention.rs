@@ -233,7 +233,7 @@ fn rollup(txn: &WriteTransaction, end_hour: u64) -> Result<usize> {
             flush(b, &mut rows)?;
         }
         bucket = Some(hour);
-        rows.push(codec::decode(v.value())?);
+        rows.push(codec::decode_metrics(v.value())?);
     }
     if let Some(b) = bucket {
         flush(b, &mut rows)?;

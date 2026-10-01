@@ -3,7 +3,7 @@
 
 mod apps;
 mod backfill;
-mod chain;
+pub(crate) mod chain;
 mod maintenance;
 mod market;
 mod registry;
@@ -72,6 +72,8 @@ pub struct JobCtx {
     pub cfg: Arc<IngestConfig>,
     shutdown: watch::Receiver<bool>,
     pub watch: watch::Receiver<WatchSet>,
+    /// Task label for per-job metrics (set by [`spawn_all`]).
+    pub job: &'static str,
 }
 
 impl JobCtx {
@@ -90,7 +92,15 @@ impl JobCtx {
             cfg,
             shutdown,
             watch,
+            job: "engine",
         }
+    }
+
+    /// A copy labelled `job` for per-job metrics.
+    pub fn for_job(&self, job: &'static str) -> Self {
+        let mut c = self.clone();
+        c.job = job;
+        c
     }
 
     /// Sends an observation; false once the reducer is gone.
@@ -131,8 +141,12 @@ impl JobCtx {
         what: &'static str,
         f: impl Future<Output = atlas_flux::Result<T>>,
     ) -> atlas_flux::Result<T> {
+        let started = std::time::Instant::now();
         let r = f.await;
-        self.handle.inner.stats.call(up, what, r.is_ok());
+        self.handle
+            .inner
+            .stats
+            .call_timed(self.job, up, what, r.is_ok(), started.elapsed());
         r
     }
 
@@ -165,27 +179,27 @@ pub fn spawn_all(ctx: &JobCtx, rx: JobRx, recent: Vec<(u32, BlockHash)>) -> Vec<
         catalog,
     } = rx;
     vec![
-        tokio::spawn(chain::run(ctx.clone(), recent)),
-        tokio::spawn(chain::payees(ctx.clone(), payees)),
-        tokio::spawn(chain::failover_pool(ctx.clone())),
-        tokio::spawn(apps::pending(ctx.clone())),
-        tokio::spawn(apps::installing(ctx.clone())),
-        tokio::spawn(apps::placement(ctx.clone())),
-        tokio::spawn(apps::hot(ctx.clone())),
-        tokio::spawn(apps::catalog(ctx.clone(), catalog)),
-        tokio::spawn(apps::install_errors(ctx.clone())),
-        tokio::spawn(apps::chain_feed(ctx.clone(), chain_feed)),
-        tokio::spawn(registry::reconcile(ctx.clone(), reconcile)),
-        tokio::spawn(registry::counts(ctx.clone())),
-        tokio::spawn(registry::lists(ctx.clone())),
-        tokio::spawn(market::price(ctx.clone())),
-        tokio::spawn(market::supply(ctx.clone())),
-        tokio::spawn(stats_round::run(ctx.clone())),
-        tokio::spawn(stats_round::geo(ctx.clone(), geo)),
-        tokio::spawn(topology::run(ctx.clone())),
-        tokio::spawn(watch_probe::run(ctx.clone())),
-        tokio::spawn(backfill::run(ctx.clone())),
-        tokio::spawn(maintenance::run(ctx.clone())),
+        tokio::spawn(chain::run(ctx.for_job("chain"), recent)),
+        tokio::spawn(chain::payees(ctx.for_job("next_payees"), payees)),
+        tokio::spawn(chain::failover_pool(ctx.for_job("failover_pool"))),
+        tokio::spawn(apps::pending(ctx.for_job("app_pending"))),
+        tokio::spawn(apps::installing(ctx.for_job("app_installing"))),
+        tokio::spawn(apps::placement(ctx.for_job("app_placement"))),
+        tokio::spawn(apps::hot(ctx.for_job("hot_apps"))),
+        tokio::spawn(apps::catalog(ctx.for_job("app_catalog"), catalog)),
+        tokio::spawn(apps::install_errors(ctx.for_job("install_errors"))),
+        tokio::spawn(apps::chain_feed(ctx.for_job("app_chain_feed"), chain_feed)),
+        tokio::spawn(registry::reconcile(ctx.for_job("node_registry"), reconcile)),
+        tokio::spawn(registry::counts(ctx.for_job("node_count"))),
+        tokio::spawn(registry::lists(ctx.for_job("start_dos_lists"))),
+        tokio::spawn(market::price(ctx.for_job("price"))),
+        tokio::spawn(market::supply(ctx.for_job("supply"))),
+        tokio::spawn(stats_round::run(ctx.for_job("stats_round"))),
+        tokio::spawn(stats_round::geo(ctx.for_job("geo_resolve"), geo)),
+        tokio::spawn(topology::run(ctx.for_job("topology_sweep"))),
+        tokio::spawn(watch_probe::run(ctx.for_job("watch_probe"))),
+        tokio::spawn(backfill::run(ctx.for_job("backfill"))),
+        tokio::spawn(maintenance::run(ctx.for_job("maintenance"))),
     ]
 }
 

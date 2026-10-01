@@ -1,0 +1,142 @@
+/* AnimatedNumber: the number ticker (design 6.4 D, 6.5, 8.11).
+
+   Changed digits roll on a vertical strip: the new digit slides in from below while the old one
+   leaves upward (the other way when the value falls), only transform and opacity, --dur-tick on
+   --ease-out-expo. Montserrat is proportional, so digits sit in tabular cells and nothing jitters.
+   A direction tint is a breath of light on the number: it holds for 600 ms and fades. The motion
+   mode arrives on `data-mode` (see useMotionMode): reduced swaps instantly and tints steadily for
+   1 s; off swaps. Size, line height and colour are inherited from the surrounding text.
+
+   Local custom property (set it on a parent to override):
+     --ui-number-weight   font weight of the digits (600 for display, 500 for mono). */
+
+.ui-number {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: var(--ui-number-weight, var(--fw-semibold));
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-number[data-font="mono"] {
+  font-family: var(--font-mono);
+  font-weight: var(--ui-number-weight, var(--fw-medium));
+}
+
+/* The animated layer: keyed by the component so every update restarts its animations. */
+.ui-number__live {
+  display: inline-block;
+}
+
+/* A digit cell: the digit that stays in flow sets the width and the baseline. */
+.ui-number__cell {
+  position: relative;
+  display: inline-block;
+}
+
+.ui-number__in {
+  display: block;
+}
+
+.ui-number__out {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+/* A rolling cell hides whatever is outside its line box: the digit that has not rolled in yet. */
+.ui-number__cell[data-roll] {
+  clip-path: inset(0 -0.15em);
+}
+
+.ui-number__cell[data-roll="up"] > .ui-number__in {
+  animation: ui-number-in-up var(--dur-tick) var(--ease-out-expo) backwards;
+}
+
+.ui-number__cell[data-roll="up"] > .ui-number__out {
+  animation: ui-number-out-up var(--dur-tick) var(--ease-out-expo) forwards;
+}
+
+.ui-number__cell[data-roll="down"] > .ui-number__in {
+  animation: ui-number-in-down var(--dur-tick) var(--ease-out-expo) backwards;
+}
+
+.ui-number__cell[data-roll="down"] > .ui-number__out {
+  animation: ui-number-out-down var(--dur-tick) var(--ease-out-expo) forwards;
+}
+
+/* A separator or unit that appears beside a rolling digit fades in with it. */
+.ui-number__char[data-fresh] {
+  animation: ui-number-fade var(--dur-tick) var(--ease-out-expo) backwards;
+}
+
+@keyframes ui-number-in-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes ui-number-in-down {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes ui-number-out-up {
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes ui-number-out-down {
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes ui-number-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Direction tint: --div-pos when the value rose, --div-neg when it fell. It holds for 600 ms (37.5%
+   of --dur-fresh) and then eases back to the text colour, with a soft bloom of the same hue. */
+.ui-number__live[data-tint="up"] {
+  --ui-tint: var(--div-pos);
+}
+
+.ui-number__live[data-tint="down"] {
+  --ui-tint: var(--div-neg);
+}
+
+.ui-number__live[data-tint] {
+  animation: ui-number-tint var(--dur-fresh) linear;
+}
+
+@keyframes ui-number-tint {
+  0%,
+  37.5% {
+    color: var(--ui-tint);
+    filter: drop-shadow(0 0 0.4em color-mix(in oklab, var(--ui-tint) 60%, transparent));
+    animation-timing-function: var(--ease-out);
+  }
+}
+
+/* Reduced motion: no roll (the component swaps), and the tint holds steady for 1000 ms. */
+.ui-number[data-mode="reduced"] .ui-number__live[data-tint] {
+  animation: ui-number-tint-steady 1000ms linear;
+}
+
+@keyframes ui-number-tint-steady {
+  0%,
+  88% {
+    color: var(--ui-tint);
+  }
+}

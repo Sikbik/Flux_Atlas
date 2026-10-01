@@ -1,0 +1,50 @@
+/* Delta: a small tinted capsule with an arrow and a signed figure in Plex Mono, then the period in
+   words. The diverging pair is blue (up) and coral (down); flat is gray. Direction is carried by the
+   arrow and the sign too, never by colour alone. */
+
+.ui-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ui-delta__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px 3px 5px;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, currentColor 13%, transparent);
+  color: var(--text-3);
+}
+
+.ui-delta[data-dir="up"] .ui-delta__chip {
+  color: color-mix(in oklab, var(--div-pos) 60%, var(--accent-300));
+}
+
+.ui-delta[data-dir="down"] .ui-delta__chip {
+  color: var(--div-neg);
+}
+
+.ui-delta__icon {
+  flex: none;
+}
+
+.ui-delta__period {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+}
+
+.ui-delta .ui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
