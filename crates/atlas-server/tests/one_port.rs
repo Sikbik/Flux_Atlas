@@ -148,7 +148,19 @@ async fn one_port_serves_everything() {
     // Prometheus metrics live on the same port.
     let (status, _, body) = get(addr, "/metrics/prometheus").await;
     assert_eq!(status, 200);
-    assert!(String::from_utf8_lossy(&body).contains("atlas_live_seq"));
+    let metrics = String::from_utf8_lossy(&body);
+    for name in [
+        "atlas_live_seq",
+        "atlas_store_file_bytes",
+        "atlas_store_table_rows{table=\"blocks\"}",
+        "atlas_engine_publishes_total",
+        "atlas_cache_bytes{cache=\"proxy_tx\"}",
+        "atlas_replay_ring_bytes{ring=\"hub\"}",
+    ] {
+        assert!(metrics.contains(name), "missing {name}");
+    }
+    #[cfg(target_os = "linux")]
+    assert!(metrics.contains("atlas_process_resident_bytes"));
 
     // The live WebSocket upgrade on the same port: the first message is `hello`.
     let (mut ws, resp) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))

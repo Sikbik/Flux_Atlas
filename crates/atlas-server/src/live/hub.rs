@@ -66,6 +66,8 @@ pub struct HubStats {
     pub replayed: AtomicU64,
     pub resyncs: AtomicU64,
     pub hub_lagged: AtomicU64,
+    /// Serialized bytes held by the frame ring.
+    pub ring_bytes: AtomicU64,
 }
 
 /// Why a new connection was refused.
@@ -233,12 +235,20 @@ impl Hub {
                 .ring
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if ring.len() >= self.ring_cap {
-                ring.pop_front();
-            }
             // Keep the ring sorted even if a bypass frame repeats a seq.
             if ring.back().is_none_or(|b| b.seq < frame.seq) {
                 ring.push_back(frame.clone());
+                let mut bytes =
+                    self.stats.ring_bytes.load(Ordering::Relaxed) as usize + frame.text.len();
+                while ring.len() > 1
+                    && (ring.len() > self.ring_cap
+                        || bytes > atlas_engine::replay::REPLAY_MAX_BYTES)
+                {
+                    if let Some(old) = ring.pop_front() {
+                        bytes -= old.text.len();
+                    }
+                }
+                self.stats.ring_bytes.store(bytes as u64, Ordering::Relaxed);
             }
         }
         self.stats.frames_published.fetch_add(1, Ordering::Relaxed);

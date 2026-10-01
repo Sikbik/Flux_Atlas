@@ -54,6 +54,87 @@ impl<K, V> Expiry<K, Entry<V>> for PerEntryTtl {
     }
 }
 
+/// Approximate heap footprint of a cached value in bytes. The proxy caches are bounded by the
+/// sum of these weights, not by entry count, so a few huge answers (a block with thousands of
+/// transactions, a rich list) cannot grow the process without limit.
+pub trait Weigh {
+    fn weigh(&self) -> usize;
+}
+
+fn opt_str(s: Option<&String>) -> usize {
+    s.map_or(0, String::len)
+}
+
+impl Weigh for u8 {
+    fn weigh(&self) -> usize {
+        1
+    }
+}
+
+impl Weigh for u32 {
+    fn weigh(&self) -> usize {
+        4
+    }
+}
+
+impl Weigh for String {
+    fn weigh(&self) -> usize {
+        size_of::<String>() + self.len()
+    }
+}
+
+impl Weigh for atlas_core::api::TxDetailDto {
+    fn weigh(&self) -> usize {
+        use atlas_core::api::{TxInputDto, TxOutputDto};
+        size_of::<Self>()
+            + self
+                .inputs
+                .iter()
+                .map(|i| size_of::<TxInputDto>() + opt_str(i.address.as_ref()))
+                .sum::<usize>()
+            + self
+                .outputs
+                .iter()
+                .map(|o| {
+                    size_of::<TxOutputDto>()
+                        + opt_str(o.address.as_ref())
+                        + o.script_type.len()
+                        + opt_str(o.op_return.as_ref())
+                })
+                .sum::<usize>()
+    }
+}
+
+impl Weigh for atlas_flux::models::insight::InsightAddrSummary {
+    fn weigh(&self) -> usize {
+        size_of::<Self>()
+            + self.addr_str.len()
+            + self
+                .transactions
+                .iter()
+                .map(|t| size_of::<String>() + t.len())
+                .sum::<usize>()
+    }
+}
+
+impl Weigh for Vec<atlas_core::api::UtxoDto> {
+    fn weigh(&self) -> usize {
+        size_of::<Self>() + self.len() * size_of::<atlas_core::api::UtxoDto>()
+    }
+}
+
+impl Weigh for atlas_core::api::SupplyInfo {
+    fn weigh(&self) -> usize {
+        size_of::<Self>()
+    }
+}
+
+/// Weight of one cache entry (key overhead included), clamped to moka's `u32` weights.
+fn entry_weight<V: Weigh>(e: &Entry<V>) -> u32 {
+    let v = e.value.as_ref().map_or(0, |v| v.weigh());
+    u32::try_from(v + 128).unwrap_or(u32::MAX)
+}
+
 /// Hit / miss counters of a cache.
 #[derive(Debug, Default)]
 pub struct CacheStats {
@@ -100,14 +181,16 @@ impl<K, V> std::fmt::Debug for TtlCache<K, V> {
 impl<K, V> TtlCache<K, V>
 where
     K: Hash + Eq + Clone + Send + Sync + 'static,
-    V: Send + Sync + 'static,
+    V: Weigh + Send + Sync + 'static,
 {
-    /// `what` names the entity in "not found" errors and metrics.
-    pub fn new(what: &'static str, capacity: u64) -> Self {
+    /// `what` names the entity in "not found" errors and metrics. The cache holds at most
+    /// `max_bytes` of values (by [`Weigh`]), evicting the least recently used.
+    pub fn new(what: &'static str, max_bytes: u64) -> Self {
         Self {
             what,
             cache: Cache::builder()
-                .max_capacity(capacity)
+                .max_capacity(max_bytes)
+                .weigher(|_k, v: &Entry<V>| entry_weight(v))
                 .expire_after(PerEntryTtl)
                 .build(),
             inflight: Mutex::new(HashSet::new()),
@@ -136,6 +219,16 @@ where
 
     pub fn entry_count(&self) -> u64 {
         self.cache.entry_count()
+    }
+
+    /// Approximate bytes held (sum of entry weights).
+    pub fn weighted_size(&self) -> u64 {
+        self.cache.weighted_size()
+    }
+
+    /// Runs moka's pending maintenance (evictions); tests use it to observe bounds.
+    pub async fn sync(&self) {
+        self.cache.run_pending_tasks().await;
     }
 
     /// Returns the cached value or runs `fetch` once for all concurrent callers of `key`.
@@ -268,7 +361,7 @@ pub async fn guarded<K, V, Fut>(
 ) -> Result<Arc<V>, ApiError>
 where
     K: Hash + Eq + Clone + Send + Sync + 'static,
-    V: Send + Sync + 'static,
+    V: Weigh + Send + Sync + 'static,
     Fut: Future<Output = Result<Fetch<V>, ApiError>>,
 {
     if let Some(ip) = ip
@@ -292,7 +385,7 @@ mod tests {
 
     #[tokio::test]
     async fn single_flight_and_ttl() {
-        let c: TtlCache<u32, String> = TtlCache::new("thing", 100);
+        let c: TtlCache<u32, String> = TtlCache::new("thing", 1 << 20);
         let calls = Arc::new(AtomicU32::new(0));
         let mut tasks = Vec::new();
         let c = Arc::new(c);
@@ -326,8 +419,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bounded_by_bytes() {
+        let max = 64 * 1024;
+        let c: TtlCache<u32, String> = TtlCache::new("blob", max);
+        for k in 0..200u32 {
+            c.get_or_fetch(k, async {
+                Ok(Fetch::Found("x".repeat(1024), Duration::from_secs(60)))
+            })
+            .await
+            .unwrap();
+        }
+        c.sync().await;
+        assert!(c.weighted_size() <= max, "{} > {max}", c.weighted_size());
+        assert!(c.entry_count() < 200);
+        assert!(c.entry_count() >= 30, "still caches: {}", c.entry_count());
+        // A single value above the bound is served but not kept.
+        let big = c
+            .get_or_fetch(9_999, async {
+                Ok(Fetch::Found(
+                    "y".repeat(128 * 1024),
+                    Duration::from_secs(60),
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(big.len(), 128 * 1024);
+        c.sync().await;
+        assert!(c.weighted_size() <= max);
+    }
+
+    #[test]
+    fn weights_follow_content() {
+        use atlas_core::api::{TxDetailDto, TxOutputDto};
+        use atlas_core::chain::TxKind;
+        use atlas_core::{Amount, Hash32};
+        let out = |n: u32| TxOutputDto {
+            n,
+            address: Some("t1abcdefghijklmnopqrstuvwxyz01234".into()),
+            value: Amount(1),
+            script_type: "pubkeyhash".into(),
+            spent_txid: None,
+            spent_height: None,
+            op_return: None,
+        };
+        let tx = |outputs: u32| TxDetailDto {
+            txid: Hash32([0; 32]),
+            height: None,
+            block_hash: None,
+            time_ms: None,
+            confirmations: 0,
+            size: 0,
+            version: 4,
+            kind: TxKind::Transfer,
+            inputs: vec![],
+            outputs: (0..outputs).map(out).collect(),
+            value_in: None,
+            value_out: Amount(0),
+            fee: None,
+            node_tx: None,
+        };
+        let small = tx(2).weigh();
+        let large = tx(2_000).weigh();
+        assert!(large > small * 500, "{small} {large}");
+        assert!(large > 2_000 * size_of::<TxOutputDto>());
+    }
+
+    #[tokio::test]
     async fn negative_and_errors() {
-        let c: TtlCache<u32, u8> = TtlCache::new("tx", 10);
+        let c: TtlCache<u32, u8> = TtlCache::new("tx", 1 << 20);
         let e = c
             .get_or_fetch(1, async { Ok(Fetch::NotFound(Duration::from_secs(5))) })
             .await

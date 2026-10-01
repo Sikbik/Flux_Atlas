@@ -47,6 +47,17 @@ pub type HostedApps = Arc<HashMap<u32, Vec<AppRef>>>;
 /// How long the hosted-apps map (built from stored app locations) is reused.
 const HOSTED_TTL: Duration = Duration::from_secs(30);
 
+/// Byte bound of the `/metrics` series response cache.
+pub const METRICS_CACHE_BYTES: u64 = 16 << 20;
+/// Byte bound of the `/timeline/state` cache (a reconstruction is about one `nodes.bin`).
+pub const TIMELINE_CACHE_BYTES: u64 = 24 << 20;
+
+/// Cache weight of a body: the raw bytes plus room for the compressed variants it builds
+/// lazily once cached.
+fn body_weight(key_len: usize, b: &CachedBody) -> u32 {
+    u32::try_from(b.raw().len() * 2 + key_len + 256).unwrap_or(u32::MAX)
+}
+
 impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
@@ -88,11 +99,13 @@ impl AppState {
                 engine,
                 hosted: tokio::sync::Mutex::new(None),
                 metrics_cache: moka::future::Cache::builder()
-                    .max_capacity(256)
+                    .max_capacity(METRICS_CACHE_BYTES)
+                    .weigher(|k: &String, v: &Arc<CachedBody>| body_weight(k.len(), v))
                     .time_to_live(Duration::from_secs(15))
                     .build(),
                 timeline_cache: moka::future::Cache::builder()
-                    .max_capacity(32)
+                    .max_capacity(TIMELINE_CACHE_BYTES)
+                    .weigher(|_: &u64, v: &Arc<CachedBody>| body_weight(8, v))
                     .time_to_live(Duration::from_secs(60))
                     .build(),
             }),

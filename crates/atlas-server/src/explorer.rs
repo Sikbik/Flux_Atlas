@@ -16,7 +16,7 @@ use atlas_flux::models::insight::{InsightAddrSummary, InsightTx, RichListRow};
 
 use crate::config::{ClientLimits, ProxyTtls};
 use crate::error::ApiError;
-use crate::proxy::{Fetch, TtlCache, UpstreamGuard, guarded};
+use crate::proxy::{Fetch, TtlCache, UpstreamGuard, Weigh, guarded};
 
 /// A decoded block as served by the explorer.
 #[derive(Debug, Clone)]
@@ -68,44 +68,97 @@ pub struct RichRows {
     pub fetched_ms: u64,
 }
 
+impl Weigh for BlockView {
+    fn weigh(&self) -> usize {
+        size_of::<Self>()
+            + self.summary.payouts.len() * 96
+            + self.node_txs.len() * (size_of::<NodeTx>() + 32)
+            + self.txs.len() * size_of::<TxLite>()
+    }
+}
+
+impl Weigh for AddrTxsPage {
+    fn weigh(&self) -> usize {
+        size_of::<Self>() + self.items.iter().map(Weigh::weigh).sum::<usize>()
+    }
+}
+
+impl Weigh for MempoolSnapshot {
+    fn weigh(&self) -> usize {
+        size_of::<Self>() + self.entries.len() * size_of::<(Hash32, u32, u64)>()
+    }
+}
+
+impl Weigh for RichRows {
+    fn weigh(&self) -> usize {
+        size_of::<Self>()
+            + self
+                .rows
+                .iter()
+                .map(|r| size_of::<RichListRow>() + r.address.len())
+                .sum::<usize>()
+    }
+}
+
+/// Byte bounds of the explorer proxy caches (about 56 MiB in all; measured weights of real
+/// answers: a decoded tx about 1 to 3 KiB, a block view about 4 to 40 KiB).
+pub mod cache_bytes {
+    const MIB: u64 = 1 << 20;
+    pub const TXS: u64 = 16 * MIB;
+    pub const BLOCKS: u64 = 16 * MIB;
+    pub const HEADERS: u64 = 2 * MIB;
+    pub const ADDRS: u64 = 4 * MIB;
+    pub const ADDR_TXS: u64 = 12 * MIB;
+    pub const UTXOS: u64 = 4 * MIB;
+    /// One-entry caches (mempool, supply, rich list).
+    pub const SINGLE: u64 = 4 * MIB;
+    pub const TOTAL: u64 = TXS + BLOCKS + HEADERS + ADDRS + ADDR_TXS + UTXOS + 3 * SINGLE;
+}
+
 impl Explorer {
     pub fn new(clients: Clients, ttl: ProxyTtls, limits: ClientLimits) -> Self {
+        use cache_bytes as b;
         Self {
             clients,
             ttl,
             guard: UpstreamGuard::new(limits),
-            txs: TtlCache::new("transaction", 20_000),
-            blocks: TtlCache::new("block", 2_000),
-            headers: TtlCache::new("block", 20_000),
-            addrs: TtlCache::new("address", 5_000),
-            addr_txs: TtlCache::new("address page", 2_000),
-            utxos: TtlCache::new("address utxos", 500),
-            mempool: TtlCache::new("mempool", 1),
-            supply: TtlCache::new("supply", 1),
-            richlist: TtlCache::new("rich list", 1),
+            txs: TtlCache::new("transaction", b::TXS),
+            blocks: TtlCache::new("block", b::BLOCKS),
+            headers: TtlCache::new("block", b::HEADERS),
+            addrs: TtlCache::new("address", b::ADDRS),
+            addr_txs: TtlCache::new("address page", b::ADDR_TXS),
+            utxos: TtlCache::new("address utxos", b::UTXOS),
+            mempool: TtlCache::new("mempool", b::SINGLE),
+            supply: TtlCache::new("supply", b::SINGLE),
+            richlist: TtlCache::new("rich list", b::SINGLE),
         }
     }
 
     /// Cache name and stats, for metrics.
     pub fn cache_stats(&self) -> Vec<(&'static str, &crate::proxy::CacheStats, u64)> {
+        self.cache_sizes()
+            .into_iter()
+            .map(|(n, st, entries, _)| (n, st, entries))
+            .collect()
+    }
+
+    /// Cache name, stats, entries and approximate bytes held.
+    pub fn cache_sizes(&self) -> Vec<(&'static str, &crate::proxy::CacheStats, u64, u64)> {
+        macro_rules! row {
+            ($name:literal, $c:expr) => {
+                ($name, &$c.stats, $c.entry_count(), $c.weighted_size())
+            };
+        }
         vec![
-            ("tx", &self.txs.stats, self.txs.entry_count()),
-            ("block", &self.blocks.stats, self.blocks.entry_count()),
-            ("header", &self.headers.stats, self.headers.entry_count()),
-            ("address", &self.addrs.stats, self.addrs.entry_count()),
-            (
-                "address_txs",
-                &self.addr_txs.stats,
-                self.addr_txs.entry_count(),
-            ),
-            ("utxos", &self.utxos.stats, self.utxos.entry_count()),
-            ("mempool", &self.mempool.stats, self.mempool.entry_count()),
-            ("supply", &self.supply.stats, self.supply.entry_count()),
-            (
-                "richlist",
-                &self.richlist.stats,
-                self.richlist.entry_count(),
-            ),
+            row!("tx", self.txs),
+            row!("block", self.blocks),
+            row!("header", self.headers),
+            row!("address", self.addrs),
+            row!("address_txs", self.addr_txs),
+            row!("utxos", self.utxos),
+            row!("mempool", self.mempool),
+            row!("supply", self.supply),
+            row!("richlist", self.richlist),
         ]
     }
 
