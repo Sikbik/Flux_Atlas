@@ -20,6 +20,15 @@
 // orbit drag past the limit meets a rubber band and eases back on release; a release keeps its
 // momentum and decays. The ambient director composes with the surface pivot and the full range
 // (`framed` = 0); the rig blends between the two (`framedTarget`).
+//
+// Landing and holding a point (G5). Because the pitch pivots below the surface at mid zoom, the
+// frame's target `T` is not what the view centre shows once the camera is pitched. A flight to a
+// point therefore solves for the frame whose centre ray lands on the point (`solveFrame`), so every
+// fly-to ends with its point exactly at the view centre (the free area's centre). The anchor then
+// holds a world point at a screen point while the zoom, the pitch limit, the pivot depth or the point
+// itself (a node riding its fan layout) change: after the springs, the whole rig is rotated about
+// the planet's centre so the point is back under its screen spot (`holdAnchor`). A rotation about the
+// centre is exact for a sphere, so one step a frame is enough and nothing drifts.
 
 import * as THREE from 'three';
 import {
@@ -75,9 +84,50 @@ const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
 const _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3();
+const _v6 = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _q0 = new THREE.Quaternion();
+const _q1 = new THREE.Quaternion();
 const _ll = { lat: 0, lon: 0, heading: 0 };
+
+/** Why a point is held on screen: `lock` follows a selection until the user moves the camera; `zoom` lasts one zoom gesture. */
+export type AnchorKind = 'lock' | 'zoom';
+
+/**
+ * Where the camera sits and looks for a frame `q`, a range, a pitch and an explore weight `framed`
+ * (the pivot depth): writes the position to `pos` and the unit view direction to `dir`.
+ */
+export function viewRay(
+  q: THREE.Quaternion,
+  range: number,
+  tilt: number,
+  framed: number,
+  pos: THREE.Vector3,
+  dir: THREE.Vector3,
+): void {
+  _v5.set(0, 0, 1).applyQuaternion(q); // T
+  _v6.set(0, 1, 0).applyQuaternion(q); // ground up
+  const ct = Math.cos(tilt);
+  const st = Math.sin(tilt);
+  const s = lerp(1, pivotDepthFor(range), clamp(framed, 0, 1));
+  const dP = 1 + range - s;
+  // back = ct*T - st*up; the camera sits at the pivot plus dP along it and looks back down it.
+  dir.copy(_v5).multiplyScalar(ct).addScaledVector(_v6, -st);
+  pos.copy(_v5).multiplyScalar(s).addScaledVector(dir, dP);
+  dir.negate();
+}
+
+/** First hit of the ray `o + t d` (unit `d`) on the sphere of `radius`, in front of the origin. False on a miss. */
+export function raySphere(o: THREE.Vector3, d: THREE.Vector3, radius: number, out: THREE.Vector3): boolean {
+  const b = o.dot(d);
+  const disc = b * b - (o.lengthSq() - radius * radius);
+  if (disc < 0) return false;
+  const t = -b - Math.sqrt(disc);
+  if (t < 0) return false;
+  out.copy(o).addScaledVector(d, t);
+  return true;
+}
 
 export interface FlyOptions {
   /** Seconds. Default derives from the distance covered. */
@@ -88,6 +138,8 @@ export interface FlyOptions {
   /** Extra zoom-out during long flights (0..1). Default 1. */
   arc?: number;
   ease?: (t: number) => number;
+  /** Radius of the point to land on (a node lifted off the surface). Default 1. */
+  radius?: number;
 }
 
 export class CameraRig {
@@ -194,6 +246,12 @@ export class CameraRig {
   private tiltVel = 0;
   private headVel = 0;
 
+  // Anchor: a world point held at a camera NDC (the view shift removed, so it moves with the framing).
+  private anchorKindV: AnchorKind | null = null;
+  private readonly anchorP = new THREE.Vector3();
+  private anchorU = 0;
+  private anchorV = 0;
+
   constructor() {
     this.setPose(18, 10, 0, 3.6, 0, true);
   }
@@ -261,11 +319,106 @@ export class CameraRig {
 
   // ---- flights ----------------------------------------------------------------------------
 
+  /**
+   * Flies so that the point at `lat`, `lon` (radius `opts.radius`, default the surface) ends exactly at
+   * the view centre, pitched by `opts.tilt`, at `range`.
+   */
   flyTo(lat: number, lon: number, range: number, opts: FlyOptions = {}): Promise<boolean> {
     const r = clamp(range, MIN_RANGE, MAX_RANGE);
-    const headT = opts.heading ?? 0;
-    CameraRig.frameFromLatLon(lat, lon, headT, this.flyQ1);
-    return this.startFlight(this.flyQ1, r, clamp(opts.tilt ?? 0, 0, this.tiltLimit(r, true)), opts);
+    const tilt = clamp(opts.tilt ?? 0, 0, this.tiltLimit(r, true));
+    const la = lat * DEG;
+    const lo = lon * DEG;
+    const rad = opts.radius ?? 1;
+    _v0.set(Math.cos(la) * Math.sin(lo), Math.sin(la), Math.cos(la) * Math.cos(lo)).multiplyScalar(rad);
+    this.solveFrame(_v0, r, tilt, opts.heading ?? 0, this.flyQ1);
+    return this.startFlight(this.flyQ1, r, tilt, opts);
+  }
+
+  /**
+   * The frame whose view centre lands exactly on the world point `p` at `range` and `tilt` (with the
+   * explore pivot the rig is heading for): the frame over `p`, then turned about the planet's centre
+   * by the small angle the pitch about a deeper pivot puts between them. Exact in one step, because
+   * a rotation about the centre carries the whole view with it.
+   */
+  solveFrame(p: THREE.Vector3, range: number, tilt: number, heading: number, out: THREE.Quaternion): void {
+    const rad = Math.max(1e-6, p.length());
+    const lat = Math.asin(clamp(p.y / rad, -1, 1)) / DEG;
+    const lon = Math.atan2(p.x, p.z) / DEG;
+    CameraRig.frameFromLatLon(lat, lon, heading, out);
+    viewRay(out, range, tilt, this.framedTarget, _v1, _v2);
+    if (!raySphere(_v1, _v2, rad, _v3)) return;
+    _q1.setFromUnitVectors(_v3.normalize(), _v4.copy(p).divideScalar(rad));
+    out.premultiply(_q1).normalize();
+  }
+
+  // ---- the anchor ----------------------------------------------------------------------------
+
+  /** What the anchor is holding: a selection (`lock`), one zoom gesture (`zoom`) or nothing. */
+  get anchorKind(): AnchorKind | null {
+    return this.anchorKindV;
+  }
+
+  /**
+   * Holds the world point `p` where it is on screen now (or at camera NDC `u`, `v`: 0, 0 is the view
+   * centre, which the framing puts at the free area's centre). False when `p` is behind the camera.
+   */
+  setAnchor(p: THREE.Vector3, kind: AnchorKind, u?: number, v?: number): boolean {
+    if (u === undefined || v === undefined) {
+      this.updateCameraMatrices(false);
+      _v0.copy(p).applyMatrix4(this.camera.matrixWorldInverse);
+      if (_v0.z > -1e-6) return false;
+      const t = Math.tan((this.fovV * DEG) / 2);
+      u = _v0.x / (-_v0.z * t * this.aspect);
+      v = _v0.y / (-_v0.z * t);
+    }
+    this.anchorP.copy(p);
+    this.anchorU = u;
+    this.anchorV = v;
+    this.anchorKindV = kind;
+    return true;
+  }
+
+  /** Moves the held world point (a node that the layout moved); its screen spot stays. */
+  moveAnchor(p: THREE.Vector3): void {
+    this.anchorP.copy(p);
+  }
+
+  clearAnchor(kind?: AnchorKind): void {
+    if (kind === undefined || this.anchorKindV === kind) this.anchorKindV = null;
+  }
+
+  /**
+   * Turns the rig about the planet's centre so the anchored point is back at its screen spot. Call
+   * once a frame after `update` (and after anything that moved the point). Does nothing during a
+   * flight, a drag or a free shot. Returns false when the spot's ray misses the point's sphere (a
+   * zoom-out that shrank the planet out from under it): a `zoom` anchor is released then.
+   */
+  holdAnchor(time = 0): boolean {
+    if (this.anchorKindV === null || this.flying || this.grabbing || this.freeBlend > 0.0005) return true;
+    this.updateCameraMatrices(false);
+    const rad = Math.max(1e-6, this.anchorP.length());
+    const t = Math.tan((this.fovV * DEG) / 2);
+    _v2
+      .set(this.anchorU * t * this.aspect, this.anchorV * t, -1)
+      .normalize()
+      .applyQuaternion(this.camera.quaternion);
+    if (!raySphere(this.camera.position, _v2, rad, _v3)) {
+      if (this.anchorKindV === 'zoom') this.anchorKindV = null;
+      this.updateCameraMatrices(true, time);
+      return false;
+    }
+    _q1.setFromUnitVectors(_v3.normalize(), _v4.copy(this.anchorP).divideScalar(rad));
+    if (1 - _q1.w > 1e-12) {
+      this.q.premultiply(_q1).normalize();
+      this.qD.premultiply(_q1).normalize();
+    }
+    this.updateCameraMatrices(true, time);
+    return true;
+  }
+
+  /** True while a zoom is still easing toward its goal. */
+  get isZooming(): boolean {
+    return Math.abs(Math.log(this.range / this.rangeD)) > 2e-3;
   }
 
   /** Fly to an explicit frame quaternion (used by the director to keep heading continuity). */
@@ -295,6 +448,8 @@ export class CameraRig {
     opts: FlyOptions,
   ): Promise<boolean> {
     this.cancelFlight(false);
+    // A flight sets its own target: whatever the anchor held is let go.
+    this.anchorKindV = null;
     this.flyQ0.copy(this.q);
     if (qTarget !== this.flyQ1) this.flyQ1.copy(qTarget);
     // Shortest arc.
@@ -388,6 +543,8 @@ export class CameraRig {
   /** Begin grabbing the globe at NDC (x, y). Returns false if the ray misses (still grabs the limb). */
   grabStart(ndcX: number, ndcY: number, now: number): void {
     this.cancelFlight(false);
+    // Grabbing the globe moves the camera off whatever the anchor held.
+    this.anchorKindV = null;
     this.grabbing = true;
     this.omega.set(0, 0, 0);
     this.rayToSphere(ndcX, ndcY, this.grabPoint);

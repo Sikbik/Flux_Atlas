@@ -35,7 +35,7 @@ import {
 } from './moon/moon';
 import type { Inset } from './moon/orbit';
 import { ClusterLayer } from './nodes/clusterLayer';
-import { computeLayout, fanPosition } from './nodes/layout';
+import { computeLayout, slotPosition } from './nodes/layout';
 import { MeshStore } from './nodes/mesh';
 import { NodeLayer } from './nodes/nodeLayer';
 import { Picker, type PickResult } from './nodes/picking';
@@ -458,6 +458,7 @@ export class GlobeEngine {
       onHome: () => {
         if (this.mode === 'explore') void this.home();
       },
+      onZoomAt: (x, y) => this.zoomAnchorAt(x, y),
       onWake: (kind, x, y) => this.handleWake(kind, x, y),
       onInteract: () => {
         this.lastInputT = this.time;
@@ -598,6 +599,7 @@ export class GlobeEngine {
 
   setMode(mode: EngineMode, opts: AmbientOptions = {}): void {
     this.mode = mode;
+    this.rig.clearAnchor();
     // Explore frames the planet in the free area and pitches about its centre; the director composes with the plain rig.
     this.rig.framedTarget = mode === 'explore' ? 1 : 0;
     if (this.frameNo === 0) this.rig.framed = this.rig.framedTarget;
@@ -1275,6 +1277,7 @@ export class GlobeEngine {
     }
     this.clearSelectionArcs();
     this.endBeacon();
+    this.rig.clearAnchor('lock');
     if (id === null || id === 0) {
       this.selectedSlot = -1;
       this.selectedId = 0;
@@ -1449,16 +1452,23 @@ export class GlobeEngine {
     lat: number,
     lon: number,
     alt = 1.2,
-    opts: { tilt?: number; heading?: number; duration?: number } = {},
+    opts: { tilt?: number; heading?: number; duration?: number; radius?: number } = {},
   ): Promise<boolean> {
     this.director?.interrupt();
     return this.rig.flyTo(lat, lon, alt, {
       tilt: opts.tilt ?? 0,
       heading: opts.heading ?? 0,
       duration: opts.duration,
+      radius: opts.radius,
     });
   }
 
+  /**
+   * Flies to a node so it lands exactly at the view centre (the free area's centre), where it is drawn at
+   * the flight's end (its place in its site's fan at that zoom), and then holds it there: if it is the
+   * selection, the camera stays locked on it through zoom, pitch and layout changes until the globe is
+   * dragged or another flight starts.
+   */
   flyToNode(id: number, alt?: number): Promise<boolean> {
     const s = this.nodes;
     const slot = s.slotOf(id);
@@ -1466,12 +1476,93 @@ export class GlobeEngine {
     const c = s.cluster[slot]!;
     const n = c === NO_CLUSTER ? 1 : s.cLive[c]!;
     const range = alt ?? (n > 60 ? 0.3 : n > 8 ? 0.36 : 0.5);
-    const tmp = this.tmp3;
-    const spacing = this.fanSpacingFor(range);
-    fanPosition(s, slot, spacing, tmp);
-    const lat = Math.asin(clamp(tmp[1]!, -1, 1)) * RAD;
-    const lon = Math.atan2(tmp[0]!, tmp[2]!) * RAD;
-    return this.flyTo(lat, lon, range, { tilt: 0.32 });
+    const p = this.tmpV;
+    this.nodeAt(slot, range, p);
+    const r = p.length();
+    const lat = Math.asin(clamp(p.y / r, -1, 1)) * RAD;
+    const lon = Math.atan2(p.x, p.z) * RAD;
+    return this.flyTo(lat, lon, range, { tilt: 0.32, radius: r }).then((done) => {
+      if (done && this.selectedId === id && this.mode === 'explore' && s.alive[slot] === 1) {
+        this.nodePos(slot, this.tmpV);
+        this.rig.setAnchor(this.tmpV, 'lock', 0, 0);
+      }
+      return done;
+    });
+  }
+
+  /** Where `slot` is drawn at camera range `range` (the layout's own formula; see `slotPosition`). */
+  private nodeAt(slot: number, range: number, out: THREE.Vector3): void {
+    const t = this.tmp3;
+    slotPosition(this.nodes, slot, 1 - smoothstep(0.35, 1.45, range), this.fanSpacingFor(range), t);
+    out.set(t[0]!, t[1]!, t[2]!);
+  }
+
+  /** Where `slot` is drawn right now. */
+  private nodePos(slot: number, out: THREE.Vector3): void {
+    const p = this.nodes.pos;
+    out.set(p[slot * 4]!, p[slot * 4 + 1]!, p[slot * 4 + 2]!);
+  }
+
+  private readonly tmpV = new THREE.Vector3();
+
+  /**
+   * After the layout: the anchor follows the selected node (it moves as its fan opens or closes with the
+   * zoom) and the rig turns so the node, or the point a zoom is anchored on, stays where it is on screen.
+   */
+  private holdAnchor(): void {
+    const rig = this.rig;
+    const kind = rig.anchorKind;
+    if (kind === null) return;
+    if (this.mode !== 'explore') {
+      rig.clearAnchor();
+      return;
+    }
+    if (kind === 'lock') {
+      const slot = this.selectedSlot;
+      if (slot < 0 || this.nodes.alive[slot] !== 1) {
+        rig.clearAnchor('lock');
+        return;
+      }
+      this.nodePos(slot, this.tmpV);
+      rig.moveAnchor(this.tmpV);
+    } else if (!rig.isZooming) {
+      // The zoom has settled: the point is where the user put it, and nothing holds it any more.
+      rig.clearAnchor('zoom');
+      return;
+    }
+    rig.holdAnchor(this.time);
+  }
+
+  /**
+   * A wheel turn or a pinch at (x, y), CSS px, before the zoom is applied: what the zoom holds still.
+   * The selection, while it is on screen, stays exactly where it is (design 7.7: the selection camera);
+   * otherwise the point of the planet under the pointer stays under it (zoom to the cursor); off the
+   * planet the zoom is about the view centre.
+   */
+  private zoomAnchorAt(x: number, y: number): void {
+    if (this.mode !== 'explore' || this.rig.isFree) return;
+    if (this.anchorSelection()) return;
+    const p = this.tmpV;
+    if (x >= 0 && this.rig.pickSurface((x / this.cssW) * 2 - 1, -((y / this.cssH) * 2 - 1), p)) {
+      this.rig.setAnchor(p, 'zoom');
+    } else {
+      this.rig.clearAnchor('zoom');
+    }
+  }
+
+  /** Locks the camera on the selection where it is on screen, if it is on screen. True when it did. */
+  private anchorSelection(): boolean {
+    const rig = this.rig;
+    if (rig.anchorKind === 'lock') return true;
+    const slot = this.selectedSlot;
+    if (slot < 0 || this.nodes.alive[slot] !== 1) return false;
+    this.nodePos(slot, this.tmpV);
+    const pt = this.tmpScreen;
+    const v = this.tmpV;
+    rig.project(v.x, v.y, v.z, this.cssW, this.cssH, pt);
+    const m = 8;
+    if (!pt.visible || pt.x < m || pt.y < m || pt.x > this.cssW - m || pt.y > this.cssH - m) return false;
+    return rig.setAnchor(v, 'lock');
   }
 
   /** Fly to a co-location cluster so its stack unfurls. */
@@ -2542,6 +2633,31 @@ export class GlobeEngine {
     this.applyFraming();
     u.uViewShift.value.set(this.rig.shiftNdcX, this.rig.shiftNdcY);
     this.rig.update(dt, this.time);
+    // Layout: stack <-> fan by camera range.
+    const range = this.rig.lodRange;
+    // Stacks always unfurl into fans with zoom (spires only change how tall the towers draw).
+    const fan = 1 - smoothstep(0.35, 1.45, range);
+    const spacing = this.fanSpacingFor(range);
+    if (
+      s.posDirty ||
+      Math.abs(fan - this.layoutFan) > 0.0012 ||
+      Math.abs(spacing / Math.max(1e-6, this.layoutSpacing) - 1) > 0.008 ||
+      this.layoutAnimating
+    ) {
+      this.layoutAnimating = computeLayout(s, {
+        belt: this.showBelt,
+        fan,
+        spacing,
+        spireScale: this.tokens.spireScale * (this.effects.spires ? 1 : 0.0001),
+        minTower: this.towerThreshold(range),
+        pxPerRad: this.rig.projScale / Math.max(1.02, this.rig.distance),
+        dt,
+      });
+      this.layoutFan = fan;
+      this.layoutSpacing = spacing;
+      s.posDirty = true;
+    }
+    this.holdAnchor();
     const cam = this.rig.camera;
     u.uCamPos.value.copy(cam.position);
     u.uCamRight.value.copy(this.rig.right);
@@ -2618,30 +2734,6 @@ export class GlobeEngine {
     }
     if (this.effects.atmosphere) this.u.uAtmo.value = this.ambientBoost.atmo;
 
-    // Layout: stack <-> fan by camera range.
-    const range = this.rig.lodRange;
-    // Stacks always unfurl into fans with zoom (spires only change how tall the towers draw).
-    const fan = 1 - smoothstep(0.35, 1.45, range);
-    const spacing = this.fanSpacingFor(range);
-    if (
-      s.posDirty ||
-      Math.abs(fan - this.layoutFan) > 0.0012 ||
-      Math.abs(spacing / Math.max(1e-6, this.layoutSpacing) - 1) > 0.008 ||
-      this.layoutAnimating
-    ) {
-      this.layoutAnimating = computeLayout(s, {
-        belt: this.showBelt,
-        fan,
-        spacing,
-        spireScale: this.tokens.spireScale * (this.effects.spires ? 1 : 0.0001),
-        minTower: this.towerThreshold(range),
-        pxPerRad: this.rig.projScale / Math.max(1.02, this.rig.distance),
-        dt,
-      });
-      this.layoutFan = fan;
-      this.layoutSpacing = spacing;
-      s.posDirty = true;
-    }
     u.uFan.value = fan;
     this.lensNow = lensAtDistance(this.rig.projScale, Math.max(0.004, this.rig.distance - 1));
     // The markers' dark halo has nothing to do until the lens opens: no draw at the global view.
