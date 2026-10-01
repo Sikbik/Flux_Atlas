@@ -85,12 +85,19 @@ pub struct PrebuiltBody {
     pub etag: String,
 }
 
-/// Compression levels used for prebuilt bodies. Bodies are built once and served many times, so
-/// these lean towards ratio over speed.
-const BROTLI_QUALITY: u32 = 9;
-const BROTLI_WINDOW: u32 = 22;
-const GZIP_LEVEL: u32 = 9;
-const ZSTD_LEVEL: i32 = 15;
+/// Compression levels used for prebuilt bodies. A full rebuild (every hot body in all three
+/// encodings) must stay under 150 ms on one core. Measured on a 590 KB `nodes.bin`
+/// (6,724 nodes, release build): brotli q4 4.7 ms / 121 KB, q5 8.0 ms / 79 KB,
+/// q6 9.4 ms / 74 KB, q9 20 ms / 73 KB, q11 563 ms / 52 KB. Dynamic q11 is far too slow for a
+/// body rebuilt every block, and q6 is within 2 % of q9 at half the cost.
+const BROTLI_QUALITY: u32 = 6;
+/// Largest brotli window (log2). The window actually used is sized to the body: a window
+/// larger than the input cannot improve the ratio but costs a ring buffer and hash tables per
+/// call, which dominated the engine's allocation churn.
+const BROTLI_WINDOW_MAX: u32 = 22;
+const BROTLI_WINDOW_MIN: u32 = 16;
+const GZIP_LEVEL: u32 = 6;
+const ZSTD_LEVEL: i32 = 9;
 
 impl PrebuiltBody {
     /// Compresses `raw` in all encodings.
@@ -101,8 +108,9 @@ impl PrebuiltBody {
 
         let mut br = Vec::with_capacity(raw.len() / 4 + 64);
         {
-            let mut w =
-                brotli::CompressorWriter::new(&mut br, 64 * 1024, BROTLI_QUALITY, BROTLI_WINDOW);
+            let window = (usize::BITS - raw.len().max(1).leading_zeros())
+                .clamp(BROTLI_WINDOW_MIN, BROTLI_WINDOW_MAX);
+            let mut w = brotli::CompressorWriter::new(&mut br, 64 * 1024, BROTLI_QUALITY, window);
             w.write_all(&raw)?;
             w.flush()?;
         }

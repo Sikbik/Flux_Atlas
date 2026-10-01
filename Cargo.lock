@@ -158,12 +158,14 @@ dependencies = [
  "brotli",
  "bytes",
  "flate2",
+ "mimalloc",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "zstd",
 ]
 

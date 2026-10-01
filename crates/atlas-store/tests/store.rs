@@ -863,3 +863,54 @@ fn large_app_message_batch() {
     assert_eq!(get("app_messages"), u64::from(N));
     assert_eq!(get("app_messages_by_app"), u64::from(N));
 }
+
+#[test]
+fn prune_events_drops_old_rows_and_keeps_app_timeline() {
+    let (_dir, path) = tmp();
+    let store = Store::open(&path).unwrap();
+    let mut b = WriteBatch::new();
+    b.intern_node(outpoint(0), NodeId(0));
+    b.intern_node(outpoint(1), NodeId(1));
+    for (i, ts) in [100u64, 200, 300, 400].iter().enumerate() {
+        b.push_event(env(
+            i as u64 + 1,
+            *ts,
+            Event::NodeAtRisk {
+                node: NodeId((i % 2) as u32),
+                blocks_since_confirm: i as u32,
+            },
+        ));
+    }
+    b.push_event(env(9, 150, Event::AppExpired { app: "Demo".into() }));
+    store.commit(b).unwrap();
+
+    let (ev, node_ev, mesh_ev) = store.prune_events(300, 250, 0).unwrap();
+    assert_eq!((ev, node_ev, mesh_ev), (3, 2, 0));
+    let left: Vec<u64> = store
+        .events(.., Order::Asc, 100)
+        .unwrap()
+        .iter()
+        .map(|(k, _)| k.ts_ms)
+        .collect();
+    assert_eq!(left, vec![300, 400]);
+    assert_eq!(
+        store
+            .node_events(NodeId(0), .., Order::Asc, 10)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        store
+            .node_events(NodeId(1), .., Order::Asc, 10)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        store.app_events("Demo", .., Order::Asc, 10).unwrap().len(),
+        1
+    );
+    // Zero cutoffs leave everything alone.
+    assert_eq!(store.prune_events(0, 0, 0).unwrap(), (0, 0, 0));
+}
