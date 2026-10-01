@@ -1,0 +1,196 @@
+/* Identity atoms: entity links, hashes, amounts, heights, relative times. Data is set in IBM Plex Mono
+   with tabular figures; links use the accent text colour (--accent-400, 5.8 to 7.7:1 on every ink). */
+
+/* ---- entity link ------------------------------------------------------------------------------ */
+
+.ui-entity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  border-radius: var(--r-xs);
+  color: var(--accent-400);
+  text-decoration: none;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: transparent;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    text-decoration-color var(--dur-fast) var(--ease-out);
+}
+
+.ui-entity[data-mono] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-entity:hover {
+  color: var(--accent-300);
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent-300) 45%, transparent);
+}
+
+.ui-entity:is(:active, [data-pressed]) {
+  color: var(--accent-200);
+}
+
+.ui-entity:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ui-entity__icon {
+  position: relative;
+  top: 2px;
+  flex: none;
+  color: var(--text-3);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.ui-entity:hover .ui-entity__icon {
+  color: var(--accent-300);
+}
+
+.ui-entity__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-entity-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Copy affordances reveal on hover or focus, and stay visible where there is no hover (touch). */
+.ui-entity-wrap[data-copy="hover"] .ui-entity__copy,
+.ui-hash[data-copy="hover"] .ui-hash__copy {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-entity-wrap[data-copy="hover"]:hover .ui-entity__copy,
+.ui-entity-wrap[data-copy="hover"]:focus-within .ui-entity__copy,
+.ui-hash[data-copy="hover"]:hover .ui-hash__copy,
+.ui-hash[data-copy="hover"]:focus-within .ui-hash__copy {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .ui-entity-wrap[data-copy="hover"] .ui-entity__copy,
+  .ui-hash[data-copy="hover"] .ui-hash__copy {
+    opacity: 1;
+  }
+}
+
+/* ---- hash ------------------------------------------------------------------------------------- */
+
+.ui-hash {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Head, gap and tail are inline, so a drag-select copies the value without line breaks. When the
+   cell is narrower than head and tail, the end of the line gives way (an ellipsis) instead of the
+   text running under the copy button. */
+.ui-hash__text {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+  user-select: text;
+  cursor: text;
+}
+
+/* The ellipsis is drawn by CSS, so it is never part of a copied selection. */
+.ui-hash__gap::before {
+  content: "\2026";
+  color: var(--text-3);
+}
+
+/* The hidden middle stays in the DOM: drag-select and copy still give the whole value. */
+.ui-hash__mid {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-hash[data-full] .ui-hash__text {
+  display: inline;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* ---- amount ----------------------------------------------------------------------------------- */
+
+.ui-amount {
+  white-space: nowrap;
+}
+
+.ui-amount__unit {
+  margin-left: 0.4em;
+  color: var(--text-3);
+  font-size: 0.88em;
+  letter-spacing: 0.02em;
+}
+
+.ui-amount__dim {
+  color: var(--text-3);
+}
+
+.ui-amount[data-dir="pos"] .ui-amount__figure {
+  color: var(--div-pos);
+}
+
+.ui-amount[data-dir="neg"] .ui-amount__figure {
+  color: var(--div-neg);
+}
+
+.ui-amount[data-tone="hot"] .ui-amount__figure {
+  color: var(--hot);
+}
+
+/* ---- height and time -------------------------------------------------------------------------- */
+
+.ui-height,
+.ui-reltime {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-reltime {
+  color: var(--text-3);
+}
+
+/* ---- touch ------------------------------------------------------------------------------------ */
+
+/* An entity link on its own line is a 17 px strip of text; give it an invisible 29 px band to hit. */
+@media (pointer: coarse) {
+  .ui-entity {
+    position: relative;
+  }
+
+  .ui-entity::after {
+    content: "";
+    position: absolute;
+    inset: -6px -2px;
+  }
+}

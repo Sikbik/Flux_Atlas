@@ -1,0 +1,156 @@
+/* Menu (design 8.4): rows of 30 px with a leading icon column, the label, and the key caps pinned to
+   the right. The active row is a quiet accent wash with a 3 px bar, like the palette's active row;
+   hover and keyboard focus share it because hovering moves focus. */
+
+.ui-menu {
+  min-width: 220px;
+  max-width: 340px;
+  padding: var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+}
+
+.ui-menu__group {
+  display: grid;
+  gap: 2px;
+}
+
+.ui-menu__heading {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  color: var(--text-3);
+  font: var(--fw-semibold) var(--fs-2xs) / 1.2 var(--font-display);
+  letter-spacing: 0;
+}
+
+.ui-menu__sep {
+  height: 1px;
+  margin: var(--space-3) var(--space-3);
+  border: 0;
+  background: var(--line-1);
+}
+
+.ui-menu__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  height: 30px;
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-sm) / 1 var(--font-sans);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.ui-menu__lead {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.ui-menu__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-menu__keys {
+  flex: none;
+  margin-left: var(--space-5);
+}
+
+/* Active: an accent wash fading to the right, and a 3 px bar with a soft glow. */
+.ui-menu__item::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent-400);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-menu__item[data-active] {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent-500) 22%, transparent),
+    color-mix(in oklab, var(--accent-500) 6%, transparent)
+  );
+  color: var(--text-1);
+}
+
+.ui-menu__item[data-active]::before {
+  opacity: 1;
+}
+
+.ui-menu__item[data-active] .ui-menu__lead {
+  color: var(--accent-300);
+}
+
+.ui-menu__item:active:not([data-disabled]) {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent-500) 32%, transparent),
+    color-mix(in oklab, var(--accent-500) 12%, transparent)
+  );
+}
+
+/* Danger: the critical colour, with a critical wash. */
+.ui-menu__item[data-danger] {
+  color: var(--status-crit);
+}
+
+.ui-menu__item[data-danger] .ui-menu__lead {
+  color: var(--status-crit);
+}
+
+.ui-menu__item[data-danger]::before {
+  background: var(--status-crit);
+}
+
+.ui-menu__item[data-danger][data-active] {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--status-crit) 20%, transparent),
+    color-mix(in oklab, var(--status-crit) 5%, transparent)
+  );
+  color: var(--status-crit);
+}
+
+.ui-menu__item[data-danger][data-active] .ui-menu__lead {
+  color: var(--status-crit);
+}
+
+.ui-menu__item[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Touch: 44 px rows. */
+@media (pointer: coarse) {
+  .ui-menu__item {
+    height: var(--touch-min);
+    font-size: var(--fs-md);
+  }
+}

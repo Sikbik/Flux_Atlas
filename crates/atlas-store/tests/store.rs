@@ -149,9 +149,9 @@ fn pending(n: u32, expires_ms: u64) -> PendingAppMessage {
 fn metrics(ts_ms: u64, node_count: u32, block_count: u32) -> MetricsRow {
     MetricsRow {
         ts_ms,
-        node_count,
-        block_count,
-        avg_block_time_ms: 30_000,
+        node_count: Some(node_count),
+        block_count: Some(block_count),
+        avg_block_time_ms: Some(30_000),
         samples: 1,
         ..MetricsRow::default()
     }
@@ -611,10 +611,12 @@ fn metrics_rollup_and_prune() {
     assert_eq!(hours.len(), 2);
     assert_eq!(hours[0].ts_ms, base);
     assert_eq!(
-        hours[0].node_count, 1_059,
+        hours[0].node_count,
+        Some(1_059),
         "gauge = last minute of the hour"
     );
-    assert_eq!(hours[0].block_count, 120, "counter = sum");
+    assert_eq!(hours[0].block_count, Some(120), "counter = sum");
+    assert_eq!(hours[0].price_usd, None, "unknown stays unknown");
     assert_eq!(hours[0].samples, 60);
     assert_eq!(hours[1].ts_ms, base + HOUR_MS);
 
@@ -862,4 +864,55 @@ fn large_app_message_batch() {
     let get = |name: &str| counts.iter().find(|(n, _)| *n == name).unwrap().1;
     assert_eq!(get("app_messages"), u64::from(N));
     assert_eq!(get("app_messages_by_app"), u64::from(N));
+}
+
+#[test]
+fn prune_events_drops_old_rows_and_keeps_app_timeline() {
+    let (_dir, path) = tmp();
+    let store = Store::open(&path).unwrap();
+    let mut b = WriteBatch::new();
+    b.intern_node(outpoint(0), NodeId(0));
+    b.intern_node(outpoint(1), NodeId(1));
+    for (i, ts) in [100u64, 200, 300, 400].iter().enumerate() {
+        b.push_event(env(
+            i as u64 + 1,
+            *ts,
+            Event::NodeAtRisk {
+                node: NodeId((i % 2) as u32),
+                blocks_since_confirm: i as u32,
+            },
+        ));
+    }
+    b.push_event(env(9, 150, Event::AppExpired { app: "Demo".into() }));
+    store.commit(b).unwrap();
+
+    let (ev, node_ev, mesh_ev) = store.prune_events(300, 250, 0).unwrap();
+    assert_eq!((ev, node_ev, mesh_ev), (3, 2, 0));
+    let left: Vec<u64> = store
+        .events(.., Order::Asc, 100)
+        .unwrap()
+        .iter()
+        .map(|(k, _)| k.ts_ms)
+        .collect();
+    assert_eq!(left, vec![300, 400]);
+    assert_eq!(
+        store
+            .node_events(NodeId(0), .., Order::Asc, 10)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        store
+            .node_events(NodeId(1), .., Order::Asc, 10)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        store.app_events("Demo", .., Order::Asc, 10).unwrap().len(),
+        1
+    );
+    // Zero cutoffs leave everything alone.
+    assert_eq!(store.prune_events(0, 0, 0).unwrap(), (0, 0, 0));
 }

@@ -136,7 +136,8 @@ fn node_tx_lite(t: &NodeTx) -> TxLite {
         } else {
             TxKind::NodeConfirm
         },
-        size: 0,
+        // The store keeps no serialized form: unknown, not 0.
+        size: None,
     }
 }
 
@@ -424,29 +425,48 @@ pub async fn address_nodes(
 // Mempool, supply, rich list
 // ---------------------------------------------------------------------------------------------
 
-/// `GET /mempool`: the upstream set, enriched with kinds and values seen on the live stream.
+/// `GET /mempool`. With live ingest, the engine's mempool: socket pushes in real time,
+/// reconciled every minute against the gateway (cache-busted), each tx classified with the block
+/// classifier once fetched. No upstream call per request. Without ingest (offline mode), the
+/// gateway set joined with what this process saw on the live stream.
 pub async fn mempool(
     State(s): State<AppState>,
     headers: HeaderMap,
     ClientIp(ip): ClientIp,
 ) -> ApiResult<Response> {
+    let live = s
+        .engine
+        .freshness()
+        .iter()
+        .any(|j| j.job == "mempool_stream" && j.last_ok_ms.is_some());
+    if live {
+        let published = s.engine.published();
+        let txs: Vec<TxLite> = published.mempool.iter().map(|(t, _)| t.clone()).collect();
+        let dto = MempoolDto {
+            size: txs.len() as u32,
+            bytes: txs.iter().filter_map(|t| t.size).map(u64::from).sum(),
+            txs,
+            updated_ms: published.generated_ms,
+        };
+        return Ok(json_response(&headers, &dto, "public, max-age=2"));
+    }
     let snap = s.explorer.mempool(Some(ip)).await?;
     let txs = snap
         .entries
         .iter()
-        .map(|(txid, size, _)| match s.hub.mempool_tx(txid) {
-            Some((mut t, _)) => {
-                if t.size == 0 {
-                    t.size = *size;
-                }
-                t
-            }
-            None => TxLite {
-                txid: *txid,
-                value: Amount::ZERO,
-                kind: TxKind::Unknown,
-                size: *size,
-            },
+        .map(|(txid, size, _)| {
+            let mut t = match s.hub.mempool_tx(txid) {
+                Some((t, _)) => t,
+                None => TxLite {
+                    txid: *txid,
+                    value: Amount::ZERO,
+                    kind: TxKind::Unknown,
+                    size: None,
+                },
+            };
+            // The upstream set carries the exact size.
+            t.size = Some(*size).filter(|s| *s > 0).or(t.size);
+            t
         })
         .collect();
     let dto = MempoolDto {

@@ -1,0 +1,145 @@
+/* Switch (design 8.9): a 36 x 20 track with a 16 px knob. Off is ink-3; on is Flux blue under a white
+   knob. The knob travels on a transform; the whole label is a target. A press shows as `data-pressed`
+   on the label (the motion language attaches there). */
+
+.ui-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: var(--hit-min);
+  color: var(--text-1);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ui-switch[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-switch__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ui-switch__label {
+  color: var(--text-1);
+  font: var(--fw-regular) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+}
+
+.ui-switch__desc {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+}
+
+/* A full-width settings row: label (and description) at the left, the switch at the right. */
+.ui-switch[data-layout="row"] {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.ui-switch[data-layout="row"] .ui-switch__text {
+  order: -1;
+  flex: 1;
+}
+
+/* The real control: invisible, covering the label, so a press anywhere on it toggles. */
+.ui-switch__input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+  appearance: none;
+}
+
+.ui-switch__track {
+  --ui-switch-w: 36px;
+  --ui-switch-knob: 16px;
+  --ui-switch-pad: 2px;
+  position: relative;
+  flex: none;
+  width: var(--ui-switch-w);
+  height: 20px;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  box-shadow:
+    inset 0 0 0 1px var(--line-2),
+    inset 0 1px 2px color-mix(in oklab, var(--void) 45%, transparent);
+  transition:
+    background var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.ui-switch__knob {
+  position: absolute;
+  top: var(--ui-switch-pad);
+  left: var(--ui-switch-pad);
+  width: var(--ui-switch-knob);
+  height: var(--ui-switch-knob);
+  border-radius: 50%;
+  background: var(--text-2);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--void) 65%, transparent);
+  transform-origin: 0 50%;
+  transition:
+    transform var(--dur-base) var(--ease-out-expo),
+    background var(--dur-fast) var(--ease-out);
+}
+
+/* Reduced motion: the knob jumps; the track colour still cross-fades. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-switch__knob {
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-switch__knob {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ui-switch__input:checked + .ui-switch__track {
+  background: var(--accent-600);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--text-1) 22%, transparent);
+}
+
+.ui-switch__input:checked + .ui-switch__track .ui-switch__knob {
+  background: var(--text-1);
+  transform: translateX(calc(var(--ui-switch-w) - var(--ui-switch-knob) - var(--ui-switch-pad) * 2));
+  transform-origin: 100% 50%;
+}
+
+@media (hover: hover) {
+  .ui-switch:hover:not([data-disabled]) .ui-switch__input:not(:checked) + .ui-switch__track {
+    background: var(--ink-4);
+  }
+
+  .ui-switch:hover:not([data-disabled]) .ui-switch__input:checked + .ui-switch__track {
+    background: var(--accent-600-hover);
+  }
+}
+
+.ui-switch__input:focus-visible + .ui-switch__track {
+  box-shadow:
+    var(--focus-ring),
+    inset 0 0 0 1px var(--line-2);
+}
+
+.ui-switch__input:checked:focus-visible + .ui-switch__track {
+  box-shadow:
+    var(--focus-ring),
+    inset 0 1px 0 color-mix(in oklab, var(--text-1) 22%, transparent);
+}
+
+/* Touch: the 44 px target. */
+@media (pointer: coarse) {
+  .ui-switch {
+    min-height: var(--touch-min);
+  }
+}

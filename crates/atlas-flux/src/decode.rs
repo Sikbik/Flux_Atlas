@@ -6,13 +6,14 @@
 //! Node attribution (producer, paid nodes) needs the node table and is left to the engine:
 //! `producer` and `Payout::node` are `None` here.
 
-use atlas_core::chain::{BlockKind, BlockSummary, NodeTx, NodeTxKind, Payout};
+use atlas_core::chain::{BlockKind, BlockSummary, NodeTx, NodeTxKind, Payout, TxKind};
 use atlas_core::emission::{self, split_coinbase};
 use atlas_core::{Amount, BlockHash, Collateral, Hash32, NodeEndpoint, Outpoint, Tier, Txid};
 
 use crate::error::{FluxError, Result};
 use crate::models::apps::APP_PAYMENT_ADDRESS;
 use crate::models::daemon::{DaemonBlock, DaemonTx};
+use crate::models::insight::InsightTx;
 
 /// A regular (value-carrying) transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +23,8 @@ pub struct TransferTx {
     /// `(first address, amount)` per output.
     pub outputs: Vec<(Option<String>, Amount)>,
     pub input_count: u32,
+    /// Serialized size in bytes (see [`DaemonTx::serialized_size`]).
+    pub size: Option<u32>,
 }
 
 /// A payment for an app register/update message.
@@ -112,6 +115,82 @@ pub fn detect_app_payment(tx: &DaemonTx, app_address: &str) -> Option<AppPayment
         txid: Hash32::from_hex(&tx.txid).ok()?,
         message_hash: hash,
         value,
+    })
+}
+
+/// What decides a transaction's kind, read from any decoded form (daemon or Insight).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TxTraits {
+    pub coinbase: bool,
+    /// `Some(Some(true))` start, `Some(Some(false))` confirm, `Some(None)` a fluxnode tx whose
+    /// type is unreadable (classifies as `node_tx`), `None` not a fluxnode tx.
+    #[allow(clippy::option_option)]
+    pub fluxnode: Option<Option<bool>>,
+    /// Pays the app address and carries an OP_RETURN message hash.
+    pub app_payment: bool,
+}
+
+/// The one classifier for block and mempool transactions: coinbase, fluxnode start / confirm,
+/// app-message payment (a payment to the app address plus an OP_RETURN carrying the message
+/// hash, as in [`detect_app_payment`]), otherwise a transfer.
+pub fn kind_of(t: TxTraits) -> TxKind {
+    if t.coinbase {
+        return TxKind::Coinbase;
+    }
+    match t.fluxnode {
+        Some(Some(true)) => TxKind::NodeStart,
+        Some(Some(false)) => TxKind::NodeConfirm,
+        Some(None) => TxKind::NodeTx,
+        None if t.app_payment => TxKind::AppMessage,
+        None => TxKind::Transfer,
+    }
+}
+
+/// Classifies a daemon transaction (`getblock` verbosity 2, `getrawtransaction`).
+pub fn classify_tx(tx: &DaemonTx, app_address: &str) -> TxKind {
+    let fluxnode = tx.is_fluxnode().then(|| {
+        if tx.is_start() {
+            Some(true)
+        } else if tx.is_confirm() {
+            Some(false)
+        } else {
+            None
+        }
+    });
+    kind_of(TxTraits {
+        coinbase: tx.is_coinbase(),
+        fluxnode,
+        app_payment: fluxnode.is_none() && detect_app_payment(tx, app_address).is_some(),
+    })
+}
+
+/// Classifies an Insight transaction (`/api/tx/<txid>`) with the same rules as [`classify_tx`].
+pub fn classify_insight_tx(tx: &InsightTx, app_address: &str) -> TxKind {
+    let fluxnode = tx
+        .is_fluxnode()
+        .then(|| match (tx.n_type, tx.kind.as_deref()) {
+            (Some(2), _) => Some(true),
+            (Some(4), _) => Some(false),
+            (_, Some(k)) if k.starts_with("Start") => Some(true),
+            (_, Some(k)) if k.starts_with("Confirm") => Some(false),
+            _ => None,
+        });
+    let pays_app = tx.vout.iter().any(|o| {
+        o.script_pub_key.addresses.iter().any(|a| a == app_address) && !o.amount().is_zero()
+    });
+    let carries_hash = tx.vout.iter().any(|o| {
+        o.script_pub_key
+            .asm
+            .strip_prefix("OP_RETURN")
+            .and_then(|h| hex::decode(h.trim()).ok())
+            .and_then(|b| String::from_utf8(b).ok())
+            .is_some_and(|t| Hash32::from_hex(&t).is_ok())
+    });
+    kind_of(TxTraits {
+        coinbase: tx.is_coinbase == Some(true)
+            || tx.vin.first().is_some_and(|v| v.coinbase.is_some()),
+        fluxnode,
+        app_payment: fluxnode.is_none() && pays_app && carries_hash,
     })
 }
 
@@ -212,6 +291,7 @@ pub fn decode_block_with(block: &DaemonBlock, app_address: &str) -> Result<Decod
             value_out: tx_value,
             outputs,
             input_count: u32::try_from(tx.vin.len()).unwrap_or(u32::MAX),
+            size: tx.serialized_size(),
         });
     }
 

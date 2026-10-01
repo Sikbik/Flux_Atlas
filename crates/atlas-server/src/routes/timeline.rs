@@ -1,4 +1,6 @@
-//! Time machine: snapshot index, and state at `t` (pending the engine's reconstruction).
+//! Time machine: snapshot index, and the node set at any `t` (nearest keyframe + event replay).
+
+use std::sync::Arc;
 
 use atlas_core::api::TimelineDto;
 use atlas_core::now_ms;
@@ -8,7 +10,7 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use serde::Deserialize;
 
-use crate::body::{cache, json_response};
+use crate::body::{CachedBody, cache, json_response};
 use crate::error::{ApiError, ApiResult};
 use crate::extract::Q;
 use crate::state::AppState;
@@ -41,16 +43,43 @@ pub struct StateQuery {
     pub t: Option<u64>,
 }
 
-/// `GET /timeline/state?t=` (binary, `nodes.bin` format).
-pub async fn state(Q(q): Q<StateQuery>) -> ApiResult<Response> {
+/// `GET /timeline/state?t=` (binary, `nodes.bin` format v1, section 7).
+///
+/// The node set at `t` reconstructed by `atlas_engine::timemachine::state_at`. The header's
+/// `generated_ms` is `t` and its `seq` is 0 (a historical state has no live position), so the
+/// ETag is stable for a given `t`. Columns the keyframes do not record (rank, hardware, apps,
+/// versions) are zero.
+pub async fn state(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Q(q): Q<StateQuery>,
+) -> ApiResult<Response> {
     let t =
         q.t.ok_or_else(|| ApiError::bad_request("t is required (unix ms)"))?;
     if t > now_ms() + 60_000 {
         return Err(ApiError::bad_request("t is in the future"));
     }
-    // INTEGRATION: reconstruct with the engine's `timemachine::state_at(store, t)`, encode the
-    // result with `encode_nodes_bin`, and serve it through `CachedBody` (cache per keyframe).
-    Err(ApiError::not_implemented(
-        "time machine state reconstruction is not available yet",
-    ))
+    let body = if let Some(b) = s.timeline_cache.get(&t).await {
+        b
+    } else {
+        let b = s
+            .store_read(move |st| {
+                let state = atlas_engine::timemachine::state_at(st, t)?;
+                tracing::debug!(
+                    t,
+                    snapshot_ms = state.snapshot_ms,
+                    replayed = state.replayed,
+                    nodes = state.nodes.len(),
+                    "time machine reconstruction"
+                );
+                Ok(Arc::new(CachedBody::new(
+                    "application/octet-stream",
+                    state.to_nodes_bin(0),
+                )))
+            })
+            .await?;
+        s.timeline_cache.insert(t, Arc::clone(&b)).await;
+        b
+    };
+    Ok(body.respond(&headers, cache::HISTORY))
 }

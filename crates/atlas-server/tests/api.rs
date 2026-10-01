@@ -671,19 +671,103 @@ async fn explorer_validation() {
 // ---------------------------------------------------------------------------------------------
 
 #[tokio::test]
-async fn timeline_and_state_stub() {
+async fn timeline_and_state_at() {
     let e = env();
     let t = get(&e.app, "/api/v1/timeline").await.json();
     assert_eq!(t["keyframes_ms"].as_array().unwrap().len(), 2);
     assert!(t["first_ms"].as_u64().is_some());
     assert!(t["event_count"].as_u64().unwrap() >= 6);
-    let s = get(
+
+    let listed: Vec<&atlas_core::NodeRecord> = e
+        .fixture
+        .nodes
+        .iter()
+        .filter(|n| !matches!(n.status, NodeStatus::Departed | NodeStatus::Unknown))
+        .collect();
+    let now = e.fixture.now_ms;
+
+    // After the newest keyframe: the whole listed set, in the section 7 format.
+    let at = now - 1000;
+    let s = get(&e.app, &format!("/api/v1/timeline/state?t={at}")).await;
+    assert_eq!(s.status, StatusCode::OK);
+    assert_eq!(s.header("content-type"), Some("application/octet-stream"));
+    assert!(s.header("etag").is_some());
+    let bin = decode_nodes_bin(&s.body).unwrap();
+    assert_eq!(bin.seq, 0);
+    assert_eq!(bin.generated_ms, at);
+    assert_eq!(bin.len(), listed.len());
+    let ids: Vec<u32> = listed.iter().map(|n| n.id.0).collect();
+    assert_eq!(bin.ids, ids);
+    let located = listed
+        .iter()
+        .position(|n| {
+            n.geo
+                .as_ref()
+                .is_some_and(atlas_core::node::Geo::has_coords)
+        })
+        .unwrap();
+    let g = listed[located].geo.as_ref().unwrap();
+    assert!((bin.lat[located] - g.lat).abs() < 1e-4);
+    assert!((bin.lon[located] - g.lon).abs() < 1e-4);
+    assert_eq!(bin.tier[located], listed[located].tier as u8);
+    // Ranks are not recorded by keyframes: the column is absent, not zero-filled. The rest of
+    // the format-2 keyframe columns are there, with the recorded values.
+    use atlas_core::codec::nodes_bin::kind;
+    assert!(!bin.has(kind::RANK));
+    for k in [
+        kind::VERSION,
+        kind::CORES,
+        kind::LAST_PAID,
+        kind::APP_COUNT,
+        kind::FLAGS,
+    ] {
+        assert!(bin.has(k), "column {k}");
+    }
+    let with_hw = listed.iter().position(|n| n.hw.is_some()).unwrap();
+    assert_eq!(
+        bin.cores[with_hw],
+        listed[with_hw].hw.as_ref().unwrap().cores
+    );
+    let with_version = listed
+        .iter()
+        .position(|n| n.versions.flux_os.is_some())
+        .unwrap();
+    assert_eq!(
+        bin.versions[bin.version_idx[with_version] as usize],
+        listed[with_version].versions.flux_os.as_deref().unwrap()
+    );
+
+    // Same t: served from cache with the same ETag; If-None-Match gives 304.
+    let again = get(&e.app, &format!("/api/v1/timeline/state?t={at}")).await;
+    assert_eq!(again.header("etag"), s.header("etag"));
+    let nm = get_with(
         &e.app,
-        &format!("/api/v1/timeline/state?t={}", e.fixture.now_ms - 1000),
+        &format!("/api/v1/timeline/state?t={at}"),
+        &[("if-none-match", s.header("etag").unwrap())],
     )
     .await;
-    assert_eq!(s.status, StatusCode::NOT_IMPLEMENTED);
-    assert_eq!(s.error_code(), "not_implemented");
+    assert_eq!(nm.status, StatusCode::NOT_MODIFIED);
+
+    // Between the keyframes: the last node had not joined yet.
+    let s = get(
+        &e.app,
+        &format!("/api/v1/timeline/state?t={}", now - 2 * 3_600_000 + 1),
+    )
+    .await;
+    let bin = decode_nodes_bin(&s.body).unwrap();
+    let last = e.fixture.nodes.last().unwrap().id.0;
+    assert!(!bin.ids.contains(&last));
+    assert!(bin.len() + 1 >= listed.len());
+
+    // Before any keyframe: nothing was known.
+    let s = get(
+        &e.app,
+        &format!("/api/v1/timeline/state?t={}", now - 3 * 3_600_000),
+    )
+    .await;
+    assert_eq!(s.status, StatusCode::OK);
+    assert_eq!(decode_nodes_bin(&s.body).unwrap().len(), 0);
+
     assert_eq!(
         get(&e.app, "/api/v1/timeline/state").await.status,
         StatusCode::BAD_REQUEST
@@ -716,9 +800,31 @@ async fn ops_endpoints() {
         "atlas_ws_messages_sent_total",
         "atlas_ws_messages_dropped_total",
         "atlas_proxy_cache_requests_total{cache=\"tx\",result=\"hit\"}",
+        // Engine families.
+        "atlas_ingest_job_runs_total{job=\"stats_round\"}",
+        "atlas_ingest_job_errors_total{job=\"node_registry\"} 0",
+        "atlas_ingest_job_stale{job=\"block_decoder\"}",
+        "# TYPE atlas_upstream_request_duration_seconds histogram",
+        "# TYPE atlas_ingest_job_upstream_seconds_total counter",
+        "atlas_store_commit_duration_seconds_bucket{le=\"+Inf\"}",
+        "atlas_publish_duration_seconds_count",
+        "atlas_replay_ring_messages{ring=\"hub\"}",
+        "atlas_replay_ring_capacity{ring=\"engine\"}",
+        "atlas_engine_internal_errors_total 0",
     ] {
         assert!(text.contains(needle), "missing {needle}\n{text}");
     }
+    // Low cardinality: every family stays small (bounded label sets).
+    let mut per_family = std::collections::BTreeMap::<&str, usize>::new();
+    for line in text.lines().filter(|l| !l.starts_with('#')) {
+        let name = line.split(['{', ' ']).next().unwrap();
+        *per_family.entry(name).or_default() += 1;
+    }
+    for (name, n) in &per_family {
+        assert!(*n <= 200, "{name} has {n} series");
+    }
+    // Unknown is absent, not 0: no job has succeeded in a stale-free fixture without ingest.
+    assert!(!text.contains("atlas_ingest_job_last_success_age_seconds{job=\"stats_round\"}"));
 
     // A stale engine is alive but not ready.
     let dir = tempfile::tempdir().unwrap();

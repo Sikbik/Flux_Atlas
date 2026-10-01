@@ -1,0 +1,50 @@
+/* Stack and Row: flex layout glue on the space tokens. */
+
+.ui-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-gap, var(--space-5));
+  min-width: 0;
+}
+
+.ui-stack[data-align="start"] {
+  align-items: flex-start;
+}
+.ui-stack[data-align="center"] {
+  align-items: center;
+}
+.ui-stack[data-align="end"] {
+  align-items: flex-end;
+}
+
+.ui-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-gap, var(--space-4));
+  min-width: 0;
+}
+
+.ui-row[data-wrap] {
+  flex-wrap: wrap;
+}
+.ui-row[data-align="start"] {
+  align-items: flex-start;
+}
+.ui-row[data-align="end"] {
+  align-items: flex-end;
+}
+.ui-row[data-align="baseline"] {
+  align-items: baseline;
+}
+.ui-row[data-align="stretch"] {
+  align-items: stretch;
+}
+.ui-row[data-justify="center"] {
+  justify-content: center;
+}
+.ui-row[data-justify="end"] {
+  justify-content: flex-end;
+}
+.ui-row[data-justify="between"] {
+  justify-content: space-between;
+}

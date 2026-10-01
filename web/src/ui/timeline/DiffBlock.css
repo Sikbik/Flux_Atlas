@@ -1,0 +1,51 @@
+/* DiffBlock: a spec change, line by line (design 8.16, the mock's .diff).
+
+   Added lines take the positive hue of the diverging pair (--div-pos, Flux blue), removed lines the
+   negative hue (--div-neg, coral), each as a low-alpha wash with a hairline bar at the left and the
+   sign in the gutter; context stays quiet in --text-3. Plex Mono 12 px. Long lines wrap with their
+   indentation kept, so the block never scrolls sideways inside a narrow inspector.
+
+   Local custom property (internal, set per line kind):
+     --ui-diff-hue   the hue of the line (--div-pos for add, --div-neg for del). */
+
+.ui-diff {
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  background: var(--ink-1);
+  font: var(--fw-regular) 12px / 1.6 var(--font-mono);
+}
+
+.ui-diff__line {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  padding-right: var(--space-5);
+  color: var(--text-3);
+}
+
+.ui-diff__line[data-kind="add"] {
+  --ui-diff-hue: var(--div-pos);
+}
+
+.ui-diff__line[data-kind="del"] {
+  --ui-diff-hue: var(--div-neg);
+}
+
+.ui-diff__line:is([data-kind="add"], [data-kind="del"]) {
+  background: color-mix(in oklab, var(--ui-diff-hue) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--ui-diff-hue);
+  color: color-mix(in oklab, var(--ui-diff-hue) 38%, var(--text-1));
+}
+
+.ui-diff__sign {
+  text-align: center;
+  color: var(--ui-diff-hue, var(--text-4));
+  user-select: none;
+}
+
+.ui-diff__text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -14,6 +14,7 @@ pub mod lenient;
 pub mod models;
 pub mod ssrf;
 pub mod timefmt;
+pub mod txsize;
 pub mod upstream;
 
 pub use clients::{

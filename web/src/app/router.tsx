@@ -301,6 +301,12 @@ const devLiveRoute = createRoute({
   component: lazyRouteComponent(() => import('../features/dev/LiveInspector'), 'LiveInspector'),
 });
 
+const devKitRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/dev/kit',
+  component: lazyRouteComponent(() => import('../ui/gallery/Gallery'), 'Gallery'),
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   nodeRoute,
@@ -326,6 +332,7 @@ export const routeTree = rootRoute.addChildren([
   settingsRoute,
   qRoute,
   devLiveRoute,
+  devKitRoute,
 ]);
 
 export function createAtlasRouter(context: RouterContext) {

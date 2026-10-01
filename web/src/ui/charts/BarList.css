@@ -1,0 +1,196 @@
+/* BarList (design 5.6, 8.0): ranked horizontal bars. A 28 px row: label, an 8 px track whose fill is
+   a quiet gradient with a rounded data end and a square baseline, the value in Plex Mono. The fill is
+   full width and slides with `translate` (a percentage of the track via container query units), so
+   its rounded end stays crisp at every length and a changed length glides without touching layout.
+   Nothing animates on entry: the Flux motion language owns reveals and hover.
+
+   Custom properties
+     --ui-bl-label   label column width, any grid track (default minmax(88px, 34%)); also set by `labelWidth`
+     --ui-bl-value   value column width in ch (set by the component from the longest value)
+     --ui-bl-detail  detail column width in ch (set by the component)
+     --ui-bl-c       a row's bar colour (set from the item's `color`); default var(--viz-1)
+     --ui-bl-frac    a row's bar length 0..1 (set by the component) */
+
+.ui-barlist {
+  --ui-bl-label: minmax(88px, 34%);
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-barlist__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-barlist__item {
+  min-width: 0;
+}
+
+.ui-barlist__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--ui-bl-label) minmax(32px, 1fr) var(--ui-bl-value, 6ch);
+  align-items: center;
+  column-gap: var(--space-5);
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ui-barlist[data-detail] .ui-barlist__row {
+  grid-template-columns: var(--ui-bl-label) minmax(32px, 1fr) var(--ui-bl-value, 6ch) var(--ui-bl-detail, 5ch);
+}
+
+.ui-barlist__row:where([data-kind="link"], [data-kind="button"]) {
+  cursor: pointer;
+}
+
+.ui-barlist__row:where([data-kind="link"], [data-kind="button"]):hover {
+  background: var(--ink-2);
+}
+
+.ui-barlist__row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Selected: the accent wash and a 2 px bar (never colour alone: the bar is a shape). */
+.ui-barlist__row[data-selected] {
+  background: var(--accent-soft);
+}
+
+.ui-barlist__row[data-selected]::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 2px;
+  border-radius: var(--r-pill);
+  background: var(--accent-500);
+}
+
+.ui-barlist__row[data-selected]:where([data-kind="link"], [data-kind="button"]):hover {
+  background: var(--accent-soft-2);
+}
+
+.ui-barlist__label {
+  overflow: hidden;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1.25 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.ui-barlist__row:where([data-kind="link"], [data-kind="button"]):hover .ui-barlist__label,
+.ui-barlist__row[data-selected] .ui-barlist__label {
+  color: var(--text-1);
+}
+
+/* The track is the 100 percent reference; the fill inside it slides, clipped by the track. */
+.ui-barlist__track {
+  position: relative;
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  container-type: inline-size;
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+  background: var(--ink-3);
+}
+
+/* An unknown value is an empty dashed track, never a zero-length bar. */
+.ui-barlist__track[data-unknown] {
+  background: repeating-linear-gradient(90deg, var(--ink-4) 0 3px, transparent 3px 7px);
+}
+
+.ui-barlist__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+  /* Quiet at the baseline, saturated at the data end; the gradient spans the visible length. */
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--ui-bl-c, var(--viz-1)) 46%, transparent),
+      var(--ui-bl-c, var(--viz-1))
+    )
+    right / max(calc(var(--ui-bl-frac) * 100%), 4px) 100% no-repeat;
+  /* Slide so that frac * 100% of the track shows (never less than the 4 px rounded end). */
+  translate: max(calc((var(--ui-bl-frac) - 1) * 100cqw), calc(4px - 100cqw)) 0;
+  transition:
+    translate var(--dur-slow) var(--ease-out),
+    background-size var(--dur-slow) var(--ease-out);
+}
+
+.ui-barlist__fill[data-none] {
+  visibility: hidden;
+}
+
+.ui-barlist__value {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1.25 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ui-barlist__value[data-unknown] {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+}
+
+.ui-barlist__detail {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1.25 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ui-barlist__more {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  padding-left: var(--space-2);
+}
+
+.ui-barlist__skeleton-value {
+  justify-self: end;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-barlist__fill,
+  :root:not([data-motion="full"]) .ui-barlist__row,
+  :root:not([data-motion="full"]) .ui-barlist__label {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__fill,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__row,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__label {
+  transition: none;
+}
+
+/* Touch: rows that act are 44 px tall. */
+@media (pointer: coarse) {
+  .ui-barlist__row:where([data-kind="link"], [data-kind="button"]) {
+    min-height: var(--touch-min);
+  }
+}

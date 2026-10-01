@@ -1,0 +1,8 @@
+{
+  "name": "@flux-atlas/ui-kit",
+  "private": true,
+  "description": "The Flux Atlas UI kit. Only stylesheets have side effects, so a view that imports one component from the barrel bundles that component and its CSS, not the whole kit.",
+  "sideEffects": [
+    "**/*.css"
+  ]
+}

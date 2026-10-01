@@ -1,0 +1,81 @@
+/* The floating surface behind popovers, menus and listboxes (design 5.5 glass, 8.4 menus): strong glass
+   with a hairline border and a lit top edge, a faint Flux-blue spill from the top left, and the pop
+   shadow. It appears with a 4 px drift and a fade, measured before it is shown (the position hook
+   keeps it hidden until then), and leaves with a quicker fade. */
+
+.ui-layer {
+  z-index: var(--z-menu);
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
+  max-height: var(--ui-layer-max-h, calc(100vh - 16px));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  background: var(--slab-spill), var(--glass-bg-strong);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-pop), var(--shadow-inset-hi);
+  color: var(--text-1);
+  outline: none;
+  animation: ui-layer-in var(--dur-fast) var(--ease-out) both;
+}
+
+/* The layer drifts in from the side it was placed on. */
+.ui-layer[data-side="bottom"] {
+  --ui-layer-dy: -4px;
+}
+
+.ui-layer[data-side="top"] {
+  --ui-layer-dy: 4px;
+}
+
+.ui-layer[data-side="right"] {
+  --ui-layer-dx: -4px;
+}
+
+.ui-layer[data-side="left"] {
+  --ui-layer-dx: 4px;
+}
+
+.ui-layer[data-state="closed"] {
+  animation: ui-layer-out calc(var(--dur-fast) * 0.6) var(--ease-in) both;
+  pointer-events: none;
+}
+
+@keyframes ui-layer-in {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--ui-layer-dx, 0px), var(--ui-layer-dy, 0px), 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ui-layer-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion keeps the cross-fade and drops the drift; off is instant. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-layer {
+    --ui-layer-dx: 0px;
+    --ui-layer-dy: 0px;
+  }
+}
+
+:root[data-motion="reduced"] .ui-layer {
+  --ui-layer-dx: 0px;
+  --ui-layer-dy: 0px;
+}
+
+:root[data-motion="off"] .ui-layer {
+  animation: none;
+}

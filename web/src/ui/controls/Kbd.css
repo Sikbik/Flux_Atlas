@@ -1,0 +1,33 @@
+/* Key caps: Plex Mono 11 px on ink-2 with a 2 px bottom edge (design 8.9). */
+
+.ui-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: var(--r-xs);
+  background: var(--ink-2);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.ui-kbd-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ui-kbd-combo__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

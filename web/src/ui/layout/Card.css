@@ -1,0 +1,79 @@
+/* Card: one ink step above the slab. Depth is lightness plus a rim that is brightest where the one
+   light lands (top left) and fades out on the far side; there is no heavy outline (design 5.2, 5.5).
+   Fill and rim are two background layers on a transparent 1 px border, so the edge needs no extra
+   element and nothing is clipped. */
+
+.ui-card {
+  --ui-card-glow: 0%;
+  position: relative;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(
+      130% 110% at 0% 0%,
+      color-mix(in oklab, var(--accent, var(--accent-500)) var(--ui-card-glow), transparent),
+      transparent 60%
+    )
+    padding-box,
+    linear-gradient(180deg, color-mix(in oklab, var(--hot) 2.4%, var(--ink-1)), var(--ink-1) 52%) padding-box,
+    var(--ui-rim) border-box;
+  box-shadow: var(--ui-lit), var(--ui-contact);
+  isolation: isolate;
+}
+
+.ui-card[data-glow] {
+  --ui-card-glow: 12%;
+}
+
+/* Flat: no fill and no light, a quiet hairline only. */
+.ui-card[data-tone="flat"] {
+  border-color: var(--line-2);
+  background: none;
+  box-shadow: none;
+}
+
+.ui-card[data-padding="sm"] {
+  padding: var(--space-4) var(--space-5);
+}
+
+.ui-card[data-padding="md"] {
+  padding: var(--space-5) var(--space-6);
+}
+
+.ui-card[data-padding="lg"] {
+  padding: var(--space-7) var(--space-8);
+}
+
+/* Interactive: a veil of light fades in on hover and deepens while pressed. Nothing moves. */
+.ui-card[data-interactive] {
+  cursor: pointer;
+}
+
+.ui-card[data-interactive]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--hot) 4%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .ui-card[data-interactive]:hover::after {
+    opacity: 1;
+  }
+}
+
+.ui-card[data-interactive][data-pressed]::after {
+  opacity: 1;
+  background: color-mix(in oklab, var(--hot) 7%, transparent);
+}
+
+.ui-card[data-interactive]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
