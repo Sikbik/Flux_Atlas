@@ -197,7 +197,7 @@
   text-overflow: ellipsis;
 }
 
-.ex-fcard__role svg:not(.ex-tier-glyph) {
+.ex-fcard__role svg:not(.ui-tier-glyph) {
   flex: none;
   color: var(--accent-300);
 }
@@ -297,7 +297,7 @@
   font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
 }
 
-.ex-flow__chip svg:not(.ex-copy svg) {
+.ex-flow__chip svg:not(.ui-copy svg) {
   flex: none;
   color: var(--accent-400);
 }

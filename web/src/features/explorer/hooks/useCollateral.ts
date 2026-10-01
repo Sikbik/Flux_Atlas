@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { useNetwork } from '../../../app/context';
 import { parseFlux } from '../../../lib/format';
 import { shallowEqual } from '../../../store/react';
-import type { TierName } from '../parts';
+import type { TierName } from '../../../ui';
 
 export function useCollateral(): Record<TierName, bigint> {
   const t = useNetwork(

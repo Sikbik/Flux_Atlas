@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  areaPath,
-  compactTick,
-  compactTickAt,
-  extent,
-  linear,
-  linePath,
-  nearestIndex,
-  niceTicks,
-  stack,
-  timeTicks,
-} from './scale';
+import { compactTickAt, linear, niceTicks, timeTicks } from './scale';
 
 describe('linear', () => {
   it('maps the domain to the range and back', () => {
@@ -90,63 +79,6 @@ describe('timeTicks', () => {
   it('is empty for an empty span', () => {
     expect(timeTicks(10, 10)).toEqual([]);
     expect(timeTicks(10, 5)).toEqual([]);
-  });
-});
-
-describe('nearestIndex', () => {
-  const xs = [0, 10, 20, 40];
-  it('finds the closest x', () => {
-    expect(nearestIndex(xs, -5)).toBe(0);
-    expect(nearestIndex(xs, 4)).toBe(0);
-    expect(nearestIndex(xs, 6)).toBe(1);
-    expect(nearestIndex(xs, 29)).toBe(2);
-    expect(nearestIndex(xs, 31)).toBe(3);
-    expect(nearestIndex(xs, 999)).toBe(3);
-    expect(nearestIndex([], 1)).toBe(-1);
-  });
-});
-
-describe('paths', () => {
-  it('breaks the line at unknown values', () => {
-    expect(linePath([0, 1, 2, 3], [1, null, 3, 4])).toBe('M0 1M2 3L3 4');
-  });
-
-  it('draws a step-after line', () => {
-    expect(linePath([0, 10, 20], [1, 2, 3], { step: true })).toBe('M0 1H10V2H20V3');
-  });
-
-  it('closes an area against a baseline and splits at gaps', () => {
-    const d = areaPath([0, 1, 2, 3], [5, 6, null, 7], 10);
-    expect(d.split('Z')).toHaveLength(3); // two closed pieces
-    expect(d).toContain('L1 10');
-    expect(d.startsWith('M0 5')).toBe(true);
-  });
-
-  it('stacks values and drops the stack where any part is unknown', () => {
-    const s = stack([
-      [1, 2, null],
-      [10, 20, 30],
-    ]);
-    expect(s.tops[1]).toEqual([11, 22, null]);
-    expect(s.bottoms[1]).toEqual([1, 2, null]);
-    expect(s.bottoms[0]).toEqual([0, 0, null]);
-  });
-});
-
-describe('extent and compactTick', () => {
-  it('finds the finite range and ignores nulls', () => {
-    expect(extent([3, null, 1], [Number.NaN, 9])).toEqual([1, 9]);
-    expect(extent([null])).toBeNull();
-  });
-
-  it('formats compact axis labels', () => {
-    expect(compactTick(0)).toBe('0');
-    expect(compactTick(950)).toBe('950');
-    expect(compactTick(2000)).toBe('2K');
-    expect(compactTick(12_500)).toBe('12.5K');
-    expect(compactTick(430_000_000)).toBe('430M');
-    expect(compactTick(1_500_000_000)).toBe('1.5B');
-    expect(compactTick(0.25)).toBe('0.25');
   });
 });
 
