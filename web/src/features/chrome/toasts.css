@@ -1,11 +1,11 @@
 /* Toasts (design 6.4 H, 8.17): glass-strong, 352 px, a 34 px icon tile tinted in the toast's colour, a
    Montserrat title and a quiet body. A payment is white-tinted, a warning amber, an achievement chamfered
-   (the only chamfered toast). They enter from the right in 280 ms and leave in 180 ms; nothing moves
-   except opacity and transform. */
+   (the only chamfered toast). A toast opens and closes with the motion language's Power-on, panel variant
+   (Toasts.tsx): it grows out of the edge it sits against with one comet along its top edge, and leaves in
+   180 ms. Nothing here animates but the stack stepping aside for a docked window. */
 
 .toasts {
   --toast-shift: 0px;
-  --toast-in: toast-in;
   position: fixed;
   top: calc(var(--topbar-h) + 62px);
   right: 16px;
@@ -35,26 +35,10 @@
   backdrop-filter: var(--glass-filter);
   box-shadow: var(--shadow-pop), var(--shadow-inset-hi);
   pointer-events: auto;
-  animation: var(--toast-in) var(--dur-enter) var(--ease-out) backwards;
 }
 
 .toast[data-leaving] {
   pointer-events: none;
-  animation: toast-out 180ms var(--ease-in) forwards;
-}
-
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-}
-
-@keyframes toast-out {
-  to {
-    opacity: 0;
-    transform: translateX(10px);
-  }
 }
 
 .toast[data-kind="success"] {
@@ -179,7 +163,6 @@ a.toast-main:hover .toast-text b {
 /* ---- phone: one toast, over the sheet, above the tab bar (12 px side margins) ------------------------- */
 
 .shell[data-layout="phone"] .toasts {
-  --toast-in: toast-rise;
   --toast-r: 18px;
   top: auto;
   right: 12px;
@@ -191,24 +174,12 @@ a.toast-main:hover .toast-text b {
   translate: none;
 }
 
-@keyframes toast-rise {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-}
-
-/* ---- motion preferences: a cross-fade only ---------------------------------------------------------- */
+/* ---- motion preferences ---------------------------------------------------------------------------- */
+/* Power-on cross-fades in Reduced and is instant when Off; the stack's own step aside stops moving. */
 
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .toasts {
     transition: none;
-  }
-  :root:not([data-motion="full"]) .toast {
-    animation: toast-fade-in var(--dur-base) var(--ease-standard) backwards;
-  }
-  :root:not([data-motion="full"]) .toast[data-leaving] {
-    animation: toast-fade-out var(--dur-base) var(--ease-standard) forwards;
   }
 }
 
@@ -217,30 +188,7 @@ a.toast-main:hover .toast-text b {
   transition: none;
 }
 
-:root[data-motion="reduced"] .toast {
-  animation: toast-fade-in var(--dur-base) var(--ease-standard) backwards;
-}
-
-:root[data-motion="reduced"] .toast[data-leaving] {
-  animation: toast-fade-out var(--dur-base) var(--ease-standard) forwards;
-}
-
-:root[data-motion-off] .toast {
-  animation: none;
-}
-
+/* Off draws no exit, so a toast that is leaving is simply gone. */
 :root[data-motion-off] .toast[data-leaving] {
   opacity: 0;
-}
-
-@keyframes toast-fade-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes toast-fade-out {
-  to {
-    opacity: 0;
-  }
 }

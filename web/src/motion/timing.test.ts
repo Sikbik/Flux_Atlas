@@ -88,6 +88,26 @@ describe('attach.ts and motion.css say the same thing', () => {
   });
 });
 
+describe("Off keeps Reduced's tokens", () => {
+  /** The declarations of the first rule whose selector contains `selector`, as a normalised list. */
+  function block(source: string, selector: string): string[] {
+    const at = source.indexOf(selector);
+    expect(at, selector).toBeGreaterThan(-1);
+    const body = source.slice(source.indexOf('{', at) + 1, source.indexOf('}', at));
+    return body
+      .split(';')
+      .map((d) => norm(d))
+      .filter(Boolean)
+      .sort();
+  }
+
+  it('gives data-motion="off" the same token set as data-motion="reduced" (tokens.css keys it on Reduced only)', () => {
+    const reduced = block(tokens, ':root[data-motion="reduced"]');
+    expect(reduced.length).toBeGreaterThan(10);
+    expect(block(css, ':root[data-motion="off"]')).toEqual(reduced);
+  });
+});
+
 describe('the design doc', () => {
   it('lists every --fx token the stylesheet declares', () => {
     const doc = read(docPath);

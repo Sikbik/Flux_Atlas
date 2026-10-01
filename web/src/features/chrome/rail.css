@@ -140,6 +140,8 @@
   flex: none;
   width: var(--card-w);
   list-style: none;
+  /* The card's own radius, so a light that circles the item (the motion language's Current) follows the card. */
+  border-radius: 12px;
 }
 
 .blk {
@@ -351,6 +353,12 @@ a.blk:focus-visible {
 
 :root[data-motion-off] .blk-item[data-fresh] {
   animation: none;
+}
+
+/* Off draws no rim either: nothing fades. */
+:root[data-motion-off] .blk-item[data-fresh] .blk::after {
+  animation: none;
+  opacity: 0;
 }
 
 @keyframes blk-land-quiet {

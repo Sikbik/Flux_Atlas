@@ -60,6 +60,11 @@ export class Run implements FxHandle {
   readonly nodes: Element[] = [];
   readonly anims: Anim[] = [];
   readonly done: Promise<void>;
+  /**
+   * Milliseconds every animation made through `play` waits before it starts: the light for a host that is
+   * itself still arriving (a card that lands a beat after its row), so the light starts when the host shows.
+   */
+  delay = 0;
   #timers: ReturnType<typeof setTimeout>[] = [];
   #cleanups: (() => void)[] = [];
   #ended = false;
@@ -90,7 +95,11 @@ export class Run implements FxHandle {
     keyframes: Keyframe[] | PropertyIndexedKeyframes,
     options: KeyframeAnimationOptions,
   ): Anim {
-    const a = this.fx.animate(el, keyframes, options);
+    const a = this.fx.animate(
+      el,
+      keyframes,
+      this.delay > 0 ? { ...options, delay: (options.delay ?? 0) + this.delay } : options,
+    );
     this.anims.push(a);
     return a;
   }

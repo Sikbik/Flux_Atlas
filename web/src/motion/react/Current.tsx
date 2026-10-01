@@ -17,6 +17,8 @@ export interface CurrentProps {
   /** Milliseconds; defaults to a length-scaled value. */
   duration?: number;
   tail?: number;
+  /** Milliseconds to wait before the light starts (a card that lands a beat after it mounts). */
+  delay?: number;
   disabled?: boolean;
   /** Also run once when the component mounts (a card that has just landed). */
   fireOnMount?: boolean;
@@ -29,13 +31,14 @@ export function Current({
   tone,
   duration,
   tail,
+  delay,
   disabled,
   fireOnMount,
 }: CurrentProps) {
   const track = useRef<HTMLSpanElement>(null);
   const prev = useRef(signal);
-  const props = useRef({ edge, reverse, tone, duration, tail });
-  props.current = { edge, reverse, tone, duration, tail };
+  const props = useRef({ edge, reverse, tone, duration, tail, delay });
+  props.current = { edge, reverse, tone, duration, tail, delay };
   useEffect(() => installEngine(), []);
 
   // A card that has just landed: one run at mount. The flag resets in the cleanup so React's

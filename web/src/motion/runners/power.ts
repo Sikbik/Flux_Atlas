@@ -12,10 +12,21 @@ import { drawEdge } from './current';
 import type { Tone } from './fx';
 import { clamp, type Fx, type FxHandle, num, readShape } from './fx';
 
-export type Origin = { x: number; y: number } | Element | DOMRect | null | undefined;
+/**
+ * Where an element comes from: client coordinates, an element or a rect (its centre), or a point on the element
+ * itself as fractions of its own box (`{ fx: 1, fy: 0.5 }` is the middle of its right edge: a toast that grows
+ * out of the screen's edge, a sheet out of the bottom).
+ */
+export type Origin =
+  | { x: number; y: number }
+  | { fx: number; fy: number }
+  | Element
+  | DOMRect
+  | null
+  | undefined;
 
 export interface PowerOptions {
-  /** Where the element comes from: client coordinates, an element or a rect (its centre). */
+  /** Where the element comes from (see `Origin`); the middle of the element when not given. */
   origin?: Origin;
   /** `window`: scale, fade and the light surge. `panel`: a quicker scale and fade with one comet along the top edge. */
   variant?: 'window' | 'panel';
@@ -30,6 +41,7 @@ export function resolveOrigin(origin: Origin, rect: DOMRect): { x: number; y: nu
     const r = origin.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
+  if ('fx' in origin) return { x: rect.left + rect.width * origin.fx, y: rect.top + rect.height * origin.fy };
   if ('width' in origin) return { x: origin.left + origin.width / 2, y: origin.top + origin.height / 2 };
   return { x: (origin as { x: number }).x, y: (origin as { y: number }).y };
 }
@@ -55,6 +67,14 @@ export function coverRadius(ox: number, oy: number, w: number, h: number): numbe
  */
 const APERTURE_BLEED = 64;
 
+/**
+ * How far outside the element the origin may be. A window summoned from a dock icon a thousand pixels away
+ * would otherwise open as a circle that has not reached it yet (nothing to see for the first frames, which
+ * is a wait) and scale about a far point (it would slide). Held to the rectangle plus this slack, the first
+ * frame already shows the window and the light still comes in from the side the source is on.
+ */
+export const ORIGIN_SLACK = 48;
+
 function canClip(el: Element): boolean {
   const cs = getComputedStyle(el);
   return cs.clipPath === 'none' && cs.maskImage === 'none' && cs.boxShadow === 'none' && cs.filter === 'none';
@@ -64,8 +84,8 @@ function canClip(el: Element): boolean {
 function measure(el: Element, opts: PowerOptions) {
   const rect = el.getBoundingClientRect();
   const o = resolveOrigin(opts.origin, rect);
-  const ox = clamp(o.x - rect.left, -4000, 4000);
-  const oy = clamp(o.y - rect.top, -4000, 4000);
+  const ox = clamp(o.x - rect.left, -ORIGIN_SLACK, rect.width + ORIGIN_SLACK);
+  const oy = clamp(o.y - rect.top, -ORIGIN_SLACK, rect.height + ORIGIN_SLACK);
   const aperture = opts.aperture === true || (opts.aperture !== false && canClip(el));
   return {
     rect,

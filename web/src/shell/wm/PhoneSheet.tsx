@@ -4,10 +4,11 @@
 // the one view that is not a route.
 
 import { X } from 'lucide-react';
-import { type ReactNode, useId, useRef } from 'react';
+import { type ReactNode, useId, useLayoutEffect, useRef } from 'react';
+import { powerOn } from '../../motion';
 import { useWindowManager, useWm } from './react';
 import { useMoreBelow } from './scrollfade';
-import { cycleSnap, sheetHeights, sheetTop, stepSnap } from './sheet';
+import { cycleSnap, SHEET_FOOT, sheetHeights, sheetTop, stepSnap } from './sheet';
 import { slideAway, useSheetDrag } from './useSheetDrag';
 import './wm.css';
 
@@ -54,6 +55,17 @@ export function PhoneSheet({
   });
   useMoreBelow(bodyRef);
 
+  // The sheet comes up out of the tab bar with the language's Power-on (panel): a quick unfold from its foot and one
+  // comet along its top edge. A finger on it ends the entrance, so a drag never fights the animation.
+  const entrance = useRef<{ cancel(): void } | null>(null);
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const h = powerOn(el, { variant: 'panel', origin: SHEET_FOOT });
+    entrance.current = h;
+    return () => h?.cancel();
+  }, []);
+
   const stepSheet = (dir: 1 | -1) => {
     const to = stepSnap(snap, dir, heights);
     if (to !== snap) wm.dispatch({ t: 'setSheet', snap: to });
@@ -84,6 +96,7 @@ export function PhoneSheet({
           height,
           zIndex: 'var(--z-window)',
         }}
+        onPointerDownCapture={() => entrance.current?.cancel()}
       >
         <div className="wm-shadow">
           <div className="wm-slab">

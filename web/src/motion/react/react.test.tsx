@@ -324,5 +324,122 @@ describe('motion react layer', () => {
       m.unmount();
       expect(installCount()).toBe(0);
     });
+
+    it('follows aria-current on a bar of routes (page, true, step) and not aria-current="false"', async () => {
+      const Bar = ({ at }: { at: 'page' | 'step' | 'false' | undefined }) => (
+        <nav style={{ position: 'relative' }}>
+          <button type="button" aria-current={at}>
+            home
+          </button>
+          <TabIndicator />
+        </nav>
+      );
+      const m = mount(<Bar at="page" />);
+      const bar = m.container.querySelector('.fx-indicator') as HTMLElement;
+      expect(bar.style.opacity).toBe('');
+      m.rerender(<Bar at="false" />);
+      await tick(); // the indicator watches the attribute with a MutationObserver
+      expect(bar.style.opacity).toBe('0');
+      m.rerender(<Bar at="step" />);
+      await tick();
+      expect(bar.style.opacity).toBe('');
+      m.unmount();
+    });
+
+    it('measures a host that is mid-scale in its own pixels (a panel still powering on)', () => {
+      // The palette's chips mount while the panel is at 97%: every painted distance is 3% short.
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.getAttribute('role') === 'tablist' ? 200 : 0;
+      });
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+        const rect = (left: number, width: number) =>
+          ({ left, top: 0, right: left + width, bottom: 20, width, height: 20, x: left, y: 0 }) as DOMRect;
+        if (this.getAttribute('role') === 'tablist') return rect(10, 194); // 200 wide, painted at 0.97
+        if (this.getAttribute('aria-selected') === 'true') return rect(10 + 97, 58.2); // 100 in, 60 wide
+        return RECT;
+      });
+      const m = mount(
+        <div role="tablist" style={{ position: 'relative' }}>
+          <button type="button" role="tab" aria-selected="true">
+            a
+          </button>
+          <TabIndicator />
+        </div>,
+      );
+      const bar = m.container.querySelector('.fx-indicator') as HTMLElement;
+      expect(Number.parseFloat(bar.style.getPropertyValue('--fx-l'))).toBeCloseTo(100, 1);
+      expect(Number.parseFloat(bar.style.getPropertyValue('--fx-r'))).toBeCloseTo(160, 1);
+      m.unmount();
+    });
+
+    it('answers a resize in the next frame, never inside the observer delivery', () => {
+      // A write made while resizes are being delivered can ask for another delivery in the same frame, which the
+      // browser reports as a ResizeObserver loop error: the line waits for a frame, and one frame covers a burst.
+      let deliver: () => void = () => undefined;
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(cb: () => void) {
+            deliver = cb;
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+      vi.stubGlobal('cancelAnimationFrame', () => undefined);
+      let selectedLeft = 40;
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+        const rect = (left: number, width: number) =>
+          ({ left, top: 0, right: left + width, bottom: 20, width, height: 20, x: left, y: 0 }) as DOMRect;
+        return this.getAttribute('aria-selected') === 'true' ? rect(selectedLeft, 60) : rect(0, 200);
+      });
+      const m = mount(
+        <div role="tablist" style={{ position: 'relative' }}>
+          <button type="button" role="tab" aria-selected="true">
+            a
+          </button>
+          <TabIndicator />
+        </div>,
+      );
+      const bar = m.container.querySelector('.fx-indicator') as HTMLElement;
+      expect(bar.style.getPropertyValue('--fx-l')).toBe('40px');
+      frames.length = 0;
+      selectedLeft = 70;
+      deliver();
+      deliver(); // a burst of resizes
+      expect(bar.style.getPropertyValue('--fx-l')).toBe('40px'); // nothing is written inside the delivery
+      expect(frames).toHaveLength(1); // and one frame answers them all
+      frames[0]?.(0);
+      expect(bar.style.getPropertyValue('--fx-l')).toBe('70px');
+      m.unmount();
+      vi.unstubAllGlobals();
+    });
+
+    it('does not rescale an ordinary host: a pixel of rounding in offsetWidth is not a transform', () => {
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.getAttribute('role') === 'tablist' ? 312 : 0; // painted 311.5 wide
+      });
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+        const rect = (left: number, width: number) =>
+          ({ left, top: 0, right: left + width, bottom: 20, width, height: 20, x: left, y: 0 }) as DOMRect;
+        if (this.getAttribute('role') === 'tablist') return rect(0, 311.5);
+        if (this.getAttribute('aria-selected') === 'true') return rect(250, 60);
+        return RECT;
+      });
+      const m = mount(
+        <div role="tablist" style={{ position: 'relative' }}>
+          <button type="button" role="tab" aria-selected="true">
+            a
+          </button>
+          <TabIndicator />
+        </div>,
+      );
+      const bar = m.container.querySelector('.fx-indicator') as HTMLElement;
+      expect(bar.style.getPropertyValue('--fx-l')).toBe('250px');
+      expect(bar.style.getPropertyValue('--fx-r')).toBe('310px');
+      m.unmount();
+    });
   });
 });

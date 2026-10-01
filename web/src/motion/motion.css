@@ -145,16 +145,24 @@
 }
 
 /* Keyboard focus: a steady, even ring (no pointer). The kit's own focus ring stays: this lights the
-   control's edge inside it. The transition only fades it in; it is never animated away. */
+   control's edge inside it. The transition only fades it in; it is never animated away. A host that
+   wraps the control that takes the focus (a picture card around a radio) wears the ring while that
+   control has visible focus: the control is focused, the host is lit. */
 .ui-button:focus-visible::after,
-[data-fx~="charge"]:focus-visible::after {
+[data-fx~="charge"]:focus-visible::after,
+[data-fx~="charge"]:has(:focus-visible)::after {
   opacity: 1;
   background: linear-gradient(rgb(174 198 255 / 0.8), rgb(174 198 255 / 0.8));
 }
 
 /* Controls outside the kit that charge, or only want the energised focus ring, get the ring plus a
-   Blue Wave bloom. The kit's buttons keep the kit's ring (--focus-ring). */
-:where([data-fx~="charge"]:focus-visible, [data-fx~="focus"]:focus-visible) {
+   Blue Wave bloom. The kit's buttons keep the kit's ring (--focus-ring). Zero specificity, so a surface
+   that draws its own shadow for the same state (a checked card's glow) says so with a class. */
+:where(
+  [data-fx~="charge"]:focus-visible,
+  [data-fx~="charge"]:has(:focus-visible),
+  [data-fx~="focus"]:focus-visible
+) {
   outline: none;
   box-shadow: var(--fx-focus-shadow);
 }
@@ -252,6 +260,35 @@
   transition-duration: var(--dur-fast, 140ms);
 }
 
+/* Off keeps Reduced's token set (shorter fades, no travel, springs replaced by the standard easing). The design
+   tokens key that set on data-motion="reduced" and the OS media query only, so an app-level Off would otherwise
+   run whatever CSS transition is left at the full durations. Kept in step with tokens.css by timing.test.ts. */
+:root[data-motion="off"] {
+  --motion-scale: 0;
+  --dur-base: 120ms;
+  --dur-slow: 120ms;
+  --dur-slower: 160ms;
+  --dur-enter: 120ms;
+  --dur-tick: 1ms;
+  --dur-fresh: 1000ms;
+  --dur-portal-open: 160ms;
+  --dur-portal-close: 120ms;
+  --dur-route: 160ms;
+  --dur-ambient-out: 600ms;
+  --dur-ambient-in: 300ms;
+  --dur-spring-snappy: 120ms;
+  --dur-spring-soft: 120ms;
+  --dur-assemble: 160ms;
+  --dur-lift: 300ms;
+  --dur-uplink: 160ms;
+  --dur-downlink: 160ms;
+  --dur-moon-hover: 120ms;
+  --stagger: 0ms;
+  --ease-spring-snappy: var(--ease-standard);
+  --ease-spring-soft: var(--ease-standard);
+  --ease-beat: var(--ease-standard);
+}
+
 /* Off: every effect is a state, never a motion. The focus ring stays (it is the indicator). */
 [data-fx-mode="off"] .ui-button::after,
 [data-fx-mode="off"] [data-fx~="charge"]::after {
@@ -260,7 +297,7 @@
 }
 
 [data-fx-mode="off"] .ui-button:not(:hover, :focus-visible)::after,
-[data-fx-mode="off"] [data-fx~="charge"]:not(:hover, :focus-visible)::after {
+[data-fx-mode="off"] [data-fx~="charge"]:not(:hover, :focus-visible, :has(:focus-visible))::after {
   opacity: 0;
 }
 
@@ -282,7 +319,11 @@
     display: none;
   }
 
-  :where([data-fx~="charge"]:focus-visible, [data-fx~="focus"]:focus-visible) {
+  :where(
+    [data-fx~="charge"]:focus-visible,
+    [data-fx~="charge"]:has(:focus-visible),
+    [data-fx~="focus"]:focus-visible
+  ) {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }

@@ -162,11 +162,15 @@
   opacity: 1;
 }
 
-.set-art:has(input:focus-visible) .set-art-frame::before {
-  box-shadow:
-    inset 0 0 0 1.5px var(--accent-400),
-    0 0 0 2px var(--ink-0),
-    0 0 0 4px var(--accent-400);
+/* Keyboard focus: the frame wears the motion language's energised ring (the kit's ring and a Blue Wave bloom
+   outside, the steady edge light inside from Charge). It is the frame's own shadow, because the frame clips
+   what is inside it; a checked card keeps its glow under the ring. */
+.set-art:has(input:focus-visible) .set-art-frame {
+  box-shadow: var(--fx-focus-shadow);
+}
+
+.set-art:has(input:checked):has(input:focus-visible) .set-art-frame {
+  box-shadow: var(--fx-focus-ring), var(--glow-accent);
 }
 
 .set-art-name {

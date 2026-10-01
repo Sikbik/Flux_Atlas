@@ -1,8 +1,9 @@
 // React layer over the headless window manager: a provider, selector hooks, and the window chrome (design
 // 8.3). A window is a wrapper that carries the geometry, the shadow and the state attributes, a slab that
 // carries the material, the rim and the chamfer, a title bar (glyph disc, title, subtitle, freshness chip,
-// controls) and a body. Windows open with a scale and a fade, leave as a ghost (a close fades, a minimise
-// flies to its dot in the dock), and slide to a new rectangle when maximised, docked or snapped.
+// controls) and a body. Windows open with the motion language's Power-on (a circle of light out of the dock
+// launcher that stands for them), leave as a ghost (a close plays the same in reverse, a minimise flies to its
+// dot in the dock), and slide to a new rectangle when maximised, docked or snapped.
 //
 // Each frame selects its own window, so dragging one never re-renders the layer, and the view inside is
 // memoised on the fields it depends on, so dragging never re-renders the view either.
@@ -23,12 +24,14 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { cssValue, play } from '../../features/chrome/motion';
+import { powerOn } from '../../motion';
 import { Freshness } from '../../ui';
 import { flipBetween, flipTransform, stableOrder, withGutter } from './chrome';
 import { ghostOut } from './ghost';
 import { WINDOW_ACCENT, WindowGlyph } from './glyphs';
 import { minimizedWindows, snapPreview, visibleWindows, windowRect } from './machine';
 import { metaEqual, type WindowMeta, WindowMetaContext, type WindowMetaSink } from './meta';
+import { windowOrigin } from './origin';
 import { useMoreBelow } from './scrollfade';
 import { cycleSnap, sheetHeights, stepSnap } from './sheet';
 import { WINDOW_SPECS } from './specs';
@@ -207,17 +210,54 @@ function Frame({
     [wm, dispatch, id, onFocusWindow],
   );
 
-  // A window that is closed or minimised leaves a ghost in its place (design 8.3).
+  // A window opens with Power-on, out of the launcher that stands for its type (a phone's sheet, out of the foot
+  // of the screen). The frame is the element it reveals: it carries no clip, mask, shadow or filter of its own
+  // (wm.css), so the aperture is safe. Nothing plays when the language has not loaded or motion is off; the
+  // window is simply there.
+  const phoneNow = useRef(phone);
+  phoneNow.current = phone;
+  const entrance = useRef<{ cancel(): void } | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: opens once, with the window; the type never changes
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const h = powerOn(el, {
+      origin: windowOrigin(win.type, phoneNow.current),
+      variant: phoneNow.current ? 'panel' : 'window',
+    });
+    entrance.current = h;
+    return () => h?.cancel();
+  }, []);
+
+  // A window that is closed or minimised leaves a ghost in its place (design 8.3): a close goes back into the
+  // launcher, a minimise flies to its dot.
   useLayoutEffect(() => {
     const el = rootRef.current;
     const type = win.type;
     return () => {
       if (!el || !layer.alive) return;
       const now = wm.getState().windows[id];
-      if (!now) ghostOut(el, 'close', type);
+      if (!now) ghostOut(el, 'close', type, windowOrigin(type, phoneNow.current));
       else if (now.mode === 'minimized') ghostOut(el, 'minimize', type);
     };
   }, [wm, layer, id, win.type]);
+
+  // Focus arrival (design 6.4 C): one flare along the title bar when a window that is already open takes the
+  // focus. A window that is opening carries Power-on's own light and flares nothing; the CSS flare answers
+  // `data-flare`, which is here for the 900 ms it takes.
+  const wasFocused = useRef(focused);
+  useEffect(() => {
+    const was = wasFocused.current;
+    wasFocused.current = focused;
+    const el = rootRef.current;
+    if (!focused || was || !el) return;
+    el.setAttribute('data-flare', '');
+    const t = setTimeout(() => el.removeAttribute('data-flare'), 950);
+    return () => {
+      clearTimeout(t);
+      el.removeAttribute('data-flare');
+    };
+  }, [focused]);
 
   // A window that moves to a new rectangle (maximise, dock, float, snap) slides there instead of jumping;
   // dragging, resizing and a changing viewport follow the pointer or the screen and never animate.
@@ -324,7 +364,11 @@ function Frame({
         height: box.h,
         zIndex: `min(calc(var(--z-window) + ${z}), var(--z-window-max))`,
       }}
-      onPointerDownCapture={(e) => focus(!(e.target as Element).closest('.wm-controls'))}
+      onPointerDownCapture={(e) => {
+        // A finger or pointer on the window ends its entrance (a sheet is dragged by transform, which it would fight).
+        entrance.current?.cancel();
+        focus(!(e.target as Element).closest('.wm-controls'));
+      }}
     >
       <div className="wm-shadow">
         <div className="wm-slab">

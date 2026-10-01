@@ -2,7 +2,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUi } from '../store/ui';
 import { attach, rules } from './attach';
-import { installCount, installEngine, powerOff, powerOn, pulse, resetEngine, stats, useHost } from './engine';
+import {
+  current,
+  installCount,
+  installEngine,
+  powerOff,
+  powerOn,
+  pulse,
+  resetEngine,
+  stats,
+  useHost,
+} from './engine';
 import type { Anim, Animate, Fx } from './fxRunners';
 import { MODE_ATTR, ROOT_ATTR } from './mode';
 
@@ -373,6 +383,99 @@ describe('engine', () => {
       expect(comets()).toBe(0);
     });
 
+    it('draws the streak inside a positioned row, so the light goes where the row goes, and takes it away', async () => {
+      const row = html('<div data-fx="current" data-fx-edge="bottom" style="position: relative">row</div>');
+      box(row, 20, 20, 400, 40);
+      row.setAttribute('data-fresh', '');
+      await tick();
+      const track = row.querySelector('.fx-current');
+      expect(track).not.toBeNull();
+      expect(track?.getAttribute('data-edge')).toBe('bottom');
+      expect(track?.getAttribute('aria-hidden')).toBe('true');
+      expect(track?.querySelectorAll('.fx-comet')).toHaveLength(1);
+      expect(layer()).toBeNull(); // no overlay: nothing is positioned over the rectangle
+      driver.finishAll();
+      await tick();
+      expect(row.querySelector('.fx-current')).toBeNull();
+      expect(row.textContent).toBe('row');
+    });
+
+    it('does not run for a row that was created with data-fresh already on it', async () => {
+      // The contract the views keep through useFresh: the attribute has to APPEAR on an element that exists.
+      const row = html('<div data-fx="current" data-fresh style="position: relative">row</div>');
+      box(row, 20, 20, 400, 40);
+      await tick();
+      expect(comets()).toBe(0);
+      expect(row.querySelector('.fx-current')).toBeNull();
+    });
+
+    describe('data-fx-delay: a row that follows an arrival with its own light', () => {
+      const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+      it('asks for the light only when the delay is over, and takes no budget while it waits', async () => {
+        const row = html('<div data-fx="current" data-fx-delay="40" style="position: relative">row</div>');
+        box(row, 20, 20, 400, 40);
+        row.setAttribute('data-fresh', '');
+        await tick();
+        expect(comets()).toBe(0);
+        expect(stats()?.active).toBe(0);
+        await wait(70);
+        expect(comets()).toBe(1);
+        expect(stats()?.byKind.current).toBe(1);
+      });
+
+      it('gets its light after two Currents that would have used the whole budget, once they are gone', async () => {
+        document.body.innerHTML = `
+          <div id="a" data-fx="current" style="position: relative">a</div>
+          <div id="b" data-fx="current" style="position: relative">b</div>
+          <div id="c" data-fx="current" data-fx-delay="40" style="position: relative">c</div>`;
+        const byId = (id: string) => document.getElementById(id) as HTMLElement;
+        const c = byId('c');
+        for (const el of [byId('a'), byId('b'), c]) {
+          box(el, 20, 20, 400, 40);
+          el.setAttribute('data-fresh', '');
+        }
+        await tick();
+        expect(stats()?.byKind.current).toBe(2); // a and b; c is still waiting
+        expect(stats()?.dropped).toBe(0); // and nothing was refused
+        driver.finishAll();
+        await wait(70);
+        expect(c.querySelectorAll('.fx-comet')).toHaveLength(1);
+        expect(stats()?.dropped).toBe(0);
+      });
+
+      it('starts no timer at all when motion is off', async () => {
+        useUi.setState({ motion: 'off' });
+        const timers = vi.spyOn(globalThis, 'setTimeout');
+        const row = html('<div data-fx="current" data-fx-delay="40" style="position: relative">row</div>');
+        box(row, 20, 20, 400, 40);
+        timers.mockClear();
+        row.setAttribute('data-fresh', '');
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(timers.mock.calls.filter(([, ms]) => ms === 40)).toHaveLength(0);
+        timers.mockRestore();
+      });
+
+      it('draws nothing when the row went away, or stopped being fresh, while it waited', async () => {
+        document.body.innerHTML = `
+          <div id="gone" data-fx="current" data-fx-delay="30" style="position: relative">a</div>
+          <div id="stale" data-fx="current" data-fx-delay="30" style="position: relative">b</div>`;
+        const gone = document.getElementById('gone') as HTMLElement;
+        const stale = document.getElementById('stale') as HTMLElement;
+        box(gone, 20, 20, 400, 40);
+        box(stale, 20, 80, 400, 40);
+        gone.setAttribute('data-fresh', '');
+        stale.setAttribute('data-fresh', '');
+        await tick();
+        gone.remove();
+        stale.removeAttribute('data-fresh');
+        await wait(60);
+        expect(comets()).toBe(0);
+        expect(stats()?.active).toBe(0);
+      });
+    });
+
     it('leaves rows that did not opt in to the kit', async () => {
       const row = html('<div class="ui-table__row">row</div>');
       box(row, 20, 20, 400, 40);
@@ -491,6 +594,44 @@ describe('engine', () => {
       expect(keys[0]?.clipPath).toBe('circle(0px at -5px -5px)');
       // the farthest corner is 368 px away (hypot(305, 205) rounded up), plus 4 px, plus the bleed
       expect(keys[1]?.clipPath).toBe('circle(436px at -5px -5px)');
+    });
+
+    it('starts a Current after its delay, for a card that lands a beat after it mounts', () => {
+      const el = html('<div style="position: relative">card</div>');
+      box(el, 10, 10, 200, 80);
+      const h = current(el, { edge: 'perimeter', delay: 90 });
+      expect(h).not.toBeNull();
+      const mine = driver.anims.filter((a) => el.contains(a.el) || a.el.closest('.fx-layer'));
+      expect(mine.length).toBeGreaterThan(0);
+      for (const a of mine) expect(a.options.delay).toBe(90);
+      h?.cancel();
+      driver.anims.length = 0;
+      current(el, { edge: 'top' });
+      for (const a of driver.anims) expect(a.options.delay ?? 0).toBe(0);
+    });
+
+    it('holds a far origin to 48 px outside the window, so the first frame already shows it', () => {
+      const el = html('<div>window</div>');
+      box(el, 10, 10, 300, 200);
+      // a dock icon a thousand pixels to the lower right: the circle starts at the window's nearest corner zone
+      powerOn(el, { origin: { x: 1100, y: 1000 }, aperture: true });
+      const reveal = driver.anims.find(
+        (a) => a.el === el && (a.keyframes as { clipPath?: string }[])[0]?.clipPath !== undefined,
+      );
+      const keys = reveal?.keyframes as { clipPath: string }[];
+      expect(keys[0]?.clipPath).toBe('circle(0px at 348px 248px)');
+      const scale = driver.anims.find((a) => a.el === el && (a.keyframes as object[]).length === 3);
+      const entrance = (scale?.keyframes ?? []) as { transformOrigin: string }[];
+      expect(entrance[0]?.transformOrigin).toBe('348px 248px');
+    });
+
+    it('takes an origin as a point on the element itself (a toast grows out of its right edge)', () => {
+      const el = html('<div>toast</div>');
+      box(el, 10, 10, 300, 200);
+      powerOn(el, { origin: { fx: 1, fy: 0.5 }, variant: 'panel' });
+      const scale = driver.anims.find((a) => a.el === el && (a.keyframes as object[]).length === 3);
+      const entrance = (scale?.keyframes ?? []) as { transformOrigin: string }[];
+      expect(entrance[0]?.transformOrigin).toBe('300px 100px');
     });
 
     it('stops listening when the last installer lets go (StrictMode double install is one install)', async () => {

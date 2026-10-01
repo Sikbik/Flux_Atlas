@@ -35,6 +35,7 @@ import { create } from 'zustand';
 import { useChainBlocks, useFeed, useRuntime } from '../../app/context';
 import { formatBytes, formatFlux, formatHeight, formatInt } from '../../lib/format';
 import { useAgo } from '../../lib/useClock';
+import { useFresh } from '../../motion/fresh';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import { visibleWindows } from '../../shell/wm/machine';
 import { useWm } from '../../shell/wm/react';
@@ -43,7 +44,6 @@ import type { WindowType } from '../../shell/wm/types';
 import { useUi } from '../../store/ui';
 import { LiveDot } from '../../ui';
 import { useNodeFacts } from './data';
-import { useFreshKeys } from './fresh';
 import { useLiveView } from './live';
 import { cssValue, play } from './motion';
 import { amountLabel } from './payouts';
@@ -227,6 +227,18 @@ function useDescribeContext(): DescribeContext {
   );
 }
 
+/**
+ * A payout to a watched node arrives with the block that paid it, and the block has its own light (the rail's
+ * streak and the card's lap, a second together). The row's Current waits for that to end, with a beat to spare: it
+ * reads as the consequence, and the effect budget (two Currents at once) never has to refuse it. The wait is
+ * counted from when the block was seen (`ev.ts`), so a row that shows later than the block lights at once.
+ */
+const BLOCK_LIGHT_MS = 1100;
+const blockLightLeft = (ev: PulseEvent): number | undefined => {
+  const left = Math.round(BLOCK_LIGHT_MS - (Date.now() - ev.ts));
+  return left > 0 ? left : undefined;
+};
+
 function EventRow({ ev, fresh }: { ev: PulseEvent; fresh: boolean }) {
   const ctx = useDescribeContext();
   const d = describeEvent(ev, ctx);
@@ -252,6 +264,7 @@ function EventRow({ ev, fresh }: { ev: PulseEvent; fresh: boolean }) {
       data-kind={ev.kind}
       data-fresh={fresh || undefined}
       data-fx={ev.kind === 'paid_mine' ? 'current' : undefined}
+      data-fx-delay={ev.kind === 'paid_mine' ? blockLightLeft(ev) : undefined}
       data-tier={d.tier && d.tier !== 'unknown' ? d.tier : undefined}
       style={{ '--ev': TONE_VAR[toneOf(ev.kind)] } as CSSProperties}
     >
@@ -308,8 +321,6 @@ function BurstRow({
 const DOM_ROWS = 14;
 /** Recent blocks the card starts with: enough to fill the tallest card (ten rows) before the feed has anything to add. */
 const BLOCK_ROWS = 12;
-/** A row stays fresh a little longer than its wash takes to decay (1.6 s). */
-const FRESH_MS = 1800;
 
 function usePulseRows(filter: PulseFilter) {
   const feed = useFeed();
@@ -380,11 +391,11 @@ export function PulseCard({ mode }: { mode: PulseMode }) {
   }, [rows, openBursts, mode]);
 
   // Rows present at first paint are history; later ones are fresh for a moment (the wash, and a Current for a
-  // payment to a watched node).
+  // payment to a watched node). `useFresh` is what gives the motion language the attribute AFTER the row exists.
   const initial = useRef<Set<string> | null>(null);
   if (initial.current === null && flat.length > 0) initial.current = new Set(flat.map((f) => f.key));
   const flatKeys = useMemo(() => flat.map((f) => f.key), [flat]);
-  const fresh = useFreshKeys(flatKeys, { ms: FRESH_MS, scope: `${filter}:${mode}` });
+  const fresh = useFresh(flatKeys, { scope: `${filter}:${mode}` });
 
   // FLIP: rows slide up by one row when a row arrives at the bottom (a fade when motion is reduced).
   const listRef = useRef<HTMLUListElement>(null);

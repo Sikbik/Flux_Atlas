@@ -32,11 +32,13 @@ manager (see its own README).
 
 ## `data-fresh`
 
-A block's card and a feed row that arrive after the first fill carry `data-fresh` for 1.8 s (`fresh.ts`:
-`useFreshKeys`). The element mounts without it and takes it in a second commit, before the next paint, because
-the motion language reads an attribute that *appears on an element that exists* (a created element that already
-has it fires nothing), and because a later re-render (a second store update, a reorg timer) must not end the
-moment early. The first fill, a resync and a filter change are not arrivals.
+A block's card and a feed row that arrive after the first fill carry `data-fresh` for 1.8 s, from
+`useFresh` in `web/src/motion/fresh.ts` (the motion language's one way to mark arrivals: see "Marking arrivals" in
+`web/src/motion/README.md`). The element mounts without the attribute and takes it in a second commit, before the
+next paint, because the language reads an attribute that *appears on an element that exists* (a created element that
+already has it fires nothing), and because a later re-render (a second store update, a reorg timer) must not end the
+moment early. The first fill, a resync and a filter change are not arrivals. A test fails any view that renders
+`data-fresh`, or opts a row into Current with `data-fx="current"`, without it.
 
 ## Loaded on demand
 
@@ -65,14 +67,14 @@ folder in the tree is listed under "Left for the integration pass".
 | Shell | `.shell` | `data-boot` (`running`, `done`), `data-boot-instant`, `data-layout` (`desktop`, `phone`) | none |
 | Top bar | `header.topbar[data-region=topbar]` | controls carry `data-pressed` | dense zone (`data-fx-density="dense"`) |
 | Dock | `nav.dock[data-region=dock]` > `button.dk` | `data-launcher` (the launcher id; `launcherOf(type)` in `shell/frame/dock.ts` names the one a window opens from, so a window can take its launcher as its source), `data-state` (`idle`, `open`, `focus`, `min`), `data-pressed` | `data-fx="charge"`, no Pulse: the window opening is the answer |
-| Block rail | `section.railwrap[data-region=rail]` > `div.rail[data-frozen]` > `ol.rail-track` > `li.blk-item` > `a.blk` | `li.blk-item[data-flip][data-fresh][data-orphan]` while a card is new (1.8 s) or orphaned, `a.blk[data-tier][data-pressed]`; the ghost is `li.blk-item-ghost[data-late]` > `.blk.ghost[data-phase]` | the rail and each card are positioned hosts for a `<Current>`; `data-frozen` is the "disabled" signal (scrolled into history) |
+| Block rail | `section.railwrap[data-region=rail]` > `div.rail[data-frozen]` > `ol.rail-track` > `li.blk-item` > `a.blk` | `li.blk-item[data-flip][data-fresh][data-orphan]` while a card is new (1.8 s) or orphaned, `a.blk[data-tier][data-pressed]`; the ghost is `li.blk-item-ghost[data-late]` > `.blk.ghost[data-phase]` | Current: a streak along the rail's top edge for each block that lands (`<Current>` in `div.rail`, keyed to the newest fresh card, off while `data-frozen`) and a lap around the new card (`<Current edge="perimeter" fireOnMount delay={90}>` in the fresh `li.blk-item`, which has the card's 12 px radius) |
 | Status bar | `section.statusbar[data-region=statusbar]` | `.sb-fresh[data-state]`, `.sb-led[data-state]`, `.sb-conn[data-tone]` | dense zone; the tip and counters settle through the kit's `AnimatedNumber` |
-| Pulse feed | `.pulse[data-mode][data-offline][data-frozen]` > `li.evt[data-flip][data-fresh][data-kind][data-tier]` | `data-fresh` while a row is new, `data-frozen` while the pointer holds the feed | rows settle; only a payment to a watched node (`data-kind="paid_mine"`) carries `data-fx="current"` |
+| Pulse feed | `.pulse[data-mode][data-offline][data-frozen]` > `li.evt[data-flip][data-fresh][data-kind][data-tier]` | `data-fresh` while a row is new, `data-frozen` while the pointer holds the feed | rows settle; only a payment to a watched node (`data-kind="paid_mine"`) carries `data-fx="current"`, and its streak is drawn inside the row, so it goes where the row goes while the row slides in; it starts when the block's own light is gone (`data-fx-delay`, counted from when the block was seen: 1.1 s) |
 | Aim strip | `.aimstrip[data-soon][data-late][data-hidden][data-inline]` > `.aimchip[data-tier][data-pending][data-mine]` | static states | none (no loops in chrome) |
 | Toasts | `.toasts[data-docked]` > `.toast[data-toast-id][data-kind][data-state][data-leaving]` | `data-state` is `open` or `leaving`; `.toast-main` and `.toast-x` carry `data-pressed` | the stack keeps a leaving toast mounted for `EXIT_MS`, so a Power-on `panel` can take over the exit |
-| Phone tabs | `nav.shell-tabs[data-region=tabs]` > `button.shell-tab[data-tab]` | `aria-current="page"` on the lit tab, `data-pressed` | no Pulse on a tab; `aria-current` is what a `<TabIndicator />` reads |
+| Phone tabs | `nav.shell-tabs[data-region=tabs]` > `button.shell-tab[data-tab]` + `span.fx-indicator` | `aria-current="page"` on the lit tab, `data-pressed` | no Pulse on a tab; a `<TabIndicator />` is the bar's last child and draws one line on its top edge over the lit tab (it reads `aria-current`) that stretches to the next; the pill behind the lit tab is a state |
 | Phone header | `header.phone-header[data-region=topbar]` | `.ph-search[data-pressed]` | none |
-| Windows and the sheet | `.wm-layer` > `.wm-window` (see `shell/wm/README.md`) | `data-window-type`, `data-window-id`, `data-focused`, `data-dragging`, `data-placement` (`docked`, `floating`, `sheet`), `data-snap` (phone: `peek`, `half`, `tall`, `full`), `data-sheet-drag`, `data-sheet-gone` | the title bar is a dense zone; the wrapper (`.wm-window`) is the element a Power-on would reveal |
+| Windows and the sheet | `.wm-layer` > `.wm-window` (see `shell/wm/README.md`) | `data-window-type`, `data-window-id`, `data-focused`, `data-flare`, `data-dragging`, `data-placement` (`docked`, `floating`, `sheet`), `data-snap` (phone: `peek`, `half`, `tall`, `full`), `data-sheet-drag`, `data-sheet-gone` | the title bar is a dense zone; the wrapper (`.wm-window`) is the element Power-on reveals, out of the launcher that stands for its type |
 | Globe cards | `.globe-tip[data-kind]` (`node`, `site`, `moon`) | `data-tier`, `data-leaving`, `data-flip-x`, `data-flip-y` | none: the renderer's own |
 | Place labels | `.globe-places[data-band]` | none | none |
 
@@ -81,18 +83,18 @@ folder in the tree is listed under "Left for the integration pass".
 (`--z-topbar`, 90). `.shell-stage`, which carries a page route (a 404, a gallery page), has `z-index: var(--z-window)`
 too, so a page is over the labels as well and `.wm-layer`, later in the document, is over the page.
 
-### Left for the integration pass (needs `web/src/motion` merged)
+### The motion language here (the integration pass)
 
-- Mount `<MotionRoot>` around the router in `app/App.tsx` (shared file).
-- Rail: a `<Current signal={tip} edge="top" disabled={frozen} />` in `div.rail` and a `<Current edge="perimeter"
-  fireOnMount />` in each `li.blk-item[data-fresh]` (both hosts are `position: relative` already).
-- Toasts: wrap `.toast` in `<PowerOn variant="panel" open onExited>`; the stack's own exit timer and the FLIP
-  (`[data-toast-id]`, transform only) can stay, or be dropped when `onExited` takes over.
-- Windows: `<PowerOn origin={...}>` around `.wm-window`, with the origin the dock button
-  `[data-launcher="<launcherOf(type)>"]`; the exit ghost in `shell/wm/ghost.ts` is what it replaces. The window is
-  ready for it (no filter, clip or mask on the wrapper; see "Ready for the motion language's Power-on" in
-  `shell/wm/README.md`).
-- Phone tabs: `<TabIndicator />` as the last child of `nav.shell-tabs` (a positioned host) in place of the lit pill.
+- `<MotionRoot>` is mounted around the router in `app/App.tsx`, and it is the one writer of `<html data-motion>`
+  (`full`, `reduced` or `off`). `useRootPrefs` (`prefs.ts`) keeps `data-perf` and the `data-motion-off` marker the
+  frame's stylesheets still key on, and no longer writes `data-motion`: it used to write `reduced` for Off, which
+  made Off read as Reduced to the kit and to every effect.
+- Windows and sheets, toasts, the rail and the Pulse's P1 rows speak the language as the table above says; the
+  dock, the top bar, the status bar and the title bars are quiet (`data-fx="charge"` on the launchers, dense zones
+  elsewhere). A surface that is not in the language's table in `docs/design/motion-language.md` (section 8) does not
+  move.
+- Rows and cards mark arrivals with `useFresh` only; the rail's streak and lap and the Pulse's streak are the
+  language's `<Current>` and `data-fx="current"`.
 
 ## No loops
 

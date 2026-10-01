@@ -9,7 +9,7 @@ The design is `docs/design/motion-language.md`: read its sections 3 (the vocabul
 | Pulse | got it | `data-pressed` on a kit button | nothing |
 | Charge | live under your pointer | hover and keyboard focus | nothing for kit buttons; `data-fx="charge"` elsewhere |
 | Spark | it is on | `data-state` turning `on`, `copied`, `selected` | nothing for the kit's toggles |
-| Current | something arrived | `data-fresh` on an opted-in row; a `<Current>` signal | `data-fx="current"` or `<Current>` |
+| Current | something arrived | `data-fresh` appearing on an opted-in row; a `<Current>` signal | `useFresh` and `data-fx="current"`, or `<Current>` |
 | Power-on | here is what you opened | a window or panel opening and closing | `<PowerOn>` |
 | Settle | this value changed | the kit's `FlashOnChange`, `AnimatedNumber`, fresh rows | nothing: the kit draws it |
 
@@ -87,7 +87,9 @@ Use the kit's `Tabs` and `SegmentedControl`: they already glide their own ink, a
 </div>
 ```
 
-It finds the selected tab by `aria-selected`, `aria-current` or `data-selected` (or the `selector` prop), watches for changes and resizes, and does nothing between them. Reduced and Off: the line jumps.
+It finds the selected tab by `aria-selected`, any `aria-current` that is not `false` (a bar of routes marks its lit tab `aria-current="page"`) or `data-selected` (or the `selector` prop), watches for changes and resizes, and does nothing between them. Reduced and Off: the line jumps. It measures in the host's own pixels, so a host that is still scaling when it mounts (the palette's chips under a panel that is powering on) gets its line in the right place. The line sits on the host's bottom edge; a bar that wants it on top moves it with CSS (`.shell-tabs .fx-indicator { top: -1px; bottom: auto }`).
+
+On a phone's tab bar (`nav.shell-tabs`) it is the last child and the pill behind the lit tab stays as a state; in the command palette it follows the chosen kind chip (`data-selected`).
 
 ### Toggles
 
@@ -110,61 +112,93 @@ A toggle chip (`<Chip onClick selected>`) sparks at its icon when it turns on an
 The Pulse feed (dense, so quiet): every row settles with the kit's wash; only P1 rows (a payment to a watched or owned node) earn a Current along their top edge. Opt those in and nothing else:
 
 ```tsx
-<li className="evt" data-fresh={fresh || undefined} data-fx={isMine ? 'current' : undefined}>
+const fresh = useFresh(keys, { scope: filter });          // the keys that just arrived
+<li
+  className="evt"
+  data-fresh={fresh.has(key) || undefined}
+  data-fx={isMine ? 'current' : undefined}
+  data-fx-delay={isMine ? blockLightLeft(ev) : undefined}   // ms; see below
+>
 ```
 
-The streak runs when `data-fresh` appears on the element (not for a row that was already there). The P0 block row does not get one: the rail already carries the block's light (a Current on the rail, one on the new card; the budget allows two at once), and a payment lands about two seconds later. `data-fx-edge="bottom"` and the other edges are available for odd layouts.
+The streak runs when `data-fresh` appears on the element (not for a row that was already there), and it is drawn inside the row (a track the run puts in the host and removes when it ends), so it goes where the row goes while the row slides in; a host that is not positioned falls back to an overlay over its rectangle. The P0 block row does not get one: the rail already carries the block's light (a Current on the rail, one on the new card; the budget allows two at once). The payment row arrives with the block, so its Current would be the third light of the same moment and the budget would refuse it: `data-fx-delay="ms"` on a `data-fresh` row holds the Current back until that long has passed (one timer, started by the arrival; nothing is drawn if the row went away or stopped being fresh meanwhile) and the engine asks the budget only then. The Pulse counts it from when the block was seen, so the streak runs 1.1 s after the block (the rail's and the card's lights are gone by 990 ms), and a row that shows later than that lights at once. `data-fx-edge="bottom"` and the other edges are available for odd layouts.
+
+### Marking arrivals: `useFresh`
+
+The engine answers an attribute that **appears on an element that already exists** (`data-fresh`). An element that is created carrying it fires nothing, and the engine does not watch the document for new nodes (that would be a `childList` observer over every React commit, a cost the language refuses). `useFresh` is the one way a view writes the attribute so that the order is right:
+
+```tsx
+import { useFresh } from '../../motion/fresh';           // or from '../../motion'
+
+const keys = useMemo(() => rows.map((r) => r.id), [rows]);  // identity changes only when the keys do
+const fresh = useFresh(keys, { max: 3, scope: filter });    // ms defaults to 1800, a little over the kit's 1.6 s wash
+...
+<li key={r.id} data-fresh={fresh.has(r.id) || undefined} data-fx="current">
+```
+
+- The element mounts without the attribute and takes it in a second commit, before the next paint, and keeps it for `ms` whatever else re-renders.
+- Nothing is fresh on the first fill, a refill is not an arrival (more than `max` keys at once: a resync, a filter change) and a change of `scope` starts over.
+- Do not compute freshness from a timestamp while rendering (`Date.now() - ts < 1800`): that renders `data-fresh` on the element's first commit. `src/motion/fresh.contract.test.ts` reads the source of every view outside the kit and this folder and fails one that renders `data-fresh=` or opts a row into Current without `useFresh`.
+- The kit's own `useFreshKeys` (`ui/table`) is a different hook for `DataTable`'s `highlightKeys` wash (Settle); it does not drive this.
 
 ### Window chrome
 
-Wrap the window in `<PowerOn>`: it mounts its children on `open`, reveals them with the aperture and the light surge, and on close plays the shorter exit and unmounts.
+The app's windows call `powerOn` on the window's own element when it mounts and play `powerOff` on the ghost a closed window leaves (`shell/wm/react.tsx`, `ghost.ts`, `origin.ts`):
 
 ```tsx
-<PowerOn
-  open={isOpen}
-  origin={() => launcherEl ?? nodeMarkerRect ?? undefined}   // an element, a DOMRect or {x, y}; read at open and at close
-  onExited={() => forget(win.id)}
-  className="wm-slot"
-  style={{ position: 'absolute', left, top, width, height, zIndex }}
->
-  <div className="wm-shadow">           {/* the drop shadow: a wrapper, since box-shadow ignores masks */}
-    <section className="wm-window">...</section>   {/* the chamfer, the mask, the rim */}
-  </div>
-</PowerOn>
+useLayoutEffect(() => {
+  const el = rootRef.current;
+  const h = el && powerOn(el, { origin: windowOrigin(type, phone), variant: phone ? 'panel' : 'window' });
+  return () => h?.cancel();
+}, []);
 ```
 
-- **The wrapper is the animated element.** Give it the window's position and size (`className` and `style` are forwarded to it). It must have no `clip-path`, `mask`, `box-shadow` or `filter` of its own: then it gets the circle reveal (the aperture, which runs 64 px past the farthest corner so a drop shadow is never cut off). With any of those it still scales, fades and surges, and the clip is skipped. Put the chamfer, mask and shadow on the children.
-- **Closing needs the window to stay mounted until it is done.** `open={false}` plays the exit and calls `onExited`, but a window the manager removed from its list is unmounted by React at once. Keep rendering it with `open={false}` until `onExited` (a `leaving` set keyed by window id, rendered with the visible list). With motion off, or before the runners have loaded, `onExited` comes at once: closing never waits on decoration.
-- **Re-opening mid-close** brings the window back visible and cancels the exit.
+- **The element is the window's wrapper.** It must have no `clip-path`, `mask`, `box-shadow` or `filter` of its own: then it gets the circle reveal (the aperture, which runs 64 px past the farthest corner so a drop shadow is never cut off). With any of those it still scales, fades and surges, and the clip is skipped. Put the chamfer, mask and shadow on children (`.wm-shadow`, `.wm-slab`).
+- **The origin** is the dock launcher `[data-launcher="<id>"]` for the window's type (`launcherOf`), read when it opens and when it closes; a phone sheet's is the middle of its foot (`{ fx: 0.5, fy: 1 }`). The engine holds an origin to 48 px outside the element, so a launcher a thousand pixels away does not delay the first frame or slide the window.
+- **Closing.** `powerOff` returns a handle whose `done` resolves when the exit has played, and at once when there is nothing to play (effects off, runners not loaded yet): closing never waits on decoration. The app plays it on a ghost (a copy of the frame) because a closed window is already gone from the manager's state and a route-bound body is the router's outlet; where the thing that closes can stay mounted, keep it mounted with `<PowerOn open={false}>` until `onExited`, as the command palette does.
+- **Re-opening mid-close** brings the element back visible: `cancel()` removes the end state.
 - **Title bar controls** (close, minimise, pin): mark the title bar `data-fx-density="dense"`; the window closing is their answer.
-- **Focus arrival** (the one-time rim flare of design 6.4 C) is plain CSS on `[data-focused]`, an event and not a loop. The 9 s rim sweep is dropped (design section 14).
-- **While dragging**, nothing plays: Power-on is for open and close only.
+- **Focus arrival** (the one-time rim flare of design 6.4 C) is CSS on `[data-focused][data-flare]`, set for 900 ms when an open window takes the focus, and never on a window that is opening: Power-on has its own light. The 9 s rim sweep is dropped (design section 14).
+- **While dragging**, nothing plays: a press on the window ends its entrance.
+
+`<PowerOn open origin onExited>` is the wrapper form of the same thing for a panel that is rendered by a parent that can keep it mounted (the command palette): it mounts its children on `open`, plays the entrance, and on `open={false}` plays the exit, unmounts and calls `onExited`.
 
 ### Toasts and the command palette
 
+A toast is a pane of glass, so the animation is on the toast itself and not on a wrapper: an ancestor that fades stops a backdrop blur seeing the page behind it.
+
 ```tsx
-<PowerOn open={visible} variant="panel" onExited={dismiss}>
-  <div className="toast" role="status">...</div>
-</PowerOn>
+useLayoutEffect(() => {
+  const h = powerOn(ref.current, { variant: 'panel', origin: { fx: 1, fy: 0.5 } }); // the middle of its right edge
+  return () => h?.cancel();
+}, []);
+useLayoutEffect(() => {
+  const h = leaving ? powerOff(ref.current, { variant: 'panel', origin: { fx: 1, fy: 0.5 } }) : null;
+  return () => h?.cancel();
+}, [leaving]);
 ```
 
-A quicker scale from 0.97 and fade (260 ms) with one comet along the top edge. Keep a toast mounted until `onExited`, as for windows.
+A quicker scale from 0.97 and fade (260 ms) with one comet along the top edge, and an exit of 180 ms; the stack keeps a leaving toast mounted for that long. On a phone the toast grows out of the foot of the screen (`{ fx: 0.5, fy: 1 }`). The command palette uses `<PowerOn variant="panel" origin onExited>` around its slot, with its own origin (the middle of its top edge, so the edge the light runs along stays put).
 
 ### Block rail cards
 
 ```tsx
+const fresh = useFresh(cardKeys, { max: 2 });
+const landed = cards.find((c) => fresh.has(keyOf(c.block)));      // the newest card that just landed
+const landedKey = landed ? keyOf(landed.block) : null;
+
 <div className="rail" style={{ position: 'relative' }}>
-  <Current signal={tip.height} edge="top" tail={120} disabled={frozen} />
+  <Current signal={landedKey} edge="top" tail={120} disabled={frozen || landedKey === null} />
   {cards.map((c) => (
-    <article key={c.height} className="rail-card" style={{ position: 'relative' }}>
-      <Current signal="landed" edge="perimeter" fireOnMount={c.height > heightAtFirstPaint} disabled={frozen} />
+    <li key={keyOf(c.block)} className="blk-item" style={{ position: 'relative', borderRadius: 12 }}>
       ...
-    </article>
+      {fresh.has(keyOf(c.block)) ? <Current signal="landed" edge="perimeter" fireOnMount delay={90} /> : null}
+    </li>
   ))}
 </div>
 ```
 
-One streak crosses the rail's top edge per block, and the card that just landed is circled once. The hosts must be positioned (`<Current>` renders an absolute, zero-size, `aria-hidden` track inside its parent and nothing else). `fireOnMount` only for cards that landed after the first paint (the ones the page loaded with do not circle), and `disabled` while the rail is hover-frozen or scrolled into history. The rail is not a dense zone. The card's white rim and its Beat landing thunk are static CSS (design 6.4 F).
+One streak crosses the rail's top edge per block, and the card that just landed is circled once. Keying the streak to the newest fresh card means the first fill and a resync (which `useFresh` does not call arrivals) draw nothing. The hosts must be positioned (`<Current>` renders an absolute, zero-size, `aria-hidden` track inside its parent and nothing else), and the card's host takes the card's radius so the lap follows it. `delay` holds the lap back for the 90 ms the card's own landing waits, so the light starts when the card shows. `disabled` while the rail is hover-frozen or scrolled into history. The rail is not a dense zone. The card's white rim and its Beat landing thunk are the kit's Settle and static CSS (design 6.4 F); the rim is not drawn in Off.
 
 ### Status bar: the tip counter and connection
 
@@ -180,7 +214,7 @@ What each frame attribute means to the language. Most mean nothing, on purpose.
 
 | Attribute | On | What to do |
 |---|---|---|
-| `data-fresh` | `.evt` feed rows, rail cards | Current only on P1 rows (mine) via `data-fx="current"`; the block row settles like the rest; for rail cards use `<Current fireOnMount>` |
+| `data-fresh` | `.evt` feed rows, rail cards | written by `useFresh` only; Current only on P1 rows (mine) via `data-fx="current"`; the block row settles like the rest; for rail cards use `<Current fireOnMount>` |
 | `data-kind`, `data-tier` | rows, chips, cards | nothing: they are the kit's colour roles, and the light is never tier or status coloured |
 | `data-leaving` | globe and rail cards | a plain fade; no light |
 | `data-frozen` | `.pulse` (hover-freeze) | pass `disabled` to any `<Current>` there while frozen |
@@ -188,9 +222,9 @@ What each frame attribute means to the language. Most mean nothing, on purpose.
 | `data-soon`, `data-late`, `data-hidden`, `data-pending`, `data-mine` | aim strip and chips | static states only: a brighter edge or a colour, never a loop |
 | `data-state` on a status light | status bar | nothing: status lights are not on the spark list |
 | `data-boot`, `data-layout` | `.shell` | nothing; effects only ever answer input, so the boot needs no switch. Touch layouts get no Charge (there is no hover) and keep the Pulse |
-| `data-focused`, `data-dragging`, `data-placement`, `data-mode` | `.wm-window` | the wrapper gets PowerOn (above); focus arrival is CSS |
+| `data-focused`, `data-flare`, `data-dragging`, `data-placement`, `data-mode` | `.wm-window` | the wrapper gets Power-on (above); focus arrival is CSS on `data-flare` |
 
-Z-order: the light layer is `position: fixed` on `<body>` at `z-index` 135 (`--fx-z`), above windows, toasts, the palette and tooltips, so a surge is never hidden. On the merged foundation, `.shell-stage` is a fixed container with no `z-index` of its own, which makes it a stacking context painted below the globe's labels (`--z-globe-hud`, 10) and the rail (`--z-rail`, 20): windows inside it paint under them whatever their own z-index. That is the frame's z-order to settle (give the stage `z-index: var(--z-window)`); the gallery portals itself to `<body>` for the same reason.
+Z-order: the light layer is `position: fixed` on `<body>` at `z-index` 135 (`--fx-z`), above windows, toasts, the palette and tooltips, so a surge is never hidden. The frame settled its own: `.wm-layer` is a sibling of `.shell-stage` and paints over the globe's labels and the rail by its own `z-index`.
 
 ## 5. Outside the kit
 
@@ -229,21 +263,35 @@ Resolved in the same order as the kit's `useMotionMode()`: the nearest `[data-fx
 
 ## 8. Budget and diagnostics
 
-At most 3 flashes (Pulse and Spark) a second, 3 Pulses, 3 Sparks, 3 slides, 2 Currents and 2 window openings alive at once, 10 in all; a new effect on an element replaces its old one; the user's own effects preempt a live Current; a refused effect draws nothing and queues nothing. `motionStats()` returns `{ active, byKind, granted, dropped, preempted }` (null until the runners have loaded); the gallery's header shows it live.
+At most 3 flashes (Pulse and Spark) a second, 3 Pulses, 3 Sparks, 3 slides, 2 Currents and 2 window openings alive at once, 10 in all; a new effect on an element replaces its old one; the user's own effects preempt a live Current; a refused effect draws nothing and queues nothing. `motionStats()` returns `{ active, byKind, granted, dropped, preempted }` (null until the runners have loaded); the gallery's header shows it live, and `MotionRoot` exposes it as `window.__atlasMotion.stats()` for the tools below (a dev server serves a module twice once it has been hot-replaced, so a tool cannot import the engine and read the live one).
 
 ## 9. Verify
 
 ```bash
 cd web
+# the app needs a backend: the Rust server, or the demo server (cargo run --example demo_server)
 ATLAS_API_TARGET=http://127.0.0.1:3100 ATLAS_WEB_PORT=5380 npx vite --host 127.0.0.1 --port 5380 --strictPort &
 npx vitest run src/motion                                    # engine, budget, geometry, mode, React layer, timing and docs parity
-node src/motion/tools/frames.mjs --list                      # frame-sequence scenarios (needs the dev server, Chromium, ImageMagick)
+
+# frame sequences (the dev server, Chromium, ImageMagick)
+node src/motion/tools/frames.mjs --list                      # the gallery's scenarios
 node src/motion/tools/frames.mjs --only pulse-primary,window-open --mode full --dpr 3
-node src/motion/tools/frametime.mjs --dpr 2                  # real-time frame time beside the globe, idle and active
+node src/motion/tools/frames-app.mjs --list                  # the same on the live app: windows, toast, block, P1 row, palette, phone
+node src/motion/tools/frames-app.mjs --mode full,reduced,off --debug
+
+# the quiet-zone audit and frame time (the dev server, or `vite preview` on a build)
+node src/motion/tools/audit.mjs --mode full                  # rest and a burst against the budget; --phone, --only rest|stress
+node src/motion/tools/frametime.mjs --app --dpr 2 --detail   # real-time frame time beside the live globe, with the scripts behind long frames
+node src/motion/tools/window-cost.mjs --dpr 1                # window opens and closes in Full against Off (--base, --cycles)
+node scripts/globe-check.mjs fps                             # the globe's own numbers (dev server)
+
+# a production build, for the numbers to trust (React runs in development mode on the dev server)
 npm run build && node src/motion/tools/size.mjs dist         # the initial payload, gzip level 9
+ATLAS_API_TARGET=http://127.0.0.1:3100 ATLAS_WEB_PORT=5381 npx vite preview --host 127.0.0.1 --port 5381 --strictPort &
+node src/motion/tools/frametime.mjs --app --base http://127.0.0.1:5381 --dpr 2
 ```
 
-Contact sheets land in `/home/stache/.cache/flux-atlas/shots/m1/frames/` (`<scenario>-<mode>.png`, with the single frames in a folder beside it). Motion is judged as frames, never as stills: the tool freezes the Web Animations a real interaction started and seeks them to chosen times, so a capture is deterministic. Open `/dev/motion` and use Compare to see Full, Reduced and Off side by side.
+Contact sheets land in `/home/stache/.cache/flux-atlas/shots/m1/frames/` for the gallery and `/home/stache/.cache/flux-atlas/shots/m1/app/` for the app (`<scenario>-<mode>.png`, with the single frames in a folder beside it); the audit's shots of the frame at the peak of the burst and after it go to `.../m1/audit/`. Motion is judged as frames, never as stills: the tools freeze the Web Animations a real interaction started and seek them to chosen times, so a capture is deterministic (`frames-app.mjs` can also run the page's own timers at their time, which is how a row that waits for the block's light is checked). Open `/dev/motion` and use Compare to see Full, Reduced and Off side by side.
 
 ## 10. Files
 
@@ -258,14 +306,19 @@ Contact sheets land in `/home/stache/.cache/flux-atlas/shots/m1/frames/` (`<scen
 | `fxRunners.ts`, `runners/` | the effect runners (a lazy chunk): `pulse`, `spark`, `current`, `power`, the comet chain, `fx.css` |
 | `geometry.ts` | pure outline, easing and comet-frame maths |
 | `indicator.ts` | the travelling selection line (also in the always-loaded part) |
+| `fresh.ts` | `useFresh`: how a view marks an arrival so the engine can answer it (`data-fresh` appears on an element that exists), and the guard test beside it (`fresh.contract.test.ts`) |
 | `react/` | `MotionRoot`, `Current`, `PowerOn`, `TabIndicator`, `usePulse`, `useCharge`, `useSpark` |
 | `gallery/` | `/dev/motion`, lazy-loaded by the router |
-| `tools/` | `frames.mjs` (frame sequences), `frametime.mjs` (real-time frame time), `size.mjs` (the initial payload of a build) |
+| `tools/` | `frames.mjs` (gallery frame sequences), `frames-app.mjs` (the same on the live app), `audit.mjs` (what animates at rest, a burst against the budget), `frametime.mjs` (real-time frame time, `--app` for the live app), `window-cost.mjs` (window opens and closes, Full against Off), `size.mjs` (the initial payload of a build) |
 
 ## 11. Cost
 
 Nothing at rest: no timers, no animation frames, no layers.
 
-Bytes, gzip level 9, over the initial payload of the production build (167,091 B at the foundation): the lazy `/dev/motion` route that is merged today adds 25 B. Mounting `MotionRoot` adds 3.9 kB (JS 2.8 kB, CSS 1.1 kB) when it is imported from `motion/react/MotionRoot`, and 6.5 kB (3.9%) when the shell pulls every primitive through the `motion` barrel. The effect runners (7.3 kB JS and 1.1 kB CSS) are a separate chunk loaded on idle, and the gallery is a separate route chunk. `node src/motion/tools/size.mjs dist` prints the initial payload; single files shift by a few hundred bytes when Rollup re-splits shared chunks, so compare the totals of two builds.
+Bytes, gzip level 9, on the production build at this commit (`node src/motion/tools/size.mjs dist` prints the initial payload of the whole app: 215.4 kB). The language's always-loaded part is the engine, the rule lists, the mode, the indicator and the timing: 12.5 kB raw, about 5.4 kB gzip, and its stylesheet, 1.7 kB gzip. The effect runners, the comet geometry and the budget are a separate chunk loaded on idle (19.2 kB raw, 7.3 kB gzip), and the gallery is a separate route chunk. Single files shift by a few hundred bytes when Rollup re-splits shared chunks, so compare the totals of two builds.
 
-Measured beside the running globe at 1600 by 900 (device pixel ratio 1 and 2, `tools/frametime.mjs`): a 60 fps lock at rest and during about 25 interactions in 8 s, with no frame over 25 ms that belongs to an effect. The tool attributes every long frame to its script: the one it does find (1 to 2 s, about every 12 s, with or without interaction) is the app's live WebSocket handler running the globe's mesh update (`GlobeEngine.updateMesh`, `addLinkInternal`), not the language. Two named paint-only exceptions to compositor-only, both bounded: the tab indicator's clip insets (a 2 px strip, 300 ms) and the window surge's radial gradient (one window-sized transparent layer, 480 ms, at most two at once).
+Measured beside the running globe at 1600 by 900 on the GPU (section 9 has the commands). Production build, at device pixel ratio 1 and 2, 19 interactions in 8 s (windows from the dock, blocks on the rail, the palette, a switch and a press): mean 16.67 ms, median 16.7, 99th percentile 16.8, longest 16.8, and no frame over 25 ms. Windows opened and closed in Full against Off (32 each at 1x): opens 16.68 ms mean in both, closes 16.74 against 16.67, so the aperture clip over the drop shadow costs nothing measurable; the only slow frames are cold ones (the first open of the Explorer window, the first closes of the About window: one 33 ms frame, in Full and Off alike). The globe's own check at 2560 by 1440: 60 fps, 0.3 ms of engine CPU and 1.35 ms of GPU per frame.
+
+On the dev server, where React runs in development mode, 16 of 411 frames pass 25 ms in the same mix: 12 are React's synchronous work in a click or key handler (mounting a window's content, the palette), none is in this folder, and the tool says so by attributing every long frame to its script. The live WebSocket handler's globe update (`GlobeEngine.updateMesh`, `addLinkInternal`) stalls the dev server for 1 to 2 s about every 12 s and is one 50 ms frame in the production build. Two named paint-only exceptions to compositor-only, both bounded: the tab indicator's clip insets (a 2 px strip, 300 ms) and the window surge's radial gradient (one window-sized transparent layer, 480 ms, at most two at once).
+
+The audit (`tools/audit.mjs`, in Full, Reduced and Off, on a desktop and a phone) finds the app still at rest between two blocks, apart from state (the block timer's ring and the progress bars) and the About window's own decoration while it is open, and finds a burst of blocks, toasts, windows and the palette inside every cap with nothing left behind.

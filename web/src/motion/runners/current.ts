@@ -25,8 +25,16 @@ export interface CurrentOptions {
   duration?: number;
   /** Tail length in px. */
   tail?: number;
+  /** Milliseconds to wait before the light starts: for a host that is itself still arriving, so it starts when the host shows. */
+  delay?: number;
   /** An inline track already positioned inside the host; the comet is drawn in it instead of an overlay. */
   track?: HTMLElement | null;
+  /**
+   * Draw into a track the run itself puts inside the host and removes when it ends, so the light goes where
+   * the host goes (a row that is sliding in, a card in a list that scrolls). The host must be positioned;
+   * otherwise the overlay over its rectangle is used, as without this option.
+   */
+  inline?: boolean;
 }
 
 const WIRE_INSET = 0.75;
@@ -135,11 +143,19 @@ export function current(fx: Fx, host: HTMLElement, opts: CurrentOptions = {}): F
   if (rect.width < 24 || rect.height < 8 || offscreen(rect)) return null;
   const run = fx.begin('current', opts.track ?? host);
   if (!run) return null;
+  run.delay = Math.max(0, opts.delay ?? 0);
   const edge = opts.edge ?? 'top';
 
   let container: HTMLElement;
   if (opts.track) {
     container = opts.track;
+  } else if (opts.inline && getComputedStyle(host).position !== 'static') {
+    // The same track a <Current> renders (motion.css), made for this run and removed with it.
+    const t = fx.doc.createElement('span');
+    t.className = 'fx-current';
+    t.setAttribute('data-edge', edge);
+    t.setAttribute('aria-hidden', 'true');
+    container = run.node(host, t);
   } else {
     // An overlay box over the host; drawEdge clips straight edges to the span between the corners.
     container = fx.box(run, rect, null);
@@ -152,5 +168,5 @@ export function current(fx: Fx, host: HTMLElement, opts: CurrentOptions = {}): F
     mode === 'reduced'
       ? drawEdgeFlash(fx, run, container, rect, edge)
       : drawEdge(fx, run, container, host, rect, opts);
-  return run.endWhenDone(ms);
+  return run.endWhenDone(ms + run.delay);
 }
