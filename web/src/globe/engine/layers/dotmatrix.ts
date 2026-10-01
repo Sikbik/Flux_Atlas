@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { readPixels } from '../assets';
 import type { AssetStore } from '../assetstore';
+import { GLSL_LENS } from '../lens';
 import { GOLDEN_ANGLE, hash01, TAU } from '../math';
 import {
   GLSL_CONSTANTS,
@@ -38,9 +39,12 @@ ${GLSL_GEO}
 ${GLSL_WAVES}
 ${GLSL_WAVE_GLOW}
 ${GLSL_REVEAL}
+${GLSL_LENS}
 uniform vec3 uOcean;
 uniform vec3 uOceanLit;
 uniform vec3 uGrat;
+uniform float uProjScale;
+uniform float uPxScale;
 uniform float uGratAlpha;
 uniform float uTermW;
 uniform float uFan;
@@ -72,7 +76,9 @@ void main() {
   float near = smoothstep(0.35, 0.7, uFan);
   float g30 = gridAA(lat, 30.0) + gridAA(lon, 30.0) * poleFade;
   float g10 = (gridAA(lat, 10.0) + gridAA(lon, 10.0) * poleFade) * near;
-  col += uGrat * (g30 * 1.0 + g10 * 0.45) * uGratAlpha * (0.6 + 0.8 * lit) * 3.2;
+  // Up close the graticule is a backdrop: the lens (lens.ts) draws it back so it never crosses a marker.
+  float L = lensZoom(length(cameraPosition - vWorld), uProjScale / max(uPxScale, 1e-4));
+  col += uGrat * (g30 * 1.0 + g10 * 0.45) * uGratAlpha * (0.6 + 0.8 * lit) * 3.2 * (1.0 - 0.65 * L);
   col += waveGlow(n) * 0.45;
   col += uShockHot * revealRing(n) * 0.8;
   gl_FragColor = vec4(col, 1.0);
@@ -84,6 +90,7 @@ ${GLSL_HASH}
 ${GLSL_WAVES}
 ${GLSL_WAVE_GLOW}
 ${GLSL_REVEAL}
+${GLSL_LENS}
 uniform float uDotR;
 uniform float uPxScale;
 uniform float uProjScale;
@@ -106,6 +113,13 @@ void main() {
   vec3 B = aDir;
   // Boot reveal: dots beyond the wave's front are not drawn.
   if (revealMask(B) < 0.02) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec4(0.0); vUv = vec2(0.0); return; }
+  // Design 7.3: the land fades out between a sphere radius of 1500 and 3200 px so the nodes own the
+  // frame; a lattice dot at that zoom is bigger than the screen. (The lens dims what is left of it.)
+  float camR = length(cameraPosition);
+  float sphereR = (uProjScale / max(uPxScale, 1e-4)) / sqrt(max(camR * camR - 1.0, 1e-4));
+  float landFade = 1.0 - smoothstep(1500.0, 3200.0, sphereR);
+  if (landFade < 0.004) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec4(0.0); vUv = vec2(0.0); return; }
+  float L = lensZoom(length(cameraPosition - B), uProjScale / max(uPxScale, 1e-4));
   vec3 sun = uTerminator > 0.5 ? uSunDir : normalize(cameraPosition);
   float mu = dot(B, sun);
   float day = smoothstep(-sin(uTermW), sin(uTermW), mu);
@@ -114,7 +128,7 @@ void main() {
   vec3 E = normalize(vec3(B.z, 0.0, -B.x) + vec3(1e-6, 0.0, 0.0));
   vec3 N = cross(B, E);
   // Radius: land dots fill the lattice, ocean dots are tiny specks. Light makes dots swell a little.
-  float lightBoost = aInfo.y * (1.0 - day) * uNightLights;
+  float lightBoost = aInfo.y * (1.0 - day) * uNightLights * (1.0 - 0.8 * L);
   float r = uDotR * mix(0.22, 1.0, land) * (0.85 + 0.3 * tone * land) * (1.0 + 0.55 * lightBoost);
   // Keep dots at least ~0.9 px radius when far away.
   float camD = max(length(cameraPosition - B), 1e-3);
@@ -131,8 +145,9 @@ void main() {
   vec3 lit = mix(uLandNight * uLandNightA, uLand * uLandA, day) * (0.82 + 0.36 * tone) * 2.1;
   vec3 col = lit * shim * mix(0.1, 1.0, land);
   col += uLand * scan * land * (0.3 + 0.5 * day);
-  col += uLights * aInfo.y * (1.0 - day) * 4.2 * uNightLights * land * (uLightsA / 0.3);
-  col += waveGlow(B) * 2.4 * land;
+  col += uLights * aInfo.y * (1.0 - day) * 4.2 * uNightLights * land * (uLightsA / 0.3) * (1.0 - 0.9 * L);
+  col *= (1.0 - 0.55 * L) * landFade;
+  col += waveGlow(B) * 2.4 * land * landFade;
   vCol = vec4(col, 1.0);
 }`;
 
@@ -186,6 +201,8 @@ export class DotMatrixBody implements GlobeBody {
         uReveal: u.uReveal,
         uRevealPx: u.uRevealPx,
         uTerminator: u.uTerminator,
+        uProjScale: u.uProjScale,
+        uPxScale: u.uPxScale,
       },
       depthWrite: true,
     });

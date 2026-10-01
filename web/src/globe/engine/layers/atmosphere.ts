@@ -7,6 +7,7 @@
 // Because it is analytic the same pass works from orbit and from near the ground.
 
 import * as THREE from 'three';
+import { GLSL_LENS } from '../lens';
 import { GLSL_CONSTANTS } from '../shaders/chunks';
 import type { GlobeTokens } from '../tokens';
 import type { SharedUniforms } from '../uniforms';
@@ -20,6 +21,7 @@ void main() {
 
 const frag = (steps: number): string => /* glsl */ `
 ${GLSL_CONSTANTS}
+${GLSL_LENS}
 #define STEPS ${steps}
 uniform vec3 uCamPos; uniform vec3 uCamRight; uniform vec3 uCamUp; uniform vec3 uCamBack;
 uniform float uTanHalfFov; uniform float uAspect; uniform vec2 uViewShift;
@@ -32,6 +34,8 @@ uniform float uGain;
 uniform float uTerminator;
 uniform vec3 uRimHot;
 uniform float uRimGain;
+uniform float uProjScale;
+uniform float uPxScale;
 in vec2 vNdc;
 
 const float R_PLANET = 1.0;
@@ -104,9 +108,15 @@ void main() {
   }
   // The glow seen edge-on at the limb carries the look; the veil over the disc stays subtle.
   float onDisc = tp.x > 0.0 ? 1.0 : 0.0;
-  sum *= uGain * uAmount * mix(1.9, 0.36, onDisc);
+  // Seen from just above the ground that veil is the haze every marker sits in (a pale wash over the
+  // whole screen on the day side), so the lens (lens.ts) draws it back, most around the focus point.
+  float lens = onDisc > 0.5
+    ? lensZoom(tp.x, uProjScale / max(uPxScale, 1e-4)) * lensVignette(vNdc - uViewShift, uAspect, 0.75)
+    : 0.0;
+  float veil = 1.0 - 0.85 * lens;
+  sum *= uGain * uAmount * mix(1.9, 0.36 * veil, onDisc);
   float T = exp(-dot(od, vec3(0.3333)));
-  float alpha = (1.0 - T) * uAmount * mix(1.0, 0.5, onDisc);
+  float alpha = (1.0 - T) * uAmount * mix(1.0, 0.5 * veil, onDisc);
   // The sun-facing limb: a hot cream specular arc about 30 degrees wide, hugging the surface.
   float tc = max(-dot(ro, rd), 0.0);
   vec3 pc = ro + rd * tc;
@@ -163,6 +173,8 @@ export class Atmosphere {
         uTerminator: u.uTerminator,
         uRimHot: u.uRimHot,
         uRimGain: { value: 1.6 },
+        uProjScale: u.uProjScale,
+        uPxScale: u.uPxScale,
       },
       transparent: true,
       blending: THREE.CustomBlending,
