@@ -1006,7 +1006,8 @@ impl Reducer {
             _ => false,
         };
         let reporters = batch.len() as u32;
-        let (verdict, diff) = self.st.mesh.merge_screened(batch, &cross);
+        let network = crate::state::mesh::network_of(queried.ip);
+        let (verdict, diff) = self.st.mesh.merge_screened(batch, network, &cross);
         let outlier = matches!(verdict, crate::state::mesh::Verdict::Reject { .. });
         if reporters > 0 {
             self.handle.note_topology_host(queried.ip, outlier, now);

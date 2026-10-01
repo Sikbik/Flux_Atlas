@@ -1148,37 +1148,54 @@ fn stale_catalog_never_rolls_an_app_back() {
 #[test]
 fn mesh_outlier_calls_are_discarded() {
     use atlas_engine::state::mesh::{
-        CallScreen, OUTLIER_MIN_ADDED, OUTLIER_WARMUP, OUTLIER_WINDOW, Verdict,
+        CallScreen, OUTLIER_MIN_ADDED, OUTLIER_RECENT, OUTLIER_WARMUP, Verdict, network_of,
     };
-    // Judgement is relative to the median of recent calls, per reporter.
+    let net = |s: &str| network_of(s.parse().unwrap());
+    let farm = net("5.230.173.205");
+    assert_eq!(farm, net("5.230.172.46"), "one /16");
+    assert_ne!(farm, net("5.231.0.1"));
+    // Judgement is relative to the median of recent accepted calls, per reporter.
     let mut s = CallScreen::default();
     // Cold: nothing is judged before the window is warm, however large.
     for _ in 0..OUTLIER_WARMUP {
-        assert_eq!(s.judge(3_000, 60), Verdict::Accept);
+        assert_eq!(s.judge(3_000, 60, farm), Verdict::Accept);
     }
     let mut s = CallScreen::default();
     for i in 0..OUTLIER_WARMUP {
-        assert_eq!(s.judge(240 + i, 60), Verdict::Accept);
+        assert_eq!(s.judge(240 + i, 60, i as u64), Verdict::Accept);
     }
     // About 4 links per reporter: 3,000 from 60 reporters is far over 4x; rejected.
     assert!(matches!(
-        s.judge(3_000, 60),
+        s.judge(3_000, 60, farm),
         Verdict::Reject { added: 3_000, .. }
     ));
     // A call that adds a lot from many reporters is not an outlier per reporter.
-    assert_eq!(s.judge(1_200, 300), Verdict::Accept);
+    assert_eq!(s.judge(1_200, 300, 7), Verdict::Accept);
     // Below the absolute floor nothing is rejected, even at a high rate.
-    assert_eq!(s.judge(OUTLIER_MIN_ADDED - 1, 10), Verdict::Accept);
+    assert_eq!(s.judge(OUTLIER_MIN_ADDED - 1, 10, 7), Verdict::Accept);
     assert_eq!((s.rejected_calls, s.rejected_links), (1, 3_000));
-    // A lasting change of regime (every call large) moves the median within half a window.
-    let mut accepted_after = None;
-    for i in 0..OUTLIER_WINDOW {
-        if s.judge(3_000, 60) == Verdict::Accept {
-            accepted_after = Some(i);
-            break;
+    // A long run of outlier calls from one network (the sweep walks the node list in id order)
+    // stays rejected: rejected calls never enter the median.
+    for _ in 0..200 {
+        assert!(matches!(s.judge(3_300, 61, farm), Verdict::Reject { .. }));
+    }
+    // A network-wide change (every host adds many links) is accepted once it is seen across
+    // several networks, and the median follows it.
+    let mut first_accept = None;
+    for i in 0..(4 * OUTLIER_RECENT) {
+        if s.judge(3_000, 60, 1_000 + i as u64) == Verdict::Accept && first_accept.is_none() {
+            first_accept = Some(i);
         }
     }
-    assert!(accepted_after.is_some_and(|i| i <= OUTLIER_WINDOW / 2 + 1));
+    assert!(
+        first_accept.is_some_and(|i| i < OUTLIER_RECENT),
+        "{first_accept:?}"
+    );
+    assert_eq!(
+        s.judge(3_000, 60, farm),
+        Verdict::Accept,
+        "the new level is normal now"
+    );
 
     // In the mesh: an outlier call changes nothing, a normal one merges.
     let set = |v: std::ops::Range<u32>| v.map(NodeId).collect::<BTreeSet<_>>();
@@ -1200,7 +1217,7 @@ fn mesh_outlier_calls_are_discarded() {
                 )
             })
             .collect();
-        let (v, d) = m.merge_screened(batch, &cross);
+        let (v, d) = m.merge_screened(batch, u64::from(i), &cross);
         assert_eq!(v, Verdict::Accept);
         assert_eq!(d.added.len(), 20);
     }
@@ -1219,7 +1236,7 @@ fn mesh_outlier_calls_are_discarded() {
         })
         .collect();
     assert_eq!(m.preview_added(&huge), 1_000);
-    let (v, d) = m.merge_screened(huge, &cross);
+    let (v, d) = m.merge_screened(huge, 99, &cross);
     assert!(matches!(v, Verdict::Reject { added: 1_000, .. }), "{v:?}");
     assert!(d.is_empty() && d.reporters.is_empty());
     assert_eq!(m.edge_count(), before);

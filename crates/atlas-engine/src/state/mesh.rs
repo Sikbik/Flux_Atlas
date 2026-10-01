@@ -14,14 +14,19 @@
 //! reports list each other. Reports expire after [`REPORT_TTL_MS`], about two full sweep cycles.
 //!
 //! **Outlier calls.** Upstream reports carry no timestamp, and some queried hosts hold copies of
-//! the reporters' lists with far more links than any other host's copies (measured: 2,400 to
-//! 3,900 new links from one call where a typical call adds about 250, removed again by the next
-//! covering reports). Before a call is merged, [`CallScreen`] counts the links it would add per
-//! reporter and compares that rate with the median rate of the recent calls: a call above
-//! [`OUTLIER_FACTOR`] times the median that would also add at least [`OUTLIER_MIN_ADDED`] links
-//! is discarded whole (no report replaced, no link added or removed). Every call, discarded or
-//! not, enters the rolling window, so a real network-wide change moves the median within half a
-//! window instead of being rejected forever.
+//! the reporters' lists with far more links than any other host's copies (measured: a block of
+//! hosts in 5.230.0.0/16, every port, adds 3,300 links per call on average where other hosts add
+//! about 370, and the next covering reports from other hosts remove them again). Those hosts
+//! also come in runs, since the sweep walks the node list in id order. Before a call is merged,
+//! [`CallScreen`] counts the links it would add per reporter and compares that rate with the
+//! median rate of the recent *accepted* calls: a call above [`OUTLIER_FACTOR`] times the median
+//! that would also add at least [`OUTLIER_MIN_ADDED`] links is discarded whole (no report
+//! replaced, no link added or removed). A real network-wide change (every host suddenly adding
+//! many links) is told apart by its spread: when at least half of the last
+//! [`OUTLIER_RECENT`] calls were over the limit and they came from at least
+//! [`OUTLIER_SPREAD`] different networks (IPv4 /16), calls are accepted again, so the median
+//! follows the new level instead of rejecting forever. A run of outliers from one network never
+//! reaches that spread.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -38,10 +43,14 @@ pub const MISSES_TO_REMOVE: u8 = 2;
 pub const OUTLIER_FACTOR: f64 = 4.0;
 /// A call adding fewer links than this is never an outlier, whatever the median.
 pub const OUTLIER_MIN_ADDED: usize = 500;
-/// Calls in the rolling window.
+/// Accepted calls in the rolling window.
 pub const OUTLIER_WINDOW: usize = 64;
-/// Calls needed in the window before any call is judged.
+/// Accepted calls needed in the window before any call is judged.
 pub const OUTLIER_WARMUP: usize = 16;
+/// Recent calls looked at to tell a network-wide change from a run of outlier hosts.
+pub const OUTLIER_RECENT: usize = 16;
+/// Distinct networks among the recent over-limit calls that mark a network-wide change.
+pub const OUTLIER_SPREAD: usize = 4;
 
 /// What [`CallScreen::judge`] decided about one call.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -58,8 +67,10 @@ pub enum Verdict {
 /// Rolling per-call statistics for the outlier rule (see the module docs).
 #[derive(Debug, Default, Clone)]
 pub struct CallScreen {
-    /// Links added per reporter of the recent calls, oldest first.
+    /// Links added per reporter of the recent accepted calls, oldest first.
     rates: VecDeque<f64>,
+    /// The last calls: over the limit or not, and the network of the queried host.
+    recent: VecDeque<(bool, u64)>,
     /// Calls discarded and the links they would have added (lifetime counters).
     pub rejected_calls: u64,
     pub rejected_links: u64,
@@ -81,30 +92,56 @@ impl CallScreen {
         })
     }
 
-    /// Judges a call that would add `added` links from `reporters` reports, and records it.
-    pub fn judge(&mut self, added: usize, reporters: usize) -> Verdict {
+    /// Judges a call to a host in `network` that would add `added` links from `reporters`
+    /// reports, and records it.
+    pub fn judge(&mut self, added: usize, reporters: usize, network: u64) -> Verdict {
         let rate = added as f64 / reporters.max(1) as f64;
-        let verdict = match self.median() {
-            Some(m) if added >= OUTLIER_MIN_ADDED && rate > OUTLIER_FACTOR * m.max(0.5) => {
-                Verdict::Reject {
-                    added,
-                    rate,
-                    limit: OUTLIER_FACTOR * m.max(0.5),
-                }
-            }
-            _ => Verdict::Accept,
+        let limit = self.median().map(|m| OUTLIER_FACTOR * m.max(0.5));
+        let over = limit.is_some_and(|l| added >= OUTLIER_MIN_ADDED && rate > l);
+        self.recent.push_back((over, network));
+        while self.recent.len() > OUTLIER_RECENT {
+            self.recent.pop_front();
+        }
+        let widespread = over && {
+            let over_calls = self.recent.iter().filter(|(o, _)| *o).count();
+            let networks: HashSet<u64> = self
+                .recent
+                .iter()
+                .filter(|(o, _)| *o)
+                .map(|(_, n)| *n)
+                .collect();
+            over_calls * 2 >= OUTLIER_RECENT && networks.len() >= OUTLIER_SPREAD
         };
+        if over && !widespread {
+            self.rejected_calls += 1;
+            self.rejected_links += added as u64;
+            return Verdict::Reject {
+                added,
+                rate,
+                limit: limit.unwrap_or_default(),
+            };
+        }
         if reporters > 0 {
             self.rates.push_back(rate);
             while self.rates.len() > OUTLIER_WINDOW {
                 self.rates.pop_front();
             }
         }
-        if let Verdict::Reject { added, .. } = verdict {
-            self.rejected_calls += 1;
-            self.rejected_links += added as u64;
+        Verdict::Accept
+    }
+}
+
+/// The network a host belongs to for [`CallScreen`]: its IPv4 /16, or its IPv6 /32.
+pub fn network_of(ip: std::net::IpAddr) -> u64 {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            u64::from(u16::from_be_bytes([o[0], o[1]]))
         }
-        verdict
+        std::net::IpAddr::V6(v6) => {
+            let o = v6.octets();
+            (1 << 32) | u64::from(u32::from_be_bytes([o[0], o[1], o[2], o[3]]))
+        }
     }
 }
 
@@ -269,15 +306,16 @@ impl Mesh {
         new.len()
     }
 
-    /// Screens one call's reports with the outlier rule, then merges them unless the call is an
-    /// outlier. Returns the verdict and the diff (empty when rejected).
+    /// Screens one call's reports (from a host in `network`, see [`network_of`]) with the
+    /// outlier rule, then merges them unless the call is an outlier. Returns the verdict and the diff (empty when rejected).
     pub fn merge_screened(
         &mut self,
         reports: Vec<(NodeId, Report)>,
+        network: u64,
         cross: &dyn Fn(NodeId, NodeId) -> bool,
     ) -> (Verdict, MeshDiff) {
         let added = self.preview_added(&reports);
-        let verdict = self.screen.judge(added, reports.len());
+        let verdict = self.screen.judge(added, reports.len(), network);
         match verdict {
             Verdict::Accept => (verdict, self.merge(reports, cross)),
             Verdict::Reject { .. } => (verdict, MeshDiff::default()),

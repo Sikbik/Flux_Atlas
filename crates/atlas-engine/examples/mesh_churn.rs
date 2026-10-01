@@ -102,19 +102,60 @@ fn main() {
         .filter(|s| s.3 == 0 && s.4 == 0 && s.2 > 0)
         .count();
     println!("calls with no change (incl. discarded outliers): {discarded}");
-    let mut by_host: BTreeMap<String, (u32, u64, u32)> = BTreeMap::new();
+    let mut reporters: Vec<u32> = in_span.iter().map(|s| s.2).collect();
+    summary("reporters per call", &mut reporters);
+    let mut by_host: BTreeMap<String, (u32, u64, u32, u64)> = BTreeMap::new();
     for s in &in_span {
         let host = s.1.rsplit_once(':').map_or(s.1.as_str(), |(h, _)| h);
         let e = by_host.entry(host.to_owned()).or_default();
         e.0 += 1;
         e.1 += u64::from(s.3);
         e.2 = e.2.max(s.3);
+        e.3 += u64::from(s.2);
     }
     let mut hosts: Vec<_> = by_host.into_iter().collect();
     hosts.sort_by_key(|h| std::cmp::Reverse(h.1.1));
-    println!("top hosts by links added (calls, added, max per call):");
-    for (h, (c, a, m)) in hosts.iter().take(8) {
-        println!("  {h:<18} {c:>3} {a:>7} {m:>6}");
+    println!("top hosts by links added (calls, added, max per call, mean reporters):");
+    for (h, (c, a, m, r)) in hosts.iter().take(8) {
+        println!(
+            "  {h:<18} {c:>3} {a:>7} {m:>6} {:>5}",
+            r / u64::from((*c).max(1))
+        );
+    }
+    // Replays the calls through the outlier rule (the counts are the links each call added
+    // under the rule the store was written with, so this is an estimate for a store written
+    // without the rule).
+    let mut screen = atlas_engine::state::mesh::CallScreen::default();
+    let (mut rej, mut rej_links) = (BTreeMap::<bool, u32>::new(), 0u64);
+    for s in &in_span {
+        let ip: std::net::IpAddr =
+            s.1.rsplit_once(':')
+                .map_or(s.1.as_str(), |(h, _)| h)
+                .parse()
+                .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+        let v = screen.judge(
+            s.3 as usize,
+            s.2 as usize,
+            atlas_engine::state::mesh::network_of(ip),
+        );
+        if let atlas_engine::state::mesh::Verdict::Reject { added, .. } = v {
+            *rej.entry(s.1.starts_with("5.230.")).or_default() += 1;
+            rej_links += added as u64;
+        }
+    }
+    println!(
+        "outlier rule replay: would discard {} calls in 5.230/16 and {} elsewhere, {} links",
+        rej.get(&true).copied().unwrap_or(0),
+        rej.get(&false).copied().unwrap_or(0),
+        rej_links
+    );
+    if std::env::var_os("MESH_CALLS").is_some() {
+        for s in &in_span {
+            println!(
+                "call {} {} reporters {} added {} removed {}",
+                s.0, s.1, s.2, s.3, s.4
+            );
+        }
     }
 
     // Removals and returns, from the mesh change log.
