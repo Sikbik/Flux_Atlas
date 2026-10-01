@@ -133,9 +133,23 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 `ATLAS_BACKFILL_DAYS` / `ATLAS_BACKFILL_RPS`), extendable to 30 days.
 
 > **Implemented (B2, I1).** Deviations and precisions over the table above:
-> - **Gap jump.** The block sync fills gaps of up to 30 blocks (`max_live_gap`) live. A larger gap (after downtime)
->   jumps straight to the tip: that block is applied as **discontinuous** (no expiry/at-risk derivation across the
->   hole), and the block backfill fills the hole in the background.
+> - **Gap jump.** The block sync fills gaps of up to 30 blocks (`max_live_gap`) live. A larger gap jumps straight
+>   to the tip: that block is applied as **discontinuous** (no expiry/at-risk derivation across the hole), and the
+>   block backfill fills the hole in the background. The reconcile that follows a jump adopts the list; its
+>   differences are expected and not counted as bug signals.
+> - **Restart catch-up (B5).** Until the chain first reaches an announced tip after a restart, the block sync replays
+>   every missed block instead of jumping, up to `max_catchup_gap` (1,440 blocks, about 12 h of downtime; one
+>   `getblockhash` + one `getblock` per block). Each missed payout rotates the restored queue exactly as it rotated
+>   upstream, and clients rotate the same way from the replayed `block` messages, so no rank correction follows a
+>   restart. Catch-up blocks (older than 2 min) skip the `currentwinner` fetch and the tip-latency sample.
+> - **Deferred reconcile (B5).** A node list whose height is above the applied tip waits until the block sync
+>   reaches that height (or until no block arrived for 90 s: a stalled sync is reconciled anyway). Adopting it
+>   first would roll the model forward, and the blocks applied after it would pay and rotate the same nodes a
+>   second time: this was the "thousands of rank diffs after every restart" bug signal (the startup reconcile
+>   runs within a second of the restart, before the catch-up). Nodes that newer blocks changed are still skipped,
+>   but fields those blocks cannot know (tier, payment address, confirm height, an unknown last payment) are filled
+>   from the list. On shutdown every listed record is written with its current rank, so the restore orders nodes
+>   that share a queue key exactly.
 > - **Reorgs.** On a `previousblockhash` mismatch the sync walks back through the 10-block finality window to the
 >   fork, then the reducer deletes the orphaned blocks (store and recent ring), moves the tip to the fork, clears
 >   the expected payees, emits `reorg` (+ a feed item), and **triggers an immediate NodeRegistry reconcile**. The

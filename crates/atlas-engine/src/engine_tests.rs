@@ -685,3 +685,211 @@ async fn mempool_classification_refines_and_discovers() {
         vec![(h(10), TxKind::AppMessage), (h(11), TxKind::NodeStart)]
     );
 }
+
+/// The upstream payment queue of a small synthetic network: every node has its own payment
+/// address, each block pays the head of every tier, and the paid node moves to the back.
+struct UpstreamQueue {
+    nodes: Vec<atlas_flux::models::nodes::ListedNode>,
+    height: u32,
+}
+
+impl UpstreamQueue {
+    fn new(per_tier: u32, height: u32) -> Self {
+        let mut nodes = Vec::new();
+        for (t, tier) in Tier::ALL.iter().enumerate() {
+            for i in 0..per_tier {
+                let k = t as u32 * 1_000 + i;
+                nodes.push(atlas_flux::models::nodes::ListedNode {
+                    outpoint: Outpoint::new(h(50_000 + k), 0),
+                    endpoint: Some(NodeEndpoint::new(
+                        format!("8.9.{t}.{}", i + 1).parse().unwrap(),
+                        16127,
+                    )),
+                    tier: *tier,
+                    status: NodeStatus::Confirmed,
+                    payment_address: format!("t1synthetic{k:06}").into(),
+                    pubkey: "".into(),
+                    rank: None,
+                    added_height: 100,
+                    confirmed_height: Some(100),
+                    last_confirmed_height: Some(height - 50),
+                    last_paid_height: Some(height - per_tier + i),
+                    active_since_ms: None,
+                    last_paid_ms: None,
+                    collateral_amount: None,
+                });
+            }
+        }
+        let mut q = Self { nodes, height };
+        q.rerank();
+        q
+    }
+
+    fn rerank(&mut self) {
+        for tier in Tier::ALL {
+            let mut idx: Vec<usize> = (0..self.nodes.len())
+                .filter(|i| self.nodes[*i].tier == tier)
+                .collect();
+            idx.sort_by_key(|i| self.nodes[*i].last_paid_height);
+            for (r, i) in idx.into_iter().enumerate() {
+                self.nodes[i].rank = Some(r as u32);
+            }
+        }
+    }
+
+    /// Mines the next block: pays every tier's head. Returns the block's payouts.
+    fn advance(&mut self) -> Vec<atlas_core::chain::Payout> {
+        self.height += 1;
+        let mut payouts = Vec::new();
+        for tier in Tier::ALL {
+            let head = (0..self.nodes.len())
+                .filter(|i| self.nodes[*i].tier == tier)
+                .min_by_key(|i| self.nodes[*i].last_paid_height)
+                .unwrap();
+            self.nodes[head].last_paid_height = Some(self.height);
+            payouts.push(atlas_core::chain::Payout {
+                tier,
+                address: self.nodes[head].payment_address.clone(),
+                amount: atlas_core::Amount::from_flux(1),
+                node: None,
+            });
+        }
+        self.rerank();
+        payouts
+    }
+
+    fn ranks(&self) -> HashMap<Outpoint, Option<u32>> {
+        self.nodes.iter().map(|n| (n.outpoint, n.rank)).collect()
+    }
+}
+
+/// A synthetic block paying `payouts`, without node transactions.
+fn paying_block(
+    base: &DecodedBlock,
+    height: u32,
+    prev: Hash32,
+    payouts: Vec<atlas_core::chain::Payout>,
+) -> DecodedBlock {
+    let mut d = synth(base, height, 0, prev);
+    d.summary.payouts = payouts.into_iter().collect();
+    d.summary.producer_collateral = None;
+    d.node_txs.clear();
+    d.spent.clear();
+    d.transfers.clear();
+    d
+}
+
+fn published_ranks(eng: &EngineHandle) -> HashMap<Outpoint, Option<u32>> {
+    eng.published()
+        .nodes
+        .iter()
+        .map(|r| (r.outpoint, r.rank))
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn restart_after_downtime_replays_blocks_without_rank_corrections() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("a.redb")).unwrap();
+    let base = fixture_block("flux/daemon_getblock_2996916_verbosity2.json");
+    let start_height = 3_000_000;
+    let mut up = UpstreamQueue::new(8, start_height - 1);
+
+    // Before the restart: a first block, the initial list, three more blocks and a clean
+    // reconcile.
+    let eng = start(store.clone());
+    let mut prev = h(1);
+    for i in 0..4 {
+        let b = paying_block(&base, start_height + i, prev, up.advance());
+        prev = b.summary.hash;
+        inject(
+            &eng,
+            Obs::Block {
+                block: Box::new(b),
+                received_ms: now_ms(),
+                discontinuous: i == 0,
+            },
+        )
+        .await;
+        if i == 0 {
+            inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+        }
+    }
+    inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+    until("second reconcile", || eng.stats().reconciles == 2).await;
+    let s = eng.stats();
+    assert_eq!(s.reconcile_diffs, 0, "steady state is clean: {s:?}");
+    until("ranks before the restart", || {
+        published_ranks(&eng) == up.ranks()
+    })
+    .await;
+    let stored_ranks = up.ranks();
+    eng.shutdown().await;
+    drop(eng);
+
+    // Downtime: four blocks are mined while the server is down.
+    let missed: Vec<DecodedBlock> = (4..8)
+        .map(|i| {
+            let b = paying_block(&base, start_height + i, prev, up.advance());
+            prev = b.summary.hash;
+            b
+        })
+        .collect();
+
+    // Restart: the restored ranks are exact for the stored tip before anything else happens.
+    let eng = start(store.clone());
+    assert_eq!(
+        published_ranks(&eng),
+        stored_ranks,
+        "restored ranks match the stored tip"
+    );
+    assert_eq!(
+        eng.published().network.tip.as_ref().map(|t| t.height),
+        Some(start_height + 3)
+    );
+
+    // The registry job is usually faster than the block catch-up: the list (already at the
+    // real tip) lands before the missed blocks are applied. It must wait for them.
+    let mut rx = eng.subscribe();
+    inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+    for b in &missed {
+        inject(
+            &eng,
+            Obs::Block {
+                block: Box::new(b.clone()),
+                received_ms: now_ms(),
+                discontinuous: false,
+            },
+        )
+        .await;
+    }
+    until("deferred reconcile after the catch-up", || {
+        eng.stats().reconciles == 1
+    })
+    .await;
+    let s = eng.stats();
+    assert_eq!(
+        s.reconcile_diffs, 0,
+        "first reconcile after the restart: {s:?}"
+    );
+    assert_eq!(
+        s.payouts_exact, 12,
+        "every missed payout hits the queue head"
+    );
+    until("ranks after the catch-up", || {
+        published_ranks(&eng) == up.ranks()
+    })
+    .await;
+    assert_eq!(eng.stats().rank_corrections, 0, "no correction burst");
+    let mut corrections = 0;
+    while let Ok(m) = rx.try_recv() {
+        if let LiveBody::Nodes(d) = &m.body {
+            corrections += d.changed.iter().filter(|c| c.rank.is_some()).count();
+        }
+    }
+    assert_eq!(
+        corrections, 0,
+        "clients rotate ranks from the block payouts alone"
+    );
+    eng.shutdown().await;
+}

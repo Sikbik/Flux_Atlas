@@ -122,6 +122,10 @@ pub struct IngestConfig {
     pub geo_background_interval: Duration,
     /// Gaps up to this many blocks are filled live; larger gaps jump (the backfill fills them).
     pub max_live_gap: u32,
+    /// The first sync after a restart replays up to this many missed blocks (about 12 h at the
+    /// default) instead of jumping, so every payout of the downtime rotates the restored queue
+    /// exactly as it rotated upstream. Longer downtime jumps like any large gap.
+    pub max_catchup_gap: u32,
     /// Transfers at or above this value become `LargeTransfer` events.
     pub large_transfer: Amount,
     pub backfill: BackfillConfig,
@@ -176,6 +180,7 @@ impl Default for IngestConfig {
             watch_probe_interval: Duration::from_secs(60),
             geo_background_interval: Duration::from_secs(2),
             max_live_gap: 30,
+            max_catchup_gap: 1_440,
             large_transfer: Amount::from_flux(10_000),
             backfill: BackfillConfig::default(),
             retention: RetentionPolicy::default(),

@@ -517,12 +517,32 @@ fn first_boot_block_before_the_list_is_attributed_by_the_reconcile() {
     }
     let blk = st.recent.iter().find(|b| b.height == 2_996_916).unwrap();
     assert!(blk.payouts.iter().all(|p| p.node.is_some()));
-    // A second pass has nothing left to attribute.
+    // Nodes the block heartbeated are newer than the list, but the list still fills what the
+    // block could not know (tier, payment address, confirm height).
+    let listed: BTreeSet<Outpoint> = common::node_list().iter().map(|n| n.outpoint).collect();
+    let mut filled = 0;
+    for e in st.nodes.listed() {
+        if !listed.contains(&e.rec.outpoint) {
+            continue;
+        }
+        assert!(
+            !e.rec.payment_address.is_empty(),
+            "node {} address",
+            e.rec.id.0
+        );
+        assert!(
+            e.rec.confirmed_height.is_some(),
+            "node {} confirmed",
+            e.rec.id.0
+        );
+        filled += 1;
+    }
+    assert!(filled > 0);
+    // A second pass has nothing left to attribute, and finds no differences.
     let mut tick = Tick::new(NOW);
-    assert_eq!(
-        reconcile(&mut st, &mut tick, &common::node_list()).reattributed,
-        0
-    );
+    let rep = reconcile(&mut st, &mut tick, &common::node_list());
+    assert_eq!(rep.reattributed, 0);
+    assert_eq!(rep.total_diffs(), 0, "{rep:?}");
 }
 
 #[test]

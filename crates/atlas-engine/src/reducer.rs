@@ -19,12 +19,15 @@ use atlas_core::live::{
 };
 use atlas_core::{Amount, Hash32, NodeId, NodeRecord, NodeStatus, Tier, Txid, now_ms};
 use atlas_flux::models::apps::APP_PAYMENT_ADDRESS;
+use atlas_flux::models::nodes::ListedNode;
 use atlas_store::{MeshChangeRecord, MeshEdgeRecord, MeshReporter, MetricsRow, WriteBatch};
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 use crate::derive::apps as dapps;
 use crate::derive::block::{Attribution, apply_block, payee_dto};
-use crate::derive::reconcile::{apply_dos_list, apply_start_list, reconcile};
+use crate::derive::reconcile::{
+    apply_dos_list, apply_start_list, is_initial, list_height, reconcile,
+};
 use crate::derive::round::{apply_round, geo_material_change, watched_feed};
 use crate::obs::{Obs, TopologyReport};
 use crate::publish::{PublishJob, block_lite, build, build_with};
@@ -102,6 +105,18 @@ const PUBLISH_MIN_INTERVAL: Duration = Duration::from_secs(1);
 const MESH_BODY_INTERVAL: Duration = Duration::from_secs(10);
 /// Mempool additions are coalesced for this long.
 const MEMPOOL_COALESCE: Duration = Duration::from_millis(500);
+/// A node list waiting for the block sync is reconciled anyway once no block arrived for this
+/// long (the sync is stalled rather than catching up).
+const LIST_DEFER_STALL: Duration = Duration::from_secs(90);
+/// A block older than this when applied is a catch-up block (gap fill after downtime), not a
+/// fresh tip: no `currentwinner` fetch and no tip-latency sample for it.
+const CATCH_UP_AGE_MS: u64 = 120_000;
+
+/// A node list that reflects blocks the model has not applied yet.
+struct PendingList {
+    list: Vec<ListedNode>,
+    since: Instant,
+}
 
 pub struct Reducer {
     pub st: NetworkState,
@@ -134,6 +149,10 @@ pub struct Reducer {
     snapshot_after_reconcile: bool,
     next_snapshot_ms: u64,
     live_floor_saved: Option<u32>,
+    pending_list: Option<PendingList>,
+    last_block_at: Instant,
+    /// The last block applied was discontinuous: the next reconcile's differences are expected.
+    after_gap: bool,
 }
 
 impl Reducer {
@@ -184,6 +203,9 @@ impl Reducer {
             snapshot_after_reconcile: last_snapshot_ms.is_none_or(|t| now.saturating_sub(t) > hour),
             next_snapshot_ms: (now / hour + 1) * hour,
             live_floor_saved,
+            pending_list: None,
+            last_block_at: Instant::now(),
+            after_gap: false,
         }
     }
 
@@ -222,6 +244,11 @@ impl Reducer {
                             Err(_) => break,
                         }
                         n += 1;
+                    }
+                    if flush.is_some() {
+                        // Store every record with its current rank: the restore orders
+                        // nodes that share a queue key by the stored rank.
+                        self.st.nodes.persist_all_listed();
                     }
                     self.finish(tick);
                     if let Some(ack) = flush {
@@ -294,16 +321,25 @@ impl Reducer {
                     s.payouts_fallback += fallback;
                     s.payouts_unattributed += none;
                 });
-                self.stats()
-                    .tip_latency(received_ms as i64 - block.summary.time_ms as i64);
+                let catching_up = now.saturating_sub(block.summary.time_ms) > CATCH_UP_AGE_MS;
+                if !catching_up {
+                    self.stats()
+                        .tip_latency(received_ms as i64 - block.summary.time_ms as i64);
+                }
+                self.last_block_at = Instant::now();
                 if discontinuous {
                     self.st.expiry_armed = false;
+                    self.after_gap = true;
                     if let Some(c) = &self.cmds {
                         c.reconcile.notify_one();
                     }
                 }
                 if let Some(c) = &self.cmds {
-                    let _ = c.payees.try_send(block.summary.height);
+                    // `currentwinner` names the payees after the real tip: useless for a
+                    // catch-up block.
+                    if !catching_up {
+                        let _ = c.payees.try_send(block.summary.height);
+                    }
                     for p in &block.app_payments {
                         if !self.st.apps.applied.contains(&p.message_hash) {
                             let _ = c
@@ -324,6 +360,7 @@ impl Reducer {
                 );
                 self.fresh = true;
                 self.fresh().ok("block_decoder");
+                self.release_pending_list(tick);
             }
             Obs::Reorg {
                 fork_height,
@@ -432,54 +469,7 @@ impl Reducer {
                 self.fresh().ok("price");
             }
             Obs::Winners { height, winners } => self.winners(tick, height, &winners),
-            Obs::NodeList(list) => {
-                let rep = reconcile(&mut self.st, tick, &list);
-                let total = rep.total_diffs();
-                self.stats().with(|s| {
-                    s.reconciles += 1;
-                    if !rep.initial {
-                        s.reconcile_diffs += u64::from(total);
-                        for (k, v) in &rep.diffs {
-                            *s.reconcile_diff_fields.entry((*k).to_owned()).or_default() +=
-                                u64::from(*v);
-                        }
-                        if rep.rank_diffs > 0 {
-                            *s.reconcile_diff_fields
-                                .entry("rank".to_owned())
-                                .or_default() += u64::from(rep.rank_diffs);
-                        }
-                    }
-                });
-                if total > 0 && !rep.initial {
-                    tracing::warn!(
-                        list_height = rep.list_height,
-                        diffs = ?rep.diffs,
-                        rank_diffs = rep.rank_diffs,
-                        added = rep.added,
-                        removed = rep.removed,
-                        skipped_newer = rep.skipped_newer,
-                        reattributed = rep.reattributed,
-                        "reconcile found differences (bug signal)"
-                    );
-                } else {
-                    tracing::info!(
-                        list_height = rep.list_height,
-                        listed = rep.listed,
-                        added = rep.added,
-                        removed = rep.removed,
-                        initial = rep.initial,
-                        reattributed = rep.reattributed,
-                        "reconcile clean"
-                    );
-                }
-                self.request_geo_for_unlocated();
-                self.fresh = true;
-                self.fresh().ok("node_registry");
-                if self.snapshot_after_reconcile {
-                    self.snapshot_after_reconcile = false;
-                    self.snapshot(tick);
-                }
-            }
+            Obs::NodeList(list) => self.node_list(tick, list),
             Obs::NodeCount(c) => {
                 let mut local = [0u32; 3];
                 for e in self.st.nodes.listed() {
@@ -627,6 +617,121 @@ impl Reducer {
             Obs::Flush(ack) => {
                 let _ = self.writer.send(WriterCmd::Flush(ack));
             }
+        }
+    }
+
+    /// A node list arrived. A list that reflects blocks the model has not applied yet (the block
+    /// sync is still catching up, typically right after a restart) waits for them: adopting it
+    /// first would roll the model forward, and the catch-up blocks would then pay and rotate the
+    /// same nodes a second time. Every rank would differ from the model and from what clients
+    /// hold, and clients would get a correction for nearly every node.
+    fn node_list(&mut self, tick: &mut Tick, list: Vec<ListedNode>) {
+        let height = list_height(&list);
+        let tip = self.st.tip_height();
+        if self.st.tip.is_some() && height > tip && !is_initial(&self.st, &list) {
+            let since = self
+                .pending_list
+                .as_ref()
+                .map_or_else(Instant::now, |p| p.since);
+            if self.pending_list.is_none() {
+                tracing::info!(
+                    list_height = height,
+                    tip,
+                    "node list is ahead of the applied chain; reconciling once the blocks are applied"
+                );
+            }
+            self.pending_list = Some(PendingList { list, since });
+            return;
+        }
+        self.pending_list = None;
+        self.reconcile_list(tick, &list);
+    }
+
+    /// Reconciles a deferred node list once the chain reached its height, or when the block
+    /// sync has stalled (no block for [`LIST_DEFER_STALL`]): a stale model is then better
+    /// corrected than kept.
+    fn release_pending_list(&mut self, tick: &mut Tick) {
+        let Some(p) = &self.pending_list else { return };
+        let height = list_height(&p.list);
+        let caught_up = self.st.tip_height() >= height;
+        let stalled = p.since.elapsed() >= LIST_DEFER_STALL
+            && self.last_block_at.elapsed() >= LIST_DEFER_STALL;
+        if !caught_up && !stalled {
+            return;
+        }
+        let Some(p) = self.pending_list.take() else {
+            return;
+        };
+        if stalled && !caught_up {
+            tracing::warn!(
+                list_height = height,
+                tip = self.st.tip_height(),
+                "block sync stalled behind the node list; reconciling anyway"
+            );
+        }
+        self.reconcile_list(tick, &p.list);
+    }
+
+    fn reconcile_list(&mut self, tick: &mut Tick, list: &[ListedNode]) {
+        let rep = reconcile(&mut self.st, tick, list);
+        // Differences right after a chain discontinuity (a jump over a gap too large to
+        // replay) are expected: the skipped blocks were never applied.
+        let after_gap = std::mem::take(&mut self.after_gap);
+        let expected = rep.initial || after_gap;
+        let total = rep.total_diffs();
+        self.stats().with(|s| {
+            s.reconciles += 1;
+            if !expected {
+                s.reconcile_diffs += u64::from(total);
+                for (k, v) in &rep.diffs {
+                    *s.reconcile_diff_fields.entry((*k).to_owned()).or_default() += u64::from(*v);
+                }
+                if rep.rank_diffs > 0 {
+                    *s.reconcile_diff_fields
+                        .entry("rank".to_owned())
+                        .or_default() += u64::from(rep.rank_diffs);
+                }
+            }
+        });
+        if total > 0 && after_gap && !rep.initial {
+            tracing::info!(
+                list_height = rep.list_height,
+                diffs = ?rep.diffs,
+                rank_diffs = rep.rank_diffs,
+                added = rep.added,
+                removed = rep.removed,
+                "reconcile after a chain gap adopted the list (expected differences)"
+            );
+        } else if total > 0 && !expected {
+            tracing::warn!(
+                list_height = rep.list_height,
+                diffs = ?rep.diffs,
+                rank_diffs = rep.rank_diffs,
+                added = rep.added,
+                removed = rep.removed,
+                skipped_newer = rep.skipped_newer,
+                reattributed = rep.reattributed,
+                "reconcile found differences (bug signal)"
+            );
+        } else {
+            tracing::info!(
+                list_height = rep.list_height,
+                listed = rep.listed,
+                added = rep.added,
+                removed = rep.removed,
+                initial = rep.initial,
+                after_gap,
+                diffs = total,
+                reattributed = rep.reattributed,
+                "reconcile clean"
+            );
+        }
+        self.request_geo_for_unlocated();
+        self.fresh = true;
+        self.fresh().ok("node_registry");
+        if self.snapshot_after_reconcile {
+            self.snapshot_after_reconcile = false;
+            self.snapshot(tick);
         }
     }
 
@@ -1321,6 +1426,7 @@ impl Reducer {
             tick.publish = true;
         }
         dapps::expire_pending(&mut self.st, &mut tick);
+        self.release_pending_list(&mut tick);
         let before = self.st.mempool.len();
         let cutoff = tick.now_ms.saturating_sub(3_600_000);
         self.st.mempool.retain(|_, e| e.first_seen_ms >= cutoff);

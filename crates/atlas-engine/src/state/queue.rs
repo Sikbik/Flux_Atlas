@@ -120,6 +120,11 @@ impl PaymentQueue {
         self.tier(tier).and_then(TierQueue::head)
     }
 
+    /// The queue key of `id`, when queued.
+    pub fn key(&self, id: NodeId) -> Option<QKey> {
+        self.tiers.iter().find_map(|q| q.keys.get(&id).copied())
+    }
+
     /// True when `id` is queued in any tier.
     pub fn contains(&self, id: NodeId) -> bool {
         self.tiers.iter().any(|q| q.contains(id))

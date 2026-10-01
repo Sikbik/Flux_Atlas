@@ -240,6 +240,13 @@ impl NodeTable {
         self.dirty = true;
     }
 
+    /// Persists every listed record at the end of the tick (shutdown: ranks change for every
+    /// queued node each block, but only touched records are written as they change).
+    pub fn persist_all_listed(&mut self) {
+        let ids: Vec<NodeId> = self.listed().map(|e| e.rec.id).collect();
+        self.persist.extend(ids);
+    }
+
     /// Every entry (including departed).
     pub fn iter(&self) -> impl Iterator<Item = &NodeEntry> {
         self.slots.iter().filter_map(Option::as_ref)
