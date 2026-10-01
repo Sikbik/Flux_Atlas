@@ -216,3 +216,80 @@ pub fn db_stats_at(path: &Path) -> Result<DbStats> {
         tables,
     })
 }
+
+/// Disk use of everything under a data directory, by top-level entry (`atlas.redb`, `geoip/`,
+/// ...), sorted largest first. A file reached through several hard links (the GeoIP
+/// `.prev.mmdb` link to last month's database) counts once, under the first entry that
+/// reaches it. The disk budget covers `atlas.redb` only; the rest is accounted here.
+pub fn dir_usage(dir: &Path) -> std::io::Result<Vec<(String, FileUsage)>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<std::io::Result<_>>()?;
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for e in entries {
+        let mut total = FileUsage::default();
+        add_usage(&e.path(), &mut seen, &mut total)?;
+        let mut name = e.file_name().to_string_lossy().into_owned();
+        if e.file_type()?.is_dir() {
+            name.push('/');
+        }
+        out.push((name, total));
+    }
+    out.sort_by_key(|(_, u)| std::cmp::Reverse(u.used_bytes()));
+    Ok(out)
+}
+
+fn add_usage(
+    path: &Path,
+    seen: &mut std::collections::HashSet<(u64, u64)>,
+    total: &mut FileUsage,
+) -> std::io::Result<()> {
+    let md = std::fs::symlink_metadata(path)?;
+    if md.is_dir() {
+        for e in std::fs::read_dir(path)? {
+            add_usage(&e?.path(), seen, total)?;
+        }
+        return Ok(());
+    }
+    if !md.is_file() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if !seen.insert((md.dev(), md.ino())) {
+            return Ok(());
+        }
+    }
+    let u = FileUsage::of(path)?;
+    total.len_bytes += u.len_bytes;
+    total.disk_bytes += u.disk_bytes;
+    Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dir_usage_counts_hard_links_once() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("atlas.redb"), vec![1u8; 8192]).unwrap();
+        let geo = dir.path().join("geoip");
+        std::fs::create_dir(&geo).unwrap();
+        std::fs::write(geo.join("dbip-city-lite.mmdb"), vec![2u8; 40_000]).unwrap();
+        std::fs::hard_link(
+            geo.join("dbip-city-lite.mmdb"),
+            geo.join("dbip-city-lite.prev.mmdb"),
+        )
+        .unwrap();
+        std::fs::write(geo.join("month.json"), b"{}").unwrap();
+        let u = dir_usage(dir.path()).unwrap();
+        assert_eq!(u.len(), 2);
+        assert_eq!(u[0].0, "geoip/");
+        assert_eq!(u[0].1.len_bytes, 40_002);
+        assert_eq!(u[1].0, "atlas.redb");
+        assert_eq!(u[1].1.len_bytes, 8192);
+    }
+}

@@ -36,6 +36,6 @@ pub use records::{
     MeshReporter, MetricsRow, Order, Resolution,
 };
 pub use retention::{RetentionPolicy, RetentionReport};
-pub use stats::{DbStats, FileUsage, TableSize, db_stats_at};
+pub use stats::{DbStats, FileUsage, TableSize, db_stats_at, dir_usage};
 pub use store::{SCHEMA_VERSION, Store, StoreOptions};
 pub use tables::meta_keys;

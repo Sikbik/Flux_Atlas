@@ -37,8 +37,10 @@ enum Cmd {
         timeout_s: u64,
     },
     /// Print the database file size and per-table sizes (rows, bytes) from redb's table
-    /// stats. The server must be stopped: redb locks the file. A running server reports the
-    /// same sizes in `/metrics/prometheus` (`atlas_store_table_*`).
+    /// stats, then the disk use of every entry in the data directory (`atlas.redb`, `geoip/`).
+    /// The table report needs the server stopped (redb locks the file); the directory listing
+    /// does not. A running server reports table sizes in `/metrics/prometheus`
+    /// (`atlas_store_table_*`).
     DbStats {
         /// Directory holding `atlas.redb`.
         #[arg(long, env = "ATLAS_DATA_DIR", default_value = "/data")]
@@ -213,7 +215,7 @@ fn main() -> ExitCode {
                     Duration::from_secs(timeout_s),
                 ))
             }),
-        Cmd::DbStats { data_dir, compact } => db_stats(&data_dir.join("atlas.redb"), compact),
+        Cmd::DbStats { data_dir, compact } => db_stats(&data_dir, compact),
         Cmd::ExportTypes { out } => atlas_core::export_typescript(&out)
             .map(|()| eprintln!("wrote TypeScript bindings to {}", out.display()))
             .map_err(anyhow::Error::from),
@@ -228,7 +230,9 @@ fn main() -> ExitCode {
 }
 
 /// `atlas db-stats [--compact]` on a database no server has open.
-fn db_stats(path: &std::path::Path, compact: bool) -> anyhow::Result<()> {
+fn db_stats(data_dir: &std::path::Path, compact: bool) -> anyhow::Result<()> {
+    let db = data_dir.join("atlas.redb");
+    let path = db.as_path();
     let locked = |e: &dyn std::fmt::Display| {
         anyhow::anyhow!(
             "reading {}: {e} (stop the server first: redb locks the file)",
@@ -250,9 +254,25 @@ fn db_stats(path: &std::path::Path, compact: bool) -> anyhow::Result<()> {
             after.disk_bytes as f64 / 1_048_576.0
         );
     }
-    let st = atlas_store::db_stats_at(path).map_err(|e| locked(&e))?;
-    print!("{}\n{}", path.display(), st.render());
-    Ok(())
+    // The directory listing needs no lock, so it prints even while a server holds the file.
+    let tables = atlas_store::db_stats_at(path).map_err(|e| locked(&e));
+    if let Ok(st) = &tables {
+        print!("{}\n{}\n", path.display(), st.render());
+    }
+    // Everything on the volume: the database plus the GeoIP files (live, previous month,
+    // staging during an update).
+    let mib = |b: u64| b as f64 / 1_048_576.0;
+    let entries = atlas_store::dir_usage(data_dir)?;
+    let total: u64 = entries.iter().map(|(_, u)| u.disk_bytes).sum();
+    println!("{} on disk: {:.1} MiB", data_dir.display(), mib(total));
+    for (name, u) in &entries {
+        println!(
+            "  {name:<28} {:>10.1} MiB on disk ({:.1} MiB length)",
+            mib(u.disk_bytes),
+            mib(u.len_bytes)
+        );
+    }
+    tables.map(drop)
 }
 
 #[cfg(test)]
