@@ -260,6 +260,35 @@
   transition-duration: var(--dur-fast, 140ms);
 }
 
+/* Off keeps Reduced's token set (shorter fades, no travel, springs replaced by the standard easing). The design
+   tokens key that set on data-motion="reduced" and the OS media query only, so an app-level Off would otherwise
+   run whatever CSS transition is left at the full durations. Kept in step with tokens.css by timing.test.ts. */
+:root[data-motion="off"] {
+  --motion-scale: 0;
+  --dur-base: 120ms;
+  --dur-slow: 120ms;
+  --dur-slower: 160ms;
+  --dur-enter: 120ms;
+  --dur-tick: 1ms;
+  --dur-fresh: 1000ms;
+  --dur-portal-open: 160ms;
+  --dur-portal-close: 120ms;
+  --dur-route: 160ms;
+  --dur-ambient-out: 600ms;
+  --dur-ambient-in: 300ms;
+  --dur-spring-snappy: 120ms;
+  --dur-spring-soft: 120ms;
+  --dur-assemble: 160ms;
+  --dur-lift: 300ms;
+  --dur-uplink: 160ms;
+  --dur-downlink: 160ms;
+  --dur-moon-hover: 120ms;
+  --stagger: 0ms;
+  --ease-spring-snappy: var(--ease-standard);
+  --ease-spring-soft: var(--ease-standard);
+  --ease-beat: var(--ease-standard);
+}
+
 /* Off: every effect is a state, never a motion. The focus ring stays (it is the indicator). */
 [data-fx-mode="off"] .ui-button::after,
 [data-fx-mode="off"] [data-fx~="charge"]::after {

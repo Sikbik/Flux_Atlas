@@ -355,6 +355,12 @@ a.blk:focus-visible {
   animation: none;
 }
 
+/* Off draws no rim either: nothing fades. */
+:root[data-motion-off] .blk-item[data-fresh] .blk::after {
+  animation: none;
+  opacity: 0;
+}
+
 @keyframes blk-land-quiet {
   from {
     opacity: 0;
