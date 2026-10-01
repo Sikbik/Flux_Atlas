@@ -86,8 +86,8 @@ export function NodeHeader() {
             </>
           ) : undefined
         }
-        actions={
-          <>
+        freshness={
+          <span className="ix-tools">
             <Button
               size="sm"
               icon={watched ? EyeOff : Eye}
@@ -112,7 +112,7 @@ export function NodeHeader() {
                 if (lat !== null && lon !== null) void engine?.flyTo(lat, lon, 0.5, { tilt: 0.32 });
               }}
             />
-          </>
+          </span>
         }
       >
         {tier !== 'unknown' ? <TierChip tier={tier} size="sm" /> : <Chip size="sm">Unknown tier</Chip>}

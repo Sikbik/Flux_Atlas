@@ -93,8 +93,8 @@ export function FleetHeader({
             : `${formatInt(nodes.length)} ${nodes.length === 1 ? 'node' : 'nodes'} paid to this address`
         }
         tier={dominant}
-        actions={
-          <>
+        freshness={
+          <span className="ix-tools">
             {watchlist ? null : (
               <Button
                 size="sm"
@@ -133,7 +133,7 @@ export function FleetHeader({
               disabled={nodes.length === 0}
               onClick={onShowOnGlobe}
             />
-          </>
+          </span>
         }
       >
         <HealthChips counts={counts} total={nodes.length} />

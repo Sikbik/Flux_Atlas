@@ -250,7 +250,7 @@ export function HostView({ ip }: { ip: string }) {
         }
         tier={dominant === 'unknown' ? undefined : dominant}
         freshness={
-          <span className="ix-host-tools">
+          <span className="ix-tools">
             <IconButton
               size="sm"
               variant="secondary"

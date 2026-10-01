@@ -252,7 +252,7 @@ function AppBody() {
         title={detail.display_name}
         subtitle={spec.description ? <span className="ix-clamp">{spec.description}</span> : undefined}
         freshness={
-          <span className="ix-app-tools">
+          <span className="ix-tools">
             {running > 0 ? (
               <ExternalButton href={`https://${url}`} icon={ExternalLink} title={`Open ${url}`}>
                 Open app

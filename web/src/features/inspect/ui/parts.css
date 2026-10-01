@@ -41,6 +41,20 @@
   font-size: var(--fs-md);
 }
 
+/* The header's tools (Watch, locate, copy) sit at the top right of the kind row, in the kit's freshness slot, on every
+   width: the kit's actions slot drops to a row of its own in a narrow window, which on a phone spends the first screen
+   on buttons. The kit top-aligns the kind label, which is right beside a chip but leaves it above the middle of a 44 px
+   touch button; centre it. */
+.ix-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ix .ui-vh__kind {
+  align-self: center;
+}
+
 .ix-pad {
   padding-inline: var(--ix-pad);
 }

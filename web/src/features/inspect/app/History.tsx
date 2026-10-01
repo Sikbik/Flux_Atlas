@@ -176,7 +176,7 @@ export function AppHistoryView({ name, n }: { name: string; n: number }) {
           .filter(Boolean)
           .join(' · ')}
         freshness={
-          <span className="ix-app-tools">
+          <span className="ix-tools">
             {prev ? (
               <HistoryButton name={name} n={prev} icon={ChevronLeft} aria-label={`Revision ${prev}`} />
             ) : (

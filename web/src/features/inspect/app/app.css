@@ -22,18 +22,6 @@
   -webkit-line-clamp: 2;
 }
 
-/* The header's top right: the copy button, or the two arrows between revisions. The kit top-aligns the kind
-   label, which is right beside a chip but leaves it above the middle of a 44 px touch button; centre it. */
-.ix-app-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.ix-app .ui-vh__kind {
-  align-self: center;
-}
-
 /* A link that wears a Button: no underline, the Button's own colours. */
 .ix-link-button {
   text-decoration: none;

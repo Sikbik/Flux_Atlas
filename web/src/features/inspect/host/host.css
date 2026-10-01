@@ -23,18 +23,6 @@
   vertical-align: bottom;
 }
 
-/* The header's top right: the two small tools stay there on every width. The kit top-aligns the kind label,
-   which is right beside a chip but leaves it above the middle of a 44 px touch button; centre it. */
-.ix-host-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.ix-host .ui-vh__kind {
-  align-self: center;
-}
-
 .ix-host-skel {
   display: grid;
   gap: var(--space-4);
