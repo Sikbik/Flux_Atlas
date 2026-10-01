@@ -3,14 +3,28 @@
 
 import { Portal } from '../internal/floating';
 import { ChartsSection } from './sections/ChartsSection';
+import { ChipsSection } from './sections/ChipsSection';
+import { ControlsSection } from './sections/ControlsSection';
 import { FormsSection } from './sections/FormsSection';
+import { FoundationsSection } from './sections/FoundationsSection';
+import { IdentitySection } from './sections/IdentitySection';
+import { LayoutSection } from './sections/LayoutSection';
 import { LiveSection } from './sections/LiveSection';
 import { NavSection } from './sections/NavSection';
 import { OverlaySection } from './sections/OverlaySection';
+import { ReadoutsSection } from './sections/ReadoutsSection';
+import { StatesSection } from './sections/StatesSection';
 import { TableSection } from './sections/TableSection';
 import './gallery.css';
 
 const NAV: ReadonlyArray<readonly [id: string, label: string]> = [
+  ['foundations', 'Foundations'],
+  ['layout', 'Layout'],
+  ['readouts', 'Readouts'],
+  ['chips', 'Chips'],
+  ['identity', 'Identity'],
+  ['controls', 'Controls'],
+  ['states', 'States'],
   ['nav', 'Tabs'],
   ['table', 'Tables'],
   ['charts', 'Charts'],
@@ -42,6 +56,13 @@ export function Gallery() {
             </a>
           ))}
         </nav>
+        <FoundationsSection />
+        <LayoutSection />
+        <ReadoutsSection />
+        <ChipsSection />
+        <IdentitySection />
+        <ControlsSection />
+        <StatesSection />
         <NavSection />
         <TableSection />
         <ChartsSection />

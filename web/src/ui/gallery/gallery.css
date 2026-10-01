@@ -79,6 +79,12 @@
   text-decoration: none;
 }
 
+@media (pointer: coarse) {
+  .kg-nav a {
+    height: var(--touch-min);
+  }
+}
+
 .kg-nav a:hover {
   background: var(--ink-2);
   color: var(--text-1);
@@ -139,6 +145,7 @@
   position: relative;
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
   gap: var(--space-5);
   min-width: 0;
@@ -181,6 +188,30 @@
   min-width: 0;
 }
 
+/* A constrained flush specimen is a window slab resting on the desk: lit rim, deep shadow. */
+.kg-stage[data-windowed] {
+  display: block;
+  padding: var(--space-8) var(--space-6);
+  background:
+    radial-gradient(
+      110% 80% at 15% 0%,
+      color-mix(in oklab, var(--accent-700) 26%, transparent),
+      transparent 70%
+    ),
+    var(--void);
+}
+
+.kg-stage[data-windowed] .kg-stage__inner {
+  margin-inline: auto;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--r-xl);
+  background:
+    linear-gradient(var(--slab-bg-solid), var(--slab-bg-solid)) padding-box,
+    var(--ui-rim-hot) border-box;
+  box-shadow: var(--shadow-window);
+}
+
 .kg-caption {
   color: var(--text-3);
   font-size: var(--fs-xs);
@@ -196,6 +227,39 @@
   color: var(--text-3);
   font-size: var(--fs-xs);
   line-height: var(--lh-snug);
+}
+
+.kg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.kg-line {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.kg-preview {
+  display: grid;
+  gap: var(--space-4);
+  width: 260px;
+  max-width: 100%;
+}
+
+.kg-qb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: var(--space-5);
+  width: 100%;
+}
+
+.kg-qb-title {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
 }
 
 .kg-foot {

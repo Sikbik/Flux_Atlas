@@ -52,7 +52,7 @@ export interface SpecimenProps {
   surface?: 'slab' | 'raised' | 'void' | 'globe';
   /** Columns the specimen spans in a grid (1 to 3). */
   span?: 1 | 2 | 3;
-  /** Remove the stage padding (for tables and full-bleed content). */
+  /** Remove the stage padding (for tables and full-bleed content); with `width` the content is drawn as a window slab. */
   flush?: boolean;
   /** Constrain the content to a width in px (a 420 px inspector, an 820 px explorer window). */
   width?: number;
@@ -74,7 +74,13 @@ export function Specimen({
 }: SpecimenProps) {
   return (
     <figure className={cx('kg-spec', className)} data-span={span}>
-      <div className="kg-stage" data-layout={layout} data-surface={surface} data-flush={flush || undefined}>
+      <div
+        className="kg-stage"
+        data-layout={layout}
+        data-surface={surface}
+        data-flush={flush && !width ? '' : undefined}
+        data-windowed={flush && width ? '' : undefined}
+      >
         {width ? (
           <div className="kg-stage__inner" style={{ width: `min(100%, ${width}px)` }}>
             {children}

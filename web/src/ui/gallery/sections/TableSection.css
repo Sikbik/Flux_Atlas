@@ -7,10 +7,6 @@
   min-width: 0;
 }
 
-.kg-tbl-frame[data-stretch] {
-  align-self: stretch;
-}
-
 .kg-tbl-bar {
   display: flex;
   flex-wrap: wrap;

@@ -49,7 +49,6 @@ function useNodeRows(): { rows: NodeRow[]; loaded: boolean } {
   const version = useNetwork((s) => s.versions.Nodes);
   const loaded = useNetwork((s) => s.loaded);
   const cache = useRef(new Map<number, NodeRow>());
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` is the store's change signal for the node columns
   const rows = useMemo(() => {
     const t = store.nodes;
     const prev = cache.current;
@@ -519,7 +518,7 @@ export function TableSection() {
 
         <Specimen
           title="Loading, then loaded."
-          caption="Skeleton rows have exactly the loaded geometry, so nothing shifts when data arrives; the skeleton cross-fades into rows that rise in with a short stagger. Synthetic delay."
+          caption="Skeleton rows have exactly the loaded geometry, so nothing shifts when data arrives; the skeleton cross-fades into the rows. Synthetic delay."
           flush
           span={2}
         >
@@ -546,15 +545,12 @@ export function TableSection() {
           caption="A compact state panel inside the table area; the header stays, so the columns are still explained."
           flush
         >
-          <div className="kg-tbl-frame" data-stretch="">
-            <DataTable
-              aria-label="Empty example"
-              rows={[]}
-              columns={inspectorColumns.slice(0, 3)}
-              rowKey={nodeKey}
-              fill
-            />
-          </div>
+          <DataTable
+            aria-label="Empty example"
+            rows={[]}
+            columns={inspectorColumns.slice(0, 3)}
+            rowKey={nodeKey}
+          />
         </Specimen>
 
         <Specimen
