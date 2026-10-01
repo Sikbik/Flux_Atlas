@@ -320,10 +320,61 @@ fn topics_mask(topics: &[Topic]) -> u8 {
     topics.iter().fold(0u8, |m, t| m | t.bit())
 }
 
+/// App name charset, without the dot segments `.` and `..` (X1 I2).
 fn valid_app_name(s: &str) -> bool {
     (1..=64).contains(&s.len())
+        && s != "."
+        && s != ".."
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
+}
+
+/// Keeps the first occurrence of each entry, in the client's order (its selection first: the
+/// engine counts a connection's first entries as its votes).
+fn dedup_ordered<T: PartialEq>(v: impl IntoIterator<Item = T>, max: usize) -> Vec<T> {
+    let mut out: Vec<T> = Vec::new();
+    for x in v {
+        if out.len() >= max {
+            break;
+        }
+        if !out.contains(&x) {
+            out.push(x);
+        }
+    }
+    out
+}
+
+/// The watched nodes that exist, deduplicated in order, at most `max`.
+fn known_nodes(state: &AppState, watch: Vec<NodeId>, max: usize) -> Vec<NodeId> {
+    if watch.is_empty() {
+        return watch;
+    }
+    let views = state.views();
+    dedup_ordered(
+        watch
+            .into_iter()
+            .take(max * 4)
+            .filter(|id| views.node(*id).is_some()),
+        max,
+    )
+}
+
+/// The watched apps that exist in the published app catalog (case-insensitive), as catalog
+/// keys, deduplicated in order, at most `max`. Unknown names are ignored (X1 M6).
+fn catalog_apps(state: &AppState, watch: &[String], max: usize) -> Vec<String> {
+    if watch.is_empty() {
+        return Vec::new();
+    }
+    let p = state.engine.published();
+    dedup_ordered(
+        watch
+            .iter()
+            .take(max * 4)
+            .filter(|a| valid_app_name(a))
+            .filter_map(|a| p.apps.iter().find(|e| e.name.eq_ignore_ascii_case(a)))
+            .map(|e| e.name.clone()),
+        max,
+    )
 }
 
 async fn on_client_text(
@@ -384,19 +435,12 @@ async fn on_client_text(
             }
         }
     }
-    let mut nodes: Vec<NodeId> = watch.unwrap_or_default();
-    nodes.sort_unstable();
-    nodes.dedup();
-    nodes.truncate(cfg.max_watch_nodes);
-    let mut apps: Vec<String> = watch_apps
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|a| valid_app_name(a))
-        .map(|a| a.to_ascii_lowercase())
-        .collect();
-    apps.sort_unstable();
-    apps.dedup();
-    apps.truncate(cfg.max_watch_apps);
+    let nodes = known_nodes(state, watch.unwrap_or_default(), cfg.max_watch_nodes);
+    let apps = catalog_apps(
+        state,
+        watch_apps.as_deref().unwrap_or_default(),
+        cfg.max_watch_apps,
+    );
     if !nodes.is_empty() || !apps.is_empty() {
         state.hooks.set_watch(conn.id, nodes, apps);
         conn.watch_set = true;

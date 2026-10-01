@@ -302,7 +302,12 @@ async fn watch_hooks_follow_sub_and_disconnect() {
     next_json(&mut ws).await;
     send(
         &mut ws,
-        serde_json::json!({"t": "sub", "topics": ["nodes"], "watch": [2, 1, 2], "watch_apps": ["KadenaNode", "bad name!"]}),
+        serde_json::json!({
+            "t": "sub",
+            "topics": ["nodes"],
+            "watch": [2, 1, 2, 4_000_000],
+            "watch_apps": ["WordPressBlog", "KadenaNode", "bad name!", "..", ".", "nosuchapp", "kadenanode"]
+        }),
     )
     .await;
     eventually("set_watch", || !e.hooks.calls().is_empty()).await;
@@ -314,8 +319,14 @@ async fn watch_hooks_follow_sub_and_disconnect() {
     else {
         panic!("expected set")
     };
-    assert_eq!(nodes, vec![NodeId(1), NodeId(2)]);
-    assert_eq!(apps, vec!["kadenanode".to_owned()]);
+    // Client order kept (the selection comes first), duplicates and unknown ids dropped.
+    assert_eq!(nodes, vec![NodeId(2), NodeId(1)]);
+    // Only catalog apps, case-insensitive, as catalog keys; dot segments and unknown names
+    // are ignored.
+    assert_eq!(
+        apps,
+        vec!["wordpressblog".to_owned(), "kadenanode".to_owned()]
+    );
     send(
         &mut ws,
         serde_json::json!({"t": "sub", "topics": ["nodes"]}),
