@@ -3,7 +3,9 @@
    shadow of its own: the shadow is a wrapper because a mask would clip a box-shadow, and the motion language's
    Power-on reveals a window with a clip that it can only put on a plain element. The top right corner is cut at
    the hexagon angle with a mask on the slab and a hairline on the diagonal. Geometry (left, top, width, height,
-   z-index) is set inline from the window manager's state. Only opacity and transform ever animate. */
+   z-index) is set inline from the window manager's state. Opacity and transform animate here; a window's
+   opening and closing is the motion language's Power-on (shell/wm/react.tsx, ghost.ts), which also uses a clip
+   on this wrapper, so it must stay free of any clip, mask, shadow or filter of its own. */
 
 .wm-layer {
   position: fixed;
@@ -20,14 +22,6 @@
   pointer-events: auto;
   transform-origin: 50% 50%;
   transition: transform var(--dur-fast) var(--ease-out);
-  animation: wm-open var(--dur-slow) var(--ease-out-expo) backwards;
-}
-
-@keyframes wm-open {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
 }
 
 /* The shadow follows the slab's chamfer because a drop-shadow filter reads the alpha of what is inside it. */
@@ -162,7 +156,9 @@
 }
 
 /* Focus arrival: one flare along the top edge, white at the middle and the window's accent toward the ends, over
-   900 ms (design 6.4 C). An event, not a loop: the motion language drops the 9 s sweep. Transform and opacity. */
+   900 ms (design 6.4 C). An event, not a loop: the motion language drops the 9 s sweep. Transform and opacity.
+   `data-flare` is set for those 900 ms when a window that is already open takes the focus (react.tsx); a window
+   that is opening has Power-on's own light and does not flare. */
 .wm-titlebar::before {
   content: "";
   position: absolute;
@@ -183,7 +179,7 @@
   );
 }
 
-.wm-window[data-focused] .wm-titlebar::before {
+.wm-window[data-focused][data-flare] .wm-titlebar::before {
   animation: wm-flare 900ms var(--ease-out) both;
 }
 
@@ -456,8 +452,10 @@
   z-index: calc(var(--z-topbar) + 1);
 }
 
+/* The wrapper carries the sheet's rounded top, so the light that runs along it as it opens follows the corners. It
+   draws nothing itself. */
 .wm-window[data-placement="sheet"] {
-  animation-name: wm-sheet-in;
+  border-radius: var(--r-2xl) var(--r-2xl) 0 0;
 }
 
 .wm-window[data-placement="sheet"] .wm-shadow {
@@ -545,13 +543,6 @@
   border-radius: 50%;
   background: var(--ink-3);
   color: var(--text-2);
-}
-
-@keyframes wm-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateY(24px);
-  }
 }
 
 .wm-grabber {
@@ -650,10 +641,11 @@
 }
 
 /* ---- motion preferences: windows cross-fade and nothing travels ------------------------------------------------------ */
+/* Opening and closing is the language's Power-on, which cross-fades in Reduced and is instant when Off; what is
+   left here is the transition on the wrapper and the lift of a dragged window. */
 
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .wm-window {
-    animation-name: wm-fade;
     transition: none;
   }
   :root:not([data-motion="full"]) .wm-window[data-dragging] {
@@ -669,7 +661,6 @@
 }
 
 :root[data-motion="reduced"] .wm-window {
-  animation-name: wm-fade;
   transition: none;
 }
 
@@ -684,7 +675,6 @@
 }
 
 :root[data-motion-off] .wm-window {
-  animation: none;
   transition: none;
 }
 
@@ -696,10 +686,4 @@
 :root[data-motion-off] .wm-drop-zone {
   animation: none;
   transition: none;
-}
-
-@keyframes wm-fade {
-  from {
-    opacity: 0;
-  }
 }

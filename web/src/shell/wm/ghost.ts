@@ -1,27 +1,45 @@
-// The way out of a window (design 8.3, 6.4 A). The window manager unmounts a closed or minimised window at
-// once, so its frame leaves a ghost behind: a copy of the frame, inert and invisible to the accessibility
-// tree, that fades and shrinks in the same place (a close) or flies to its dot in the dock (a minimise).
-// Transform and opacity only; under reduced motion it is a cross-fade, with motion off it never appears.
+// The way out of a window (design 8.3, motion language 3.5). The window manager unmounts a closed or minimised
+// window at once, so its frame leaves a ghost behind: a copy of the frame, inert and invisible to the
+// accessibility tree. A close plays the language's Power-off on it (the circle closes back into the launcher the
+// window opened from, 180 ms), a minimise flies to its dot in the dock, and a phone sheet slides down as it
+// fades. Transform, opacity and the aperture's clip only; under reduced motion it is a cross-fade, with motion
+// off it never appears.
+//
+// The ghost, not the live frame, plays the exit on purpose: a closed window is gone from the manager's state
+// and a route-bound window's body is the router's outlet, which empties the moment the route changes, so the
+// real frame has nothing left to show by the time an exit could start.
 
 import { cssValue, currentMotion, play } from '../../features/chrome/motion';
+import { type Origin, powerOff } from '../../motion';
 import { minimizeFlight } from './chrome';
 import type { Rect } from './types';
 
 export type GhostKind = 'close' | 'minimize';
 
-const CLOSE_MS = 200;
+const SHEET_CLOSE_MS = 200;
 const MINIMIZE_MS = 300;
 
 /** Attributes a copy must not carry: other code finds windows by them (tethers, tests, focus). */
-const IDENTITY = ['id', 'data-window-id', 'data-window-type', 'data-focused', 'data-dragging', 'role'];
+const IDENTITY = [
+  'id',
+  'data-window-id',
+  'data-window-type',
+  'data-focused',
+  'data-flare',
+  'data-dragging',
+  'role',
+];
 
 function rectOf(el: Element): Rect {
   const r = el.getBoundingClientRect();
   return { x: r.x, y: r.y, w: r.width, h: r.height };
 }
 
-/** Lays a ghost of `el` over the same place and plays its exit. Call while `el` is still in the document. */
-export function ghostOut(el: HTMLElement, kind: GhostKind, type: string): void {
+/**
+ * Lays a ghost of `el` over the same place and plays its exit. Call while `el` is still in the document.
+ * `to` is where a close goes back to (the window's launcher): the circle closes toward it.
+ */
+export function ghostOut(el: HTMLElement, kind: GhostKind, type: string, to?: Origin): void {
   const parent = el.parentElement;
   if (!parent || currentMotion() === 'off') return;
   // A phone sheet that was flicked away has already left the screen: nothing is left to fade.
@@ -37,6 +55,16 @@ export function ghostOut(el: HTMLElement, kind: GhostKind, type: string): void {
   const sheet = el.getAttribute('data-placement') === 'sheet';
   parent.appendChild(ghost);
   const done = () => ghost.remove();
+  // A ghost never outlives its flight, whatever happens to the animation.
+  setTimeout(done, MINIMIZE_MS + 400);
+
+  if (kind === 'close' && !sheet) {
+    // The language's close. It plays now, in the same frame the window left, and `done` comes at once when
+    // there is nothing to play (effects off, the runners not loaded yet): closing never waits on decoration.
+    void powerOff(ghost, { origin: to }).done.then(done);
+    return;
+  }
+
   // Start next frame, when the dock's dot for a minimised window exists.
   requestAnimationFrame(() => {
     let frames: Keyframe[];
@@ -44,8 +72,7 @@ export function ghostOut(el: HTMLElement, kind: GhostKind, type: string): void {
     let easing: string;
     const dot = kind === 'minimize' ? document.querySelector(`.wm-dot[data-window-type="${type}"]`) : null;
     if (dot) {
-      const to = rectOf(dot);
-      const f = minimizeFlight(from, to);
+      const f = minimizeFlight(from, rectOf(dot));
       frames = [
         { opacity: 1, transform: 'none' },
         { opacity: 0, transform: `translate(${f.dx}px, ${f.dy}px) scale(${f.scale})` },
@@ -53,12 +80,12 @@ export function ghostOut(el: HTMLElement, kind: GhostKind, type: string): void {
       duration = MINIMIZE_MS;
       easing = cssValue('--ease-in-out', 'cubic-bezier(0.65, 0, 0.35, 1)');
     } else {
-      // A phone sheet slides down as it fades; a window shrinks in place.
+      // A phone sheet slides down as it fades.
       frames = [
         { opacity: 1, transform: 'none' },
-        { opacity: 0, transform: sheet ? 'translateY(56px)' : 'scale(0.96)' },
+        { opacity: 0, transform: 'translateY(56px)' },
       ];
-      duration = CLOSE_MS;
+      duration = SHEET_CLOSE_MS;
       easing = cssValue('--ease-in', 'cubic-bezier(0.55, 0, 1, 0.45)');
     }
     const anim = play(ghost, frames, {
@@ -74,6 +101,4 @@ export function ghostOut(el: HTMLElement, kind: GhostKind, type: string): void {
     anim.onfinish = done;
     anim.oncancel = done;
   });
-  // A ghost never outlives its flight, whatever happens to the animation.
-  setTimeout(done, MINIMIZE_MS + 400);
 }

@@ -7,6 +7,12 @@
 import { SHEET, TABBAR_H } from './specs';
 import type { SheetSnap } from './types';
 
+/**
+ * Where a sheet comes from and goes back to: the middle of its own foot, as fractions of the sheet (the motion
+ * language's Power-on origin), where the tab bar is.
+ */
+export const SHEET_FOOT = { fx: 0.5, fy: 1 } as const;
+
 /** The snaps from the lowest to the highest. */
 export const SNAP_ORDER: readonly SheetSnap[] = ['peek', 'half', 'tall', 'full'];
 
