@@ -24,6 +24,8 @@ function rectOf(el: Element): Rect {
 export function ghostOut(el: HTMLElement, kind: GhostKind, type: string): void {
   const parent = el.parentElement;
   if (!parent || currentMotion() === 'off') return;
+  // A phone sheet that was flicked away has already left the screen: nothing is left to fade.
+  if (el.hasAttribute('data-sheet-gone')) return;
   const ghost = el.cloneNode(true) as HTMLElement;
   for (const a of IDENTITY) ghost.removeAttribute(a);
   for (const n of ghost.querySelectorAll('[id]')) n.removeAttribute('id');
@@ -32,6 +34,7 @@ export function ghostOut(el: HTMLElement, kind: GhostKind, type: string): void {
   ghost.setAttribute('data-ghost', kind);
   ghost.classList.add('wm-ghost');
   const from = rectOf(el);
+  const sheet = el.getAttribute('data-placement') === 'sheet';
   parent.appendChild(ghost);
   const done = () => ghost.remove();
   // Start next frame, when the dock's dot for a minimised window exists.
@@ -50,9 +53,10 @@ export function ghostOut(el: HTMLElement, kind: GhostKind, type: string): void {
       duration = MINIMIZE_MS;
       easing = cssValue('--ease-in-out', 'cubic-bezier(0.65, 0, 0.35, 1)');
     } else {
+      // A phone sheet slides down as it fades; a window shrinks in place.
       frames = [
         { opacity: 1, transform: 'none' },
-        { opacity: 0, transform: 'scale(0.96)' },
+        { opacity: 0, transform: sheet ? 'translateY(56px)' : 'scale(0.96)' },
       ];
       duration = CLOSE_MS;
       easing = cssValue('--ease-in', 'cubic-bezier(0.55, 0, 1, 0.45)');

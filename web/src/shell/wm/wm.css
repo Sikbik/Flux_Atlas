@@ -429,11 +429,34 @@
 
 /* ---- the phone sheet ------------------------------------------------------------------------------------------ */
 
+/* The layer is clipped above the tab bar: a sheet that is pulled up, thrown low or still on its way to its snap
+   never draws over the bar, whatever it is carrying below its own edge. */
+.wm-layer[data-layout="phone"] {
+  clip-path: inset(0 0 calc(var(--tabbar-h) + var(--safe-bottom, 0px)) 0);
+}
+
 .wm-window[data-placement="sheet"] {
   filter: none;
   box-shadow: 0 -14px 44px -10px rgb(0 0 0 / 0.6);
   border-radius: var(--r-2xl) var(--r-2xl) 0 0;
   animation-name: wm-sheet-in;
+}
+
+/* The skirt: under the sheet's own edge the material goes on, so a sheet that is being pulled up (its box is
+   still the height it started at) never shows the globe through a gap. The layer's clip cuts it at the tab bar. */
+.wm-window[data-placement="sheet"]::after {
+  content: "";
+  position: absolute;
+  top: calc(100% - 1px);
+  right: 0;
+  left: 0;
+  height: 100vh;
+  pointer-events: none;
+  background: var(--slab-bg);
+}
+
+.wm-window[data-placement="sheet"][data-sheet-drag] {
+  will-change: transform;
 }
 
 .wm-window[data-placement="sheet"] .wm-slab {
@@ -444,6 +467,48 @@
 
 .wm-window[data-placement="sheet"] .wm-cut {
   display: none;
+}
+
+/* The content scrolls only when the sheet is tall or full (design 3.6); below that it is a preview, read by
+   lifting the sheet. */
+.wm-window[data-placement="sheet"] .wm-body {
+  overscroll-behavior: contain;
+}
+
+.wm-window[data-placement="sheet"]:is([data-snap="peek"], [data-snap="half"]) .wm-body {
+  overflow-y: hidden;
+}
+
+/* A taller title bar for a thumb, with a larger disc, a larger name and 44 px controls. */
+.wm-window[data-placement="sheet"] .wm-titlebar {
+  height: 64px;
+  gap: var(--space-5);
+  padding: 0 var(--space-6);
+}
+
+.wm-window[data-placement="sheet"] .wm-glyph {
+  width: 40px;
+  height: 40px;
+}
+
+.wm-window[data-placement="sheet"] .wm-title {
+  font-size: 18px;
+}
+
+.wm-window[data-placement="sheet"] .wm-title[data-mono] {
+  font-size: 16px;
+}
+
+.wm-window[data-placement="sheet"] .wm-sub {
+  font-size: var(--fs-sm);
+}
+
+.wm-window[data-placement="sheet"] .wm-btn {
+  width: var(--touch-min);
+  height: var(--touch-min);
+  border-radius: 50%;
+  background: var(--ink-3);
+  color: var(--text-2);
 }
 
 @keyframes wm-sheet-in {
@@ -464,6 +529,9 @@
   border: 0;
   background: transparent;
   cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .wm-grabber::before {
@@ -476,6 +544,18 @@
   margin-top: -2px;
   border-radius: var(--r-pill);
   background: var(--line-3);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+/* A thumb's target: the grabber is 44 by 16 to look at and about 100 by 44 to hit. */
+.wm-grabber::after {
+  content: "";
+  position: absolute;
+  inset: -14px -28px;
+}
+
+.wm-window[data-sheet-drag] .wm-grabber::before {
+  background: var(--text-3);
 }
 
 /* ---- the ghost a closed or minimised window leaves behind ---------------------------------------------------------- */

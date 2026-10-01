@@ -30,9 +30,11 @@ import { WINDOW_ACCENT, WindowGlyph } from './glyphs';
 import { minimizedWindows, snapPreview, visibleWindows, windowRect } from './machine';
 import { metaEqual, type WindowMeta, WindowMetaContext, type WindowMetaSink } from './meta';
 import { useMoreBelow } from './scrollfade';
+import { SNAP_ORDER } from './sheet';
 import { WINDOW_SPECS } from './specs';
 import type { WindowManager } from './store';
-import type { Rect, SheetSnap, WindowState, WmAction, WmState } from './types';
+import type { Rect, WindowState, WmAction, WmState } from './types';
+import { useSheetDrag } from './useSheetDrag';
 import './wm.css';
 
 export { useWindowMeta, type WindowMeta } from './meta';
@@ -136,7 +138,6 @@ export function WindowLayer({ renderContent, onRequestClose, onFocusWindow }: Wi
   );
 }
 
-const SNAPS: SheetSnap[] = ['peek', 'half', 'tall', 'full'];
 const EDGES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
 /** A window that fills the workspace's height keeps this gutter above and below (design 3.1). */
@@ -173,6 +174,7 @@ function Frame({
   const dragging = useWm((s) => s.drag?.id === id, Object.is);
   const sheet = useWm((s) => s.sheet, Object.is);
   const viewport = useWm((s) => `${s.viewport.w}x${s.viewport.h}`, Object.is);
+  const viewportH = useWm((s) => s.viewport.h, Object.is);
   const spec = WINDOW_SPECS[win.type];
   const titleId = `wm-title-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
   const rootRef = useRef<HTMLElement>(null);
@@ -284,7 +286,19 @@ function Frame({
   });
 
   const toggleMaximize = () => dispatch(maximized ? { t: 'restore', id } : { t: 'maximize', id });
-  const nextSnap = SNAPS[(SNAPS.indexOf(sheet) + 1) % SNAPS.length] ?? 'half';
+  const nextSnap = SNAP_ORDER[(SNAP_ORDER.indexOf(sheet) + 1) % SNAP_ORDER.length] ?? 'half';
+  // The phone's sheet: the grabber and the title bar drag it between its snaps (sheet.ts, useSheetDrag.ts).
+  const sheetDrag = useSheetDrag({
+    elRef: rootRef,
+    snap: sheet,
+    viewportH,
+    onSnap: (snap) => dispatch({ t: 'setSheet', snap }),
+    onDismiss: () => onRequestClose(winRef.current),
+  });
+  const stepSheet = (dir: 1 | -1) => {
+    const to = SNAP_ORDER[Math.min(SNAP_ORDER.length - 1, Math.max(0, SNAP_ORDER.indexOf(sheet) + dir))];
+    if (to && to !== sheet) dispatch({ t: 'setSheet', snap: to });
+  };
   const tier = win.type === 'node' && meta?.tier && meta.tier !== 'unknown' ? meta.tier : undefined;
   const accent = meta?.accent ?? WINDOW_ACCENT[win.type];
   return (
@@ -297,6 +311,7 @@ function Frame({
       data-window-id={id}
       data-placement={phone ? 'sheet' : docked ? 'docked' : 'floating'}
       data-mode={win.mode}
+      data-snap={phone ? sheet : undefined}
       data-focused={focused || undefined}
       data-dragging={dragging || undefined}
       data-tier={tier}
@@ -316,19 +331,27 @@ function Frame({
             type="button"
             className="wm-grabber"
             aria-label={`Sheet size ${sheet}, switch to ${nextSnap}`}
-            onClick={() => dispatch({ t: 'setSheet', snap: nextSnap })}
+            {...sheetDrag.handlers}
+            onClick={() => {
+              if (!sheetDrag.wasDragged()) dispatch({ t: 'setSheet', snap: nextSnap });
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+              e.preventDefault();
+              stepSheet(e.key === 'ArrowUp' ? 1 : -1);
+            }}
           />
         ) : null}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: a double-click on the title bar maximises, like any desktop window; the Maximize button is the keyboard route */}
         <header
           className="wm-titlebar"
-          {...dragHandlers('move', '')}
+          {...(phone ? sheetDrag.handlers : dragHandlers('move', ''))}
           onDoubleClick={(e) => {
             if (!phone && !(e.target as HTMLElement).closest('button')) toggleMaximize();
           }}
         >
           <span className="wm-glyph" aria-hidden="true">
-            <WindowGlyph type={win.type} tier={tier} size={16} />
+            <WindowGlyph type={win.type} tier={tier} size={phone ? 20 : 16} />
           </span>
           <div className="wm-heading">
             <h2 className="wm-title" id={titleId} data-mono={meta?.mono || undefined}>
