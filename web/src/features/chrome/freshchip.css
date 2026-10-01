@@ -1,0 +1,53 @@
+/* A freshness chip (design 4.4, 8.8): a dot, the data's name, its age. The dot and the words follow the one
+   rule for every chip: fresh is quiet with an ok dot, aging steps up with a plain dot, stale is amber with
+   the word, dead is red. Plex Mono, tabular, so ticking seconds never move the layout. */
+
+.fresh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fresh-chip i {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--status-ok);
+}
+
+.fresh-chip em {
+  font-style: normal;
+}
+
+.fresh-chip[data-state="aging"] {
+  color: var(--text-2);
+}
+
+.fresh-chip[data-state="aging"] i {
+  background: var(--text-4);
+}
+
+.fresh-chip[data-state="stale"] {
+  color: var(--status-warn);
+}
+
+.fresh-chip[data-state="stale"] i {
+  background: var(--status-warn);
+}
+
+.fresh-chip[data-state="dead"] {
+  color: var(--status-crit);
+}
+
+.fresh-chip[data-state="dead"] i {
+  background: var(--status-crit);
+}
+
+.fresh-chip[data-state="unknown"] i {
+  background: var(--status-off);
+}

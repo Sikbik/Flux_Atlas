@@ -1,6 +1,13 @@
-// React layer over the headless window manager: a provider, selector hooks, and a minimal,
-// token-driven window frame. The shell team restyles `wm.css`; behaviour lives in machine.ts.
+// React layer over the headless window manager: a provider, selector hooks, and the window chrome (design
+// 8.3). A window is a wrapper that carries the geometry, the shadow and the state attributes, a slab that
+// carries the material, the rim and the chamfer, a title bar (glyph disc, title, subtitle, freshness chip,
+// controls) and a body. Windows open with a scale and a fade, leave as a ghost (a close fades, a minimise
+// flies to its dot in the dock), and slide to a new rectangle when maximised, docked or snapped.
+//
+// Each frame selects its own window, so dragging one never re-renders the layer, and the view inside is
+// memoised on the fields it depends on, so dragging never re-renders the view either.
 
+import { Maximize2, Minimize2, Minus, PanelRight, X } from 'lucide-react';
 import {
   createContext,
   type ReactNode,
@@ -8,14 +15,27 @@ import {
   Suspense,
   useCallback,
   useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from 'react';
+import { FreshChip } from '../../features/chrome/FreshChip';
+import { cssValue, play } from '../../features/chrome/motion';
+import { flipBetween, flipTransform, stableOrder, withGutter } from './chrome';
+import { ghostOut } from './ghost';
+import { WINDOW_ACCENT, WindowGlyph } from './glyphs';
 import { minimizedWindows, snapPreview, visibleWindows, windowRect } from './machine';
+import { metaEqual, type WindowMeta, WindowMetaContext, type WindowMetaSink } from './meta';
+import { useMoreBelow } from './scrollfade';
 import { WINDOW_SPECS } from './specs';
 import type { WindowManager } from './store';
 import type { Rect, SheetSnap, WindowState, WmAction, WmState } from './types';
 import './wm.css';
+
+export { useWindowMeta, type WindowMeta } from './meta';
 
 const WmContext = createContext<WindowManager | null>(null);
 
@@ -65,6 +85,9 @@ export function useWmDispatch(): (a: WmAction) => void {
   return useWindowManager().dispatch;
 }
 
+/** Whether the layer is still mounted: when the whole layer goes (ambient), its windows leave no ghosts. */
+const LayerContext = createContext<{ alive: boolean }>({ alive: true });
+
 export interface WindowLayerProps {
   renderContent: (win: WindowState) => ReactNode;
   /** Close control or Esc on a window; route-bound windows should navigate instead of closing. */
@@ -74,61 +97,169 @@ export interface WindowLayerProps {
 
 /** Every visible window in z-order, plus the drop-zone preview while a window is dragged. */
 export function WindowLayer({ renderContent, onRequestClose, onFocusWindow }: WindowLayerProps) {
-  const wins = useWm(visibleWindows);
+  const ids = useWm((s) => visibleWindows(s).map((w) => w.id));
   const layout = useWm((s) => s.layout);
   const preview = useWm(snapPreview, (a, b) => a === b || (!!a && !!b && rectEqual(a, b)));
+  const order = useRef<string[]>([]);
+  order.current = stableOrder(order.current, ids);
+  const layer = useRef({ alive: true });
+  useLayoutEffect(() => {
+    const l = layer.current;
+    l.alive = true;
+    return () => {
+      l.alive = false;
+    };
+  }, []);
   return (
-    <div className="wm-layer" data-layout={layout}>
-      {wins.map((w, i) => (
-        <WindowFrame
-          key={w.id}
-          win={w}
-          z={i}
-          phone={layout === 'phone'}
-          onRequestClose={onRequestClose}
-          onFocusWindow={onFocusWindow}
-        >
-          {renderContent(w)}
-        </WindowFrame>
-      ))}
-      {preview ? (
-        <div
-          className="wm-drop-zone"
-          aria-hidden="true"
-          style={{ left: preview.x, top: preview.y, width: preview.w, height: preview.h }}
-        />
-      ) : null}
-    </div>
+    <LayerContext.Provider value={layer.current}>
+      <div className="wm-layer" data-layout={layout}>
+        {order.current.map((id) => (
+          <WindowFrame
+            key={id}
+            id={id}
+            z={ids.indexOf(id)}
+            phone={layout === 'phone'}
+            renderContent={renderContent}
+            onRequestClose={onRequestClose}
+            onFocusWindow={onFocusWindow}
+          />
+        ))}
+        {preview ? (
+          <div
+            className="wm-drop-zone"
+            aria-hidden="true"
+            style={{ left: preview.x, top: preview.y, width: preview.w, height: preview.h }}
+          />
+        ) : null}
+      </div>
+    </LayerContext.Provider>
   );
 }
 
 const SNAPS: SheetSnap[] = ['peek', 'half', 'tall', 'full'];
 const EDGES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
+/** A window that fills the workspace's height keeps this gutter above and below (design 3.1). */
+export const GUTTER = 12;
+
 interface FrameProps {
-  win: WindowState;
+  id: string;
   z: number;
   phone: boolean;
-  children: ReactNode;
+  renderContent: (win: WindowState) => ReactNode;
   onRequestClose: (win: WindowState) => void;
   onFocusWindow: ((win: WindowState) => void) | undefined;
 }
 
-/** Minimal window chrome: title bar (drag handle), controls, resize handles, content. */
-export function WindowFrame({ win, z, phone, children, onRequestClose, onFocusWindow }: FrameProps) {
+export function WindowFrame(props: FrameProps) {
+  const win = useWm((s) => s.windows[props.id], Object.is);
+  return win ? <Frame {...props} win={win} /> : null;
+}
+
+function Frame({
+  win,
+  z,
+  phone,
+  renderContent,
+  onRequestClose,
+  onFocusWindow,
+}: FrameProps & { win: WindowState }) {
   const wm = useWindowManager();
   const { dispatch } = wm;
-  const rect = useWm((s) => windowRect(s, win.id), rectEqual);
-  const focused = useWm((s) => s.focused === win.id);
-  const dragging = useWm((s) => s.drag?.id === win.id);
-  const sheet = useWm((s) => s.sheet);
+  const layer = useContext(LayerContext);
+  const id = win.id;
+  const rect = useWm((s) => windowRect(s, id), rectEqual);
+  const focused = useWm((s) => s.focused === id, Object.is);
+  const dragging = useWm((s) => s.drag?.id === id, Object.is);
+  const sheet = useWm((s) => s.sheet, Object.is);
+  const viewport = useWm((s) => `${s.viewport.w}x${s.viewport.h}`, Object.is);
   const spec = WINDOW_SPECS[win.type];
-  const titleId = `wm-title-${win.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  const titleId = `wm-title-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  const rootRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
-  const focus = useCallback(() => {
-    if (wm.getState().focused !== win.id) dispatch({ t: 'focus', id: win.id });
-    onFocusWindow?.(win);
-  }, [wm, dispatch, win, onFocusWindow]);
+  const [meta, setMeta] = useState<WindowMeta | null>(null);
+  const sink = useMemo<WindowMetaSink>(() => ({ set: (m) => setMeta((p) => (metaEqual(p, m) ? p : m)) }), []);
+
+  const maximized = win.mode === 'maximized';
+  const docked = win.placement === 'docked';
+  const workspace = useWm((s) => s.workspace, rectEqual);
+  const box: Rect = phone ? rect : withGutter(rect, workspace, GUTTER);
+
+  // The view depends on these fields alone: a drag changes the rectangle every frame and must not re-render it.
+  const winRef = useRef(win);
+  winRef.current = win;
+  const contentKey = [win.type, win.key ?? '', win.binding, win.placement, win.mode, win.title].join(
+    '\u0000',
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contentKey stands for the fields the view depends on
+  const content = useMemo(() => renderContent(winRef.current), [contentKey, renderContent]);
+
+  // Focus raises the window; for an extra it also makes it the path's window (design 2.2), except when the
+  // pointer goes down on a control: closing or minimising an unfocused window must not swap the route first.
+  const focus = useCallback(
+    (route = true) => {
+      if (wm.getState().focused !== id) dispatch({ t: 'focus', id });
+      if (route) onFocusWindow?.(winRef.current);
+    },
+    [wm, dispatch, id, onFocusWindow],
+  );
+
+  // A window that is closed or minimised leaves a ghost in its place (design 8.3).
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    const type = win.type;
+    return () => {
+      if (!el || !layer.alive) return;
+      const now = wm.getState().windows[id];
+      if (!now) ghostOut(el, 'close', type);
+      else if (now.mode === 'minimized') ghostOut(el, 'minimize', type);
+    };
+  }, [wm, layer, id, win.type]);
+
+  // A window that moves to a new rectangle (maximise, dock, float, snap) slides there instead of jumping;
+  // dragging, resizing and a changing viewport follow the pointer or the screen and never animate.
+  const last = useRef<{ box: Rect; viewport: string } | null>(null);
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    const before = last.current;
+    last.current = { box, viewport };
+    if (!el || !before || dragging || phone || before.viewport !== viewport) return;
+    const f = flipBetween(before.box, box);
+    if (!f) return;
+    const ease = cssValue('--ease-out-expo', 'cubic-bezier(0.16, 1, 0.3, 1)');
+    play(
+      el,
+      [
+        { transformOrigin: '0 0', transform: flipTransform(f) },
+        { transformOrigin: '0 0', transform: 'none' },
+      ],
+      { duration: 340, easing: ease },
+    );
+  });
+
+  // Retargeting (node to node) swaps the body with a short fade and a 6 px rise; the frame stays still.
+  const lastKey = useRef(win.key);
+  useEffect(() => {
+    if (lastKey.current === win.key) return;
+    lastKey.current = win.key;
+    const body = bodyRef.current;
+    if (!body) return;
+    play(
+      body,
+      [
+        { opacity: 0, transform: 'translateY(6px)' },
+        { opacity: 1, transform: 'none' },
+      ],
+      {
+        duration: 320,
+        easing: cssValue('--ease-out', 'cubic-bezier(0.22, 1, 0.36, 1)'),
+        reduced: [{ opacity: 0 }, { opacity: 1 }],
+      },
+    );
+  }, [win.key]);
+
+  useMoreBelow(bodyRef);
 
   const startDrag = (e: ReactPointerEvent<HTMLElement>, kind: 'move' | 'resize', edges: string) => {
     if (e.button !== 0 || phone) return;
@@ -136,14 +267,14 @@ export function WindowFrame({ win, z, phone, children, onRequestClose, onFocusWi
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     focus();
-    dispatch({ t: 'dragStart', id: win.id, kind, edges, px: e.clientX, py: e.clientY });
+    dispatch({ t: 'dragStart', id, kind, edges, px: e.clientX, py: e.clientY });
   };
   const moveDrag = (e: ReactPointerEvent<HTMLElement>) => {
-    if (wm.getState().drag?.id === win.id) dispatch({ t: 'dragMove', px: e.clientX, py: e.clientY });
+    if (wm.getState().drag?.id === id) dispatch({ t: 'dragMove', px: e.clientX, py: e.clientY });
   };
   const endDrag = (e: ReactPointerEvent<HTMLElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    if (wm.getState().drag?.id === win.id) dispatch({ t: 'dragEnd' });
+    if (wm.getState().drag?.id === id) dispatch({ t: 'dragEnd' });
   };
   const dragHandlers = (kind: 'move' | 'resize', edges: string) => ({
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => startDrag(e, kind, edges),
@@ -152,82 +283,111 @@ export function WindowFrame({ win, z, phone, children, onRequestClose, onFocusWi
     onPointerCancel: endDrag,
   });
 
-  const maximized = win.mode === 'maximized';
-  const docked = win.placement === 'docked';
-  const nextSnap = SNAPS[(SNAPS.indexOf(sheet) + 1) % SNAPS.length]!;
+  const toggleMaximize = () => dispatch(maximized ? { t: 'restore', id } : { t: 'maximize', id });
+  const nextSnap = SNAPS[(SNAPS.indexOf(sheet) + 1) % SNAPS.length] ?? 'half';
+  const tier = win.type === 'node' && meta?.tier && meta.tier !== 'unknown' ? meta.tier : undefined;
+  const accent = meta?.accent ?? WINDOW_ACCENT[win.type];
   return (
     <section
+      ref={rootRef}
       className="wm-window"
       role="dialog"
       aria-labelledby={titleId}
       data-window-type={win.type}
-      data-window-id={win.id}
+      data-window-id={id}
       data-placement={phone ? 'sheet' : docked ? 'docked' : 'floating'}
       data-mode={win.mode}
       data-focused={focused || undefined}
       data-dragging={dragging || undefined}
+      data-tier={tier}
+      data-accent={tier ? undefined : accent}
       style={{
-        left: rect.x,
-        top: rect.y,
-        width: rect.w,
-        height: rect.h,
+        left: box.x,
+        top: box.y,
+        width: box.w,
+        height: box.h,
         zIndex: `min(calc(var(--z-window) + ${z}), var(--z-window-max))`,
       }}
-      onPointerDownCapture={focus}
+      onPointerDownCapture={(e) => focus(!(e.target as Element).closest('.wm-controls'))}
     >
-      {phone ? (
-        <button
-          type="button"
-          className="wm-grabber"
-          aria-label={`Sheet size ${sheet}, switch to ${nextSnap}`}
-          onClick={() => dispatch({ t: 'setSheet', snap: nextSnap })}
-        />
-      ) : null}
-      <header className="wm-titlebar" {...dragHandlers('move', '')}>
-        <h2 className="wm-title" id={titleId}>
-          {win.title}
-        </h2>
-        <div className="wm-controls">
-          {phone ? null : (
-            <>
-              <button
-                type="button"
-                className="wm-btn"
-                aria-label="Minimize"
-                onClick={() => dispatch({ t: 'minimize', id: win.id })}
-              >
-                <span aria-hidden="true">_</span>
-              </button>
-              <button
-                type="button"
-                className="wm-btn"
-                aria-label={maximized ? 'Restore' : 'Maximize'}
-                onClick={() =>
-                  dispatch(maximized ? { t: 'restore', id: win.id } : { t: 'maximize', id: win.id })
-                }
-              >
-                <span aria-hidden="true">{maximized ? '=' : '+'}</span>
-              </button>
-              {spec.dockable ? (
+      <div className="wm-slab">
+        {phone ? (
+          <button
+            type="button"
+            className="wm-grabber"
+            aria-label={`Sheet size ${sheet}, switch to ${nextSnap}`}
+            onClick={() => dispatch({ t: 'setSheet', snap: nextSnap })}
+          />
+        ) : null}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a double-click on the title bar maximises, like any desktop window; the Maximize button is the keyboard route */}
+        <header
+          className="wm-titlebar"
+          {...dragHandlers('move', '')}
+          onDoubleClick={(e) => {
+            if (!phone && !(e.target as HTMLElement).closest('button')) toggleMaximize();
+          }}
+        >
+          <span className="wm-glyph" aria-hidden="true">
+            <WindowGlyph type={win.type} tier={tier} size={16} />
+          </span>
+          <div className="wm-heading">
+            <h2 className="wm-title" id={titleId} data-mono={meta?.mono || undefined}>
+              {win.title}
+            </h2>
+            {meta?.subtitle ? <small className="wm-sub">{meta.subtitle}</small> : null}
+          </div>
+          {meta?.fresh ? <FreshChip {...meta.fresh} className="wm-fresh" /> : null}
+          <div className="wm-controls">
+            {phone ? null : (
+              <>
+                {spec.dockable ? (
+                  <button
+                    type="button"
+                    className="wm-btn"
+                    aria-label={docked ? 'Float window' : 'Dock window'}
+                    aria-pressed={docked}
+                    onClick={() => dispatch({ t: 'toggleDock', id })}
+                  >
+                    <PanelRight size={15} strokeWidth={1.6} aria-hidden="true" />
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  className="wm-btn"
-                  aria-label={docked ? 'Float window' : 'Dock window'}
-                  aria-pressed={docked}
-                  onClick={() => dispatch({ t: 'toggleDock', id: win.id })}
+                  className="wm-btn wm-btn-min"
+                  aria-label="Minimize"
+                  onClick={() => dispatch({ t: 'minimize', id })}
                 >
-                  <span aria-hidden="true">|</span>
+                  <Minus size={15} strokeWidth={1.6} aria-hidden="true" />
                 </button>
-              ) : null}
-            </>
-          )}
-          <button type="button" className="wm-btn" aria-label="Close" onClick={() => onRequestClose(win)}>
-            <span aria-hidden="true">x</span>
-          </button>
+                <button
+                  type="button"
+                  className="wm-btn wm-btn-max"
+                  aria-label={maximized ? 'Restore' : 'Maximize'}
+                  onClick={toggleMaximize}
+                >
+                  {maximized ? (
+                    <Minimize2 size={14} strokeWidth={1.6} aria-hidden="true" />
+                  ) : (
+                    <Maximize2 size={14} strokeWidth={1.6} aria-hidden="true" />
+                  )}
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="wm-btn wm-btn-close"
+              aria-label="Close"
+              onClick={() => onRequestClose(win)}
+            >
+              <X size={15} strokeWidth={1.6} aria-hidden="true" />
+            </button>
+          </div>
+        </header>
+        <div className="wm-body" ref={bodyRef}>
+          <WindowMetaContext.Provider value={sink}>
+            <Suspense fallback={null}>{content}</Suspense>
+          </WindowMetaContext.Provider>
         </div>
-      </header>
-      <div className="wm-body">
-        <Suspense fallback={null}>{children}</Suspense>
       </div>
       {phone || maximized ? null : docked ? (
         <div className="wm-resize" data-edge="w" aria-hidden="true" {...dragHandlers('resize', 'w')} />
@@ -242,6 +402,7 @@ export function WindowFrame({ win, z, phone, children, onRequestClose, onFocusWi
           />
         ))
       )}
+      <span className="wm-cut" aria-hidden="true" />
     </section>
   );
 }

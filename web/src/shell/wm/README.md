@@ -12,8 +12,9 @@ re-centres in the free area, and the phone shows one sheet.
 | `route.ts` | `windowForPath`, `pathForWindow`, `parseExtraWindows`, `serializeExtraWindows` (pure) |
 | `machine.ts` | `wmReduce`, `initialWmState`, `defaultWorkspace`, `clampRect` and the selectors |
 | `store.ts` | `createWindowManager` (subscriptions, persistence), `wmKeyHandler` (keyboard) |
-| `react.tsx` | `WindowManagerProvider`, `useWm`, `useWmDispatch`, `useWindowManager`, `WindowLayer`, `WindowFrame`, `WindowDots` |
-| `wm.css` | minimal token-driven chrome (`wm-` classes), imported by `react.tsx` |
+| `react.tsx` | `WindowManagerProvider`, `useWm`, `useWmDispatch`, `useWindowManager`, `WindowLayer`, `WindowFrame`, `WindowDots`, `useWindowMeta` |
+| `wm.css` | the window chrome (`wm-` classes), imported by `react.tsx` |
+| `chrome.ts`, `ghost.ts`, `meta.tsx`, `scrollfade.ts`, `glyphs.tsx` | the chrome's pure geometry (FLIP, gutter, stable order), the exit ghost, the title bar meta, the body's "more to read" fade, the glyph and accent per window type |
 | `index.ts` | re-exports everything but the React layer |
 
 ## The model
@@ -163,14 +164,61 @@ global keymap (design 10.4), not to this handler.
    `extra`, and dispatches `close` for `free` windows. Put `<WindowDots />` under the dock launchers.
 7. Install `wmKeyHandler` on `window` with `onEscape` clearing the selection first.
 
-## For the shell team
+## The window chrome (`react.tsx`, `wm.css`)
 
-`WindowFrame` is deliberately plain: a `section[role=dialog]` with `data-window-type`,
-`data-window-id`, `data-placement` (`docked`, `floating`, `sheet`), `data-mode`, `data-focused` and
-`data-dragging`, a `.wm-titlebar` drag handle with `.wm-btn` controls, `.wm-body` for content, and
-`.wm-resize[data-edge]` handles. Everything visual in `wm.css` reads tokens (`--slab-bg-solid`,
-`--line-*`, `--shadow-window*`, `--r-*`, `--window-titlebar-h`, `--z-window..--z-window-max`). Not
-built here, and yours to add: the aperture open and close (6.4 A), the focus rim flare and sweep (6.4
-C), the spring on snap and FLIP re-tiling (6.4 B), the swap animation (6.4 G), real icons for the
-controls (they are text glyphs now), the tether drawing, the pop-out, and the sheet's drag gesture
-(the grabber currently cycles peek, half, tall, full on click).
+A window is a `section.wm-window[role=dialog]` wrapper (geometry, the drop shadow, the state attributes)
+around a `.wm-slab` (the material, the 1 px rim, the chamfered top right corner), plus the resize handles
+and `.wm-cut` (the hairline on the chamfer's diagonal). Inside the slab: `.wm-titlebar` (glyph disc, title,
+subtitle, freshness chip, controls), then `.wm-body`.
+
+State attributes on the wrapper, for CSS and for anything that wants to attach to a window:
+`data-window-type`, `data-window-id`, `data-placement` (`docked`, `floating`, `sheet`), `data-mode`
+(`normal`, `minimized`, `maximized`), `data-focused`, `data-dragging`, `data-accent` (a Flux blue tone or
+white) or `data-tier` (a node window wears its tier). Tests and tethers find windows by these; a ghost
+(below) never carries them.
+
+| Behaviour | How |
+|---|---|
+| Open | the wrapper scales from 0.96 and fades in (`wm-open`, `--dur-slow`); reduced motion fades only |
+| Focus | the hot rim cross-fades in over the quiet one; a hairline of light passes along the top edge every 9 s (dropped in reduced motion and the lite tier) |
+| Drag | `scale(1.006)` and a deeper shadow; the snap zone previews as `.wm-drop-zone` |
+| Move to a new rectangle (maximise, dock, float, snap) | one FLIP of transform from the old rectangle, 340 ms, never while dragging, resizing or when the viewport changed |
+| Close | a ghost (a copy of the frame, inert, `aria-hidden`, without the identity attributes) fades and shrinks in place, 200 ms |
+| Minimise | the ghost flies to the window's `.wm-dot` in the dock, 300 ms |
+| Retarget (node to node) | the body fades in with a 6 px rise, 320 ms; the frame stays |
+| Body | thin scrollbar; fades over its last 30 px only while there is more to read (`data-more`) |
+
+Only transform and opacity animate. A docked, snapped or maximised window that fills the workspace's
+height is drawn with a 12 px gutter above and below (`withGutter`); the shell leaves a 12 px margin at the
+workspace's right edge, so a docked inspector floats clear of the screen like the others.
+
+Each `Frame` selects its own window, and the view inside is memoised on the fields it depends on (type,
+key, binding, placement, mode, title): dragging changes the rectangle every frame and re-renders neither
+the layer nor the view. Frames keep the order they appeared in the DOM (`stableOrder`) and stack by
+z-index: moving a frame's element in the document would cancel a click that is half done on one of its
+controls. Pressing a control on an unfocused extra window raises it but does not make it the path's
+window, so Close and Minimise act on the window you pressed them on.
+
+### Telling the frame about a window: `useWindowMeta`
+
+```tsx
+import { useWindowMeta } from '../../shell/wm/react';
+
+useWindowMeta({
+  subtitle: 'Stratus node, Helsinki',   // a line under the title
+  mono: true,                            // set the title in Plex Mono (IPs, ids, hashes)
+  tier: 'stratus',                       // a node window wears its tier colour and capsule glyph
+  fresh: { label: 'nodes', evidenceMs: lastNodesMs, cadenceMs: 90_000 },  // the title bar's own freshness chip
+});
+```
+
+Call it from anywhere inside the window's content; it clears when the content unmounts. `accent` overrides
+the type's default (`WINDOW_ACCENT` in `glyphs.tsx`). The title itself stays the window manager's (`setTitle`).
+The chip uses the same rule as the status bar: fresh under 1.5x the cadence, aging to 3x, stale to 10x, dead
+beyond; an unknown time reads "Unknown".
+
+### Not built
+
+The aperture open (a clip-path circle out of the clicked launcher or marker, 6.4 A) and the pop-out are not
+here: the open is a plain scale and fade, which the motion layer can replace by attaching to the state
+attributes above. The phone sheet's grabber cycles peek, half, tall, full on click.
