@@ -79,7 +79,7 @@ Unknown keys are logged as unapplied at startup.
 
 `deploy/Dockerfile` builds the production image from the repository root: the web app (`npm ci`,
 `npm run build`), a static musl build of `atlas` that embeds `web/dist`, and a `scratch` runtime that
-holds only the binary, the CA bundle and `/app/backend/data` (about 33 MB uncompressed, 14 MB
+holds only the binary, the CA bundle and `/app/backend/data` (about 34 MB uncompressed, 14.5 MB
 compressed). The Flux spec passes no environment variables and no commands, so the image defaults
 are the production configuration: `ATLAS_BIND=0.0.0.0:3000`, `ATLAS_DATA_DIR=/app/backend/data`,
 `ATLAS_LOG=info`, `EXPOSE 3000` only, and `HEALTHCHECK` running `atlas healthcheck`. With the GeoIP
