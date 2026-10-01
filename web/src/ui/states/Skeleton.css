@@ -1,0 +1,47 @@
+/* Skeleton: --ink-2 blocks with a 1.2 s shimmer, the geometry of the loaded state (design 8.0). */
+
+.ui-skeleton {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 12px;
+  border-radius: var(--r-sm);
+  background: var(--ink-2);
+  overflow: hidden;
+}
+
+.ui-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in oklab, var(--text-1) 6%, transparent) 50%,
+    transparent 80%
+  );
+  translate: -100% 0;
+  animation: ui-shimmer 1.2s var(--ease-standard) infinite;
+}
+
+.ui-skeleton-text {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+@keyframes ui-shimmer {
+  to {
+    translate: 100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-skeleton::after {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-skeleton::after {
+  animation: none;
+}

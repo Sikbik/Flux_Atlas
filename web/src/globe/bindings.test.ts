@@ -15,7 +15,7 @@ import {
   meshModeFor,
   shiftSink,
 } from './bindings';
-import type { EngineEvents, NodeColumns, PickInfo } from './engine/types';
+import type { EngineEvents, NodeColumns, NodeDelta, PickInfo } from './engine/types';
 
 // ---- a fake engine that records every call -----------------------------------------------------
 
@@ -27,7 +27,18 @@ interface Call {
 function fakeEngine() {
   const calls: Call[] = [];
   const listeners = new Map<string, Set<(p: unknown) => void>>();
-  const nodes = new Map<number, { lat: number; lon: number }>();
+  // What the engine currently shows per node, so `nodeInfo` answers like the real engine.
+  const nodes = new Map<number, { lat: number; lon: number; tier: number; status: number; flags: number }>();
+  const putColumns = (cols: NodeColumns) => {
+    for (let i = 0; i < cols.ids.length; i++)
+      nodes.set(cols.ids[i]!, {
+        lat: cols.lat[i]!,
+        lon: cols.lon[i]!,
+        tier: cols.tier[i]!,
+        status: cols.status[i]!,
+        flags: cols.flags[i]!,
+      });
+  };
   const record =
     (name: string) =>
     (...args: unknown[]) => {
@@ -40,10 +51,23 @@ function fakeEngine() {
     reduced: false,
     setNodes: (cols: NodeColumns, opts?: unknown) => {
       calls.push({ name: 'setNodes', args: [cols, opts] });
-      for (let i = 0; i < cols.ids.length; i++)
-        nodes.set(cols.ids[i]!, { lat: cols.lat[i]!, lon: cols.lon[i]! });
+      nodes.clear();
+      putColumns(cols);
     },
-    updateNodes: record('updateNodes'),
+    updateNodes: (delta: NodeDelta) => {
+      calls.push({ name: 'updateNodes', args: [delta] });
+      for (const id of Array.from(delta.removedIds ?? [])) nodes.delete(id);
+      if (delta.added) putColumns(delta.added);
+      const ch = delta.changed;
+      if (!ch) return;
+      for (let k = 0; k < ch.ids.length; k++) {
+        const n = nodes.get(ch.ids[k]!);
+        if (!n) continue;
+        if (ch.tier) n.tier = ch.tier[k]!;
+        if (ch.status) n.status = ch.status[k]!;
+        if (ch.flags) n.flags = ch.flags[k]!;
+      }
+    },
     setMesh: record('setMesh'),
     updateMesh: record('updateMesh'),
     setMeshMode: record('setMeshMode'),
@@ -58,6 +82,10 @@ function fakeEngine() {
     showAppConstellation: record('showAppConstellation'),
     clearAppConstellation: record('clearAppConstellation'),
     setMode: record('setMode'),
+    home: (...args: unknown[]) => {
+      calls.push({ name: 'home', args });
+      return Promise.resolve(true);
+    },
     setMoon: record('setMoon'),
     moonState: () => ({ x: 0, y: 0, s: 0, r: 0, z: 0, visible: false, hover: false, phase: 0 }),
     moonClick: record('moonClick'),
@@ -70,7 +98,7 @@ function fakeEngine() {
     setReduced: record('setReduced'),
     nodeInfo: (id: number) => {
       const n = nodes.get(id);
-      return n ? ({ id, lat: n.lat, lon: n.lon } as PickInfo) : null;
+      return n ? ({ id, ...n } as PickInfo) : null;
     },
     projectNode: () => false,
     project: () => false,
@@ -347,12 +375,49 @@ describe('URL -> engine', () => {
     expect(last('setMode')!.args).toEqual(['explore']);
   });
 
+  it('restores the URL mesh layer after ambient, whatever the director left on', () => {
+    const { view, named, calls } = setup();
+    view('/', { l: 'mesh.flow' });
+    view('/ambient');
+    // The director's own mesh flow (the real engine switches to flow on entry).
+    const n = named('setMeshMode').length;
+    view('/');
+    const after = named('setMeshMode');
+    expect(after.length).toBe(n + 1);
+    expect(after.at(-1)!.args).toEqual(['selection']);
+    // ...and after setMode('explore'), so the director's restore cannot win.
+    const order = calls.map((c) => c.name).filter((x) => x === 'setMode' || x === 'setMeshMode');
+    expect(order.slice(-2)).toEqual(['setMode', 'setMeshMode']);
+  });
+
   it('marks watched nodes, and the watched filter allows only them', () => {
     const { view, binding, last } = setup();
     binding.setWatched([0, 4]);
     expect(last('setWatched')!.args).toEqual([[1, 5]]);
     view('/', { watched: true });
     expect(last('setFilter')!.args).toEqual([{}, [1, 5]]);
+  });
+
+  it('goes home when a camera route returns to the bare globe', () => {
+    const { view, named, binding } = setup();
+    view('/');
+    view('/settings');
+    view('/');
+    expect(named('home').length).toBe(0); // a plain window never moved the camera
+    view('/node/3');
+    view('/');
+    expect(named('home').length).toBe(1);
+    view('/host/5.0.0.7');
+    view('/', { tier: 'stratus' });
+    expect(named('home').length).toBe(2);
+    view('/ambient');
+    view('/');
+    expect(named('home').length).toBe(2); // ambient restores its own saved pose
+    binding.home();
+    expect(named('home').length).toBe(3);
+    view('/ambient');
+    binding.home();
+    expect(named('home').length).toBe(3);
   });
 });
 

@@ -19,7 +19,13 @@ pub struct ServeConfig {
     pub engine: EngineConfig,
     pub engine_overrides: EngineOverrides,
     pub server: ServerConfig,
+    /// redb page cache in MiB (`ATLAS_DB_CACHE_MB`). redb defaults to 1 GiB, which would
+    /// dominate RSS; the hot state lives in memory anyway.
+    pub db_cache_mb: usize,
 }
+
+/// Default redb page cache (MiB).
+pub const DEFAULT_DB_CACHE_MB: usize = 32;
 
 impl ServeConfig {
     /// Defaults for a bind address and data directory.
@@ -31,6 +37,7 @@ impl ServeConfig {
             engine: EngineConfig::default(),
             engine_overrides: EngineOverrides::default(),
             server: ServerConfig::default(),
+            db_cache_mb: DEFAULT_DB_CACHE_MB,
         }
     }
 }
@@ -178,12 +185,50 @@ impl ProxyTtls {
 /// Engine settings given on the command line or in the environment.
 #[derive(Debug, Clone, Default)]
 pub struct EngineOverrides {
-    /// Per-job interval overrides by job name (`ping`, `app_placement`, `topology`, ...).
+    /// Per-job interval overrides by job name (see [`INTERVAL_KEYS`]).
     pub intervals: BTreeMap<String, Duration>,
     pub replay_capacity: Option<usize>,
     /// Optional local GeoIP database (.mmdb).
     pub geoip_db: Option<PathBuf>,
+    /// Run the ingest jobs (`ATLAS_INGEST`). `Some(false)` serves the stored state only.
+    pub ingest: Option<bool>,
+    /// Days of blocks the bootstrap backfill fetches (`ATLAS_BACKFILL_DAYS`, 0 disables).
+    pub backfill_days: Option<u32>,
+    /// Request rate of the block backfill (`ATLAS_BACKFILL_RPS`).
+    pub backfill_rps: Option<f64>,
+    /// Insight socket endpoints (`wss://.../socket.io/?EIO=3&transport=websocket`).
+    pub socket_urls: Vec<String>,
 }
+
+/// Interval override keys accepted by `ATLAS_INTERVALS` (`key=duration,...`). Freshness job
+/// names are accepted as aliases where a job has one interval.
+pub const INTERVAL_KEYS: &[&str] = &[
+    "ping",
+    "app_pending",
+    "app_installing",
+    "app_placement",
+    "hot_app",
+    "app_catalog",
+    "install_errors",
+    "node_registry",
+    "reconcile_min_spacing",
+    "node_count",
+    "start_dos_lists",
+    "mempool_reconcile",
+    "price",
+    "supply",
+    "stats_round",
+    "topology_sweep",
+    "watch_probe",
+    "geo_resolve",
+    "compaction",
+    "events_retention",
+    "node_events_retention",
+    "mesh_events_retention",
+];
+
+/// Block backfill rate ceiling (requests per second): be polite to the shared gateway.
+pub const DEFAULT_BACKFILL_RPS: f64 = 1.5;
 
 impl EngineOverrides {
     /// Applies what the engine supports and returns the names it could not apply.
@@ -192,20 +237,82 @@ impl EngineOverrides {
         if let Some(n) = self.replay_capacity {
             cfg.replay_capacity = n.max(16);
         }
+        let ing = &mut cfg.ingest;
         for (name, d) in &self.intervals {
+            let d = *d;
             match name.as_str() {
-                "ping" => cfg.ping_interval = *d,
-                // INTEGRATION: map the ingest job intervals (tip poll, app placement, topology
-                // sweep, stats round, node reconcile, ...) onto the EngineConfig fields B2 adds.
+                "ping" => cfg.ping_interval = d,
+                "app_pending" | "pending" => ing.pending_interval = d,
+                "app_installing" | "installing" => ing.installing_interval = d,
+                "app_placement" | "placement" => ing.placement_interval = d,
+                "hot_app" | "hot_apps" => ing.hot_app_interval = d,
+                "app_catalog" | "catalog" => ing.catalog_interval = d,
+                "install_errors" => ing.install_errors_interval = d,
+                "node_registry" | "reconcile" => ing.reconcile_interval = d,
+                "reconcile_min_spacing" => ing.reconcile_min_spacing = d,
+                "node_count" | "count" => ing.count_interval = d,
+                "start_dos_lists" | "lists" => ing.lists_interval = d,
+                "mempool_reconcile" | "mempool" => ing.mempool_reconcile_interval = d,
+                "price" => ing.price_interval = d,
+                "supply" => ing.supply_interval = d,
+                "stats_round" | "round_check" => ing.round_check_interval = d,
+                "topology_sweep" | "topology" => ing.topology_interval = d,
+                "watch_probe" => ing.watch_probe_interval = d,
+                "geo_resolve" | "geo_background" => ing.geo_background_interval = d,
+                "compaction" | "maintenance" => ing.compaction_interval = d,
+                "events_retention" => ing.events_retention = d,
+                "node_events_retention" => ing.node_events_retention = d,
+                "mesh_events_retention" => ing.mesh_events_retention = d,
                 _ => unapplied.push(name.clone()),
             }
         }
+        if let Some(on) = self.ingest {
+            ing.enabled = on;
+        }
+        if let Some(days) = self.backfill_days {
+            ing.backfill.block_days = days;
+        }
+        let rps = self.backfill_rps.unwrap_or(DEFAULT_BACKFILL_RPS);
+        if rps.is_finite() && rps > 0.0 {
+            ing.backfill.blocks_per_second = rps;
+        }
+        if !self.socket_urls.is_empty() {
+            ing.socket.urls.clone_from(&self.socket_urls);
+        }
         if self.geoip_db.is_some() {
-            // INTEGRATION: pass the GeoIP database path to the engine once it accepts one.
+            // The engine has no local GeoIP reader yet: geo comes from stats rounds and
+            // `fluxlocation` lookups.
             unapplied.push("geoip_db".to_owned());
         }
         unapplied
     }
+}
+
+/// Parses a boolean switch: `1/0`, `true/false`, `on/off`, `yes/no`.
+pub fn parse_switch(s: &str) -> Result<bool, String> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "on" | "yes" => Ok(true),
+        "0" | "false" | "off" | "no" => Ok(false),
+        _ => Err(format!(
+            "expected 1/0, true/false, on/off or yes/no, got {s:?}"
+        )),
+    }
+}
+
+/// The Insight socket.io endpoint for an Insight API base URL
+/// (`https://explorer.runonflux.io` becomes `wss://explorer.runonflux.io/socket.io/...`).
+pub fn socket_url_for(insight_base: &str) -> Option<String> {
+    let u = url::Url::parse(insight_base.trim()).ok()?;
+    let scheme = match u.scheme() {
+        "https" => "wss",
+        "http" => "ws",
+        _ => return None,
+    };
+    let host = u.host_str()?;
+    let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+    Some(format!(
+        "{scheme}://{host}{port}/socket.io/?EIO=3&transport=websocket"
+    ))
 }
 
 /// Parses `"500ms"`, `"10s"`, `"5m"`, `"1h"`, or a bare number of seconds.
@@ -278,20 +385,57 @@ mod tests {
 
     #[test]
     fn intervals_and_overrides() {
-        let m = parse_intervals("ping=5s, app_placement=90s").unwrap();
+        let m = parse_intervals("ping=5s, app_placement=75s").unwrap();
         assert_eq!(m["ping"], Duration::from_secs(5));
         assert!(parse_intervals("bad").is_err());
         assert!(parse_intervals("a b=1s").is_err());
+        let mut m = m;
+        m.insert("bogus".into(), Duration::from_secs(1));
+        m.insert("topology".into(), Duration::from_secs(30));
         let o = EngineOverrides {
             intervals: m,
             replay_capacity: Some(100),
-            geoip_db: None,
+            ingest: Some(false),
+            backfill_days: Some(2),
+            ..EngineOverrides::default()
         };
         let mut cfg = EngineConfig::default();
         let left = o.apply(&mut cfg);
         assert_eq!(cfg.ping_interval, Duration::from_secs(5));
+        assert_eq!(cfg.ingest.placement_interval, Duration::from_secs(75));
+        assert_eq!(cfg.ingest.topology_interval, Duration::from_secs(30));
         assert_eq!(cfg.replay_capacity, 100);
-        assert_eq!(left, vec!["app_placement".to_owned()]);
+        assert!(!cfg.ingest.enabled);
+        assert_eq!(cfg.ingest.backfill.block_days, 2);
+        assert!((cfg.ingest.backfill.blocks_per_second - DEFAULT_BACKFILL_RPS).abs() < 1e-9);
+        assert_eq!(left, vec!["bogus".to_owned()]);
+    }
+
+    #[test]
+    fn every_interval_key_applies() {
+        for k in INTERVAL_KEYS {
+            let o = EngineOverrides {
+                intervals: [((*k).to_owned(), Duration::from_secs(1))].into(),
+                ..EngineOverrides::default()
+            };
+            assert!(o.apply(&mut EngineConfig::default()).is_empty(), "{k}");
+        }
+    }
+
+    #[test]
+    fn switches_and_socket_urls() {
+        assert_eq!(parse_switch("OFF"), Ok(false));
+        assert_eq!(parse_switch("1"), Ok(true));
+        assert!(parse_switch("maybe").is_err());
+        assert_eq!(
+            socket_url_for("https://explorer.runonflux.io").as_deref(),
+            Some("wss://explorer.runonflux.io/socket.io/?EIO=3&transport=websocket")
+        );
+        assert_eq!(
+            socket_url_for("http://127.0.0.1:8080/api").as_deref(),
+            Some("ws://127.0.0.1:8080/socket.io/?EIO=3&transport=websocket")
+        );
+        assert_eq!(socket_url_for("nope"), None);
     }
 
     #[test]

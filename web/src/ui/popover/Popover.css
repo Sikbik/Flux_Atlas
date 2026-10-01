@@ -1,0 +1,10 @@
+/* Popover content area: the glass surface itself is the shared layer (Layer.css). */
+
+.ui-popover {
+  min-width: 200px;
+  padding: var(--space-5);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+}

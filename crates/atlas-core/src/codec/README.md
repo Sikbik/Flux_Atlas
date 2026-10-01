@@ -135,6 +135,12 @@ The per-node `lat`/`lon` columns keep exact coordinates.
 - New columns get new kinds; decoders skip unknown kinds.
 - Only `ids` is required. A decoder should default missing columns (NaN coordinates, zeros,
   empty strings) so that a server may drop columns.
+- A missing column means **not recorded**: unknown for every row, never "all zeros". A producer
+  that does not know a column leaves it out (`encode_nodes_bin_without`) rather than writing
+  zeros; `/timeline/state` omits `rank` (11) always, and `last_paid` (12), `app_count` (10) and
+  `flags` (6) when its keyframe did not record them. Decoders expose which columns were present
+  (Rust `NodesBin::has`, web `NodesBin.present` / `hasColumn`), and readers must not present a
+  defaulted column as data.
 - Changing the meaning or type of an existing kind requires a version bump.
 
 ## `mesh.bin` (magic `FXMS`, version 1)

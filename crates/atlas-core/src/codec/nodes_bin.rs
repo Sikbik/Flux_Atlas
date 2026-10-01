@@ -210,6 +210,19 @@ impl Interner {
 
 /// Encodes a node snapshot. Rows are written in the given order (callers sort by id).
 pub fn encode_nodes_bin(seq: u64, generated_ms: u64, rows: &[NodeBinInput]) -> Vec<u8> {
+    encode_nodes_bin_without(seq, generated_ms, rows, &[])
+}
+
+/// [`encode_nodes_bin`] without the column kinds in `omit`. A producer that did not record a
+/// column (the time machine has no ranks, for example) leaves it out: a missing column means
+/// "not recorded", unknown for every row, and is never written as zeros. `ids` cannot be
+/// omitted.
+pub fn encode_nodes_bin_without(
+    seq: u64,
+    generated_ms: u64,
+    rows: &[NodeBinInput],
+    omit: &[u16],
+) -> Vec<u8> {
     let n = rows.len();
     let mut ids = Vec::with_capacity(n);
     let mut lat = Vec::with_capacity(n);
@@ -329,6 +342,8 @@ pub fn encode_nodes_bin(seq: u64, generated_ms: u64, rows: &[NodeBinInput]) -> V
         .strings(kind::ORGS, &orgs.list)
         .strings(kind::VERSIONS, &versions.list)
         .section(kind::LOCATIONS, DType::Struct, encode_locations(&locations));
+    let omit: Vec<u16> = omit.iter().copied().filter(|k| *k != kind::IDS).collect();
+    w.drop_sections(&omit);
     w.finish()
 }
 
@@ -406,6 +421,16 @@ pub struct NodesBin {
     pub locations: Vec<LocationEntry>,
     /// Section kinds present in the file that this decoder does not know.
     pub unknown_sections: Vec<u16>,
+    /// Every section kind present in the file, in file order. A known column that is absent
+    /// was not recorded by the producer: its defaulted values above mean "unknown".
+    pub present: Vec<u16>,
+}
+
+impl NodesBin {
+    /// True when the file carries the column `kind` (see [`kind`]).
+    pub fn has(&self, kind: u16) -> bool {
+        self.present.contains(&kind)
+    }
 }
 
 impl NodesBin {
@@ -508,6 +533,7 @@ pub fn decode_nodes_bin(buf: &[u8]) -> Result<NodesBin, CodecError> {
             .copied()
             .filter(|k| !KNOWN.contains(k))
             .collect(),
+        present: r.kinds.clone(),
     })
 }
 
@@ -600,6 +626,23 @@ mod tests {
             decode_nodes_bin(&w.finish()).unwrap_err(),
             CodecError::MissingSection(kind::IDS)
         );
+    }
+
+    #[test]
+    fn omitted_columns_are_absent_not_zero() {
+        let rows = [row(1, Some(1.0), "FR", "x"), row(2, None, "", "")];
+        let full = decode_nodes_bin(&encode_nodes_bin(1, 2, &rows)).unwrap();
+        assert!(full.has(kind::RANK) && full.has(kind::LAST_PAID));
+        let buf = encode_nodes_bin_without(1, 2, &rows, &[kind::RANK, kind::IDS, kind::FLAGS]);
+        assert_eq!(buf.len() % 8, 0);
+        let d = decode_nodes_bin(&buf).unwrap();
+        assert!(!d.has(kind::RANK), "rank not recorded");
+        assert!(!d.has(kind::FLAGS));
+        assert!(d.has(kind::IDS), "ids can never be omitted");
+        assert!(d.has(kind::LAST_PAID));
+        assert_eq!(d.ids, vec![1, 2]);
+        assert_eq!(d.cores, full.cores);
+        assert!(d.unknown_sections.is_empty());
     }
 
     #[test]

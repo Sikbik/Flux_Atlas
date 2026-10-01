@@ -148,6 +148,40 @@ pub fn family(out: &mut String, name: &str, kind: &str, help: &str, value: impl 
     let _ = writeln!(out, "{name} {value}");
 }
 
+/// Writes the `# HELP` / `# TYPE` header of a family.
+pub fn header(out: &mut String, name: &str, kind: &str, help: &str) {
+    let _ = writeln!(out, "# HELP {name} {help}");
+    let _ = writeln!(out, "# TYPE {name} {kind}");
+}
+
+/// Writes one labelled sample; `labels` is `key="value",...` (already escaped) or empty.
+pub fn sample(out: &mut String, name: &str, labels: &str, value: impl std::fmt::Display) {
+    if labels.is_empty() {
+        let _ = writeln!(out, "{name} {value}");
+    } else {
+        let _ = writeln!(out, "{name}{{{labels}}} {value}");
+    }
+}
+
+/// Writes the samples of one histogram (cumulative buckets, `+Inf`, sum, count). Call
+/// [`header`] once per family first.
+pub fn histogram_samples(
+    out: &mut String,
+    name: &str,
+    labels: &str,
+    h: &atlas_engine::stats::Histogram,
+) {
+    let sep = if labels.is_empty() { "" } else { "," };
+    let mut cum = 0u64;
+    for (b, c) in h.bounds.iter().zip(&h.counts) {
+        cum += c;
+        let _ = writeln!(out, "{name}_bucket{{{labels}{sep}le=\"{b}\"}} {cum}");
+    }
+    let _ = writeln!(out, "{name}_bucket{{{labels}{sep}le=\"+Inf\"}} {}", h.count);
+    sample(out, &format!("{name}_sum"), labels, h.sum);
+    sample(out, &format!("{name}_count"), labels, h.count);
+}
+
 /// Per-request middleware: tracing span, latency histogram, slow-request warning.
 pub async fn track(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let route = req

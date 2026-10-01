@@ -36,6 +36,8 @@ pub struct Inner {
     pub hub: Arc<Hub>,
     /// `/metrics` series responses, keyed by the normalized request (15 s).
     pub metrics_cache: moka::future::Cache<String, Arc<CachedBody>>,
+    /// `/timeline/state` reconstructions keyed by `t` (60 s).
+    pub timeline_cache: moka::future::Cache<u64, Arc<CachedBody>>,
     hosted: tokio::sync::Mutex<Option<(Instant, HostedApps)>>,
 }
 
@@ -88,6 +90,10 @@ impl AppState {
                 metrics_cache: moka::future::Cache::builder()
                     .max_capacity(256)
                     .time_to_live(Duration::from_secs(15))
+                    .build(),
+                timeline_cache: moka::future::Cache::builder()
+                    .max_capacity(32)
+                    .time_to_live(Duration::from_secs(60))
                     .build(),
             }),
         };

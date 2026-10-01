@@ -189,6 +189,9 @@ export class MeshVeil {
     const a = mesh.sa[e]!;
     const b = mesh.sb[e]!;
     if (a === 0xffffffff || b === 0xffffffff) return -1;
+    // An edge shown again: retire its current ribbon instead of orphaning it.
+    const old = mesh.link[e]!;
+    if (old >= 0 && this.links.isActive(old, mesh.linkStart[e]!)) this.links.fadeOut(old, time, 0.3);
     const life = this.meanLife * (0.9 + 0.6 * hash01(e * 13 + 5));
     const idx = this.links.add(
       a,
