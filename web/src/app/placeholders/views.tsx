@@ -10,6 +10,7 @@ import {
   useMempool,
   useMetrics,
   useNetworkCapacity,
+  useNetworkDecentralization,
   useNetworkGeo,
   useNetworkProviders,
   useNetworkSummary,
@@ -154,6 +155,8 @@ const HostingTab = () => <QueryState q={useNetworkProviders()} />;
 const CapacityTab = () => <QueryState q={useNetworkCapacity()} />;
 const VersionsTab = () => <QueryState q={useNetworkVersions()} />;
 const ArchaeologyTab = () => <QueryState q={useTimeline()} />;
+const EconomicsTab = () => <QueryState q={useNetworkSummary()} />;
+const FairnessTab = () => <QueryState q={useNetworkDecentralization()} />;
 function ChurnTab() {
   const to = Math.floor(Date.now() / 3_600_000) * 3_600_000;
   const q = useMetrics({
@@ -173,6 +176,8 @@ const TABS: Record<AnalyticsTab, () => React.JSX.Element> = {
   versions: VersionsTab,
   churn: ChurnTab,
   archaeology: ArchaeologyTab,
+  economics: EconomicsTab,
+  fairness: FairnessTab,
 };
 
 function AnalyticsBody({ tab }: { tab: AnalyticsTab }) {

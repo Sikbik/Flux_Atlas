@@ -1,0 +1,121 @@
+// Turns the columnar `/metrics` payload into chart-ready frames. The server sends null for a value it
+// did not record and never 0 in its place, so a 0 here is a real 0 (no DoS nodes, no pending apps).
+
+import type { MetricsSeriesDto } from '../../../api/generated/MetricsSeriesDto';
+
+export interface MetricFrame {
+  /** Unix ms of each bucket start. */
+  t: number[];
+  /** Series name to values; null means unknown. */
+  v: Record<string, (number | null)[]>;
+}
+
+export function frameFromDto(dto: MetricsSeriesDto): MetricFrame {
+  const v: Record<string, (number | null)[]> = {};
+  for (const [name, col] of Object.entries(dto.series)) {
+    v[name] = col.map((x) => (x === null || x === undefined || !Number.isFinite(x) ? null : x));
+  }
+  return { t: [...dto.t], v };
+}
+
+/** Drops leading and trailing buckets where every listed series is unknown (the open bucket, empty history). */
+export function trimEmpty(frame: MetricFrame, names: readonly string[]): MetricFrame {
+  const known = (i: number) => names.some((n) => frame.v[n]?.[i] != null);
+  let a = 0;
+  let b = frame.t.length - 1;
+  while (a <= b && !known(a)) a++;
+  while (b >= a && !known(b)) b--;
+  if (a === 0 && b === frame.t.length - 1) return frame;
+  const v: Record<string, (number | null)[]> = {};
+  for (const [k, col] of Object.entries(frame.v)) v[k] = col.slice(a, b + 1);
+  return { t: frame.t.slice(a, b + 1), v };
+}
+
+/**
+ * Removes short runs of missing buckets between two known ones (a skipped sample or two), so a chart
+ * draws one continuous line across them instead of breaking. Longer runs stay: an hour of silence is
+ * a missed sample, six hours is an outage and should show as one. `maxMissing` is in buckets.
+ */
+export function bridgeGaps(frame: MetricFrame, names: readonly string[], maxMissing = 2): MetricFrame {
+  const n = frame.t.length;
+  const known = (i: number) => names.some((k) => frame.v[k]?.[i] != null);
+  const drop = new Array<boolean>(n).fill(false);
+  let i = 0;
+  while (i < n) {
+    if (known(i)) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < n && !known(j)) j++;
+    // A run of missing buckets i..j-1, bridged only when known on both sides and short.
+    if (i > 0 && j < n && j - i <= maxMissing) for (let k = i; k < j; k++) drop[k] = true;
+    i = j;
+  }
+  if (!drop.includes(true)) return frame;
+  const keep = (_: unknown, idx: number) => !drop[idx];
+  const v: Record<string, (number | null)[]> = {};
+  for (const [k, col] of Object.entries(frame.v)) v[k] = col.filter(keep);
+  return { t: frame.t.filter(keep), v };
+}
+
+/**
+ * Appends a live point (right now) to named series, so a chart's right edge follows the stream between
+ * server samples. A point at or before the last bucket replaces nothing: it is only added when newer.
+ */
+export function withLiveTail(
+  frame: MetricFrame,
+  nowMs: number,
+  live: Record<string, number | null>,
+): MetricFrame {
+  const last = frame.t.at(-1);
+  if (last !== undefined && nowMs <= last) return frame;
+  const t = [...frame.t, nowMs];
+  const v: Record<string, (number | null)[]> = {};
+  for (const [k, col] of Object.entries(frame.v)) v[k] = [...col, live[k] ?? null];
+  return { t, v };
+}
+
+/** Difference between consecutive known points of a series (null where either end is unknown). */
+export function differences(values: readonly (number | null)[]): (number | null)[] {
+  return values.map((x, i) => {
+    if (i === 0) return null;
+    const prev = values[i - 1];
+    return x === null || prev === null || prev === undefined ? null : x - prev;
+  });
+}
+
+/** Sum of several series per bucket (null when any is unknown). */
+export function sumSeries(frame: MetricFrame, names: readonly string[]): (number | null)[] {
+  return frame.t.map((_, i) => {
+    let s = 0;
+    for (const n of names) {
+      const x = frame.v[n]?.[i];
+      if (x === null || x === undefined) return null;
+      s += x;
+    }
+    return s;
+  });
+}
+
+/** Number of known points in a series. */
+export function knownCount(values: readonly (number | null)[]): number {
+  let c = 0;
+  for (const x of values) if (x !== null) c++;
+  return c;
+}
+
+export type Range = '24h' | '7d' | '30d';
+
+export const RANGES: Record<Range, { label: string; ms: number; stepMs: number }> = {
+  '24h': { label: '24 hours', ms: 24 * 3_600_000, stepMs: 15 * 60_000 },
+  '7d': { label: '7 days', ms: 7 * 24 * 3_600_000, stepMs: 3_600_000 },
+  '30d': { label: '30 days', ms: 30 * 24 * 3_600_000, stepMs: 3_600_000 },
+};
+
+/** A request window ending at the current step boundary, so the query key is stable between ticks. */
+export function rangeWindow(range: Range, nowMs: number): { from: number; to: number; step: number } {
+  const { ms, stepMs } = RANGES[range];
+  const to = Math.floor(nowMs / stepMs) * stepMs + stepMs;
+  return { from: to - ms, to, step: stepMs };
+}
