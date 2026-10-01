@@ -112,7 +112,14 @@ export function bootstrap(seq = 100, height = 2_996_914): BootstrapDto {
       },
     ],
     freshness: [
-      { job: 'chain_stream', last_ok_ms: 1_000, last_error: null, last_error_ms: null, stale: false },
+      {
+        job: 'chain_stream',
+        last_ok_ms: 1_000,
+        last_error: null,
+        last_error_ms: null,
+        stale: false,
+        next_run_ms: null,
+      },
     ],
   } as BootstrapDto;
 }
@@ -155,6 +162,8 @@ export function blockMsg(
     reward: '14.00000000',
     fees: '0.00010000',
     dev_fund: '0.50010000',
+    app_payments: [],
+    collateral_spent: [],
   };
 }
 

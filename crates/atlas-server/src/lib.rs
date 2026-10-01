@@ -26,7 +26,6 @@ pub mod search;
 pub mod state;
 pub mod views;
 pub mod watch;
-pub mod watch_shim;
 pub mod web;
 
 use std::net::SocketAddr;
@@ -47,8 +46,14 @@ pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
     std::fs::create_dir_all(&cfg.data_dir)
         .with_context(|| format!("creating data dir {}", cfg.data_dir.display()))?;
     let db = cfg.data_dir.join("atlas.redb");
-    let store =
-        atlas_store::Store::open(&db).with_context(|| format!("opening {}", db.display()))?;
+    let store = atlas_store::Store::open_with(
+        &db,
+        atlas_store::StoreOptions {
+            cache_size_bytes: Some(cfg.db_cache_mb.max(1) << 20),
+            ..atlas_store::StoreOptions::default()
+        },
+    )
+    .with_context(|| format!("opening {}", db.display()))?;
     let clients =
         atlas_flux::Clients::new(cfg.clients.clone()).context("building upstream clients")?;
     let mut engine_cfg = cfg.engine.clone();
@@ -59,6 +64,13 @@ pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
             "engine settings not supported by this engine build"
         );
     }
+    tracing::info!(
+        ingest = engine_cfg.ingest.enabled,
+        backfill_days = engine_cfg.ingest.backfill.block_days,
+        backfill_rps = engine_cfg.ingest.backfill.blocks_per_second,
+        db_cache_mb = cfg.db_cache_mb,
+        "engine configuration"
+    );
     let engine = Engine::start(engine_cfg, store.clone(), clients);
     let state = AppState::new(engine.clone(), cfg.server.clone());
     let app = router(state.clone());

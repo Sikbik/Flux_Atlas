@@ -69,7 +69,9 @@ Environment: the Rust toolchain lives in `~/.cargo/bin` (`export PATH="$HOME/.ca
   swaps it in with `arc_swap`. Readers never block.
 - **Pre-built bodies.** On publish, the reducer (or a helper task it spawns) serializes the hot endpoints once
   (`bootstrap.json`, `nodes.bin`, `apps.json`, …), pre-compresses each one (br + gzip + zstd), and computes a
-  strong ETag. Handlers just pick the right encoding: zero serialization per request.
+  strong ETag. Handlers just pick the right encoding: zero serialization per request. **Brotli runs at quality 6**
+  (measured on `nodes.bin`: q6 9.4 ms / 74 KB, q9 20 ms / 73 KB, q11 563 ms / 52 KB); q11 is far too slow for a
+  body rebuilt every block.
 - **Sequencing.** Every publish increments `seq: u64`. Snapshot bodies carry `seq`; WS deltas carry
   `seq` / `prev_seq`, so clients can detect gaps and resync.
 - **Persistence is write-behind.** The StoreWriter batches everything from a tick into one redb write
@@ -127,7 +129,25 @@ node APIs for TopologySweep, WatchProbe and failover reads, always through the S
 
 **Bootstrap backfills (background, resumable, polite):** `stats /fluxhistorystats` (30 days of tier counts at
 ~15-min resolution → metrics); `/apps/permanentmessages` full (one call, 24.5 MB, 6 years of app history →
-app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` (≤ 2 req/s), extendable to 30 days.
+app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` (1.5 req/s by default,
+`ATLAS_BACKFILL_DAYS` / `ATLAS_BACKFILL_RPS`), extendable to 30 days.
+
+> **Implemented (B2, I1).** Deviations and precisions over the table above:
+> - **Gap jump.** The block sync fills gaps of up to 30 blocks (`max_live_gap`) live. A larger gap (after downtime)
+>   jumps straight to the tip: that block is applied as **discontinuous** (no expiry/at-risk derivation across the
+>   hole), and the block backfill fills the hole in the background.
+> - **Reorgs.** On a `previousblockhash` mismatch the sync walks back through the 10-block finality window to the
+>   fork, then the reducer deletes the orphaned blocks (store and recent ring), moves the tip to the fork, clears
+>   the expected payees, emits `reorg` (+ a feed item), and **triggers an immediate NodeRegistry reconcile**. The
+>   replacement blocks then arrive as ordinary `block` messages. A reorg deeper than the window is logged as an
+>   error and treated as a discontinuity.
+> - **Mesh expiry.** Each TopologySweep reporter's peer list replaces its previous one; an undirected edge is decided
+>   by the newer of its two reports. A report not refreshed for **1 h** (about two sweep cycles) expires and its edges
+>   are removed (streamed as a `mesh` delta).
+> - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
+>   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
+> - **Ingest switch.** `ATLAS_INGEST=0` (or `IngestConfig::disabled()`) runs the engine without ingest jobs: it
+>   restores, publishes and serves the stored state. Tests, fixtures and `demo_server` always run this way.
 
 **FluxOS caching facts:** apicache keys on the full URL (30 s default; 5 s for topology/temporarymessages;
 2 min for permanentmessages), and **a unique query string (`?nc=<ts>`) bypasses it**. Only use that where freshness
@@ -246,7 +266,9 @@ byte. Large blobs are **zstd**-compressed.
 > `block_payouts`, `node_txs` + `node_txs_by_node`, `app_messages` + `app_messages_by_app`,
 > `pending_app_messages`, `mesh_edges` + `mesh_events`. Notes: the global event key is a store row counter
 > (not the live `seq`). Non-durable commits use `Durability::None`, fsynced at most every 10 s (a crash can lose
-> up to 10 s of history, which re-ingest recovers). Event pruning is not implemented yet (B2).
+> up to 10 s of history, which re-ingest recovers). Event pruning (`Store::prune_events`) keeps global events 30 d,
+> per-node events 90 d, mesh change rows 7 d. redb's page cache defaults to 1 GiB, so the server sets
+> `cache_size_bytes` (`ATLAS_DB_CACHE_MB`, default 32 MB); the hot state lives in memory anyway.
 
 A retention task runs hourly: prune `metrics_1m` older than 30 d, roll up `metrics_1h`, keep hourly
 snapshots for 30 d, then daily keyframes forever. `compact()` runs weekly. **Time machine:** state at `t` =
@@ -277,7 +299,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
 | `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras [TBD research] |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
-| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t |
+| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; columns keyframes do not record, such as rank and hardware, are 0; cached 60 s per t) |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |
 | `GET /ws` | WebSocket live stream (§8) |
 | `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops |
@@ -371,6 +393,15 @@ every 30 s). Each tier's queue is a strict rotation, so clients maintain ranks d
 3. A `nodes` delta with `cause: reconcile` carries authoritative ranks for every node whose rank differs from the
    rotation model. After applying it, clients are exact again. The server sends one after every NodeRegistry
    reconcile (≤ 10 min) and whenever its own model detects a divergence.
+4. A node whose status leaves `confirmed` drops out of its tier queue; ranks behind it close the gap.
+5. An unranked node that receives a rank (a `changed` rank, typically a join confirmed in a block) is inserted at
+   that rank; nodes at or behind it shift back. Ranks past the tier size clamp to the back.
+
+The server keeps an exact model of what clients hold (`atlas_engine::state::queue::ClientRanks`) and diffs it
+against the true queue after every tick, so clients must apply a `nodes` delta in the same order: `removed`
+(rule 2), then status exits (rule 4), then field changes, then entering ranks ascending by `(rank, id)` (rules 2
+and 5; an already ranked node is taken out at its turn, a move). In a `cause: reconcile` delta, `changed` ranks are
+authoritative and set as is, without shifting anyone. Implemented in `web/src/store/network.ts`.
 Displayed ETAs are `rank × 30 s`, labelled as estimates.
 
 **Client choreographer (web).** Incoming events go into a scheduler with a visual budget (max concurrent
@@ -414,9 +445,13 @@ web/src/
   LTO thin, `codegen-units=1`) → `gcr.io/distroless/cc-debian12` runtime, non-root, volume `/data`.
   `atlas healthcheck` subcommand for Docker HEALTHCHECK.
 - `deploy/flux_app_spec.json`: Flux app spec (see legacy spec; ports/containerData [TBD research: current spec version & port rules]).
-- Config: env vars `ATLAS_BIND` (default `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`), `ATLAS_FLUX_API`,
-  `ATLAS_EXPLORER_API`, `ATLAS_GEOIP_DB` (optional .mmdb), `ATLAS_LOG`, `ATLAS_UPSTREAM_RPS`, per-job interval
-  overrides.
+- Config: env vars (each also a flag; full table in `crates/atlas-server/README.md`): `ATLAS_BIND` (default
+  `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`), `ATLAS_INGEST` (`1`; `0` serves stored state only),
+  `ATLAS_BACKFILL_DAYS` (7), `ATLAS_BACKFILL_RPS` (1.5), `ATLAS_DB_CACHE_MB` (32), `ATLAS_INTERVALS`
+  (`job=duration,...` per-job interval overrides), `ATLAS_FLUX_API`, `ATLAS_EXPLORER_API`, `ATLAS_STATS_API`,
+  `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_DB` (accepted, not used yet), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
+  `ATLAS_CLIENT_RPS` / `ATLAS_CLIENT_BURST`, `ATLAS_WS_MAX_CONNECTIONS` / `ATLAS_WS_MAX_PER_IP` / `ATLAS_WS_PING`,
+  `ATLAS_LOG`. The web smoke targets a running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).
 - Gates. Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. Web: `tsc --noEmit`,
   `biome check`, `vitest run`, Playwright smoke. Perf: an ingest-cycle benchmark on the full raw node dump, `oha`
   load test on `/api/v1/nodes.bin` and `/bootstrap`, globe FPS via the team shot tool `--gpu --fps`.

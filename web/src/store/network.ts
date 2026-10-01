@@ -24,6 +24,7 @@ import type { MempoolDto } from '../api/generated/MempoolDto';
 import type { MeshDelta } from '../api/generated/MeshDelta';
 import type { NetworkSummary } from '../api/generated/NetworkSummary';
 import type { NextPayeesMsg } from '../api/generated/NextPayeesMsg';
+import type { NodeChange } from '../api/generated/NodeChange';
 import type { NodesDelta } from '../api/generated/NodesDelta';
 import type { PayoutDto } from '../api/generated/PayoutDto';
 import type { PriceInfo } from '../api/generated/PriceInfo';
@@ -550,6 +551,8 @@ export class NetworkStore {
       t.flags[i] = t.flags[i]! | NodeFlag.RecentlyPaid;
       nc.changed.push(p.node);
       nc.fields |= NodeField.LastPaid | NodeField.Flags;
+      // Rank contract rule 1: the payee moves to the back of its tier queue.
+      this.rotateToBack(i, nc);
       touched = true;
     }
     const confirmedCode = statusCode('confirmed');
@@ -636,6 +639,19 @@ export class NetworkStore {
     return ok;
   }
 
+  /**
+   * Applies a `nodes` delta, maintaining payment-queue ranks by the rank contract
+   * (ARCHITECTURE section 8). The order mirrors the server's model of the clients exactly, so
+   * its `cause: reconcile` corrections make the ranks exact again:
+   *
+   * 1. `removed` nodes leave their tier queue; ranks behind them move up (the gap closes).
+   * 2. A node whose status leaves `confirmed` leaves its tier queue the same way.
+   * 3. Field changes apply.
+   * 4. Entering ranks, ascending by (rank, id): `added` nodes, and `changed` ranks outside a
+   *    reconcile, are inserted at their rank (clamped to the tier size); nodes at or behind it
+   *    shift back. A node already ranked is taken out first, at its turn (a move).
+   * 5. In a `cause: reconcile` delta, `changed` ranks are authoritative and set as is.
+   */
   private applyNodes(d: NodesDelta, seq: number): void {
     const t = this.nodes;
     if (seq <= t.snapshotSeq) {
@@ -645,15 +661,27 @@ export class NetworkStore {
     if (!this.checkContinuity('nodes', t.snapshotSeq, this.lastNodesMsgSeq, d.prev_seq, seq)) return;
     this.lastNodesMsgSeq = seq;
     const nc = this.nodeChanges();
+    const authoritative = d.cause === 'reconcile';
     for (const id of d.removed) {
+      const i = t.indexOf(id);
+      if (i >= 0) this.leaveQueue(i, nc);
       if (t.remove(id)) {
         nc.removed.push(id);
         nc.structural = true;
       }
     }
+    for (const c of d.changed) {
+      if (c.status === undefined || c.status === 'confirmed') continue;
+      const i = t.indexOf(c.id);
+      if (i >= 0) this.leaveQueue(i, nc);
+    }
+    // Field updates keep the rank the client holds; entering ranks apply below.
+    const entering: { id: number; rank: number }[] = [];
     for (const n of d.added) {
-      const existed = t.has(n.id);
-      t.upsert(n);
+      const i = t.indexOf(n.id);
+      const existed = i >= 0;
+      if (n.rank !== null) entering.push({ id: n.id, rank: n.rank });
+      t.upsert({ ...n, rank: existed && t.rank[i]! > 0 ? t.rank[i]! - 1 : null });
       if (existed) {
         nc.changed.push(n.id);
         nc.fields |= 0x1fff;
@@ -663,13 +691,89 @@ export class NetworkStore {
       }
     }
     for (const c of d.changed) {
-      const f = t.applyChange(c);
+      let change: NodeChange = c;
+      if (c.rank !== undefined && !authoritative) {
+        entering.push({ id: c.id, rank: c.rank });
+        const { rank: _rank, ...rest } = c;
+        change = rest;
+      }
+      const f = t.applyChange(change);
       if (f > 0) {
         nc.changed.push(c.id);
         nc.fields |= f;
       }
     }
+    entering.sort((x, y) => x.rank - y.rank || x.id - y.id);
+    for (const e of entering) {
+      const i = t.indexOf(e.id);
+      if (i < 0) continue;
+      // A node already ranked moves: out of its place, then in at the new rank.
+      this.leaveQueue(i, nc);
+      this.enterQueue(i, e.rank, nc);
+    }
     this.touch(Slice.Nodes);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Payment queue (rank contract). Ranks are stored plus one (0 = not queued), per tier.
+  // -------------------------------------------------------------------------------------------
+
+  /** Number of ranked nodes in tier code `tier`. */
+  private queueSize(tier: number): number {
+    const t = this.nodes;
+    const tiers = t.tier;
+    const rank = t.rank;
+    let n = 0;
+    for (let i = 0; i < t.count; i++) if (tiers[i] === tier && rank[i]! > 0) n++;
+    return n;
+  }
+
+  /** Moves every node of `tier` with stored rank above `above` by `delta`, recording them. */
+  private shiftQueue(tier: number, above: number, delta: 1 | -1, skip: number, nc: NodeChangeSet): void {
+    const t = this.nodes;
+    const tiers = t.tier;
+    const rank = t.rank;
+    const ids = t.ids;
+    for (let i = 0; i < t.count; i++) {
+      if (i === skip || tiers[i] !== tier || rank[i]! <= above) continue;
+      rank[i] = rank[i]! + delta;
+      nc.changed.push(ids[i]!);
+    }
+    nc.fields |= NodeField.Rank;
+  }
+
+  /** Takes row `i` out of its tier queue; the nodes behind it move up. */
+  private leaveQueue(i: number, nc: NodeChangeSet): void {
+    const t = this.nodes;
+    const r = t.rank[i]!;
+    if (r === 0) return;
+    t.rank[i] = 0;
+    nc.changed.push(t.ids[i]!);
+    this.shiftQueue(t.tier[i]!, r, -1, i, nc);
+  }
+
+  /** Inserts unranked row `i` at `rank` (clamped to the tier size); the rest shifts back. */
+  private enterQueue(i: number, rank: number, nc: NodeChangeSet): void {
+    const t = this.nodes;
+    const tier = t.tier[i]!;
+    if (tier === 0 || t.rank[i]! > 0) return;
+    const at = Math.min(rank, this.queueSize(tier));
+    // Stored ranks are rank + 1: everything at `at` or behind (stored >= at + 1) moves back.
+    this.shiftQueue(tier, at, 1, i, nc);
+    t.rank[i] = at + 1;
+    nc.changed.push(t.ids[i]!);
+  }
+
+  /** Rule 1: a paid node moves to the back of its tier; the nodes behind it move up. */
+  private rotateToBack(i: number, nc: NodeChangeSet): void {
+    const t = this.nodes;
+    const r = t.rank[i]!;
+    if (r === 0) return;
+    const tier = t.tier[i]!;
+    this.shiftQueue(tier, r, -1, i, nc);
+    // The tier size includes the payee itself, so the back is size - 1 (stored: size).
+    t.rank[i] = this.queueSize(tier);
+    nc.changed.push(t.ids[i]!);
   }
 
   private applyApps(d: AppsDelta, seq: number): void {

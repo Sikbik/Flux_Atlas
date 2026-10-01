@@ -527,8 +527,8 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
       for (const id of new Set(nc.changed)) {
         const i = t.indexOf(id);
         if (i < 0) continue;
+        const info = engine.nodeInfo(toEngineId(id));
         if (nc.fields & NodeField.Geo) {
-          const info = engine.nodeInfo(toEngineId(id));
           const lat = t.lat[i]!;
           const lon = t.lon[i]!;
           if (info && (!sameCoord(info.lat, lat) || !sameCoord(info.lon, lon))) {
@@ -537,9 +537,13 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
           }
         }
         if (nc.fields & VISIBLE_FIELDS) {
+          // `fields` is a union over the batch, and a block re-ranks a whole tier, so most ids here
+          // may carry bookkeeping only: forward just what the engine does not already show.
+          const st = engineStatus(t, i);
+          if (info && info.tier === t.tier[i] && info.status === st && info.flags === t.flags[i]) continue;
           ids.push(toEngineId(id));
           tier.push(t.tier[i]!);
-          status.push(engineStatus(t, i));
+          status.push(st);
           flags.push(t.flags[i]!);
         }
       }

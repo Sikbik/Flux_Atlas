@@ -15,7 +15,7 @@ import {
   meshModeFor,
   shiftSink,
 } from './bindings';
-import type { EngineEvents, NodeColumns, PickInfo } from './engine/types';
+import type { EngineEvents, NodeColumns, NodeDelta, PickInfo } from './engine/types';
 
 // ---- a fake engine that records every call -----------------------------------------------------
 
@@ -27,7 +27,18 @@ interface Call {
 function fakeEngine() {
   const calls: Call[] = [];
   const listeners = new Map<string, Set<(p: unknown) => void>>();
-  const nodes = new Map<number, { lat: number; lon: number }>();
+  // What the engine currently shows per node, so `nodeInfo` answers like the real engine.
+  const nodes = new Map<number, { lat: number; lon: number; tier: number; status: number; flags: number }>();
+  const putColumns = (cols: NodeColumns) => {
+    for (let i = 0; i < cols.ids.length; i++)
+      nodes.set(cols.ids[i]!, {
+        lat: cols.lat[i]!,
+        lon: cols.lon[i]!,
+        tier: cols.tier[i]!,
+        status: cols.status[i]!,
+        flags: cols.flags[i]!,
+      });
+  };
   const record =
     (name: string) =>
     (...args: unknown[]) => {
@@ -40,10 +51,23 @@ function fakeEngine() {
     reduced: false,
     setNodes: (cols: NodeColumns, opts?: unknown) => {
       calls.push({ name: 'setNodes', args: [cols, opts] });
-      for (let i = 0; i < cols.ids.length; i++)
-        nodes.set(cols.ids[i]!, { lat: cols.lat[i]!, lon: cols.lon[i]! });
+      nodes.clear();
+      putColumns(cols);
     },
-    updateNodes: record('updateNodes'),
+    updateNodes: (delta: NodeDelta) => {
+      calls.push({ name: 'updateNodes', args: [delta] });
+      for (const id of Array.from(delta.removedIds ?? [])) nodes.delete(id);
+      if (delta.added) putColumns(delta.added);
+      const ch = delta.changed;
+      if (!ch) return;
+      for (let k = 0; k < ch.ids.length; k++) {
+        const n = nodes.get(ch.ids[k]!);
+        if (!n) continue;
+        if (ch.tier) n.tier = ch.tier[k]!;
+        if (ch.status) n.status = ch.status[k]!;
+        if (ch.flags) n.flags = ch.flags[k]!;
+      }
+    },
     setMesh: record('setMesh'),
     updateMesh: record('updateMesh'),
     setMeshMode: record('setMeshMode'),
@@ -70,7 +94,7 @@ function fakeEngine() {
     setReduced: record('setReduced'),
     nodeInfo: (id: number) => {
       const n = nodes.get(id);
-      return n ? ({ id, lat: n.lat, lon: n.lon } as PickInfo) : null;
+      return n ? ({ id, ...n } as PickInfo) : null;
     },
     projectNode: () => false,
     project: () => false,

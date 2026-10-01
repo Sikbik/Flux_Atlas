@@ -96,6 +96,9 @@ pub struct JobFreshness {
     pub last_error_ms: Option<u64>,
     /// True when the job's data is older than its freshness tier allows.
     pub stale: bool,
+    /// When the job runs next (unix ms); `None` for push-driven or event-triggered jobs.
+    #[serde(default)]
+    pub next_run_ms: Option<u64>,
 }
 
 /// The chain tip.

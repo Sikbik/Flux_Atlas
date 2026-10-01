@@ -8,6 +8,11 @@
 // Env: ATLAS_DEMO_BIN (a prebuilt demo_server binary; default `cargo run --example demo_server`),
 // CARGO_TARGET_DIR (respected by cargo), CHROMIUM (browser path), ATLAS_E2E_SKIP_BUILD=1 (reuse
 // web/dist-e2e).
+//
+// ATLAS_E2E_SERVER=http://host:port targets an already running server (for example `atlas serve`
+// against the real network) instead of starting the demo server: blocks then arrive every ~30 s,
+// and the fixture-specific route test and the restart test are skipped. ATLAS_WEB_PORT pins the
+// preview port.
 import assert from 'node:assert/strict';
 import { execSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -71,6 +76,13 @@ function stop(child) {
   }
 }
 
+const external = process.env.ATLAS_E2E_SERVER?.replace(/\/+$/, '') || null;
+const skipExternal = external
+  ? 'targets an external server (fixture data and restarts only in demo mode)'
+  : false;
+// Real blocks are ~30 s apart; the demo server makes one every 3 s.
+const blockWaitMs = external ? 120_000 : 30_000;
+
 let demo;
 let preview;
 let browser;
@@ -93,9 +105,10 @@ function startDemo() {
 }
 
 before(async () => {
-  apiPort = await freePort();
-  const webPort = await freePort();
-  demo = startDemo();
+  if (!external) apiPort = await freePort();
+  const apiUrl = external ?? `http://127.0.0.1:${apiPort}`;
+  const webPort = Number(process.env.ATLAS_WEB_PORT) || (await freePort());
+  if (!external) demo = startDemo();
   if (!process.env.ATLAS_E2E_SKIP_BUILD || !existsSync(join(webDir, 'dist-e2e', 'index.html'))) {
     execSync('npx vite build --outDir dist-e2e --emptyOutDir', {
       cwd: webDir,
@@ -106,15 +119,15 @@ before(async () => {
   preview = start(
     join(webDir, 'node_modules', '.bin', 'vite'),
     ['preview', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort', '--outDir', 'dist-e2e'],
-    { cwd: webDir, env: { ...env, ATLAS_API_TARGET: `http://127.0.0.1:${apiPort}` } },
+    { cwd: webDir, env: { ...env, ATLAS_API_TARGET: apiUrl } },
   );
   base = `http://127.0.0.1:${webPort}`;
   try {
     // The first run compiles the demo server.
-    await waitHttp(`http://127.0.0.1:${apiPort}/healthz`, 600_000);
+    await waitHttp(`${apiUrl}/healthz`, 600_000);
     await waitHttp(`${base}/`, 60_000);
   } catch (e) {
-    console.error('demo server log:\n', demo.log.join(''));
+    console.error('demo server log:\n', demo?.log.join('') ?? '(external)');
     console.error('preview log:\n', preview.log.join(''));
     throw e;
   }
@@ -144,7 +157,7 @@ async function intOf(page, testId) {
   return Number((t ?? '').replace(/[^0-9]/g, ''));
 }
 
-test('the WebSocket goes live and a block arrives', { timeout: 90_000 }, async () => {
+test('the WebSocket goes live and a block arrives', { timeout: blockWaitMs + 60_000 }, async () => {
   const page = await open('/dev/live');
   await page.waitForFunction(
     () => document.querySelector('[data-testid=conn-status]')?.textContent === 'live',
@@ -160,7 +173,7 @@ test('the WebSocket goes live and a block arrives', { timeout: 90_000 }, async (
   await page.waitForFunction(
     (n) => Number(document.querySelector('[data-testid=live-blocks]')?.textContent ?? '0') > n,
     seen,
-    { timeout: 30_000 },
+    { timeout: blockWaitMs },
   );
   assert.ok((await intOf(page, 'last-block-height')) > before, 'the tip advanced');
   // The status line reads live too, and the runtime received block messages over the socket.
@@ -171,7 +184,7 @@ test('the WebSocket goes live and a block arrives', { timeout: 90_000 }, async (
   assert.deepEqual(pageErrors, []);
 });
 
-test('every IA route renders, and unknown routes 404', { timeout: 90_000 }, async () => {
+test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: skipExternal }, async () => {
   const routes = [
     ['/', null],
     ['/node/1', 'Node 1'],
@@ -206,7 +219,10 @@ test('every IA route renders, and unknown routes 404', { timeout: 90_000 }, asyn
 
 const statusIs = (want) => document.querySelector('[data-testid=conn-status]')?.textContent === want;
 
-test('a server restart is survived: reconnect, resync, live again', { timeout: 120_000 }, async () => {
+test('a server restart is survived: reconnect, resync, live again', {
+  timeout: 120_000,
+  skip: skipExternal,
+}, async () => {
   const page = await open('/dev/live');
   await page.waitForFunction(statusIs, 'live', { timeout: 30_000 });
   const resyncsBefore = await intOf(page, 'resyncs');

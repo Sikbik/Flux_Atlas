@@ -59,6 +59,8 @@ fn block(h: u32) -> LiveBody {
         reward: Amount::from_flux(14),
         fees: Amount::ZERO,
         dev_fund: Amount(50_000_000),
+        app_payments: vec![],
+        collateral_spent: vec![],
     })
 }
 
