@@ -33,6 +33,7 @@ fn block(h: u32) -> LiveBody {
         lat: Some(50.1),
         lon: Some(8.6),
         country_code: Some("DE".into()),
+        city: Some("Frankfurt am Main".into()),
     };
     LiveBody::Block(BlockMsg {
         height: h,

@@ -124,6 +124,12 @@ pub fn apply_round(
             continue;
         }
         rep.matched += 1;
+        // Local GeoIP adds the city (and the region when missing) to the reported location.
+        let ip = st.nodes.rec(id).and_then(|r| r.endpoint).map(|e| e.ip);
+        let row_geo = row
+            .geo
+            .as_ref()
+            .map(|g| crate::geoip::enriched(st, ip, g.clone()));
         let mut m = 0u16;
         let mut events: Vec<Event> = Vec::new();
         let mut persist = false;
@@ -178,7 +184,7 @@ pub fn apply_round(
                     r.versions = row.versions.clone();
                     persist = true;
                 }
-                if let Some(g) = &row.geo
+                if let Some(g) = &row_geo
                     && geo_material_change(r.geo.as_ref(), g)
                 {
                     events.push(Event::NodeLocated {

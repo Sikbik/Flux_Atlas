@@ -240,6 +240,13 @@ impl NodeTable {
         self.dirty = true;
     }
 
+    /// Persists every listed record at the end of the tick (shutdown: ranks change for every
+    /// queued node each block, but only touched records are written as they change).
+    pub fn persist_all_listed(&mut self) {
+        let ids: Vec<NodeId> = self.listed().map(|e| e.rec.id).collect();
+        self.persist.extend(ids);
+    }
+
     /// Every entry (including departed).
     pub fn iter(&self) -> impl Iterator<Item = &NodeEntry> {
         self.slots.iter().filter_map(Option::as_ref)
@@ -336,6 +343,8 @@ pub struct NetworkState {
     pub upstream_counts: Option<[u32; 3]>,
     pub blocks_dirty: bool,
     pub summary_dirty: bool,
+    /// Local GeoIP database (city names, approximate locations), when loaded.
+    pub geoip: Option<crate::geoip::LoadedGeoIp>,
 }
 
 /// Max blocks kept in memory.
@@ -409,7 +418,17 @@ pub fn node_ref(r: &NodeRecord) -> NodeRef {
             .as_ref()
             .map(|g| g.country_code.to_string())
             .filter(|s| !s.is_empty()),
+        city: city_of(r),
     }
+}
+
+/// The node's city, when known.
+pub fn city_of(r: &NodeRecord) -> Option<String> {
+    r.geo
+        .as_ref()
+        .map(|g| g.city.trim())
+        .filter(|c| !c.is_empty())
+        .map(str::to_owned)
 }
 
 /// `NodeLite` of a record (mirrors one `nodes.bin` row).
@@ -429,6 +448,7 @@ pub fn node_lite(r: &NodeRecord, tip: u32, now_ms: u64) -> NodeLite {
         last_paid_height: r.last_paid_height,
         app_count: r.app_count,
         flags: b.flags,
+        city: city_of(r),
     }
 }
 
@@ -450,6 +470,7 @@ pub fn node_change(r: &NodeRecord, m: u16, tip: u32, now_ms: u64) -> NodeChange 
         c.lon = b.lon;
         c.country_code = Some(b.country_code).filter(|s| !s.is_empty());
         c.org = Some(b.org).filter(|s| !s.is_empty());
+        c.city = city_of(r);
     }
     if m & mask::RANK != 0 {
         // `null` when the node is not queued: the explicit unranked signal.

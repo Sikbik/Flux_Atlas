@@ -5,6 +5,7 @@ members = [
     "crates/atlas-flux",
     "crates/atlas-store",
     "crates/atlas-engine",
+    "crates/atlas-geoip",
     "crates/atlas-server",
 ]
 
@@ -22,6 +23,7 @@ atlas-core = { path = "crates/atlas-core" }
 atlas-flux = { path = "crates/atlas-flux" }
 atlas-store = { path = "crates/atlas-store" }
 atlas-engine = { path = "crates/atlas-engine" }
+atlas-geoip = { path = "crates/atlas-geoip" }
 
 # Serialization
 serde = { version = "1.0.229", features = ["derive"] }

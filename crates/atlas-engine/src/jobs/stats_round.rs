@@ -162,7 +162,7 @@ pub async fn geo(ctx: JobCtx, mut rx: mpsc::Receiver<(IpAddr, bool)>) {
                 .all(|r| {
                     r.geo
                         .as_ref()
-                        .is_some_and(atlas_core::node::Geo::has_coords)
+                        .is_some_and(atlas_core::node::Geo::is_precise)
                 });
             if located {
                 continue;

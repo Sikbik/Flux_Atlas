@@ -94,6 +94,10 @@ pub struct NodeLite {
     pub app_count: u16,
     /// Same bit layout as the `nodes.bin` flags column.
     pub flags: u8,
+    /// City name, when known (local GeoIP).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub city: Option<String>,
 }
 
 /// Changed fields of one node; absent fields did not change.
@@ -121,6 +125,10 @@ pub struct NodeChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub org: Option<String>,
+    /// City name; sent with a location change when known (absent: unchanged or unknown).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub city: Option<String>,
     /// Payment-queue rank, 0-based. Absent: unchanged. `null`: the node is not queued
     /// (unranked), the explicit leave signal of the rank contract (ARCHITECTURE section 8).
     #[serde(

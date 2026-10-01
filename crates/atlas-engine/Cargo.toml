@@ -11,6 +11,8 @@ publish.workspace = true
 atlas-core = { path = "../atlas-core" }
 atlas-flux = { path = "../atlas-flux" }
 atlas-store = { path = "../atlas-store" }
+atlas-geoip = { path = "../atlas-geoip" }
+compact_str.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 postcard.workspace = true

@@ -517,11 +517,75 @@ fn first_boot_block_before_the_list_is_attributed_by_the_reconcile() {
     }
     let blk = st.recent.iter().find(|b| b.height == 2_996_916).unwrap();
     assert!(blk.payouts.iter().all(|p| p.node.is_some()));
-    // A second pass has nothing left to attribute.
+    // Nodes the block heartbeated are newer than the list, but the list still fills what the
+    // block could not know (tier, payment address, confirm height).
+    let listed: BTreeSet<Outpoint> = common::node_list().iter().map(|n| n.outpoint).collect();
+    let mut filled = 0;
+    for e in st.nodes.listed() {
+        if !listed.contains(&e.rec.outpoint) {
+            continue;
+        }
+        assert!(
+            !e.rec.payment_address.is_empty(),
+            "node {} address",
+            e.rec.id.0
+        );
+        assert!(
+            e.rec.confirmed_height.is_some(),
+            "node {} confirmed",
+            e.rec.id.0
+        );
+        filled += 1;
+    }
+    assert!(filled > 0);
+    // A second pass has nothing left to attribute, and finds no differences.
     let mut tick = Tick::new(NOW);
+    let rep = reconcile(&mut st, &mut tick, &common::node_list());
+    assert_eq!(rep.reattributed, 0);
+    assert_eq!(rep.total_diffs(), 0, "{rep:?}");
+}
+
+#[test]
+fn stats_round_location_gets_the_local_geoip_city() {
+    let mut st = common::seeded();
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../atlas-geoip/tests/fixtures/GeoIP2-City-Test.mmdb");
+    st.geoip = Some(atlas_engine::geoip::LoadedGeoIp::open(&fixture).unwrap());
+    let id = st.nodes.listed().next().unwrap().rec.id;
+    st.nodes
+        .set_endpoint(id, Some("81.2.69.142:16127".parse().unwrap()));
+    let outpoint = st.nodes.rec(id).unwrap().outpoint;
+    let reported = Geo {
+        lat: 51.5,
+        lon: -0.12,
+        country_code: "GB".into(),
+        country: "United Kingdom".into(),
+        org: "Andrews & Arnold Ltd".into(),
+        asn: Some(20_712),
+        source: atlas_core::node::GeoSource::NodeReported,
+        ..Geo::default()
+    };
+    let row = RoundNode {
+        outpoint,
+        reachable: true,
+        geo: Some(reported),
+        ..RoundNode::default()
+    };
+    let mut tick = Tick::new(NOW);
+    apply_round(&mut st, &mut tick, NOW, std::slice::from_ref(&row));
+    let g = st.nodes.rec(id).unwrap().geo.clone().unwrap();
+    assert_eq!(g.city, "London");
+    assert_eq!(g.region, "England");
+    assert_eq!(g.org, "Andrews & Arnold Ltd", "org from the source");
+    assert_eq!((g.lat, g.lon), (51.5, -0.12), "coordinates from the source");
+    assert_eq!(g.source, atlas_core::node::GeoSource::NodeReported);
+    // The same report again changes nothing (the enriched city is kept).
+    let mut tick = Tick::new(NOW);
+    let rep = apply_round(&mut st, &mut tick, NOW, &[row]);
+    assert_eq!(rep.located, 0);
     assert_eq!(
-        reconcile(&mut st, &mut tick, &common::node_list()).reattributed,
-        0
+        st.nodes.rec(id).unwrap().geo.as_ref().unwrap().city,
+        "London"
     );
 }
 

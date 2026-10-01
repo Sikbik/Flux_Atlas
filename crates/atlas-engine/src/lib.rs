@@ -15,6 +15,7 @@
 pub mod body;
 pub mod derive;
 pub mod freshness;
+pub mod geoip;
 mod jobs;
 pub mod obs;
 pub mod publish;
@@ -122,6 +123,10 @@ pub struct IngestConfig {
     pub geo_background_interval: Duration,
     /// Gaps up to this many blocks are filled live; larger gaps jump (the backfill fills them).
     pub max_live_gap: u32,
+    /// The first sync after a restart replays up to this many missed blocks (about 12 h at the
+    /// default) instead of jumping, so every payout of the downtime rotates the restored queue
+    /// exactly as it rotated upstream. Longer downtime jumps like any large gap.
+    pub max_catchup_gap: u32,
     /// Transfers at or above this value become `LargeTransfer` events.
     pub large_transfer: Amount,
     pub backfill: BackfillConfig,
@@ -176,6 +181,7 @@ impl Default for IngestConfig {
             watch_probe_interval: Duration::from_secs(60),
             geo_background_interval: Duration::from_secs(2),
             max_live_gap: 30,
+            max_catchup_gap: 1_440,
             large_transfer: Amount::from_flux(10_000),
             backfill: BackfillConfig::default(),
             retention: RetentionPolicy::default(),
@@ -202,6 +208,8 @@ pub struct EngineConfig {
     pub ping_interval: Duration,
     /// Ingest jobs.
     pub ingest: IngestConfig,
+    /// Local GeoIP (DB-IP City Lite).
+    pub geoip: geoip::GeoIpConfig,
 }
 
 impl Default for EngineConfig {
@@ -213,6 +221,7 @@ impl Default for EngineConfig {
             broadcast_capacity: 1024,
             ping_interval: Duration::from_secs(20),
             ingest: IngestConfig::default(),
+            geoip: geoip::GeoIpConfig::default(),
         }
     }
 }
@@ -245,6 +254,8 @@ pub struct Published {
     pub mesh_edge_count: u32,
     /// The engine mempool, classified, as `(tx, first_seen_ms)`, newest first.
     pub mempool: Arc<[(TxLite, u64)]>,
+    /// Third-party data credits to show (bootstrap `attributions`).
+    pub attributions: Arc<[atlas_core::api::DataAttribution]>,
 }
 
 impl Published {
@@ -273,6 +284,7 @@ impl Published {
             next_payees: Arc::from(Vec::new()),
             mesh_edge_count: st.mesh.edge_count() as u32,
             mempool: st.mempool_list().into(),
+            attributions: geoip::attributions(st).into(),
         }
     }
 }
@@ -325,6 +337,28 @@ impl Engine {
         };
         let mut st = restore(&store);
         st.large_transfer = config.ingest.large_transfer;
+        // Local GeoIP: an installed database is mapped right away (microseconds), so the first
+        // publish already carries cities. Downloads happen later, in the background.
+        if let Some(path) = config.geoip.db_path.as_ref().filter(|p| p.exists()) {
+            match geoip::LoadedGeoIp::open(path) {
+                Ok(g) => {
+                    tracing::info!(
+                        path = %path.display(),
+                        version = ?g.version,
+                        bytes = g.db.info().bytes,
+                        "geoip: database mapped"
+                    );
+                    st.geoip = Some(g);
+                    let n = geoip::enrich_all(&mut st, None);
+                    if n > 0 {
+                        tracing::info!(nodes = n, "geoip: restored nodes enriched");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, path = %path.display(), "geoip: cannot open the database");
+                }
+            }
+        }
         let first_ingest = store
             .meta_u64(atlas_store::meta_keys::FIRST_INGEST_MS)
             .ok()
@@ -400,6 +434,8 @@ impl Engine {
                 watch_rx,
             );
             tasks.extend(jobs::spawn_all(&ctx, rx, recent));
+            let geo = handle.inner.config.geoip.clone();
+            tasks.push(tokio::spawn(jobs::geoip::run(ctx.for_job("geoip_db"), geo)));
         }
         handle
             .inner

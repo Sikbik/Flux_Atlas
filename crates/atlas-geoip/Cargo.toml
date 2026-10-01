@@ -1,0 +1,52 @@
+[package]
+name = "atlas-geoip"
+description = "Flux Atlas local GeoIP: memory-mapped DB-IP City Lite reader, verified download and atomic install"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+maxminddb = "0.32.0"
+memmap2 = "0.9.11"
+flate2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util"] }
+reqwest.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# The workspace lints, except that `unsafe_code` is `deny` instead of `forbid`: memory-mapping the
+# database needs one `unsafe` call (`GeoIpDb::open`), allowed locally with its safety argument.
+# Every other crate keeps `forbid`.
+[lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+struct_excessive_bools = "allow"
+doc_markdown = "allow"
+items_after_statements = "allow"
+struct_field_names = "allow"
+return_self_not_must_use = "allow"
+unwrap_used = "deny"
+dbg_macro = "deny"
+todo = "warn"
+unimplemented = "warn"
