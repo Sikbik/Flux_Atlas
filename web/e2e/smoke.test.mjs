@@ -397,6 +397,58 @@ test('a page panel takes the left column: the Pulse and the aim strip step aside
   assert.deepEqual(pageErrors, []);
 });
 
+test('the Pulse and the rail step back while the time machine shows the archive', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForSelector('.pulse .pulse-list', { timeout: 30_000 });
+  const state = () =>
+    page.evaluate(() => {
+      const cs = (sel) => getComputedStyle(document.querySelector(sel));
+      return {
+        pulseHeight: Math.round(document.querySelector('.pulse').getBoundingClientRect().height),
+        list: cs('.pulse-list').visibility,
+        track: cs('.rail-track').visibility,
+      };
+    });
+  const live = await state();
+  assert.equal(live.list, 'visible');
+  assert.equal(live.track, 'visible');
+  assert.ok(live.pulseHeight > 150, `the Pulse is a full card (${live.pulseHeight} px)`);
+
+  // The time machine's view sets this on the document element while its handle is in the past.
+  await page.evaluate(() => {
+    document.documentElement.dataset.archive = 'on';
+  });
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.rail-track')).visibility === 'hidden',
+    null,
+    { timeout: 5_000 },
+  );
+  const away = await state();
+  assert.equal(away.list, 'hidden', 'the feed is out of the key and reading order');
+  assert.ok(away.pulseHeight < 60, `the Pulse folds to its head (${away.pulseHeight} px)`);
+
+  await page.evaluate(() => {
+    delete document.documentElement.dataset.archive;
+  });
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.rail-track')).visibility === 'visible',
+    null,
+    { timeout: 5_000 },
+  );
+  await page.waitForFunction(
+    () => document.querySelector('.pulse').getBoundingClientRect().height > 150,
+    null,
+    {
+      timeout: 5_000,
+    },
+  );
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
 test('a lost WebGL context comes back with a fresh engine', { timeout: 120_000 }, async () => {
   const page = await open('/');
   await page.waitForFunction(globeReady, null, { timeout: 60_000 });

@@ -197,6 +197,112 @@
   translate: none;
 }
 
+/* ---- the archive view: what is live steps back --------------------------------------------------------------
+   While the time machine shows a past moment (<html data-archive="on">, set by its view) a feed of what is
+   happening now, or the chain's newest blocks, beside the globe would read as current. The Pulse folds to its
+   head and says it is paused; the rail's blocks fade out under the same words, in the archive's own cool
+   colour. Once faded they are hidden (visibility), which takes them out of the key order and the reading order
+   too, so nothing is focusable or announced that nobody can see. The Pulse's status line is dropped for the same
+   reason. The words are drawn with empty alternative text: the time machine announces the archive view itself,
+   and a label that is there at rest (fully faded) must not be read. Both come back as they left when the view
+   returns to live. The feeds keep arriving underneath, so
+   "paused" is what the eye sees, and it is what the words say. The rail and the Pulse keep absorbing the
+   pointer, so a press on the veil is not a press on the globe. */
+
+.pulse .pulse-list {
+  transition:
+    height var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.pulse .pulse-head::after {
+  content: "Paused in the archive view" / "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--accent-time);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+
+.rail .rail-track {
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.rail::after {
+  content: "Live blocks paused in the archive view" / "";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--accent-time);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.01em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+
+:root[data-archive="on"] .pulse .pulse-list {
+  height: 0;
+  padding-block: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    height var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear var(--dur-slow);
+}
+
+:root[data-archive="on"] .pulse .pulse-head {
+  border-bottom-color: transparent;
+}
+
+:root[data-archive="on"] .pulse .pulse-head::after {
+  opacity: 1;
+}
+
+:root[data-archive="on"] .pulse .pulse-head .ui-livedot {
+  background: var(--accent-time);
+  box-shadow: none;
+}
+
+:root[data-archive="on"] .pulse :is(.filters, .filter-now, .pulse-stale, .newpill, [role="status"]) {
+  display: none;
+}
+
+:root[data-archive="on"] .rail .rail-track {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    visibility 0s linear var(--dur-slow);
+}
+
+:root[data-archive="on"] .rail::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .pulse .pulse-list {
+    transition: none;
+  }
+}
+
+:root[data-motion="reduced"] .pulse .pulse-list,
+:root[data-motion-off] .pulse .pulse-list {
+  transition: none;
+}
+
 /* ---- phone ----------------------------------------------------------------------------------- */
 
 .shell-tabs {
