@@ -15,7 +15,8 @@
   pointer-events: auto;
 }
 
-/* The first focusable element: jumps past the chrome to the globe's stage. */
+/* The first focusable element: jumps past the chrome to what is open (skip.ts): the window's body, the page panel,
+   else the globe's stage. Hidden above the screen until it has focus. */
 .skip-link {
   position: fixed;
   top: 8px;
@@ -33,6 +34,18 @@
 
 .skip-link:focus-visible {
   transform: none;
+}
+
+/* What the link lands on takes focus without joining the tab order; its ring is drawn inside its edge so a window's
+   or the panel's own clipping never cuts it. The stage is the whole globe: nothing to ring. */
+.wm-body[tabindex="-1"]:focus-visible,
+.shell-page[tabindex="-1"]:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: -2px;
+}
+
+.shell-stage:focus-visible {
+  outline: none;
 }
 
 /* ---- stage (the globe's free area; page routes without a window) ------------------------------ */

@@ -340,67 +340,11 @@
 
 /* ---- failure ------------------------------------------------------------------------------------------------------ */
 
+/* The panel itself (BootFail.tsx) is in veil.css, which the quick path shares; here it takes its place by the log. */
 .boot-fail {
   position: absolute;
   right: 48px;
   bottom: 230px;
-  display: grid;
-  gap: 8px;
-  width: min(380px, calc(100vw - 48px));
-  padding: 16px 18px;
-  border: 1px solid color-mix(in oklab, var(--status-crit) 40%, transparent);
-  border-radius: var(--r-lg);
-  background: var(--glass-bg-strong);
-  box-shadow: var(--shadow-pop);
-  animation: boot-in 280ms var(--ease-out) both;
-}
-
-.boot-fail b {
-  font: var(--fw-semibold) var(--fs-md) / 1.3 var(--font-display);
-}
-
-.boot-fail p {
-  margin: 0;
-  color: var(--text-3);
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-}
-
-.boot-fail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.boot-btn {
-  height: 34px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: var(--r-md);
-  background: var(--accent-600);
-  color: #fff;
-  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out);
-}
-
-.boot-btn:hover {
-  background: var(--accent-600-hover);
-}
-
-.boot-btn[data-quiet] {
-  background: var(--ink-3);
-  color: var(--text-1);
-}
-
-.boot-btn[data-quiet]:hover {
-  background: var(--ink-4);
-}
-
-.boot-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 /* ---- phone: the same sequence, the symbol at 150 px, five log lines over a scrim ------------------------------------ */
@@ -478,9 +422,6 @@
     animation: none;
     border-color: rgb(134 161 218 / 0.6);
   }
-  :root:not([data-motion="full"]) .boot-fail {
-    animation-name: boot-fade;
-  }
   :root:not([data-motion="full"]) .boot-ring.go::before {
     animation: none;
   }
@@ -492,16 +433,7 @@
   border-color: rgb(134 161 218 / 0.6);
 }
 
-:root[data-motion="reduced"] .boot-fail {
-  animation-name: boot-fade;
-}
-
 :root[data-motion="reduced"] .boot-ring.go::before,
 :root[data-motion-off] .boot-ring.go::before {
   animation: none;
-}
-
-:root[data-motion-off] .boot-fail {
-  animation: none;
-  opacity: 1;
 }

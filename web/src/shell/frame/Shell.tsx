@@ -58,8 +58,10 @@ import { moonParked } from './moonpark';
 import { isPagePanel } from './nav';
 import { PhoneHeader } from './PhoneHeader';
 import { PhoneTabs } from './PhoneTabs';
-import { useGlobeInsetSync, useWindowRouting } from './routing';
+import { useGlobeInsetSync, usePageEdge, useWindowRouting } from './routing';
+import { focusContent } from './skip';
 import { TopBar } from './TopBar';
+import { WatchAlertsGate } from './watchgate';
 import './frame.css';
 
 /** The Pulse is its own chunk: it mounts with the shell and is long loaded by the time the boot is over. */
@@ -92,6 +94,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const bottomRef = useRef<HTMLElement>(null);
   const statusRef = useRef<HTMLElement>(null);
   const tabsRef = useRef<HTMLElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const { requestClose, focusWindow } = useWindowRouting(wm);
   const launch = useLauncher();
   const boot = useBootPhase();
@@ -174,8 +177,9 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const primary = windowForPath(pathname);
   const pageRoute = !primary || WINDOW_SPECS[primary.type].chrome !== 'window';
   // A page that draws a panel in the stage's left column, where the Pulse and the aim strip stand: they step
-  // aside for it (frame.css).
+  // aside for it (frame.css), and the globe gives it its side like a left-floating window (usePageEdge).
   const pagePanel = isPagePanel(pathname);
+  usePageEdge(pageRef, pagePanel && !phone && !ambient);
 
   if (ambient) {
     // Ambient: no chrome; the globe and the moon (orbit mode) are the screen (design 6.4 K).
@@ -197,8 +201,17 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         data-boot-instant={boot === 'done' && bootInstant() ? '' : undefined}
         data-page={pagePanel ? '' : undefined}
       >
-        <a className="skip-link" href="#shell-stage">
-          Skip to the globe
+        {/* biome-ignore lint/a11y/useValidAnchor: a skip link is a link (that is what a screen reader announces); its fragment is the fallback, and it moves focus itself so the router's hash (`#all`) is left alone */}
+        <a
+          className="skip-link"
+          href="#shell-stage"
+          onClick={(e) => {
+            // To what is open, not the stage's top: the window's body, the page panel, else the globe (skip.ts).
+            e.preventDefault();
+            focusContent(wm.getState());
+          }}
+        >
+          Skip to content
         </a>
         <GlobeOverlay>
           <PlaceLabels />
@@ -213,7 +226,11 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         {phone ? null : <pulse.Card />}
         <main className="shell-stage" id="shell-stage" tabIndex={-1} data-region="stage" aria-label="Globe">
           {pageRoute ? (
-            <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
+            <div
+              ref={pageRef}
+              className="shell-page"
+              data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}
+            >
               <Suspense fallback={null}>
                 <Outlet />
               </Suspense>
@@ -231,6 +248,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         />
         {phone && liveOpen && !sheetOpen ? <liveSheet.Card /> : null}
         <ToastHost />
+        <WatchAlertsGate />
         <CommandLayer />
         <Boot />
       </div>

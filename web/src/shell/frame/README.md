@@ -16,28 +16,50 @@ workspace, hands it over, binds windows to the URL, keeps the globe centred in t
 | `launchers.tsx`, `keys.ts`, `actions.tsx`, `nav.ts` | the one list behind the dock, menus, tabs and keys; the keyboard map; the shared actions; navigation by URL |
 | `routing.ts` | the URL to window manager binding, and the globe's inset (`insetFor`, `useGlobeInsetSync`) |
 | `ShellLink.tsx` | a link that opens its subject as a window and still works as a link |
+| `skip.ts` | where "Skip to content" goes (pure): the open window's body, else the page panel, else the stage |
+| `watchgate.tsx` | mounts F3's watched-node alerts once for the shell's life, from a lazy chunk, once the boot is over |
 
 ## Contracts
 
 **The page slot.** Routes without a window (`/dev/live`, `/q/...`, not found) and the strip and layer types
 (time machine, weather) render in `main.shell-stage > .shell-page`. A route that draws a panel in the stage's left
 column (`isPagePanel` in `nav.ts`) sets `data-page` on `.shell`, and `frame.css` steps the Pulse and the aim strip
-aside for it; on a phone the page takes the stage and nothing needs to move.
+aside for it; on a phone the page takes the stage and nothing needs to move. On a desktop the panel also gives the
+globe its side (see the inset below).
 
 **The archive view.** While the time machine shows the past it sets `data-archive="on"` on `<html>`. The live
 chrome steps back on that attribute alone, in CSS (`frame.css`): the Pulse folds to its head with "Paused in the
 archive view", the rail's blocks fade out under a label, and what is paused leaves the key and the reading order
 (`visibility`), while the veil still takes the pointer so nothing falls through to the globe.
 
-**The palette.** It is open while the URL carries `?q=`, even empty. The launchers open it on a kind's prefix
-(`PALETTE_SEED` in `launchers.tsx`: `app `, `operator `), and a prefix is only a prefix with its trailing space,
-which is why the `q` validator (`text` in `app/search.ts`) keeps the end of what it is given.
+**The palette.** It is open while the URL carries `?q=`, even empty. The launchers that need a subject open it on
+a kind's prefix (`PALETTE_SEED` in `launchers.tsx`: `node `, `app `), and a prefix is only a prefix with its trailing
+space, which is why the `q` validator (`text` in `app/search.ts`) keeps the end of what it is given. The Operator
+launcher needs no subject: it opens the watchlist (`/operator/watchlist`, `WATCHLIST` in `launchers.tsx`), or raises
+an operator window that is already open.
+
+**Skip to content.** The first stop of the tab order, hidden above the screen until it has focus (`.skip-link`,
+`frame.css`). It does not follow its fragment: it moves focus to what is open (`focusContent`, `skip.ts`), the
+focused window's body (past its title bar's controls), else the topmost window's, else the page panel, else the
+globe's stage, and the next Tab lands on that thing's first control. On a phone the one window shown is the sheet.
+The targets take focus with `tabindex="-1"`, so the arrow keys scroll them and they stay out of the tab order.
+
+**Watch alerts.** `WatchAlertsGate` (`watchgate.tsx`) mounts F3's `WatchAlerts` (a lazy chunk from `views/inspect`)
+once, for the shell's life, so a watched node's offline, near-expiry, paid or new-address toast reaches you with no
+inspector open. It mounts once the boot is over, so the chunk is never on the load path, and not on the ambient
+route, which draws no toasts. It mounts whether or not anything is watched: `WatchAlerts` runs one engine however
+many copies are mounted (the operator view still mounts its own), the first to mount wins, and the shell's copy is
+the one that has to stay.
 
 **The globe's inset.** `globeInset` (`wm/machine.ts`) gives the workspace edges plus the windows: docked windows
 always reserve their side, a maximized window reserves nothing, and a floating window reserves its side only
 while the free area left after it is still as wide as the planet's minimum (`planetMinWidth`); past that it floats
-over the globe. `insetFor` (`routing.ts`) adds what the window manager does not know on a phone: the Live sheet,
-the time machine's sheet (`--tm-sheet-h`, written on the shell) and the bottom safe area.
+over the globe. A page panel (search results, a dev page, not found) is one more left-floating obstruction under
+the same rule: `usePageEdge` (`routing.ts`) writes the panel's right edge to the shell as `--page-edge` (an edge
+that moves by under 16 px is not chased, since a panel that sizes to its content, like the live inspector, would
+otherwise drag the globe with it), and `globeInset(state, pageEdge)` counts it like a window, edge + 24 px, while
+the planet still fits beside it. `insetFor` (`routing.ts`) adds what the window manager does not know on a phone:
+the Live sheet, the time machine's sheet (`--tm-sheet-h`, written on the shell) and the bottom safe area.
 
 **The moon on a phone.** While a window or the Live sheet is as tall as the tall snap or taller, `moonParked`
 (`moonpark.ts`) is true: the moon glides into the Beat ring in the header as a 22 px symbol

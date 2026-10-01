@@ -1,8 +1,8 @@
 // The launchers of the dock, the menus, the phone tabs and the keyboard (design 2.7, 8.5, 10.4): one
 // list says what each one is called, which key runs it and what it does, so the four surfaces cannot
 // drift apart. A launcher either opens a window (retargeting or raising one that is already open),
-// goes to a route, or opens the command palette for the things that need a subject (a node, an app, an
-// operator address).
+// goes to a route, or opens the command palette for the things that need a subject (a node, an app).
+// The Operator launcher opens the watchlist, the operator view of the nodes you follow.
 
 import {
   Blocks,
@@ -23,7 +23,7 @@ import { useCallback } from 'react';
 import { useRuntime } from '../../app/context';
 import { windowOfType } from '../wm/machine';
 import { useWindowManager } from '../wm/react';
-import type { WindowType } from '../wm/types';
+import type { WindowRef, WindowType } from '../wm/types';
 import { type ShellNav, useShellNav } from './nav';
 
 export type LauncherId =
@@ -151,8 +151,10 @@ export function keyCaps(l: Launcher): readonly string[] {
 export const PALETTE_SEED: Partial<Record<LauncherId, string>> = {
   nodes: 'node ',
   apps: 'app ',
-  operator: 'operator ',
 };
+
+/** The Operator launcher's window: the nodes you follow (`/operator/watchlist`), which also finds an operator to follow. */
+export const WATCHLIST: WindowRef = { type: 'operator', key: 'watchlist' };
 
 /** Runs a launcher. `source` is the launcher's element (the aperture opens out of it). */
 export type RunLauncher = (id: LauncherId) => void;
@@ -200,8 +202,7 @@ export function runLauncher(id: LauncherId, env: LauncherEnv): void {
       nav.globe();
       return;
     case 'nodes':
-    case 'apps':
-    case 'operator': {
+    case 'apps': {
       // These need a subject: raise the window if one is open, otherwise ask the palette for it.
       const w = env.openWindowOfType(l.types);
       if (w) {
@@ -218,6 +219,17 @@ export function runLauncher(id: LauncherId, env: LauncherEnv): void {
         }
       }
       nav.palette(PALETTE_SEED[id] ?? '');
+      return;
+    }
+    case 'operator': {
+      // Raise an operator window if one is open (an address, or the watchlist), otherwise open the watchlist.
+      const w = env.openWindowOfType(l.types);
+      if (w) {
+        if (w.binding === 'extra') nav.open({ type: w.type, key: w.key });
+        else env.focus(w.id);
+        return;
+      }
+      nav.open(WATCHLIST);
       return;
     }
     case 'explorer': {

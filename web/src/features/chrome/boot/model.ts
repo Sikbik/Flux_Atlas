@@ -133,6 +133,30 @@ export function bootScale(share: number, shellR: number, nowR: number): number {
   return Math.min(1, share * (shellR / nowR));
 }
 
+/** The settle after the boot ends: the globe's scale eases from the drift's end to 1 while the chrome assembles. */
+export const SETTLE_MS = 1500;
+/** A skip lands at once; a flight needs a duration, and this is one frame of it. */
+const INSTANT_FLIGHT_S = 0.001;
+
+/** The options of the camera's last move of the boot (`GlobeTarget.flyTo`). */
+export interface SettleFlight {
+  /** No zoom-out on the way: the planet only turns, at the zoom it ends at. */
+  arc: 0;
+  /** Seconds. */
+  duration: number;
+}
+
+/**
+ * The camera's last move of the boot: home, over the settle, with no zoom-out arc. The reveal opens from the newest
+ * producer (the camera turns to face it first), and the shell's compact orbit is fitted to the home pose, so the boot
+ * hands the camera back there: left facing the producer, the lap would pass under the rail. Null when the camera
+ * never left home (a reduced boot does not turn it). A skip lands at once.
+ */
+export function settleFlight(turned: boolean, instant: boolean): SettleFlight | null {
+  if (!turned) return null;
+  return { arc: 0, duration: instant ? INSTANT_FLIGHT_S : SETTLE_MS / 1000 };
+}
+
 export class BootTimeline {
   private progress = 0;
   private arrivals: [number, number, number, number] = [0, 0, 0, 0];
@@ -288,4 +312,46 @@ export function detectFailure(i: FailureInput, done: BootSignals['done']): Stage
 function firstUndone(done: BootSignals['done']): StageId | null {
   for (const s of STAGES) if (done[s.id] === undefined) return s.id;
   return null;
+}
+
+/** The quick path's veil gives the globe this long once the data is in; then it shows the shell with what it has. */
+export const QUICK_GIVE_UP_MS = 6000;
+
+export interface QuickInput {
+  nowMs: number;
+  startMs: number;
+  /** The snapshot is in the store. */
+  loaded: boolean;
+  /** The globe engine is not up yet. */
+  globeLoading: boolean;
+  live: boolean;
+  status: string;
+  retriedAtMs: number | null;
+}
+
+/** What the quick veil does this frame: lift, or keep waiting (and say so when Atlas has not answered). */
+export type QuickStep = { kind: 'end' } | { kind: 'wait'; failed: StageId | null };
+
+/**
+ * The quick path's veil, frame by frame. It lifts when the data and the globe are ready, or when the data is in and
+ * only the globe is slow (`QUICK_GIVE_UP_MS`: the shell shows what it has). With no data there is nothing to show:
+ * the veil stays, and once Atlas has not answered for long enough to be a failure and not a hiccup (`detectFailure`:
+ * 3 s of refusals, 10 s of silence) it says so, with a retry, the way the full boot does. When the data does come,
+ * the veil lifts by itself.
+ */
+export function quickStep(i: QuickInput): QuickStep {
+  if (i.loaded && (!i.globeLoading || i.nowMs - i.startMs > QUICK_GIVE_UP_MS)) return { kind: 'end' };
+  if (i.loaded) return { kind: 'wait', failed: null };
+  const failed = detectFailure(
+    {
+      nowMs: i.nowMs,
+      startMs: i.startMs,
+      loadedAtMs: null,
+      live: i.live,
+      status: i.status,
+      retriedAtMs: i.retriedAtMs,
+    },
+    {},
+  );
+  return { kind: 'wait', failed };
 }

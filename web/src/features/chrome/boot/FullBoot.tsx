@@ -14,12 +14,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useNetwork, useRuntime } from '../../../app/context';
 import { toEngineId } from '../../../globe/bindings';
 import { useGlobeHandles } from '../../../globe/context';
-import { homeView } from '../../../globe/engine/moon/orbit';
+import { HOME, homeView } from '../../../globe/engine/moon/orbit';
 import { formatHeight, formatInt } from '../../../lib/format';
 import { globeInset } from '../../../shell/wm/machine';
 import { useWindowManager } from '../../../shell/wm/react';
 import { TierGlyph } from '../../../ui';
 import { FluxMarkWhite, FluxRound } from '../brand';
+import { BootFail } from './BootFail';
 import { announce, type BootFacts, lineValue } from './lines';
 import { markBootedNow } from './mode';
 import {
@@ -29,9 +30,11 @@ import {
   bootScale,
   driftShare,
   LIFT_MS,
+  SETTLE_MS,
   STAGES,
   type StageId,
   type StageView,
+  settleFlight,
 } from './model';
 import { BootSignalCollector, type Marks, readMarks } from './signals';
 import { bootPhase, finishBoot } from './state';
@@ -43,7 +46,6 @@ import './boot.css';
  * it settles from 0.94 to 1 over `SETTLE_MS` as the chrome assembles. The wave's front never jumps: it grows at
  * most `WAVE_MAX_RATE` fast (radians per second).
  */
-const SETTLE_MS = 1500;
 const WAVE_MAX_RATE = 1.6;
 
 const TIERS = ['cumulus', 'nimbus', 'stratus'] as const;
@@ -96,6 +98,8 @@ export function FullBoot({ choice }: { choice: BootMode }) {
 
     let engineOn = false;
     let lifted = false;
+    /** The camera was turned to face the newest producer, so it has to be sent home at the end. */
+    let turned = false;
     let ended = false;
     let skipped = false;
     let raf = 0;
@@ -123,6 +127,9 @@ export function FullBoot({ choice }: { choice: BootMode }) {
       e?.setReveal(null);
       // The globe settles from its boot scale while the chrome assembles; a skip lands at once.
       e?.setViewScale(1, why === 'skip' || reduced ? 0 : SETTLE_MS);
+      // And the camera goes home over the same time, with no zoom-out (settleFlight): the shell's orbit is fitted to it.
+      const home = e ? settleFlight(turned, why === 'skip') : null;
+      if (e && home) void e.flyTo(HOME.lat, HOME.lon, e.homeRange, home);
       markBootedNow();
       root.dataset.done = '';
       cancelAnimationFrame(raf);
@@ -246,8 +253,10 @@ export function FullBoot({ choice }: { choice: BootMode }) {
         origin = originOf();
         // The wave starts at the newest producer: turn the dark planet to face it before it lights.
         const at = origin === null ? null : e.nodeInfo(origin);
-        if (at && Number.isFinite(at.lat) && !reduced)
+        if (at && Number.isFinite(at.lat) && !reduced) {
+          turned = true;
           void e.flyTo(at.lat, at.lon, e.homeRange, { duration: 0.6 });
+        }
       }
       const now = performance.now();
       const step = (now - waveAt) / 1000;
@@ -388,22 +397,12 @@ export function FullBoot({ choice }: { choice: BootMode }) {
         skip the boot
       </p>
       {failed ? (
-        <div className="boot-fail" role="alert">
-          <b>{failed === 'stream' ? 'The live stream did not open' : 'Atlas did not answer'}</b>
-          <p>
-            {failed === 'stream'
-              ? 'The map is the last snapshot and may be out of date. Atlas keeps trying in the background.'
-              : 'Check the connection. Atlas keeps trying in the background.'}
-          </p>
-          <div className="boot-fail-actions">
-            <button type="button" className="boot-btn" onClick={() => actions.current.retry()}>
-              Retry
-            </button>
-            <button type="button" className="boot-btn" data-quiet="" onClick={() => actions.current.skip()}>
-              {hasSnapshot ? 'Continue with the last snapshot' : 'Continue without data'}
-            </button>
-          </div>
-        </div>
+        <BootFail
+          failed={failed}
+          hasSnapshot={hasSnapshot}
+          onRetry={() => actions.current.retry()}
+          onContinue={() => actions.current.skip()}
+        />
       ) : null}
       <p className="sr-only" role="status">
         {said}

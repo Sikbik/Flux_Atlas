@@ -4,7 +4,7 @@
 // same desktop (design 2.2, 2.4, 2.6).
 
 import { useRouter, useRouterState } from '@tanstack/react-router';
-import { useCallback, useEffect } from 'react';
+import { type RefObject, useCallback, useEffect, useLayoutEffect } from 'react';
 import { isBooting, subscribeBoot } from '../../features/chrome/boot/state';
 import { usePhone } from '../../features/chrome/phone';
 import { useGlobeHandles } from '../../globe';
@@ -117,11 +117,13 @@ export function useWindowRouting(wm: WindowManager) {
  * The inset the globe centres in: the window manager's, and on the phone also the Live sheet (a sheet that is not
  * a window, so the window manager does not know it), the time machine's sheet (`tmSheet`, its height in px while
  * it rests on the tab bar) and the bottom safe area (the window manager's viewport ends where the safe area
- * begins). On the desktop the time machine's strip is part of the rail, which the workspace already measures.
+ * begins). On the desktop the time machine's strip is part of the rail, which the workspace already measures, and
+ * a page panel in the stage's left column (`pageEdge`, its right edge in px) reserves its side like a left-floating
+ * window (`globeInset`).
  */
-export function insetFor(s: WmState, ambient: boolean, liveOpen: boolean, tmSheet = 0): Insets {
+export function insetFor(s: WmState, ambient: boolean, liveOpen: boolean, tmSheet = 0, pageEdge = 0): Insets {
   if (ambient) return { left: 0, right: 0, top: 0, bottom: 0 };
-  const inset = globeInset(s);
+  const inset = globeInset(s, pageEdge);
   if (s.layout !== 'phone') return inset;
   const live = liveOpen && visibleWindows(s).length === 0;
   const sheet = live ? TABBAR_H + sheetHeights(s.viewport.h)[s.sheet] : inset.bottom;
@@ -137,6 +139,53 @@ function readTmSheet(shell: Element | null): number {
   return Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
 }
 
+/** The right edge of the page panel, which it writes to the shell while one stands (0: none). */
+function readPageEdge(shell: Element | null): number {
+  const v = shell instanceof HTMLElement ? Number.parseFloat(shell.style.getPropertyValue('--page-edge')) : 0;
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+}
+
+/**
+ * A panel that sizes to its content (the live inspector's rows change its width as they come and go) is not chased
+ * a few pixels at a time: an edge that moves by less than this keeps the globe where it is. Under the gap the globe
+ * keeps from the panel (`FREE_GAP`), so the two never touch.
+ */
+const PAGE_EDGE_SLACK = 16;
+
+/**
+ * Tells the globe where a page panel ends. While `on` (a desktop route that draws a panel in the stage's page slot:
+ * search results, a dev page, not found) it writes the panel's right edge to the shell as `--page-edge`, the way the
+ * phone header writes its height, and `useGlobeInsetSync` reads it from there. An empty slot (the content has not
+ * arrived: `display: none`) has no edge, and nothing reserves a side for it.
+ */
+export function usePageEdge(ref: RefObject<HTMLElement | null>, on: boolean) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const shell = el?.closest<HTMLElement>('.shell');
+    if (!on || !el || !shell || typeof ResizeObserver === 'undefined') return;
+    const sync = () => {
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0)) {
+        shell.style.removeProperty('--page-edge');
+        return;
+      }
+      const edge = Math.round(r.right);
+      const was = Number.parseFloat(shell.style.getPropertyValue('--page-edge'));
+      if (Number.isFinite(was) && Math.abs(edge - was) < PAGE_EDGE_SLACK) return;
+      shell.style.setProperty('--page-edge', `${edge}px`);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    window.addEventListener('resize', sync);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', sync);
+      shell.style.removeProperty('--page-edge');
+    };
+  }, [ref, on]);
+}
+
 /** Keeps the globe centred in the free area the windows leave (engine.setInset, 300 ms). */
 export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
   const handles = useGlobeHandles();
@@ -147,7 +196,13 @@ export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
       const engine = handles.engine.get();
       // While the boot runs it places the globe itself (centred, then easing into the free area).
       if (!engine || isBooting()) return;
-      const inset = insetFor(wm.getState(), ambient, usePhone.getState().live, readTmSheet(shell));
+      const inset = insetFor(
+        wm.getState(),
+        ambient,
+        usePhone.getState().live,
+        readTmSheet(shell),
+        readPageEdge(shell),
+      );
       const key = `${inset.left},${inset.right},${inset.top},${inset.bottom}`;
       if (key === last) return;
       last = key;
@@ -164,7 +219,7 @@ export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
       apply();
     });
     const offLive = usePhone.subscribe(apply);
-    // The time machine's sheet announces its height as a style on the shell, the way the phone header does.
+    // The time machine's sheet and a page panel announce their size as styles on the shell, the way the phone header does.
     const watch = shell ? new MutationObserver(apply) : null;
     if (shell) watch?.observe(shell, { attributes: true, attributeFilter: ['style'] });
     return () => {

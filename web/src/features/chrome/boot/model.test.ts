@@ -12,9 +12,13 @@ import {
   driftShare,
   LIFT_MS,
   MIN_MS,
+  QUICK_GIVE_UP_MS,
+  quickStep,
+  SETTLE_MS,
   STAGES,
   STALL_MS,
   type StageId,
+  settleFlight,
   stageOf,
 } from './model';
 
@@ -257,5 +261,79 @@ describe('the planet scale while the boot runs', () => {
     expect(bootScale(0.9, 290, 0)).toBe(0.9);
     expect(bootScale(0.9, 0, 300)).toBe(0.9);
     expect(bootScale(0.9, 290, Number.NaN)).toBe(0.9);
+  });
+});
+
+describe("the quick path's veil", () => {
+  const base = {
+    startMs: 0,
+    live: false,
+    retriedAtMs: null,
+    globeLoading: false,
+    loaded: false,
+    status: 'connecting',
+  };
+
+  it('lifts as soon as the data and the globe are ready', () => {
+    expect(quickStep({ ...base, nowMs: 400, loaded: true })).toEqual({ kind: 'end' });
+  });
+
+  it('waits for a slow globe, then shows the shell with the data it has', () => {
+    const slow = { ...base, loaded: true, globeLoading: true };
+    expect(quickStep({ ...slow, nowMs: QUICK_GIVE_UP_MS - 1 })).toEqual({ kind: 'wait', failed: null });
+    expect(quickStep({ ...slow, nowMs: QUICK_GIVE_UP_MS + 1 })).toEqual({ kind: 'end' });
+  });
+
+  it('keeps waiting with no data: there is nothing to show, so it never lifts on a clock', () => {
+    expect(quickStep({ ...base, nowMs: 3000 })).toEqual({ kind: 'wait', failed: null });
+    expect(quickStep({ ...base, nowMs: QUICK_GIVE_UP_MS + 1 }).kind).toBe('wait');
+  });
+
+  it('says Atlas did not answer after a few seconds of refusals', () => {
+    const refused = { ...base, status: 'reconnecting' };
+    expect(quickStep({ ...refused, nowMs: 2500 })).toEqual({ kind: 'wait', failed: null });
+    expect(quickStep({ ...refused, nowMs: 3500 })).toEqual({ kind: 'wait', failed: 'connect' });
+  });
+
+  it('says it after longer silence from a server that does not refuse', () => {
+    expect(quickStep({ ...base, nowMs: 9000, status: 'syncing' })).toEqual({ kind: 'wait', failed: null });
+    expect(quickStep({ ...base, nowMs: 10_500, status: 'syncing' })).toEqual({
+      kind: 'wait',
+      failed: 'connect',
+    });
+  });
+
+  it('starts the clock again at a retry', () => {
+    const refused = { ...base, status: 'offline', retriedAtMs: 20_000 };
+    expect(quickStep({ ...refused, nowMs: 21_000 })).toEqual({ kind: 'wait', failed: null });
+    expect(quickStep({ ...refused, nowMs: 23_500 })).toEqual({ kind: 'wait', failed: 'connect' });
+  });
+
+  it('lifts by itself when the data arrives after the failure was shown', () => {
+    expect(quickStep({ ...base, nowMs: 12_000, status: 'offline' })).toEqual({
+      kind: 'wait',
+      failed: 'connect',
+    });
+    expect(quickStep({ ...base, nowMs: 12_500, status: 'live', live: true, loaded: true })).toEqual({
+      kind: 'end',
+    });
+  });
+});
+
+describe('the camera at the end of the boot', () => {
+  it('goes home over the settle with no zoom-out when the reveal turned it', () => {
+    expect(settleFlight(true, false)).toEqual({ arc: 0, duration: SETTLE_MS / 1000 });
+  });
+
+  it('stays where it is when the boot never turned it (a reduced boot)', () => {
+    expect(settleFlight(false, false)).toBeNull();
+    expect(settleFlight(false, true)).toBeNull();
+  });
+
+  it('lands at once on a skip, still with no zoom-out', () => {
+    const f = settleFlight(true, true);
+    expect(f?.arc).toBe(0);
+    expect(f?.duration).toBeGreaterThan(0);
+    expect(f?.duration).toBeLessThan(0.05);
   });
 });

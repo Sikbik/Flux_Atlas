@@ -26,6 +26,7 @@ import { ShellLink } from '../../shell/frame/ShellLink';
 import type { ChainBlock } from '../../store/network';
 import { cx, HoverCard, TierGlyph } from '../../ui';
 import { pressHandlers } from '../../ui/internal/press';
+import { useBlockSince } from './Beat';
 import { useNodeFacts, usePayoutLines } from './data';
 import { ProducerGlyph } from './glyphs';
 import { lazyCard } from './lazyCard';
@@ -283,6 +284,10 @@ function BlockCard({ block, orphan, isNew }: { block: ChainBlock; orphan: boolea
 function GhostCard() {
   const { clock, store } = useRuntime();
   const beat = useBeat(clock);
+  // Where the block timer stood when the block landed: the fill's animation carries it from there. (The tick's own
+  // time since the block, written here every second, would be counted twice: once by the animation's clock and once
+  // by the offset, and the fill would run at twice the pace.)
+  const { since, sec } = useBlockSince();
   const lines = usePayoutLines();
   const weight = mempoolWeight(store.mempoolList());
   const seen = store.lastMessageMs.has('mempool');
@@ -311,7 +316,7 @@ function GhostCard() {
           ))}
         </span>
         <span className="bar" aria-hidden="true">
-          <i key={beat.height ?? 0} style={{ '--since': Math.round(beat.sinceMs) } as CSSProperties} />
+          <i key={beat.height ?? 0} style={{ '--since': Math.round(since), '--sec': sec } as CSSProperties} />
         </span>
       </div>
     </li>

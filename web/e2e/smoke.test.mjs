@@ -452,6 +452,359 @@ test('the Pulse and the rail step back while the time machine shows the archive'
   assert.deepEqual(pageErrors, []);
 });
 
+test('the Beat reads t minus and the status bar the archived moment while the time machine shows one', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForSelector('.topbar .beat-anim', { timeout: 30_000 });
+  const beat = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('.topbar .beat');
+      const text = (sel) => document.querySelector(sel)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+      return {
+        tag: el?.tagName,
+        phase: el?.dataset.phase,
+        tip: text('.topbar .beat-tip'),
+        sub: text('.topbar .beat-sub'),
+        ring: !!document.querySelector('.topbar .beat-anim'),
+        light: !!document.querySelector('.topbar-light'),
+        face: !!document.querySelector('.topbar .beat-hist'),
+        statusTip: text('[data-testid="tip-chip"]'),
+        statusTipState: document.querySelector('[data-testid="tip-chip"]')?.dataset.state ?? null,
+        fill: !!document.querySelector('[data-testid="tip-chip"] .sb-prog'),
+        nodes: text('[data-testid="nodes-total"] .sb-nodes'),
+        tiers: !!document.querySelector('[data-testid="nodes-total"] .sb-tiers'),
+      };
+    });
+  const live = await beat();
+  assert.equal(live.tag, 'A', 'the live Beat is a link to the tip block');
+  assert.ok(live.ring && live.light && !live.face, 'the live Beat runs its ring and the bar its light');
+  assert.ok(live.fill, 'the status bar counts to the next block');
+
+  // What the time machine's view writes to the document element while its handle is in the past
+  // (features/chrome/archive.ts): the instant, and the tip and the node count it holds for it.
+  // Four hours and half a minute ago, so the reading is four hours whatever second the clock is on.
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-archive-at', String(Date.now() - 4 * 3_600_000 - 30_000));
+    root.setAttribute('data-archive-tip', '2998071');
+    root.setAttribute('data-archive-nodes', '6726');
+  });
+  await page.waitForSelector('.topbar .beat[data-phase="archive"]', { timeout: 5_000 });
+  const past = await beat();
+  assert.equal(past.tag, 'SPAN', 'a readout, not a link: leaving for a block would end the archive view');
+  assert.equal(past.tip, 'T\u22124 h 00 m');
+  assert.equal(past.sub, 'block 2,998,071');
+  assert.ok(past.face && !past.ring, 'a still ring with a clock face; nothing counts to a block');
+  assert.ok(!past.light, "the bar's light rests");
+  assert.equal(past.statusTipState, 'archive');
+  assert.match(
+    past.statusTip ?? '',
+    /^tip\s*2,998,071\s*T\u22124 h 00 m$/,
+    `the status bar's tip: ${past.statusTip}`,
+  );
+  assert.ok(!past.fill, 'no block timer in the status bar');
+  assert.match(past.nodes ?? '', /^6,726 nodes/, `the node count: ${past.nodes}`);
+  assert.ok(!past.tiers, 'the live tier split steps aside');
+  const spoken = await page.locator('.topbar .beat .sr-only').textContent();
+  assert.equal(spoken, 'Archive view, T minus 4 hours, block 2,998,071');
+
+  // A recording that does not hold a reading says so; it never shows a zero.
+  await page.evaluate(() => {
+    document.documentElement.removeAttribute('data-archive-tip');
+    document.documentElement.removeAttribute('data-archive-nodes');
+  });
+  await page.waitForFunction(
+    () => document.querySelector('.topbar .beat-sub')?.textContent === 'block unknown',
+    null,
+    { timeout: 5_000 },
+  );
+  const unknown = await beat();
+  assert.match(
+    unknown.statusTip ?? '',
+    /^tip\s*Unknown\s*T\u2212/,
+    `the status bar's tip: ${unknown.statusTip}`,
+  );
+  assert.match(unknown.nodes ?? '', /^Unknown nodes/);
+
+  // Return to live: the ring comes back, with one ping, and the status bar counts again.
+  await page.evaluate(() => {
+    for (const a of ['data-archive-at', 'data-archive-tip', 'data-archive-nodes'])
+      document.documentElement.removeAttribute(a);
+  });
+  await page.waitForSelector('.topbar a.beat .beat-anim', { timeout: 5_000 });
+  await page.waitForSelector('.topbar .beat-ping', { state: 'attached', timeout: 2_000 });
+  const back = await beat();
+  assert.equal(back.phase === 'archive', false);
+  assert.ok(back.light && back.fill, 'the light and the fill are back');
+  assert.equal(back.tiers, live.tiers, 'and the tier split with them');
+  // The ring picks up where the block timer is, not where it stood when the archive began.
+  const drift = await page.evaluate(() => {
+    const clock = globalThis.__atlas.clock ?? null;
+    const style = document.querySelector('.topbar .beat-anim')?.style.getPropertyValue('--since');
+    const last = clock?.lastBlockInfo;
+    return { style: Number(style), expect: last ? clock.now() - last.anchorMs : null };
+  });
+  if (drift.expect !== null)
+    assert.ok(
+      Math.abs(drift.style - drift.expect) < 1500,
+      `the ring's offset ${drift.style} vs ${drift.expect}`,
+    );
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test('Off draws the block timer as steps: no animation runs, and the state moves once a second', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForSelector('.topbar .beat-anim', { timeout: 30_000 });
+  // The mode a page forces (the motion root takes it as the document's mode).
+  await page.evaluate(() => document.documentElement.setAttribute('data-motion', 'off'));
+  const timers = () =>
+    page.evaluate(() =>
+      document
+        .getAnimations()
+        .filter((a) => a.playState === 'running')
+        .map((a) => a.animationName ?? '')
+        .filter((n) => /^(beat-(r|l|head|core)|topbar-light|sb-prog)$/.test(n)),
+    );
+  await page.waitForFunction(
+    () =>
+      document
+        .getAnimations()
+        .every((a) => !/^(beat-(r|l|head|core)|topbar-light|sb-prog)$/.test(a.animationName ?? '')),
+    null,
+    { timeout: 5_000 },
+  );
+  assert.deepEqual(await timers(), [], 'the ring, its head, the light and both fills run no animation');
+  const drawn = () =>
+    page.evaluate(() => {
+      const turn = (sel) => {
+        const m = /matrix\(([^)]+)\)/.exec(getComputedStyle(document.querySelector(sel)).transform);
+        if (!m) return null;
+        const [a, b] = m[1].split(',').map(Number);
+        return Math.round((Math.atan2(b, a) * 180) / Math.PI);
+      };
+      const scale = (sel) => {
+        const m = /matrix\(([^)]+)\)/.exec(getComputedStyle(document.querySelector(sel)).transform);
+        return m ? Math.round(Number(m[1].split(',')[0]) * 100) / 100 : null;
+      };
+      return {
+        sec: Number(document.querySelector('.topbar .beat-anim').style.getPropertyValue('--sec')),
+        head: turn('.topbar .beat-head'),
+        fill: scale('[data-testid="tip-chip"] .sb-prog i'),
+      };
+    });
+  // Sampled every 100 ms for 2.4 s, the drawn state takes only the values of whole seconds.
+  const seen = [];
+  for (let i = 0; i < 24; i++) {
+    const s = await drawn();
+    // A block can land mid-way and restart the interval: only compare within one.
+    seen.push(s);
+    await page.waitForTimeout(100);
+  }
+  for (const s of seen) {
+    const headNow = ((s.sec * 12 + 180) % 360) - 180;
+    assert.equal(s.head, headNow === -180 ? 180 : headNow, `the head stands at ${s.sec} s: ${s.head}`);
+    assert.ok(
+      Math.abs((s.fill ?? 0) - Math.min(30, s.sec) / 30) < 0.02,
+      `the fill stands at ${s.sec} s: ${s.fill}`,
+    );
+  }
+  const secs = new Set(seen.map((s) => s.sec));
+  assert.ok(secs.size <= 4, `whole seconds only (${[...secs].join(', ')})`);
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test('the boot veil says so when Atlas does not answer: Retry gets through once it does, Continue shows the shell', {
+  timeout: 150_000,
+}, async () => {
+  // Every API request is refused and the stream closes, until `blocked` is lifted; then it all goes through.
+  const refusing = async () => {
+    const state = { blocked: true };
+    const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    await context.route(
+      (url) => url.pathname.startsWith('/api/'),
+      (route) => (state.blocked ? route.abort('connectionrefused') : route.continue()),
+    );
+    await context.routeWebSocket(
+      (url) => url.pathname === '/ws',
+      (ws) => (state.blocked ? ws.close() : ws.connectToServer()),
+    );
+    const page = await context.newPage();
+    page.on('pageerror', (e) => pageErrors.push(`boot: ${e.message}`));
+    await page.goto(`${base}/?boot=off`, { waitUntil: 'load' });
+    return { state, context, page };
+  };
+
+  // Retry: the veil first stays quiet, then says Atlas did not answer; after the server is back, Retry lifts it.
+  {
+    const { state, context, page } = await refusing();
+    await page.waitForSelector('.boot .boot-fail', { timeout: 30_000 });
+    assert.equal(await page.locator('.boot-fail b').textContent(), 'Atlas did not answer');
+    assert.match(
+      (await page.locator('.boot-fail .boot-fail-now').textContent()) ?? '',
+      /Reconnecting|Offline/,
+    );
+    assert.equal(await page.locator('.boot-fail[role="alert"]').count(), 1, 'announced as an alert');
+    const buttons = await page.locator('.boot-fail button').allTextContents();
+    assert.deepEqual(buttons, ['Retry', 'Continue without data']);
+    // The shell waits behind the veil: nothing under it takes focus.
+    assert.equal(await page.locator('.shell').getAttribute('data-boot'), 'running');
+    state.blocked = false;
+    await page.click('.boot-fail .boot-btn:not([data-quiet])');
+    await page.waitForFunction(() => globalThis.__atlas?.store?.loaded === true, null, { timeout: 60_000 });
+    await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+      timeout: 20_000,
+    });
+    assert.equal(await page.locator('.boot-fail').count(), 0, 'the offline state is gone with the veil');
+    await context.close();
+  }
+
+  // Continue: the shell shows what it has, with its own offline words.
+  {
+    const { context, page } = await refusing();
+    await page.waitForSelector('.boot .boot-fail', { timeout: 30_000 });
+    await page.click('.boot-fail .boot-btn[data-quiet]');
+    await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+      timeout: 10_000,
+    });
+    const chip = (await page.getByTestId('live-status').textContent()) ?? '';
+    assert.match(chip, /Reconnecting|Offline|Connecting/, `the Live chip says what is wrong: ${chip}`);
+    await context.close();
+  }
+  assert.deepEqual(pageErrors, []);
+});
+
+test('Skip to content is the first tab stop, hidden until focused, and lands in what is open', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/mempool');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+    timeout: 30_000,
+  });
+  // The view is a chunk of its own: wait for a control in the body, or the next Tab has nothing to land on.
+  await page.waitForSelector(
+    '.wm-window[data-window-type="mempool"] .wm-body :is(a[href], button, input, select, textarea)',
+    { timeout: 60_000 },
+  );
+  const above = () =>
+    page.evaluate(() => document.querySelector('.skip-link').getBoundingClientRect().bottom <= 0);
+  assert.equal(await above(), true, 'hidden above the screen until it has focus');
+
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement?.className), 'skip-link');
+  assert.equal(await above(), false, 'it comes into view with focus');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Skip to content');
+
+  // Past the chrome and the window's own title bar, onto its body.
+  await page.keyboard.press('Enter');
+  const landed = await page.evaluate(() => {
+    const el = document.activeElement;
+    return {
+      body: !!el?.classList.contains('wm-body'),
+      window: el?.closest('.wm-window')?.getAttribute('data-window-type') ?? null,
+      hash: location.hash,
+    };
+  });
+  assert.deepEqual(
+    landed,
+    { body: true, window: 'mempool', hash: '' },
+    'focus is on the window body; the hash is untouched',
+  );
+  await page.keyboard.press('Tab');
+  const next = await page.evaluate(() => {
+    const el = document.activeElement;
+    return { inWindow: !!el?.closest('.wm-window .wm-body'), tag: el?.tagName };
+  });
+  assert.equal(next.inWindow, true, `the next stop is the window's first control (${next.tag})`);
+
+  // A page panel takes it too.
+  await page.evaluate(() => {
+    history.pushState({}, '', '/no-such-page');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await page.waitForSelector('.shell-page:not(:empty)', { timeout: 20_000 });
+  await page.evaluate(() => document.querySelector('.skip-link').focus());
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('shell-page')), true);
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test('watched-node alerts start from the shell once the boot is over and look up what is watched; the Operator launcher opens the watchlist', {
+  timeout: 150_000,
+}, async () => {
+  const CHUNK = /\/assets\/WatchAlerts-[\w-]+\.js$/;
+  const LOOKUP = /\/api\/v1\/nodes\/(\d+)$/;
+  const until = async (done, ms) => {
+    for (let t = 0; t < ms && !done(); t += 100) await new Promise((r) => setTimeout(r, 100));
+    return done();
+  };
+  // A page on `/` that records the boot's state at the moment the alerts' chunk is asked for, and every node
+  // lookup (the alert engine asks the server for each watched node's last check-in).
+  const visit = async (watched) => {
+    const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    await context.addInitScript((ids) => {
+      if (ids.length) localStorage.setItem('atlas.ui.v1', JSON.stringify({ watched: ids }));
+    }, watched);
+    const page = await context.newPage();
+    page.on('pageerror', (e) => pageErrors.push(`watch alerts: ${e.message}`));
+    const asked = [];
+    const lookups = [];
+    await page.route(
+      (url) => CHUNK.test(url.pathname),
+      async (route) => {
+        asked.push(await page.evaluate(() => document.querySelector('.shell')?.dataset.boot ?? null));
+        await route.continue();
+      },
+    );
+    page.on('request', (r) => {
+      const m = LOOKUP.exec(new URL(r.url()).pathname);
+      if (m) lookups.push(Number(m[1]));
+    });
+    await page.goto(`${base}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+      timeout: 60_000,
+    });
+    return { context, page, asked, lookups };
+  };
+
+  // Nothing watched: the chunk comes once the boot is over (never during it) and has nothing to look up.
+  const none = await visit([]);
+  assert.equal(await until(() => none.asked.length > 0, 20_000), true, 'the alerts chunk was fetched');
+  await none.page.waitForTimeout(2000);
+  assert.deepEqual(none.asked, ['done'], 'the chunk is asked for once, after the boot');
+  assert.deepEqual(none.lookups, [], 'nothing is watched, so nothing is looked up');
+  const id = await none.page.evaluate(
+    async () => (await (await fetch('/api/v1/nodes?limit=1')).json()).items[0].id,
+  );
+  assert.equal(Number.isInteger(id), true, 'the demo network has a node to watch');
+  await none.context.close();
+
+  // One node watched: the engine looks it up, once the boot is over.
+  const watching = await visit([id]);
+  assert.equal(
+    await until(() => watching.lookups.includes(id), 20_000),
+    true,
+    'the engine looked the node up',
+  );
+  assert.deepEqual(watching.asked, ['done'], 'the chunk is asked for once, after the boot');
+
+  // The dock's Operator launcher opens the watchlist.
+  await watching.page.click('.dk[data-launcher="operator"]');
+  await watching.page.waitForFunction(() => location.pathname === '/operator/watchlist', null, {
+    timeout: 10_000,
+  });
+  await watching.context.close();
+  assert.deepEqual(pageErrors, []);
+});
+
 test("the moon parks in the phone header's Beat ring while a tall sheet covers its orbit", {
   timeout: 120_000,
 }, async () => {
