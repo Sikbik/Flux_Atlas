@@ -1,0 +1,233 @@
+/* The top bar (design 3.1, 8.4): glass, 52 px, a hairline of Blue Wave light along its lower edge and the
+   block's light travelling it. Nothing here animates layout. */
+
+.topbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--topbar-h);
+  z-index: var(--z-topbar);
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 0 var(--space-6);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border-bottom: 1px solid var(--glass-border);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+/* The resting hairline: bright in the middle, gone at the ends. */
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(134 161 218 / 0.5) 30%,
+    rgb(255 255 255 / 0.55) 50%,
+    rgb(134 161 218 / 0.5) 70%,
+    transparent
+  );
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--logo-gap-chrome);
+  height: 40px;
+  padding: 0 12px 0 8px;
+  border-radius: var(--r-md);
+  color: var(--text-1);
+  text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.brand:hover {
+  background: var(--ink-2);
+}
+
+.brand-word {
+  font-family: var(--font-display);
+  font-size: var(--logo-word-size);
+  font-weight: var(--logo-word);
+  letter-spacing: var(--tracking-heading);
+  line-height: 1;
+}
+
+.brand img {
+  display: block;
+}
+
+.omni {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  width: min(440px, 30vw);
+  margin-left: auto;
+  padding: 0 8px 0 13px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: rgb(255 255 255 / 0.04);
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: text;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.omni:hover {
+  background: rgb(255 255 255 / 0.07);
+  border-color: var(--line-3);
+}
+
+.omni-ph {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.omni-keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.topright {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin-left: var(--space-2);
+}
+
+.topbar-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--line-2);
+}
+
+.iconbtn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.iconbtn:hover,
+.iconbtn[data-open] {
+  background: var(--ink-2);
+  color: var(--text-1);
+}
+
+.opchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px 0 9px;
+  border: 1px solid rgb(79 122 212 / 0.35);
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent-200);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.opchip:hover {
+  background: var(--accent-soft-2);
+}
+
+/* ---- compact desktop and tablet landscape (design 3.4) ---------------------------------------- */
+
+@media (max-width: 1500px) {
+  .omni {
+    width: min(400px, 26vw);
+  }
+  .omni-more {
+    display: none;
+  }
+}
+
+@media (max-width: 1360px) {
+  .menubar,
+  .topbar .utc-clock {
+    display: none;
+  }
+  .topright {
+    gap: var(--space-4);
+  }
+}
+
+@media (max-width: 1279px) {
+  .topbar {
+    gap: var(--space-4);
+    padding: 0 var(--space-5);
+  }
+  .omni {
+    width: min(320px, 30vw);
+  }
+  .omni-keys,
+  .live-detail {
+    display: none;
+  }
+  .opchip {
+    padding: 0 9px;
+  }
+  .opchip-word {
+    display: none;
+  }
+}
+
+/* ---- phone ----------------------------------------------------------------------------------- */
+
+.shell[data-layout="phone"] .topbar {
+  gap: var(--space-4);
+  padding: 0 var(--space-5);
+}
+
+.shell[data-layout="phone"] .brand-word,
+.shell[data-layout="phone"] .omni-keys,
+.shell[data-layout="phone"] .beat-txt,
+.shell[data-layout="phone"] .opchip {
+  display: none;
+}
+
+.shell[data-layout="phone"] .brand {
+  padding: 0 4px;
+}
+
+.shell[data-layout="phone"] .omni {
+  flex: 1;
+  width: auto;
+  margin-left: 0;
+}
+
+.shell[data-layout="phone"] .beat {
+  padding: 0 2px;
+}
+
+.shell[data-layout="phone"] .topright {
+  margin-left: 0;
+  gap: var(--space-3);
+}

@@ -10,135 +10,30 @@
   color: var(--text-1);
 }
 
-.shell-topbar,
-.shell-dock,
 .shell-bottom,
-.shell-statusbar,
 .shell-tabs,
 .shell-page {
   pointer-events: auto;
 }
 
-/* ---- top bar --------------------------------------------------------------------------------- */
-
-.shell-topbar {
+/* The first focusable element: jumps past the chrome to the globe's stage. */
+.skip-link {
   position: fixed;
-  inset: 0 0 auto 0;
-  height: var(--topbar-h);
-  z-index: var(--z-topbar);
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  padding-inline: var(--space-6);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-filter);
-  border-bottom: 1px solid var(--glass-border);
-}
-
-.shell-lockup {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  color: var(--text-1);
-  text-decoration: none;
-  font-family: var(--font-display);
-  font-weight: var(--fw-semibold, 600);
-}
-
-.shell-menus {
-  display: flex;
-  gap: var(--space-5);
-  color: var(--text-2);
-}
-
-.shell-omnibox {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex: 0 1 440px;
-  min-width: 0;
-  height: 32px;
-  padding-inline: var(--space-4);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-pill);
-  color: var(--text-3);
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.shell-topbar-end {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-}
-
-.shell-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-2);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-}
-
-.shell-chip-sub {
-  color: var(--text-3);
-}
-
-.shell-chip[data-phase="late"] .shell-chip-sub {
-  color: var(--status-warn);
-}
-
-.shell-chip[data-phase="quiet"] .shell-chip-sub {
-  color: var(--status-crit);
-}
-
-/* ---- dock ------------------------------------------------------------------------------------ */
-
-.shell-dock {
-  position: fixed;
-  left: var(--space-6);
-  top: calc(var(--topbar-h) + var(--space-6));
-  z-index: var(--z-dock);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  width: 56px;
-  padding-block: var(--space-4);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-filter);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-pill);
-}
-
-.shell-launcher {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 0;
+  top: 8px;
+  left: 8px;
+  z-index: calc(var(--z-boot) + 10);
+  padding: 8px 14px;
   border-radius: var(--r-md);
-  background: none;
-  color: var(--text-2);
+  background: var(--accent-600);
+  color: #fff;
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  pointer-events: auto;
+  transform: translateY(-160%);
 }
 
-.shell-launcher:hover:not(:disabled),
-.shell-launcher[data-status="active"] {
-  background: var(--ink-3);
-  color: var(--text-1);
-}
-
-.shell-launcher:disabled {
-  opacity: 0.35;
-}
-
-.shell-dock-divider {
-  width: 24px;
-  height: 1px;
-  background: var(--line-2);
-  margin-block: var(--space-2);
+.skip-link:focus-visible {
+  transform: none;
 }
 
 /* ---- stage (the globe's free area; page routes without a window) ------------------------------ */
@@ -221,27 +116,6 @@
   color: var(--text-3);
 }
 
-/* ---- status bar ------------------------------------------------------------------------------ */
-
-.shell-statusbar {
-  position: fixed;
-  inset: auto 0 0 0;
-  height: var(--statusbar-h);
-  z-index: var(--z-statusbar);
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  padding-inline: var(--space-6);
-  font-size: var(--fs-xs);
-  color: var(--text-2);
-  background: var(--glass-bg);
-  border-top: 1px solid var(--glass-border);
-}
-
-.shell-statusbar-end {
-  margin-left: auto;
-}
-
 /* ---- boot veil ------------------------------------------------------------------------------- */
 
 .shell-boot {
@@ -278,15 +152,6 @@
 
 .shell-tabs {
   display: none;
-}
-
-.shell[data-layout="phone"] .shell-topbar {
-  gap: var(--space-4);
-  padding-inline: var(--space-5);
-}
-
-.shell[data-layout="phone"] .shell-omnibox {
-  flex: 1 1 auto;
 }
 
 .shell[data-layout="phone"] .shell-stage {
@@ -332,12 +197,6 @@
 
 .shell-tab:disabled {
   opacity: 0.4;
-}
-
-@media (max-width: 1360px) {
-  .shell-hide-compact {
-    display: none;
-  }
 }
 
 /* Placeholder views inside a window: the window frame already draws the surface. */

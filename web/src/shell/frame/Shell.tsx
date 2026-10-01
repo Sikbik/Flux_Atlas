@@ -21,6 +21,9 @@
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNetwork } from '../../app/context';
+import { useApplyLayers } from '../../features/chrome/layers';
+import { useRootPrefs } from '../../features/chrome/prefs';
+import { StatusBar } from '../../features/chrome/StatusBar';
 import { CommandLayer } from '../../features/command';
 import {
   type Anchor,
@@ -38,8 +41,13 @@ import { windowForPath } from '../wm/route';
 import { PHONE_MAX_W, WINDOW_SPECS } from '../wm/specs';
 import { createWindowManager, type WindowManager } from '../wm/store';
 import type { WindowState } from '../wm/types';
-import { BlockRail, BootVeil, Dock, PhoneTabs, StatusBar, TopBar } from './regions';
+import { ShellActionsContext } from './actions';
+import { Dock } from './Dock';
+import { useShellKeys } from './keys';
+import { useLauncher } from './launchers';
+import { BlockRail, BootVeil, PhoneTabs } from './regions';
 import { useGlobeInsetSync, useWindowRouting } from './routing';
+import { TopBar } from './TopBar';
 import './frame.css';
 
 const viewportNow = () => ({
@@ -66,7 +74,12 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const bottomRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const { requestClose, focusWindow } = useWindowRouting(wm);
+  const launch = useLauncher();
+  const actions = useMemo(() => ({ requestClose, focusWindow, launch }), [requestClose, focusWindow, launch]);
   useGlobeInsetSync(wm, ambient);
+  useRootPrefs();
+  useApplyLayers();
+  useShellKeys(launch, !ambient);
 
   // Measure the workspace and hand it to the window manager (on resize and layout changes).
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-measures when the layout (ambient, phone) swaps regions
@@ -112,36 +125,41 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   }
 
   return (
-    <div className="shell" data-layout={phone ? 'phone' : 'desktop'}>
-      <GlobeOverlay>
-        <PlaceLabels />
-        <GlobeTooltip />
-        <MoonProxy />
-      </GlobeOverlay>
-      <WindowTethers />
-      <TopBar ref={topRef} phone={phone} />
-      {phone ? null : <Dock ref={dockRef} />}
-      <main className="shell-stage" data-region="stage" aria-label="Globe">
-        {pageRoute ? (
-          <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
-            <Suspense fallback={null}>
-              <Outlet />
-            </Suspense>
-          </div>
-        ) : null}
-      </main>
-      {phone ? <PhoneTabs ref={tabsRef} /> : <BlockRail ref={bottomRef} />}
-      {phone ? null : <StatusBar />}
-      <WindowLayer
-        renderContent={(win: WindowState) =>
-          win.binding === 'primary' && !pageRoute ? <Outlet /> : windowContent(win)
-        }
-        onRequestClose={requestClose}
-        onFocusWindow={focusWindow}
-      />
-      <CommandLayer />
-      <BootVeil />
-    </div>
+    <ShellActionsContext.Provider value={actions}>
+      <div className="shell" data-layout={phone ? 'phone' : 'desktop'}>
+        <a className="skip-link" href="#shell-stage">
+          Skip to the globe
+        </a>
+        <GlobeOverlay>
+          <PlaceLabels />
+          <GlobeTooltip />
+          <MoonProxy />
+        </GlobeOverlay>
+        <WindowTethers />
+        <TopBar ref={topRef} phone={phone} />
+        {phone ? null : <Dock ref={dockRef} />}
+        <main className="shell-stage" id="shell-stage" tabIndex={-1} data-region="stage" aria-label="Globe">
+          {pageRoute ? (
+            <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
+              <Suspense fallback={null}>
+                <Outlet />
+              </Suspense>
+            </div>
+          ) : null}
+        </main>
+        {phone ? <PhoneTabs ref={tabsRef} /> : <BlockRail ref={bottomRef} />}
+        {phone ? null : <StatusBar />}
+        <WindowLayer
+          renderContent={(win: WindowState) =>
+            win.binding === 'primary' && !pageRoute ? <Outlet /> : windowContent(win)
+          }
+          onRequestClose={requestClose}
+          onFocusWindow={focusWindow}
+        />
+        <CommandLayer />
+        <BootVeil />
+      </div>
+    </ShellActionsContext.Provider>
   );
 }
 

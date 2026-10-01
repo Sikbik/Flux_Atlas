@@ -1,0 +1,474 @@
+/* The Beat, the Live chip and the clock (design 8.4, 4.2). The ring and the top-bar light are CSS
+   animations on transform and opacity only, started at the right offset by a negative delay
+   (--since, ms into the block interval) and remounted per block. Under reduced motion they tick once a
+   second instead of sweeping. */
+
+:root {
+  --beat-ms: 30000ms;
+  --beat-tf: linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) {
+    --beat-tf: steps(15, end);
+    --beat-head-tf: steps(30, end);
+    --beat-light-tf: steps(30, end);
+  }
+}
+
+:root[data-motion="reduced"] {
+  --beat-tf: steps(15, end);
+  --beat-head-tf: steps(30, end);
+  --beat-light-tf: steps(30, end);
+}
+
+/* ---- the Beat chip -------------------------------------------------------------------------- */
+
+.beat-anchor {
+  display: inline-flex;
+}
+
+.beat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 12px 0 6px;
+  border-radius: var(--r-pill);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+a.beat:hover {
+  background: var(--ink-2);
+}
+
+.beat-ring {
+  --c: var(--accent-500);
+  position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.beat-ring[data-phase="late"] {
+  --c: var(--status-warn);
+}
+
+.beat-ring[data-phase="quiet"],
+.beat-ring[data-phase="lost"] {
+  --c: var(--status-crit);
+}
+
+.beat-track,
+.beat-arc {
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 11px, #000 11.5px);
+  mask: radial-gradient(circle, transparent 11px, #000 11.5px);
+}
+
+.beat-track {
+  position: absolute;
+  inset: 0;
+  background: rgb(255 255 255 / 0.09);
+}
+
+.beat-anim {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* Two half rings, each a half-annulus that rotates into view: the right one in the first 15 s, the
+   left one in the last 15 s. The container clips to its own half of the ring. */
+.beat-half {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  overflow: hidden;
+}
+
+.beat-half-r {
+  left: 50%;
+}
+
+.beat-half-l {
+  left: 0;
+}
+
+.beat-arc {
+  position: absolute;
+  top: 0;
+  width: 200%;
+  height: 100%;
+  background: var(--c);
+  clip-path: inset(0 0 0 50%);
+  will-change: transform;
+}
+
+.beat-half-r .beat-arc {
+  left: -100%;
+  animation: beat-r calc(var(--beat-ms) / 2) var(--beat-tf) calc(var(--since) * -1ms) both;
+}
+
+.beat-half-l .beat-arc {
+  left: 0;
+  animation: beat-l calc(var(--beat-ms) / 2) var(--beat-tf) calc(var(--beat-ms) / 2 - var(--since) * 1ms) both;
+}
+
+@keyframes beat-r {
+  from {
+    transform: rotate(-180deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes beat-l {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+/* The head: a white-hot bead riding the end of the arc. */
+.beat-head {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+  animation: beat-head var(--beat-ms) var(--beat-head-tf, linear) calc(var(--since) * -1ms) both;
+}
+
+.beat-head i {
+  position: absolute;
+  top: -0.75px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--hot);
+  box-shadow: 0 0 6px 1px var(--hot-glow);
+}
+
+.beat-ring[data-phase="late"] .beat-head i {
+  background: var(--status-warn);
+  box-shadow: 0 0 6px 1px var(--status-warn-soft);
+}
+
+.beat-ring[data-phase="quiet"] .beat-head i,
+.beat-ring[data-phase="lost"] .beat-head i {
+  background: var(--status-crit);
+  box-shadow: 0 0 6px 1px var(--status-crit-soft);
+}
+
+@keyframes beat-head {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.beat-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--hot);
+  box-shadow: 0 0 10px var(--hot-glow);
+  animation: beat-core var(--beat-ms) linear calc(var(--since) * -1ms) both;
+}
+
+.beat-ring[data-phase="late"] .beat-core {
+  background: var(--status-warn);
+  box-shadow: none;
+}
+
+.beat-ring[data-phase="quiet"] .beat-core,
+.beat-ring[data-phase="lost"] .beat-core {
+  background: var(--status-crit);
+  box-shadow: none;
+}
+
+@keyframes beat-core {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The last 3 s: the ring breathes ahead of the block. */
+.beat-ring::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  box-shadow: 0 0 12px 0 var(--hot-glow);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.beat-ring[data-phase="soon"]::after {
+  animation: beat-soon 640ms var(--ease-in-out) infinite alternate;
+}
+
+@keyframes beat-soon {
+  from {
+    opacity: 0.15;
+  }
+  to {
+    opacity: 0.85;
+  }
+}
+
+/* A block landed: one expanding ring. */
+.beat-ping {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--hot);
+  opacity: 0;
+  pointer-events: none;
+  animation: beat-ping 700ms var(--ease-out) both;
+}
+
+@keyframes beat-ping {
+  from {
+    transform: scale(0.85);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes beat-ping-quiet {
+  from {
+    opacity: 0.9;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .beat-ping {
+    animation-name: beat-ping-quiet;
+  }
+  :root:not([data-motion="full"]) .beat-ring[data-phase="soon"]::after {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+:root[data-motion="reduced"] .beat-ping {
+  animation-name: beat-ping-quiet;
+}
+
+:root[data-motion="reduced"] .beat-ring[data-phase="soon"]::after {
+  animation: none;
+  opacity: 0.6;
+}
+
+:root[data-motion-off] .beat-ping {
+  animation: none;
+}
+
+.beat-txt {
+  display: grid;
+  min-width: 5.7rem;
+  line-height: 1.15;
+}
+
+.beat-tip {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.beat-sub {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.beat[data-phase="soon"] .beat-sub {
+  color: var(--text-1);
+}
+
+.beat[data-phase="late"] .beat-sub {
+  color: var(--status-warn);
+}
+
+.beat[data-phase="quiet"] .beat-sub,
+.beat[data-phase="lost"] .beat-sub {
+  color: var(--status-crit);
+}
+
+.beat-card {
+  min-width: 220px;
+}
+
+/* ---- the Live chip -------------------------------------------------------------------------- */
+
+.livechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--t) 13%, transparent);
+  border: 1px solid color-mix(in oklab, var(--t) 28%, transparent);
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+  white-space: nowrap;
+  transition:
+    background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+/* Tone: any element with data-tone exposes --t (the Live chip, the status bar's connection chip). */
+[data-tone="ok"] {
+  --t: var(--status-ok);
+}
+
+[data-tone="pending"] {
+  --t: var(--status-pending);
+}
+
+[data-tone="warn"] {
+  --t: var(--status-warn);
+}
+
+[data-tone="crit"] {
+  --t: var(--status-crit);
+}
+
+[data-tone="off"] {
+  --t: var(--status-off);
+}
+
+.live-dot {
+  position: relative;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--t);
+}
+
+[data-tone="ok"] .live-dot {
+  box-shadow: var(--glow-ok);
+}
+
+[data-tone="ok"] .live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--t);
+  opacity: 0;
+  animation: live-ping 2400ms var(--ease-out) infinite;
+}
+
+[data-tone="pending"] .live-dot,
+[data-tone="warn"] .live-dot {
+  animation: live-blink 1100ms var(--ease-in-out) infinite alternate;
+}
+
+@keyframes live-ping {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes live-blink {
+  from {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .live-dot,
+  :root:not([data-motion="full"]) .live-dot::after {
+    animation: none;
+  }
+}
+
+:root[data-motion="reduced"] .live-dot,
+:root[data-motion="reduced"] .live-dot::after,
+:root[data-motion-off] .live-dot,
+:root[data-motion-off] .live-dot::after {
+  animation: none;
+}
+
+.live-detail {
+  min-width: 4.2ch;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the clock ------------------------------------------------------------------------------- */
+
+.utc-clock {
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- the top bar's light --------------------------------------------------------------------- */
+
+.topbar-lightrail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.topbar-light {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent calc(100% - 240px),
+    rgb(134 161 218 / 0.55) calc(100% - 70px),
+    rgb(255 255 255 / 0.95) 100%
+  );
+  will-change: transform;
+  animation: topbar-light var(--beat-ms) var(--beat-light-tf, linear) calc(var(--since) * -1ms) both;
+}
+
+@keyframes topbar-light {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}

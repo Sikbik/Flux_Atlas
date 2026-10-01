@@ -1,0 +1,240 @@
+/* The dock (design 2.7, 8.5): a floating glass pill, 56 px wide, launchers 40 px on a 4 px gap. The icon
+   scales on hover with the snappy spring; the label sits to the right and fades in with a small
+   travel. Only transform and opacity animate. */
+
+.dock {
+  position: fixed;
+  left: 12px;
+  top: calc(var(--topbar-h) + 14px);
+  z-index: var(--z-dock);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 56px;
+  padding: 8px 0;
+  border-radius: 20px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass), var(--shadow-inset-hi);
+  pointer-events: auto;
+}
+
+.dock-rule {
+  width: 26px;
+  height: 1px;
+  margin: 4px 0;
+  padding: 0;
+  border: 0;
+  background: var(--line-2);
+}
+
+.dk {
+  --dk-accent: var(--accent-500);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.dk-ico {
+  display: grid;
+  place-items: center;
+  transition: transform var(--dur-spring-snappy) var(--ease-spring-snappy);
+}
+
+.dk:hover {
+  color: var(--text-1);
+  background: rgb(255 255 255 / 0.07);
+}
+
+.dk:hover .dk-ico,
+.dk:focus-visible .dk-ico {
+  transform: scale(1.08);
+}
+
+.dk:active .dk-ico {
+  transform: scale(0.96);
+  transition-duration: var(--dur-instant);
+}
+
+.dk:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.dk[data-state="open"],
+.dk[data-state="focus"] {
+  color: var(--text-1);
+}
+
+/* The open tick, on the dock's outer edge. */
+.dk[data-state="open"]::before,
+.dk[data-state="focus"]::before,
+.dk[data-state="min"]::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 15px;
+  width: 3px;
+  height: 10px;
+  border-radius: 0 3px 3px 0;
+  background: var(--dk-accent);
+  box-shadow: 0 0 8px var(--dk-accent);
+}
+
+.dk[data-state="min"]::before {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.dk[data-state="focus"] {
+  background: color-mix(in oklab, var(--dk-accent) 16%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--dk-accent) 45%, transparent),
+    0 0 18px -6px var(--dk-accent);
+}
+
+.dk[data-state="focus"]:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--dk-accent) 45%, transparent),
+    var(--focus-ring);
+}
+
+/* The label: name and key, to the right of the pill. */
+.dk-label {
+  position: absolute;
+  left: 52px;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass-bg-strong);
+  box-shadow: var(--shadow-pop);
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  translate: 0 -50%;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    translate var(--dur-fast) var(--ease-out);
+}
+
+.dk-label .kbd {
+  height: 18px;
+  padding: 0 5px;
+}
+
+.dk:hover .dk-label,
+.dk:focus-visible .dk-label {
+  opacity: 1;
+  translate: 4px -50%;
+}
+
+/* The About mark: Flux gray at rest, white when hovered, open or focused. */
+.flux-mark-toggle {
+  position: relative;
+  display: block;
+}
+
+.flux-mark-toggle img {
+  position: absolute;
+  inset: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.flux-mark-toggle img:last-child {
+  opacity: 0;
+}
+
+.dk:hover .flux-mark-toggle img:last-child,
+.dk:focus-visible .flux-mark-toggle img:last-child,
+.dk[data-state="open"] .flux-mark-toggle img:last-child,
+.dk[data-state="focus"] .flux-mark-toggle img:last-child {
+  opacity: 1;
+}
+
+.dk:hover .flux-mark-toggle img:first-child,
+.dk:focus-visible .flux-mark-toggle img:first-child,
+.dk[data-state="open"] .flux-mark-toggle img:first-child,
+.dk[data-state="focus"] .flux-mark-toggle img:first-child {
+  opacity: 0;
+}
+
+/* Minimized windows wait under the launchers. */
+.dock-dots {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line-2);
+  width: 26px;
+  list-style: none;
+}
+
+.dock-dots .wm-dot {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 1px solid var(--accent-400);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.dock-dots .wm-dot:hover {
+  transform: scale(1.35);
+}
+
+@media (max-height: 820px) {
+  .dock {
+    gap: 2px;
+    padding: 6px 0;
+  }
+  .dk {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+  }
+  .dk[data-state="open"]::before,
+  .dk[data-state="focus"]::before,
+  .dk[data-state="min"]::before {
+    top: 13px;
+  }
+}
+
+@media (max-height: 700px) {
+  .dock {
+    gap: 0;
+  }
+  .dk {
+    width: 32px;
+    height: 32px;
+  }
+  .dk[data-state="open"]::before,
+  .dk[data-state="focus"]::before,
+  .dk[data-state="min"]::before {
+    top: 11px;
+  }
+}

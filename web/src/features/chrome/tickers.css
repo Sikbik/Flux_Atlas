@@ -1,0 +1,102 @@
+/* Tickers and the reward-cut card. Quiet text with mono data, tier colour only on the glyph. */
+
+.ticker {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ticker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tier);
+  font-size: var(--fs-xs);
+}
+
+.ticker-link,
+.ticker-row > span:last-child {
+  color: var(--text-2);
+  text-decoration: none;
+}
+
+.ticker-link:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+
+.ticker-empty {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* ---- the reward cut ---------------------------------------------------------------------------- */
+
+.cut-card {
+  min-width: 270px;
+}
+
+.cut-bar {
+  height: 3px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.cut-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-500), var(--hot));
+  transform-origin: left center;
+}
+
+.cut-note {
+  margin: 6px 0 10px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+.cut-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+}
+
+.cut-table th,
+.cut-table td {
+  padding: 3px 0;
+  text-align: right;
+  font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.cut-table thead th {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+.cut-table th[scope="row"],
+.cut-table thead th:first-child {
+  text-align: left;
+  color: var(--text-2);
+}
+
+.cut-table tbody th svg {
+  vertical-align: -2px;
+  color: var(--tier);
+}
+
+.cut-table td.mono {
+  color: var(--text-1);
+}
+
+.cut-table .cut-total th,
+.cut-table .cut-total td {
+  padding-top: 6px;
+  border-top: 1px solid var(--line-2);
+  color: var(--text-1);
+}
