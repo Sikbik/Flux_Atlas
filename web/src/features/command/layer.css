@@ -4,6 +4,9 @@
 /* ---- The palette layer: scrim and the stand-in panel shown while the palette chunk loads ------------ */
 
 .pal-layer {
+  /* The layer sits inside .shell, which passes pointer events through to the globe everywhere a region does not
+     take them back (frame.css). An open palette is modal: its panel and scrim take every click. */
+  pointer-events: auto;
   --pal-w: min(660px, calc(100vw - 32px));
   --pal-top: 13vh;
   --pal-r: 20px;

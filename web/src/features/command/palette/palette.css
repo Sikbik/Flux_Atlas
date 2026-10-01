@@ -406,6 +406,25 @@
   transition: opacity var(--dur-fast) var(--ease-out);
 }
 
+.pal-key {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.pal-key:hover {
+  color: var(--text-1);
+}
+
+.pal-key:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 3px;
+}
+
 .pal-hint .ui-kbd:last-of-type {
   margin-right: 2px;
 }

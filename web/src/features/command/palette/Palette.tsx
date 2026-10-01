@@ -46,6 +46,9 @@ const ENTER_AFTER_MS = 320;
 
 const PLACEHOLDER = 'Search nodes, apps, blocks, addresses, or type a command';
 
+/** A hint button acts without taking focus from the field, so typing carries on where it was. */
+const keepFocus = (e: React.MouseEvent) => e.preventDefault();
+
 export default function Palette({ phase, urlText, seed, close, via }: PaletteProps) {
   const router = useRouter();
   const { store, effects } = useRuntime();
@@ -273,6 +276,12 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
     return t.length > raw.length && t.toLowerCase().startsWith(raw.toLowerCase()) ? t.slice(raw.length) : '';
   }, [model, raw, userActive]);
 
+  /** Enter's action: runs the active row, or queues the run while the server is still answering. */
+  const run = (mode: RunMode) => {
+    if (active) activate(active, mode);
+    else if (server === 'loading') setPending(mode);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     const key = e.key;
@@ -307,9 +316,7 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
           void router.navigate({ to: '/q/$text', params: { text }, hash: 'all', replace: true } as never);
         return;
       }
-      const mode: RunMode = e.altKey ? 'fly' : e.shiftKey ? 'alongside' : 'open';
-      if (active) activate(active, mode);
-      else if (server === 'loading') setPending(mode);
+      run(e.altKey ? 'fly' : e.shiftKey ? 'alongside' : 'open');
     }
   };
 
@@ -473,34 +480,77 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
       </div>
 
       <div className="pal-foot">
+        {/* Every hint is also a button that does what its keys do. Pressing one keeps focus in the field. */}
         <span className="pal-hint">
-          <KeyCap k="up" />
-          <KeyCap k="down" />
+          <button
+            type="button"
+            className="pal-key"
+            tabIndex={-1}
+            onMouseDown={keepFocus}
+            onClick={() => move(-1)}
+            aria-label="Previous result"
+          >
+            <KeyCap k="up" />
+          </button>
+          <button
+            type="button"
+            className="pal-key"
+            tabIndex={-1}
+            onMouseDown={keepFocus}
+            onClick={() => move(1)}
+            aria-label="Next result"
+          >
+            <KeyCap k="down" />
+          </button>
           move
         </span>
-        <span className="pal-hint">
+        <button
+          type="button"
+          className="pal-hint pal-key"
+          tabIndex={-1}
+          onMouseDown={keepFocus}
+          onClick={() => run('open')}
+        >
           <KeyCap k="enter" />
           open
-        </span>
+        </button>
         {active?.alongside ? (
-          <span className="pal-hint">
+          <button
+            type="button"
+            className="pal-hint pal-key"
+            tabIndex={-1}
+            onMouseDown={keepFocus}
+            onClick={() => run('alongside')}
+          >
             <KeyCap k="shift" />
             <KeyCap k="enter" />
             alongside
-          </span>
+          </button>
         ) : null}
         {active?.fly ? (
-          <span className="pal-hint">
+          <button
+            type="button"
+            className="pal-hint pal-key"
+            tabIndex={-1}
+            onMouseDown={keepFocus}
+            onClick={() => run('fly')}
+          >
             <KeyCap k="alt" />
             <KeyCap k="enter" />
             fly
-          </span>
+          </button>
         ) : null}
         {!model.input.prefix ? (
-          <span className="pal-hint">
+          <button
+            type="button"
+            className="pal-hint pal-key"
+            tabIndex={-1}
+            onMouseDown={keepFocus}
+            onClick={() => cycleChip(1)}
+          >
             <KeyCap k="tab" />
             kind
-          </span>
+          </button>
         ) : null}
         {!text ? (
           <span className="pal-r">Understands heights, hashes, txids, addresses, IPs, apps</span>
