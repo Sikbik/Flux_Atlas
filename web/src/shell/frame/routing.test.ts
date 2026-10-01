@@ -43,6 +43,26 @@ describe('insetFor on the desktop and in ambient', () => {
   });
 
   it('is nothing in ambient mode', () => {
-    expect(insetFor(phone(), true, true, 195)).toEqual({ left: 0, right: 0, top: 0, bottom: 0 });
+    expect(insetFor(phone(), true, true, 195, 800)).toEqual({ left: 0, right: 0, top: 0, bottom: 0 });
+  });
+});
+
+describe('insetFor beside a page panel', () => {
+  it('gives the globe the left side of a panel that stands in the stage, with the gap', () => {
+    expect(insetFor(desktop(), false, false, 0, 800).left).toBe(824);
+    expect(insetFor(desktop(), false, false, 0, 800)).toEqual({
+      ...insetFor(desktop(), false, false),
+      left: 824,
+    });
+  });
+
+  it('reserves nothing for a panel with no edge (an empty slot) or one that would squeeze the planet out', () => {
+    expect(insetFor(desktop(), false, false, 0, 0).left).toBe(0);
+    expect(insetFor(desktop(), false, false, 0, 1400).left).toBe(0);
+  });
+
+  it('leaves the phone, where the panel is the page, to the sheets', () => {
+    expect(insetFor(phone(), false, false, 0, 300).left).toBe(0);
+    expect(insetFor(phone(), false, false, 0, 300)).toEqual(insetFor(phone(), false, false));
   });
 });

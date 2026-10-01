@@ -58,7 +58,7 @@ import { moonParked } from './moonpark';
 import { isPagePanel } from './nav';
 import { PhoneHeader } from './PhoneHeader';
 import { PhoneTabs } from './PhoneTabs';
-import { useGlobeInsetSync, useWindowRouting } from './routing';
+import { useGlobeInsetSync, usePageEdge, useWindowRouting } from './routing';
 import { TopBar } from './TopBar';
 import './frame.css';
 
@@ -92,6 +92,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const bottomRef = useRef<HTMLElement>(null);
   const statusRef = useRef<HTMLElement>(null);
   const tabsRef = useRef<HTMLElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const { requestClose, focusWindow } = useWindowRouting(wm);
   const launch = useLauncher();
   const boot = useBootPhase();
@@ -174,8 +175,9 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const primary = windowForPath(pathname);
   const pageRoute = !primary || WINDOW_SPECS[primary.type].chrome !== 'window';
   // A page that draws a panel in the stage's left column, where the Pulse and the aim strip stand: they step
-  // aside for it (frame.css).
+  // aside for it (frame.css), and the globe gives it its side like a left-floating window (usePageEdge).
   const pagePanel = isPagePanel(pathname);
+  usePageEdge(pageRef, pagePanel && !phone && !ambient);
 
   if (ambient) {
     // Ambient: no chrome; the globe and the moon (orbit mode) are the screen (design 6.4 K).
@@ -213,7 +215,11 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         {phone ? null : <pulse.Card />}
         <main className="shell-stage" id="shell-stage" tabIndex={-1} data-region="stage" aria-label="Globe">
           {pageRoute ? (
-            <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
+            <div
+              ref={pageRef}
+              className="shell-page"
+              data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}
+            >
               <Suspense fallback={null}>
                 <Outlet />
               </Suspense>

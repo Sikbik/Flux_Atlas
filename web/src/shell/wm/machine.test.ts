@@ -427,6 +427,66 @@ describe('globe inset policy for floating windows', () => {
   });
 });
 
+describe('globe inset for a page panel', () => {
+  const about = { type: 'about', key: null } as const;
+  const explorer = { type: 'block', key: '1' } as const;
+
+  it('shifts the globe right of the panel by its edge and the gap, as for a left-floating window', () => {
+    expect(globeInset(start(), 800)).toEqual({ left: 800 + 24, right: 0, top: 52, bottom: 132 });
+    // The explorer's own right edge is 118 + 820 = 938: the same edge gives the same inset.
+    const w = run(start(), route(explorer));
+    const rect = w.windows['block:1']!.rect;
+    expect(globeInset(start(), rect.x + rect.w)).toEqual(globeInset(w));
+  });
+
+  it('reserves nothing when there is no panel', () => {
+    expect(globeInset(start(), 0)).toEqual(globeInset(start()));
+  });
+
+  it('lets the panel stand over the globe when it would squeeze the planet out', () => {
+    // 1600 wide: a panel ending at 1400 leaves 1600 - 1424 = 176 px, under the planet's 328.
+    expect(1600 - (1400 + 24)).toBeLessThan(planetMinWidth(1600, 900));
+    expect(globeInset(start(), 1400).left).toBe(0);
+  });
+
+  it('counts it up to the edge that leaves the planet its room, and not a pixel past', () => {
+    const room = planetMinWidth(1600, 900);
+    const fits = Math.floor(1600 - room - 24);
+    expect(globeInset(start(), fits).left).toBe(fits + 24);
+    expect(globeInset(start(), fits + 2).left).toBe(0);
+  });
+
+  it('goes by the same rule as the windows beside it: the largest edge that still leaves the room wins', () => {
+    // The explorer ends at 938 (+ 24 = 962). A panel ending further right counts while the planet fits; one that
+    // does not fit leaves the explorer's edge in force.
+    const w = run(start(), route(explorer));
+    expect(globeInset(w, 1000).left).toBe(1000 + 24);
+    expect(globeInset(w, 1400).left).toBe(938 + 24);
+    // A panel ending short of the explorer changes nothing.
+    expect(globeInset(w, 500).left).toBe(938 + 24);
+  });
+
+  it('keeps the docked inspector on the right in the fit', () => {
+    // About docked at the right reserves 464 + 24: a panel ending at 800 leaves 1600 - 824 - 488 = 288, under 328.
+    const s = run(start(), route(null, [about]));
+    expect(globeInset(s).right).toBe(464 + 24);
+    expect(globeInset(s, 800).left).toBe(0);
+    // A narrower panel ending at 700 leaves 1600 - 724 - 488 = 388 and counts.
+    expect(globeInset(s, 700).left).toBe(724);
+  });
+
+  it('is the page itself on the phone: no inset beside it', () => {
+    let s = start();
+    s = run(s, {
+      t: 'setViewport',
+      viewport: { w: 390, h: 844 },
+      workspace: { x: 0, y: 190, w: 390, h: 590 },
+    });
+    expect(s.layout).toBe('phone');
+    expect(globeInset(s, 300).left).toBe(0);
+  });
+});
+
 describe('tether and titles', () => {
   it('points About at the moon and lets the bindings set node and cluster anchors', () => {
     let s = run(start(), route({ type: 'about', key: null }));

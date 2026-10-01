@@ -22,7 +22,8 @@ workspace, hands it over, binds windows to the URL, keeps the globe centred in t
 **The page slot.** Routes without a window (`/dev/live`, `/q/...`, not found) and the strip and layer types
 (time machine, weather) render in `main.shell-stage > .shell-page`. A route that draws a panel in the stage's left
 column (`isPagePanel` in `nav.ts`) sets `data-page` on `.shell`, and `frame.css` steps the Pulse and the aim strip
-aside for it; on a phone the page takes the stage and nothing needs to move.
+aside for it; on a phone the page takes the stage and nothing needs to move. On a desktop the panel also gives the
+globe its side (see the inset below).
 
 **The archive view.** While the time machine shows the past it sets `data-archive="on"` on `<html>`. The live
 chrome steps back on that attribute alone, in CSS (`frame.css`): the Pulse folds to its head with "Paused in the
@@ -36,8 +37,12 @@ which is why the `q` validator (`text` in `app/search.ts`) keeps the end of what
 **The globe's inset.** `globeInset` (`wm/machine.ts`) gives the workspace edges plus the windows: docked windows
 always reserve their side, a maximized window reserves nothing, and a floating window reserves its side only
 while the free area left after it is still as wide as the planet's minimum (`planetMinWidth`); past that it floats
-over the globe. `insetFor` (`routing.ts`) adds what the window manager does not know on a phone: the Live sheet,
-the time machine's sheet (`--tm-sheet-h`, written on the shell) and the bottom safe area.
+over the globe. A page panel (search results, a dev page, not found) is one more left-floating obstruction under
+the same rule: `usePageEdge` (`routing.ts`) writes the panel's right edge to the shell as `--page-edge` (an edge
+that moves by under 16 px is not chased, since a panel that sizes to its content, like the live inspector, would
+otherwise drag the globe with it), and `globeInset(state, pageEdge)` counts it like a window, edge + 24 px, while
+the planet still fits beside it. `insetFor` (`routing.ts`) adds what the window manager does not know on a phone:
+the Live sheet, the time machine's sheet (`--tm-sheet-h`, written on the shell) and the bottom safe area.
 
 **The moon on a phone.** While a window or the Live sheet is as tall as the tall snap or taller, `moonParked`
 (`moonpark.ts`) is true: the moon glides into the Beat ring in the header as a 22 px symbol

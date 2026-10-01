@@ -193,8 +193,12 @@ export function planetMinWidth(w: number, h: number): number {
  * area left after it is still as wide as the planet's minimum (`planetMinWidth`); beyond that it floats
  * over the globe, and the planet frames in what the docked windows leave. So an 820 px explorer beside
  * a docked About Flux on a 1600 px screen no longer squeezes the planet out of its free area.
+ *
+ * A page panel (search results, a dev page, not found) stands in the stage's left column, where a left-floating
+ * window would, and reserves its side by the same rule: `pageEdge` is its right edge in CSS px (0 when there is
+ * none, and on the phone, where the panel is the page and the planet stays framed behind it).
  */
-export function globeInset(s: WmState): Insets {
+export function globeInset(s: WmState, pageEdge = 0): Insets {
   const ws = s.workspace;
   const v = s.viewport;
   if (s.layout === 'phone') {
@@ -216,6 +220,7 @@ export function globeInset(s: WmState): Insets {
       floating.push(w.rect.x + w.rect.w + FREE_GAP);
     }
   }
+  if (pageEdge > 0) floating.push(pageEdge + FREE_GAP);
   // The nearest edges first: a window that does not fit leaves every wider one over the globe as well.
   const room = planetMinWidth(v.w, v.h);
   for (const edge of floating.sort((a, b) => a - b)) {
