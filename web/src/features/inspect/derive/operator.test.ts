@@ -38,6 +38,8 @@ const row = (id: number, over: Partial<NodeRow> = {}): NodeRow => ({
   payment_address: 't1Operator',
   country_code: 'FI',
   country: 'Finland',
+  city: null,
+  region: null,
   org: 'Hetzner',
   lat: 60,
   lon: 25,
