@@ -1,0 +1,174 @@
+/* The aim strip (design 8.13): a 38 px glass pill, centred on the free area, 14 px under the top bar. It
+   moves with the free area through a transform transition (never `left`), and its chips fade in a beat
+   apart when the payees change. */
+
+.aimstrip {
+  min-width: 0;
+  margin: 0;
+  position: fixed;
+  top: calc(var(--topbar-h) + 14px);
+  left: 0;
+  z-index: calc(var(--z-globe-hud) + 5);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 8px 0 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-glass), var(--shadow-inset-hi);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  translate: calc(var(--aim-x, 50vw) - 50%) 0;
+  transition: translate var(--dur-slower) var(--ease-out);
+  pointer-events: auto;
+}
+
+.aim-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 128px;
+  color: var(--text-3);
+}
+
+.aim-lead b {
+  min-width: 3.2ch;
+  color: var(--hot);
+  font: var(--fw-semibold) var(--fs-sm) / 1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  transition: color var(--dur-base) var(--ease-out);
+}
+
+/* The last 5 s: the countdown brightens (a step up, not a loop). */
+.aimstrip[data-soon] .aim-lead b {
+  color: #fff;
+  text-shadow: 0 0 10px var(--hot-glow);
+}
+
+.aimstrip[data-late] .aim-lead {
+  color: var(--status-warn);
+}
+
+/* Every chip is the same width, so a new set of payees swaps in place and the pill never changes size. */
+.aimchip {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 128px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--tier-line);
+  border-radius: var(--r-pill);
+  background: var(--tier-soft);
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+  animation: aim-chip-in var(--dur-slow) var(--ease-out) calc(var(--i, 0) * 70ms) both;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+a.aimchip:hover {
+  border-color: var(--tier);
+}
+
+a.aimchip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.aimchip .glyph-tier {
+  color: var(--tier);
+}
+
+.aim-place {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aimchip i {
+  color: var(--tier);
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-weight: var(--fw-medium);
+}
+
+/* Before the first block after a load the payees are not known yet: three quiet placeholders hold the
+   layout, and the real chips fade in over them. */
+.aimchip[data-ghost] {
+  border-color: var(--line-1);
+  background: none;
+  animation: none;
+}
+
+.aimchip[data-ghost] .glyph-tier {
+  opacity: 0.45;
+}
+
+.aimchip[data-ghost] .aim-place,
+.aimchip[data-ghost] i {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ink-3);
+}
+
+.aimchip[data-ghost] i {
+  width: 18px;
+}
+
+/* A payee you watch is ringed in white. */
+.aimchip[data-mine] {
+  box-shadow:
+    0 0 0 1px var(--hot),
+    var(--glow-hot);
+}
+
+@keyframes aim-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .aimstrip {
+    transition: none;
+  }
+  :root:not([data-motion="full"]) .aimchip {
+    animation: aim-chip-quiet var(--dur-base) var(--ease-standard) both;
+  }
+}
+
+:root[data-motion="reduced"] .aimstrip {
+  transition: none;
+}
+
+:root[data-motion="reduced"] .aimchip {
+  animation: aim-chip-quiet var(--dur-base) var(--ease-standard) both;
+}
+
+:root[data-motion-off] .aimstrip {
+  transition: none;
+}
+
+:root[data-motion-off] .aimchip {
+  animation: none;
+}
+
+@keyframes aim-chip-quiet {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 1279px) {
+  .aimchip {
+    width: 112px;
+  }
+}
