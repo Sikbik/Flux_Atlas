@@ -1,0 +1,171 @@
+/* Operator and watchlist views (F3). Kit components carry almost everything; these are the few local
+   pieces: the status grid and its legend, the callout stack, the node cell of the list. */
+
+.ix-operator {
+  padding-bottom: var(--space-9);
+}
+
+.ix-skel-head {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+.ix-callouts {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+}
+
+.ix-callouts > .ix-cap {
+  margin: 0;
+}
+
+.ix-callout-a .ui-entity,
+.ix-callout-a .ui-endpoint {
+  font-size: var(--fs-xs);
+}
+
+/* Three stat tiles: three across when the grid is wide enough for each to hold a figure with its unit,
+   else two, with the third taking the whole row so no cell is left empty. */
+@container (max-width: 483px) {
+  .ix-trio > :nth-child(3):last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---- status grid -------------------------------------------------------------------------------- */
+
+.ix-stack {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ix-fleet-card {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ix-fgrid {
+  position: relative;
+  width: 100%;
+}
+
+.ix-fgrid > canvas {
+  display: block;
+  max-width: 100%;
+}
+
+.ix-fgrid > canvas[data-hover] {
+  cursor: pointer;
+}
+
+.ix-fgrid-tip {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 1px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--ink-1) 94%, transparent);
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.ix-fgrid-tip[data-flip] {
+  transform: translate(-100%, calc(-100% - 8px));
+}
+
+.ix-fgrid-tip > b {
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+}
+
+.ix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ix-legend > li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ix-legend > li > b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.ix-legend > li > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--status-off);
+}
+
+.ix-legend > li[data-state="ok"] > i {
+  background: var(--status-ok);
+  opacity: 0.6;
+}
+
+.ix-legend > li[data-state="risk"] > i {
+  background: var(--status-warn);
+}
+
+.ix-legend > li[data-state="down"] > i {
+  background: var(--status-crit);
+}
+
+.ix-legend > li[data-state="pending"] > i {
+  background: var(--status-pending);
+}
+
+/* ---- the list ----------------------------------------------------------------------------------- */
+
+.ix-fleet-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ix-fleet-ep {
+  min-width: 0;
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ix-fleet-node > svg {
+  flex: none;
+}
+
+/* The state chip sits at the right of the node cell and gives way last: the endpoint shortens first. */
+.ix-fleet-node > .ix-fleet-state {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+.ix-behind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3) var(--space-4);
+}
+
+.ix-switches {
+  display: grid;
+  gap: var(--space-5);
+}

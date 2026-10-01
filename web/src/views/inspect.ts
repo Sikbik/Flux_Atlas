@@ -3,7 +3,7 @@
 
 import { lazy } from 'react';
 
-export { OperatorView, WeatherView } from '../app/placeholders/views';
+export { WeatherView } from '../app/placeholders/views';
 
 export const NodeView = lazy(() =>
   import('../features/inspect/node/NodeView').then((m) => ({ default: m.NodeView })),
@@ -23,4 +23,18 @@ export const AppHistoryView = lazy(() =>
 
 export const QueueView = lazy(() =>
   import('../features/inspect/queue/QueueView').then((m) => ({ default: m.QueueView })),
+);
+
+export const OperatorView = lazy(() =>
+  import('../features/inspect/operator/OperatorView').then((m) => ({ default: m.OperatorView })),
+);
+
+/**
+ * Raises toasts (and, when the user opted in, browser notifications) for changes to watched nodes. It
+ * renders nothing and runs once however many copies are mounted. Mount it once under the runtime and
+ * router providers, inside a `Suspense` with a null fallback, so alerts reach the user with no inspector
+ * open: `<Suspense fallback={null}><WatchAlerts /></Suspense>`.
+ */
+export const WatchAlerts = lazy(() =>
+  import('../features/inspect/watch/WatchAlerts').then((m) => ({ default: m.WatchAlerts })),
 );
