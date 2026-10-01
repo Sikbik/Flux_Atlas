@@ -2,6 +2,7 @@
 // facts, tier economics and the chain clock. Everything here is a store selector or a pure read, so
 // views re-render only when the facts they show change.
 
+import { useMemo } from 'react';
 import type { NodeStatus } from '../../../api/generated/NodeStatus';
 import { STATUS_CODES } from '../../../api/nodesBin';
 import { useNetwork, useRuntime, useTip } from '../../../app/context';
@@ -154,16 +155,22 @@ const EMPTY_TIERS: readonly TierInfo[] = [];
 /** Per-tier payout, node count and cycle length from the live tier stats. */
 export function useTierInfo(): readonly TierInfo[] {
   const stats = useNetwork((s) => s.tierStats);
-  if (stats.length === 0) return EMPTY_TIERS;
-  return QUEUE_TIERS.map((tier) => {
-    const s = stats.find((x) => x.tier === tier);
-    return {
-      tier,
-      count: s?.count ?? 0,
-      payout: s ? fluxToNumber(s.payout) : null,
-      cycleBlocks: s?.cycle_blocks ?? 0,
-    };
-  });
+  // One array per change of the stats, so a reader may use it as a dependency.
+  return useMemo(
+    () =>
+      stats.length === 0
+        ? EMPTY_TIERS
+        : QUEUE_TIERS.map((tier) => {
+            const s = stats.find((x) => x.tier === tier);
+            return {
+              tier,
+              count: s?.count ?? 0,
+              payout: s ? fluxToNumber(s.payout) : null,
+              cycleBlocks: s?.cycle_blocks ?? 0,
+            };
+          }),
+    [stats],
+  );
 }
 
 export function tierPayouts(info: readonly TierInfo[]): Partial<Record<QueueTier, number>> {
