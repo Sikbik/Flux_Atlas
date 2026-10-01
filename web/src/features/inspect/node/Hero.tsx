@@ -12,8 +12,8 @@ import {
   Btn,
   Chip,
   CopyButton,
+  HeroCard,
   type MapPoint,
-  MiniMap,
   OperatorLink,
   StateChips,
   TierChip,
@@ -67,23 +67,12 @@ export function Hero() {
 
   return (
     <header className="ix-hero" data-tier={tier}>
-      <div className="ix-hero-card" data-empty={points.length === 0 || undefined}>
-        {points.length ? (
-          <MiniMap
-            className="ix-hero-map"
-            height={176}
-            points={points}
-            minSpan={13}
-            labels={false}
-            label={`Map of ${place.city}`}
-          />
-        ) : (
-          <div className="ix-hero-map ix-hero-lattice" aria-hidden="true" />
-        )}
-        {points.length ? <div className="ix-hero-reticle" aria-hidden="true" /> : null}
-        <div className="ix-hero-veil" aria-hidden="true" />
-        <div className="ix-hero-in">
-          <div className="ix-chips">
+      <HeroCard
+        tier={tier}
+        points={points}
+        mapLabel={`Map of ${place.city}`}
+        chips={
+          <>
             {tier !== 'unknown' ? <TierChip tier={tier} /> : <Chip>Unknown tier</Chip>}
             <StateChips chips={chips} />
             {arcane ? (
@@ -101,21 +90,20 @@ export function Hero() {
                 {hosting ? 'Datacenter' : 'Residential'}
               </Chip>
             ) : null}
-          </div>
-          <div className="ix-hero-foot">
-            <div className="ix-hero-place">
-              <div className="ix-hero-city">{place.city}</div>
-              {place.sub ? <div className="ix-hero-sub">{place.sub}</div> : null}
-            </div>
-            {lat !== null && lon !== null ? (
-              <div className="ix-hero-coord" title="Approximate: placed from the IP address">
-                <span>{formatCoord(lat, 'N', 'S')}</span>
-                <span>{formatCoord(lon, 'E', 'W')}</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+        title={place.city}
+        sub={place.sub}
+        corner={
+          lat !== null && lon !== null ? (
+            <>
+              <span>{formatCoord(lat, 'N', 'S')}</span>
+              <span>{formatCoord(lon, 'E', 'W')}</span>
+            </>
+          ) : null
+        }
+        cornerTitle="Approximate: placed from the IP address"
+      />
       <div className="ix-actions ix-hero-actions">
         <Btn
           icon={<LocateFixed size={14} strokeWidth={1.75} />}

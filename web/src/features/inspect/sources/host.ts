@@ -5,6 +5,7 @@ import { useNetwork } from '../../../app/context';
 import { parseEndpoint } from '../../../lib/format';
 import type { NetworkStore } from '../../../store/network';
 import { shallowEqual } from '../../../store/react';
+import { type NodeLive, readNodeLive } from './live';
 
 /** The UPnP port ladder: eight ports, ten apart. */
 export const LADDER_PORTS = [16127, 16137, 16147, 16157, 16167, 16177, 16187, 16197] as const;
@@ -52,3 +53,44 @@ export function useHostNodes(ip: string | null): number[] {
 export function ipOfEndpoint(endpoint: string | null | undefined): string | null {
   return parseEndpoint(endpoint)?.host ?? null;
 }
+
+// ---- live rows of one host ----------------------------------------------------------------------------
+
+export interface HostLive {
+  /** Every node on the host, ordered by port. */
+  live: NodeLive[];
+  /** The nodes on the eight ladder ports. */
+  byPort: Map<number, NodeLive>;
+  /** Nodes on any other port. */
+  other: NodeLive[];
+}
+
+const EMPTY_HOST: HostLive = { live: [], byPort: new Map(), other: [] };
+const liveCache = new WeakMap<NetworkStore, { key: number; byIp: Map<string, HostLive> }>();
+
+/** The live facts of every node on `ip`, cached per node-slice version so the reference is stable. */
+export function hostLiveFor(store: NetworkStore, ip: string): HostLive {
+  const key = store.versions.Nodes;
+  let entry = liveCache.get(store);
+  if (!entry || entry.key !== key) {
+    entry = { key, byIp: new Map() };
+    liveCache.set(store, entry);
+  }
+  const hit = entry.byIp.get(ip);
+  if (hit) return hit;
+  const ids = hostIndexFor(store).get(ip) ?? [];
+  const live = ids.map((i) => readNodeLive(store, i)).filter((n): n is NodeLive => n !== null);
+  const byPort = new Map<number, NodeLive>();
+  const other: NodeLive[] = [];
+  for (const n of live) {
+    const port = parseEndpoint(n.endpoint)?.port ?? 0;
+    if ((LADDER_PORTS as readonly number[]).includes(port) && !byPort.has(port)) byPort.set(port, n);
+    else other.push(n);
+  }
+  const value = { live, byPort, other };
+  entry.byIp.set(ip, value);
+  return value;
+}
+
+export const useHostLive = (ip: string | null): HostLive =>
+  useNetwork((s) => (ip ? hostLiveFor(s, ip) : EMPTY_HOST));

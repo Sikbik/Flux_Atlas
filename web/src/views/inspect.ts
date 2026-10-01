@@ -3,15 +3,12 @@
 
 import { lazy } from 'react';
 
-export {
-  AppHistoryView,
-  AppView,
-  HostView,
-  OperatorView,
-  QueueView,
-  WeatherView,
-} from '../app/placeholders/views';
+export { AppHistoryView, AppView, OperatorView, QueueView, WeatherView } from '../app/placeholders/views';
 
 export const NodeView = lazy(() =>
   import('../features/inspect/node/NodeView').then((m) => ({ default: m.NodeView })),
+);
+
+export const HostView = lazy(() =>
+  import('../features/inspect/host/HostView').then((m) => ({ default: m.HostView })),
 );

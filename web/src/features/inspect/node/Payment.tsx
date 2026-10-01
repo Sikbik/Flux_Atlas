@@ -243,7 +243,7 @@ function PayStats() {
 /** The payment block: the tile and the three statistics under it. */
 export function PaymentBlock() {
   return (
-    <div className="ix-sec-pay ix-rise" style={{ '--ix-i': 1 } as CSSProperties}>
+    <div className="ix-lead ix-rise" style={{ '--ix-i': 1 } as CSSProperties}>
       <PayTile />
       <div className="ix-gap">
         <PayStats />

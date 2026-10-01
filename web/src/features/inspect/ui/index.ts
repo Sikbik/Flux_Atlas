@@ -11,6 +11,8 @@ export { Digits, Swap } from './digits';
 export { Disclosure, Disclosures, Dot, useOpenSet } from './disclosure';
 export { FeedLine } from './FeedLine';
 export { ArcaneGlyph, TierGlyph } from './glyphs';
+export { HeroCard } from './hero';
+export { HostLadder, portOf } from './ladder';
 export { Alert, Block, Grid, Kv, KvRow, Meter, Section, Sk, State, Tile } from './layout';
 export {
   AddressLink,
@@ -22,4 +24,5 @@ export {
   PathLink,
 } from './links';
 export { type MapPoint, MiniMap } from './map';
+export { etaShort, QueueCell } from './queuecell';
 export { VirtualList } from './VirtualList';

@@ -2,7 +2,7 @@ import { Activity, Check, Network, OctagonX, TriangleAlert } from 'lucide-react'
 import { type CSSProperties, useMemo } from 'react';
 import type { NodeHistoryDto } from '../../../api/generated/NodeHistoryDto';
 import { useNodeHistory } from '../../../api/queries';
-import { useNetwork, useRuntime, useTip } from '../../../app/context';
+import { useRuntime, useTip } from '../../../app/context';
 import {
   formatAgo,
   formatInt,
@@ -13,12 +13,10 @@ import {
 } from '../../../lib/format';
 import { spanText } from '../derive/eta';
 import { CHECKIN, checkinGauge, GAUGE_ZONES, lifeStage } from '../derive/expiry';
-import { positionOf } from '../derive/queue';
 import { heartbeatTicks, ipHistory, uptimeCells } from '../derive/uptime';
 import { useFirstIngestMs, useHostRows } from '../sources/hooks';
-import { LADDER_PORTS, useHostNodes } from '../sources/host';
-import { type NodeLive, readNodeLive, useQueues } from '../sources/live';
-import { Block, Digits, HostLink, NodeLink, OperatorLink, Sk, TierGlyph, tierLabel } from '../ui';
+import { LADDER_PORTS, useHostLive } from '../sources/host';
+import { Block, Digits, HostLadder, HostLink, NodeLink, OperatorLink, Sk, tierLabel } from '../ui';
 import { useNodeCtx } from './context';
 
 const DAY_MS = 86_400_000;
@@ -28,23 +26,10 @@ const DAY_MS = 86_400_000;
 /** The host's eight UPnP ports with the node on each, and who is paid. */
 export function HostBlock() {
   const { ip, id } = useNodeCtx();
-  const store = useRuntime().store;
-  const ids = useHostNodes(ip);
-  const queues = useQueues();
-  // Subscribes to the node slice so the ladder follows every change; reading up to eight rows is cheap.
-  useNetwork((s) => s.versions.Nodes);
+  const { live, other } = useHostLive(ip);
   const { rows } = useHostRows(ip);
-
-  const live = ids.map((i) => readNodeLive(store, i)).filter((n): n is NodeLive => n !== null);
   if (!ip) return null;
 
-  const byPort = new Map<number, NodeLive>();
-  const other: NodeLive[] = [];
-  for (const n of live) {
-    const port = parseEndpoint(n.endpoint)?.port ?? 0;
-    if ((LADDER_PORTS as readonly number[]).includes(port) && !byPort.has(port)) byPort.set(port, n);
-    else other.push(n);
-  }
   const used = live.length;
   const addresses = new Set(rows.map((r) => r.payment_address).filter(Boolean));
   const single = addresses.size === 1 ? [...addresses][0]! : null;
@@ -55,35 +40,7 @@ export function HostBlock() {
       icon={<Network size={14} strokeWidth={1.75} />}
       aside={`${used} of ${LADDER_PORTS.length} ports in use`}
     >
-      <ul className="ix-ladder" aria-label={`Nodes on ${ip}`}>
-        {LADDER_PORTS.map((port) => {
-          const n = byPort.get(port);
-          if (!n) {
-            return (
-              <li className="ix-slot" data-free="" key={port}>
-                <span>{port}</span>
-                <small>free</small>
-              </li>
-            );
-          }
-          const pos = positionOf(queues, n.id);
-          return (
-            <li key={port} className="ix-slot-cell">
-              <NodeLink
-                nodeKey={n.endpoint || n.id}
-                className="ix-slot"
-                data-tier={n.tier}
-                data-sel={n.id === id}
-                title={`${n.endpoint}, ${tierLabel(n.tier)}${pos ? `, queue position ${formatInt(pos.position + 1)}` : ''}`}
-              >
-                <TierGlyph tier={n.tier} size={14} />
-                <span>{port}</span>
-                <small>{pos ? `#${formatInt(pos.position + 1)}` : 'n/a'}</small>
-              </NodeLink>
-            </li>
-          );
-        })}
-      </ul>
+      <HostLadder ip={ip} selectedId={id} />
       {other.length ? (
         <p className="ix-cap">
           Also on{' '}
