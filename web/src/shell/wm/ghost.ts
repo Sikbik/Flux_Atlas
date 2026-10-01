@@ -54,6 +54,10 @@ export function ghostOut(el: HTMLElement, kind: GhostKind, type: string, to?: Or
   const from = rectOf(el);
   const sheet = el.getAttribute('data-placement') === 'sheet';
   parent.appendChild(ghost);
+  // A clone restarts every CSS animation inside it: an entrance would replay over content that was already
+  // there, and a loop (the About page's hex drift) would run again as one more layer to composite during the
+  // exit. The ghost is a snapshot of what the window showed, so they are cancelled before its own exit starts.
+  for (const a of ghost.getAnimations?.({ subtree: true }) ?? []) a.cancel();
   const done = () => ghost.remove();
   // A ghost never outlives its flight, whatever happens to the animation.
   setTimeout(done, MINIMIZE_MS + 400);
