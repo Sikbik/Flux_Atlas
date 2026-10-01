@@ -15,7 +15,7 @@ use anyhow::Context as _;
 use atlas_core::api::{AppIndexEntry, NetworkSummary, SupplyInfo, TierCounts, TipInfo};
 use atlas_core::app::{AppComponent, AppInstance, AppMessageRecord, AppRecord, AppSpec};
 use atlas_core::chain::{BlockKind, BlockSummary, NodeTx, NodeTxKind, Payout};
-use atlas_core::codec::mesh_bin::{encode_mesh_bin, flags as mesh_flags};
+use atlas_core::codec::mesh_bin::{encode_mesh_bin_from, flags as mesh_flags};
 use atlas_core::emission::{self, DEV_FUND_ADDRESS};
 use atlas_core::event::{AppMessageKind, Event, EventEnvelope};
 use atlas_core::ids::{Collateral, Hash32, NodeId, Outpoint};
@@ -809,7 +809,12 @@ pub fn publish(engine: &EngineHandle, f: &Fixture, stale: bool) -> anyhow::Resul
     )?);
     p.bodies.mesh_bin = Some(PrebuiltBody::build(
         "application/octet-stream",
-        encode_mesh_bin(seq, p.generated_ms, f.mesh.iter().copied()),
+        encode_mesh_bin_from(
+            seq,
+            p.generated_ms,
+            f.mesh.iter().copied(),
+            Some(atlas_engine::origin_of(&p.server)),
+        ),
     )?);
     p.bodies.apps_index = Some(PrebuiltBody::build(
         "application/json",
