@@ -1,19 +1,13 @@
-/* About Flux (F2b). The same quiet page as Settings (the .set base, its section and disclosure styles), with
-   a hero, the block ring, the moon's anatomy and the capacity bars on top. Local custom properties are
-   prefixed --ab-. Motion is opacity, transform and stroke offset, and every loop stops under reduced motion. */
-
-.ab {
-  --ab-card: color-mix(in oklab, var(--accent-600) 6%, var(--ink-1));
-  --ab-tile-gap: 8px;
-  padding-top: 0;
-}
+/* About Flux (F2b). The same quiet page as Settings, built from the UI kit (Section, Stat, ShareBar, Meter,
+   KeyValue, AnimatedNumber), with a hero, the block ring, the moon's anatomy and the mission of its own.
+   Local custom properties are prefixed --ab-. Motion is opacity, transform and stroke offset, and every
+   loop stops under reduced motion. */
 
 /* ---- Hero ------------------------------------------------------------------------------------- */
 
 .ab-hero {
   position: relative;
   isolation: isolate;
-  margin: 0 calc(var(--set-px) * -1);
   padding: 34px var(--set-px) 26px;
   overflow: hidden;
   border-bottom: 1px solid var(--line-1);
@@ -65,7 +59,7 @@
   font: var(--fw-regular) 13px / 1.45 var(--font-sans);
 }
 
-/* ---- Shared bits ------------------------------------------------------------------------------ */
+/* ---- The chain, right now --------------------------------------------------------------------- */
 
 .ab-eyebrow {
   color: var(--text-3);
@@ -73,47 +67,6 @@
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
-
-.ab-bar {
-  position: relative;
-  display: block;
-  height: 3px;
-  border-radius: 3px;
-  background: var(--ink-3);
-  overflow: hidden;
-}
-
-.ab-bar i {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--tier, var(--accent-500));
-  transform-origin: 0 50%;
-  transform: scaleX(var(--f, 0));
-  transition: transform 700ms var(--ease-out);
-}
-
-/* A value that has not arrived yet: a quiet block in its place, so nothing moves when it does. */
-.ab [data-pending] {
-  justify-self: start;
-  min-width: 52px;
-  border-radius: 4px;
-  background: var(--ink-3);
-  color: transparent;
-  animation: ab-pulse 1.5s ease-in-out infinite alternate;
-}
-
-@keyframes ab-pulse {
-  from {
-    opacity: 0.45;
-  }
-
-  to {
-    opacity: 0.9;
-  }
-}
-
-/* ---- The chain, right now --------------------------------------------------------------------- */
 
 .ab-now {
   display: flex;
@@ -184,32 +137,9 @@
 }
 
 .ab-tip-n {
-  position: relative;
   color: var(--text-1);
   font: var(--fw-semibold) 32px / 1.05 var(--font-display);
-  font-feature-settings: var(--num-tabular);
   letter-spacing: var(--tracking-display);
-}
-
-/* The landing flash: a soft white-blue bloom behind the number, once per block (the node remounts). */
-.ab-tip-n::after {
-  content: "";
-  position: absolute;
-  inset: -8px -14px;
-  background: radial-gradient(closest-side, rgb(174 198 255 / 0.4), transparent);
-  opacity: 0;
-  pointer-events: none;
-  animation: ab-land 1.2s var(--ease-out);
-}
-
-@keyframes ab-land {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
-  }
 }
 
 .ab-tip-line {
@@ -226,68 +156,11 @@
 }
 
 .ab-tiles {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--ab-tile-gap);
   margin-top: 18px;
 }
 
-.ab-tile {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-  padding: 12px 12px 11px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--r-md);
-  background: var(--ab-card);
-  box-shadow: var(--shadow-inset-hi);
-}
-
-.ab-tile-n {
-  color: var(--text-1);
-  font: var(--fw-semibold) 22px / 1.1 var(--font-display);
-  font-feature-settings: var(--num-tabular);
-  letter-spacing: var(--tracking-heading);
-}
-
-.ab-tile-sub {
-  overflow: hidden;
-  color: var(--text-3);
-  font-size: 11.5px;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .ab-tiers {
-  display: grid;
-  gap: 9px;
-  margin: 16px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ab-tier {
-  display: grid;
-  grid-template-columns: 14px 62px minmax(0, 1fr) 52px;
-  align-items: center;
-  gap: 10px;
-}
-
-.ab-tier-glyph {
-  display: grid;
-  place-items: center;
-}
-
-.ab-tier-name {
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-
-.ab-tier-n {
-  color: var(--text-1);
-  font: var(--fw-regular) 12px / 1 var(--font-mono);
-  text-align: right;
+  margin-top: 18px;
 }
 
 /* ---- The moon is the chain -------------------------------------------------------------------- */
@@ -439,6 +312,26 @@
   font: var(--fw-regular) 11px / 1.2 var(--font-mono);
 }
 
+/* A value that has not arrived yet: a quiet block in its place, so nothing moves when it does. */
+.ab [data-pending] {
+  justify-self: end;
+  min-width: 52px;
+  border-radius: 4px;
+  background: var(--ink-3);
+  color: transparent;
+  animation: ab-pulse 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes ab-pulse {
+  from {
+    opacity: 0.45;
+  }
+
+  to {
+    opacity: 0.9;
+  }
+}
+
 .ab-caption {
   margin: 14px 0 0;
   color: var(--text-3);
@@ -450,140 +343,17 @@
 
 .ab-cap {
   display: grid;
-  gap: 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ab-cap-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 128px;
-  align-items: baseline;
-  column-gap: 14px;
-  row-gap: 8px;
-}
-
-.ab-cap-label {
-  color: var(--text-2);
-}
-
-.ab-cap-total {
-  color: var(--text-1);
-  font: var(--fw-medium) 13px / 1 var(--font-mono);
-  text-align: right;
-}
-
-.ab-cap-bar {
-  align-self: center;
-}
-
-.ab-cap-bar i {
-  background: var(--accent-500);
-}
-
-.ab-cap-locked {
-  color: var(--text-3);
-  font: var(--fw-regular) 11px / 1 var(--font-mono);
-  text-align: right;
-}
-
-.ab-kv {
-  display: grid;
-  margin: 14px 0 0;
-}
-
-.ab-kv > div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 9px 0;
-  border-top: 1px solid var(--line-1);
-}
-
-.ab-kv dt {
-  color: var(--text-2);
-}
-
-.ab-kv dd {
-  margin: 0;
-  color: var(--text-1);
-  font: var(--fw-regular) 12.5px / 1.3 var(--font-mono);
-  text-align: right;
-}
-
-.ab-kv-quiet {
-  margin-top: 6px;
-}
-
-.ab-kv-quiet dd {
-  color: var(--text-2);
-}
-
-.ab-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 8px;
-  border-radius: 50%;
-  background: var(--text-4);
-  vertical-align: 1px;
-}
-
-.ab-kv dd[data-status="live"] .ab-dot {
-  background: var(--status-ok);
-}
-
-.ab-kv dd[data-status="syncing"] .ab-dot,
-.ab-kv dd[data-status="connecting"] .ab-dot {
-  background: var(--status-pending);
-}
-
-.ab-kv dd[data-status="reconnecting"] .ab-dot {
-  background: var(--status-warn);
-}
-
-.ab-kv dd[data-status="offline"] .ab-dot,
-.ab-kv dd[data-status="closed"] .ab-dot {
-  background: var(--status-crit);
-}
-
-/* ---- The next reward cut ---------------------------------------------------------------------- */
-
-.ab-cut {
-  display: flex;
-  align-items: center;
   gap: 16px;
 }
 
-.ab-cut-n {
-  color: var(--text-1);
-  font: var(--fw-semibold) 30px / 1 var(--font-display);
-  font-feature-settings: var(--num-tabular);
-  letter-spacing: var(--tracking-display);
-}
-
-.ab-cut-text {
-  display: grid;
-  gap: 5px;
-}
-
-.ab-cut-unit {
-  color: var(--text-3);
-  font: var(--fw-semibold) 10.5px / 1 var(--font-display);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.ab-cut-eta {
-  color: var(--text-2);
+.ab-kv {
+  margin-top: 16px;
 }
 
 /* ---- Mission ---------------------------------------------------------------------------------- */
 
 .ab-mission {
-  margin: 26px 0 10px;
+  margin: 26px var(--set-px) 10px;
   padding: 2px 0 2px 16px;
   border-left: 3px solid var(--accent-600);
 }
@@ -641,6 +411,12 @@
   font: var(--fw-medium) 12px / 1.5 var(--font-mono);
 }
 
+.ab-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .ab-note {
   margin: 8px 0 0;
   color: var(--text-3);
@@ -664,6 +440,7 @@
   display: grid;
   gap: 14px;
   margin-top: 24px;
+  padding: 0 var(--set-px);
 }
 
 .ab-links {
@@ -731,14 +508,6 @@
     padding: 18px 0;
   }
 
-  .ab-tile {
-    padding: 10px 10px 9px;
-  }
-
-  .ab-tile-n {
-    font-size: 20px;
-  }
-
   .ab-src li {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
@@ -747,26 +516,22 @@
 
 :root[data-motion="reduced"] .ab-hero-lattice i,
 :root[data-motion="reduced"] .ab-anat-card::before,
-:root[data-motion="reduced"] .ab-tip-n::after,
 :root[data-motion="reduced"] .ab [data-pending] {
   animation: none;
 }
 
-:root[data-motion="reduced"] .ab-ring-arc,
-:root[data-motion="reduced"] .ab-bar i {
+:root[data-motion="reduced"] .ab-ring-arc {
   transition: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .ab-hero-lattice i,
   :root:not([data-motion="full"]) .ab-anat-card::before,
-  :root:not([data-motion="full"]) .ab-tip-n::after,
   :root:not([data-motion="full"]) .ab [data-pending] {
     animation: none;
   }
 
-  :root:not([data-motion="full"]) .ab-ring-arc,
-  :root:not([data-motion="full"]) .ab-bar i {
+  :root:not([data-motion="full"]) .ab-ring-arc {
     transition: none;
   }
 }

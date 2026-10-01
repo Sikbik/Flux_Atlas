@@ -1,34 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveMsg } from '../../api/generated/LiveMsg';
-import { ageLabel, FRESH_SOURCES, freshnessState, lastSignOf } from './freshness';
-
-describe('freshnessState', () => {
-  it('follows the shared thresholds, 1.5x, 3x and 10x the cadence', () => {
-    const c = 30_000;
-    expect(freshnessState(0, c)).toBe('fresh');
-    expect(freshnessState(44_000, c)).toBe('fresh');
-    expect(freshnessState(45_000, c)).toBe('aging');
-    expect(freshnessState(89_000, c)).toBe('aging');
-    expect(freshnessState(90_000, c)).toBe('stale');
-    expect(freshnessState(299_000, c)).toBe('stale');
-    expect(freshnessState(300_000, c)).toBe('dead');
-  });
-});
-
-describe('ageLabel', () => {
-  it('reads now, seconds, minutes and hours', () => {
-    expect(ageLabel(400)).toBe('now');
-    expect(ageLabel(4_000)).toBe('4 s');
-    expect(ageLabel(59_999)).toBe('59 s');
-    expect(ageLabel(60_000)).toBe('1 min');
-    expect(ageLabel(12 * 60_000 + 5_000)).toBe('12 min');
-    expect(ageLabel(3 * 3_600_000)).toBe('3 h');
-    expect(ageLabel(-5)).toBe('now');
-  });
-});
+import { FRESH_SOURCES, lastSignOf } from './freshness';
 
 describe('the sources', () => {
-  it('names each ingest path once, with a cadence', () => {
+  it('names each ingest path once, with a cadence and the feeds that carry it', () => {
     expect(new Set(FRESH_SOURCES.map((s) => s.id)).size).toBe(FRESH_SOURCES.length);
     for (const s of FRESH_SOURCES) {
       expect(s.cadenceMs).toBeGreaterThan(0);

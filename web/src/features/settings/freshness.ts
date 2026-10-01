@@ -1,18 +1,9 @@
-// How current each live source is, by the rule the whole interface shares (design 6.5): an age against the
-// source's own cadence. Under 1.5 cadences is fresh, to 3 aging, to 10 stale, beyond that dead. The status
-// bar's chips and this list read the same store timestamps, so one rule explains every one of them.
+// The live sources Settings reports on, and where each one's last sign of life comes from. The judging
+// itself (fresh under 1.5 cadences, aging to 3, stale to 10, then lost, design 6.5) is the UI kit's
+// `Freshness` chip, the same one every other surface uses, so one rule explains every chip. This file only
+// says what the sources are and when each last spoke.
 
 import type { LiveMsg } from '../../api/generated/LiveMsg';
-
-export type FreshState = 'fresh' | 'aging' | 'stale' | 'dead';
-
-export function freshnessState(ageMs: number, cadenceMs: number): FreshState {
-  const x = ageMs / cadenceMs;
-  if (x < 1.5) return 'fresh';
-  if (x < 3) return 'aging';
-  if (x < 10) return 'stale';
-  return 'dead';
-}
 
 export interface FreshSource {
   id: string;
@@ -67,7 +58,7 @@ export const FRESH_SOURCES: readonly FreshSource[] = [
 
 /**
  * The newest sign of life across a source's feeds. A feed that has said nothing since this page connected is
- * judged from the moment it connected, so the first seconds read as "nothing yet" and only real silence ages.
+ * judged from the moment it connected, so the first seconds read as fresh and only real silence ages.
  */
 export function lastSignOf(
   s: FreshSource,
@@ -80,14 +71,4 @@ export function lastSignOf(
     if (v !== undefined && v > at) at = v;
   }
   return at === Number.NEGATIVE_INFINITY ? { at: connectedMs, heard: false } : { at, heard: true };
-}
-
-/** `4 s`, `41 s`, `12 min`, `3 h`. Seconds swap instantly; past a minute the label changes once a minute. */
-export function ageLabel(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 1) return 'now';
-  if (s < 60) return `${s} s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min`;
-  return `${Math.floor(m / 60)} h`;
 }

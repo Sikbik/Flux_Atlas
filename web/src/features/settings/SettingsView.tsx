@@ -1,10 +1,12 @@
 // Settings (design 9, window "Settings"): the few choices that change how Atlas looks and behaves, with
-// the quiet ones in front and the advanced ones (data freshness, achievements) behind a disclosure. Every
-// change applies at once and is remembered in this browser; nothing is sent anywhere.
+// the quiet ones in front and the advanced ones (data freshness, achievements) behind a fold. Every
+// change applies at once and is remembered in this browser; nothing is sent anywhere. Built from the UI
+// kit (Section, SegmentedControl, Select, Switch, Button, Freshness, StatusChip); the globe art cards and
+// the setting row are the only pieces of its own.
 
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { Bell, BellOff, Play } from 'lucide-react';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useConnection, useRuntime } from '../../app/context';
 import { formatUtcTime } from '../../lib/format';
 import { useNow } from '../../lib/useClock';
@@ -16,14 +18,15 @@ import {
   type PerfPref,
   useUi,
 } from '../../store/ui';
+import { Button, Freshness, Section, SegmentedControl, Select, StatusChip, Switch } from '../../ui';
 import { AchievementCount, AchievementList } from '../achievements/AchievementList';
 import { track } from '../achievements/events';
 import { enterAmbient } from '../ambient/enter';
 import artHolo from './assets/art-holo.webp';
 import artMarble from './assets/art-marble.webp';
 import artNeon from './assets/art-neon.webp';
-import { Disclosure, Field, Section, Segmented, type SegOption, SelectBox, Switch } from './controls';
-import { ageLabel, FRESH_SOURCES, freshnessState, lastSignOf } from './freshness';
+import { Field, Sr } from './controls';
+import { FRESH_SOURCES, lastSignOf } from './freshness';
 import {
   IDLE_OPTIONS_MIN,
   notificationSupport,
@@ -54,7 +57,7 @@ function GlobeArt() {
     [setArt],
   );
   return (
-    <Section title="Globe" aside="Changes the planet behind this window, live">
+    <Section title="Globe" level={3} aside="Changes the planet behind this window, live">
       <fieldset className="set-art-grid" data-value={art}>
         <legend className="set-sr">Globe art style</legend>
         {GLOBE_ARTS.map((a) => (
@@ -76,7 +79,7 @@ function GlobeArt() {
 // Motion and performance
 // ---------------------------------------------------------------------------------------------
 
-const MOTION_OPTIONS: readonly SegOption<MotionPref>[] = [
+const MOTION_OPTIONS: readonly { value: MotionPref; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'full', label: 'Full' },
   { value: 'reduced', label: 'Reduced' },
@@ -90,7 +93,7 @@ const MOTION_HINT: Record<MotionPref, string> = {
   off: 'Nothing animates. The globe still updates.',
 };
 
-const PERF_OPTIONS: readonly SegOption<PerfPref>[] = [
+const PERF_OPTIONS: readonly { value: PerfPref; label: string }[] = [
   { value: 'auto', label: 'Auto' },
   { value: 'high', label: 'High' },
   { value: 'balanced', label: 'Balanced' },
@@ -111,7 +114,7 @@ function MotionAndPerformance() {
   const setPerf = useUi((s) => s.setPerf);
   const following = motion === 'system' ? effectiveMotion('system') : null;
   return (
-    <Section title="Motion and performance">
+    <Section title="Motion and performance" level={3}>
       <Field
         stacked
         title="Motion"
@@ -121,8 +124,9 @@ function MotionAndPerformance() {
             : MOTION_HINT[motion]
         }
       >
-        <Segmented
-          legend="Motion"
+        <SegmentedControl
+          aria-label="Motion"
+          fullWidth
           value={motion}
           options={MOTION_OPTIONS}
           onChange={(m) => {
@@ -132,8 +136,9 @@ function MotionAndPerformance() {
         />
       </Field>
       <Field stacked title="Performance" hint={PERF_HINT[perf]}>
-        <Segmented
-          legend="Performance level"
+        <SegmentedControl
+          aria-label="Performance level"
+          fullWidth
           value={perf}
           options={PERF_OPTIONS}
           onChange={(p) => {
@@ -151,9 +156,12 @@ function MotionAndPerformance() {
 // ---------------------------------------------------------------------------------------------
 
 const IDLE_CHOICES = IDLE_OPTIONS_MIN.map((m) => ({
-  value: m,
+  value: String(m),
   label: m === 0 ? 'Never' : m === 1 ? '1 minute' : `${m} minutes`,
 }));
+
+const coarsePointer = (): boolean =>
+  typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 function AmbientSettings() {
   const router = useRouter();
@@ -162,36 +170,34 @@ function AmbientSettings() {
   const sound = usePrefs((s) => s.ambientSound);
   const setSound = usePrefs((s) => s.setAmbientSound);
   return (
-    <Section title="Ambient mode" aside="The planet and the moon, with nothing in front">
+    <Section title="Ambient mode" level={3} aside="The planet and the moon, with nothing in front">
       <Field title="Start by itself after" hint="Only when nothing has been touched for this long.">
-        <SelectBox
-          label="Start ambient mode after"
-          value={idle}
+        <Select
+          aria-label="Start ambient mode after"
+          size="sm"
+          native={coarsePointer()}
+          value={String(idle)}
           options={IDLE_CHOICES}
-          onChange={(m) => {
-            setIdle(m);
-            track({ type: 'ui', what: 'idle', value: String(m) });
+          onChange={(v) => {
+            setIdle(Number(v));
+            track({ type: 'ui', what: 'idle', value: v });
           }}
         />
       </Field>
-      <Field
-        title="Sound"
-        hint="A quiet generative pad that plays only in ambient mode. Off until you turn it on."
-      >
-        <Switch
-          label="Ambient sound"
-          checked={sound}
-          onChange={(on) => {
-            setSound(on);
-            track({ type: 'ui', what: 'sound', value: on ? 'on' : 'off' });
-          }}
-        />
-      </Field>
+      <Switch
+        layout="row"
+        label="Sound"
+        description="A quiet generative pad that plays only in ambient mode. Off until you turn it on."
+        checked={sound}
+        onChange={(on) => {
+          setSound(on);
+          track({ type: 'ui', what: 'sound', value: on ? 'on' : 'off' });
+        }}
+      />
       <div className="set-actions">
-        <button type="button" className="set-btn" onClick={() => enterAmbient(router, 'manual')}>
-          <Play size={13} strokeWidth={2.2} aria-hidden="true" />
+        <Button size="sm" icon={Play} onClick={() => enterAmbient(router, 'manual')}>
           Try ambient mode
-        </button>
+        </Button>
         <span className="set-note">Any key or movement brings you back.</span>
       </div>
     </Section>
@@ -233,28 +239,31 @@ function Notifications() {
         title="Browser notifications"
         hint="They are blocked for this site. Allow them in your browser's site settings, then come back."
       >
-        <BellOff size={16} aria-hidden="true" className="set-ic-off" />
+        <BellOff size={16} strokeWidth={1.5} aria-hidden="true" className="set-ic-off" />
       </Field>
     );
   } else if (support === 'default') {
     body = (
       <Field title="Browser notifications" hint="Hear about watched nodes without keeping this tab in front.">
-        <button type="button" className="set-btn" onClick={ask}>
-          <Bell size={13} strokeWidth={2.2} aria-hidden="true" />
+        <Button size="sm" icon={Bell} onClick={ask}>
           Allow
-        </button>
+        </Button>
       </Field>
     );
   } else {
     body = (
       <>
-        <Field title="Watched nodes" hint="A notification when a node you watch is paid or stops answering.">
-          <Switch label="Notify me about watched nodes" checked={on} onChange={setOn} />
-        </Field>
+        <Switch
+          layout="row"
+          label="Watched nodes"
+          description="A notification when a node you watch is paid or stops answering."
+          checked={on}
+          onChange={setOn}
+        />
         <div className="set-actions">
-          <button
-            type="button"
-            className="set-btn"
+          <Button
+            size="sm"
+            icon={Bell}
             disabled={!on}
             onClick={() =>
               notify('Notifications are on', 'This is how a watched node will reach you.', {
@@ -262,9 +271,8 @@ function Notifications() {
               })
             }
           >
-            <Bell size={13} strokeWidth={2.2} aria-hidden="true" />
             Send a test
-          </button>
+          </Button>
           <span className="set-note">
             Notifications come from this browser; Atlas sends nothing to a server.
           </span>
@@ -272,48 +280,38 @@ function Notifications() {
       </>
     );
   }
-  return <Section title="Notifications">{body}</Section>;
+  return (
+    <Section title="Notifications" level={3}>
+      {body}
+    </Section>
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
-// Disclosures: data freshness and achievements
+// Folds: data freshness and achievements
 // ---------------------------------------------------------------------------------------------
 
-const STATUS_WORD: Record<string, string> = {
-  live: 'Live',
-  syncing: 'Catching up',
-  connecting: 'Connecting',
-  reconnecting: 'Reconnecting',
-  offline: 'Offline',
-  closed: 'Closed',
-  idle: 'Idle',
+/** The connection states as the kit's status words. */
+const CONNECTION_STATUS: Record<string, string> = {
+  live: 'live',
+  syncing: 'syncing',
+  connecting: 'syncing',
+  reconnecting: 'degraded',
+  offline: 'offline',
+  closed: 'offline',
 };
 
 function DataFreshness() {
   const { store, clock } = useRuntime();
+  // Once a second, so the rows read the store's own timestamps again (the chips tick by themselves).
   const now = useNow(clock);
   const conn = useConnection();
-  const status = STATUS_WORD[conn.status] ?? conn.status;
   // Both clocks are server time: the store stamps messages with the event clock's corrected now.
   const connectedMs = conn.sinceMs + conn.clockOffsetMs;
-  const rows = useMemo(
-    () =>
-      FRESH_SOURCES.map((s) => {
-        const { at, heard } = lastSignOf(s, store.lastMessageMs, connectedMs);
-        const age = Math.max(0, now - at);
-        const judged = freshnessState(age, s.cadenceMs);
-        // Nothing yet, and not long enough to matter: neutral, not green and not an alarm.
-        const state = !heard && judged === 'fresh' ? 'quiet' : judged;
-        return { s, age, heard, state };
-      }),
-    // `now` ticks once a second: the ages are recomputed from the store's own timestamps each time.
-    [store, now, connectedMs],
-  );
   return (
-    <div className="set-data">
-      <p className="set-data-conn" data-status={conn.status}>
-        <span className="set-dot" aria-hidden="true" />
-        <b>{status}</b>
+    <div className="set-data" data-now={now}>
+      <p className="set-data-conn">
+        <StatusChip status={CONNECTION_STATUS[conn.status]} size="sm" />
         {conn.status === 'live' && conn.transitMs !== null ? (
           <span>{Math.round(conn.transitMs)} ms from the server</span>
         ) : null}
@@ -322,19 +320,56 @@ function DataFreshness() {
         ) : null}
       </p>
       <ul className="set-fresh">
-        {rows.map(({ s, age, heard, state }) => (
-          <li key={s.id} className="set-fresh-row" data-state={state}>
-            <span className="set-dot" aria-hidden="true" />
-            <span className="set-fresh-name">
-              {s.label}
-              <span className="set-fresh-every">{s.every}</span>
-            </span>
-            <span className="set-fresh-age">{heard ? ageLabel(age) : 'none yet'}</span>
-            <span className="set-fresh-word">{state === 'stale' || state === 'dead' ? 'stale' : ''}</span>
-          </li>
-        ))}
+        {FRESH_SOURCES.map((s) => {
+          // A feed that has said nothing since this page connected is judged from the moment it connected.
+          const { at } = lastSignOf(s, store.lastMessageMs, connectedMs);
+          return (
+            <li key={s.id} className="set-fresh-row">
+              <span className="set-fresh-name">
+                {s.label}
+                <span className="set-fresh-every">{s.every}</span>
+              </span>
+              <Freshness ts={at} cadenceMs={s.cadenceMs} label={s.id} />
+            </li>
+          );
+        })}
       </ul>
     </div>
+  );
+}
+
+/** A collapsible kit section whose body is only built once it has been opened. */
+function Fold({
+  title,
+  aside,
+  open,
+  onOpenChange,
+  id,
+  children,
+}: {
+  title: string;
+  aside?: ReactNode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  id: string;
+  children: ReactNode;
+}) {
+  const [everOpen, setEverOpen] = useState(open);
+  useEffect(() => {
+    if (open) setEverOpen(true);
+  }, [open]);
+  return (
+    <Section
+      id={id}
+      title={title}
+      level={3}
+      aside={aside}
+      collapsible
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      {everOpen ? children : null}
+    </Section>
   );
 }
 
@@ -342,35 +377,44 @@ export default function SettingsView() {
   const hash = useRouterState({ select: (s) => s.location.hash ?? '' });
   const wantAchievements = hash.replace(/^#/, '') === 'achievements';
   const target = useRef<HTMLDivElement>(null);
+  const [dataOpen, setDataOpen] = useState(false);
+  const [achOpen, setAchOpen] = useState(wantAchievements);
   useEffect(() => {
     if (!wantAchievements) return;
+    setAchOpen(true);
     const t = window.setTimeout(() => target.current?.scrollIntoView({ block: 'start' }), 60);
     return () => window.clearTimeout(t);
   }, [wantAchievements]);
 
   return (
     <div className="set" data-testid="settings">
+      <Sr>Settings apply at once and stay in this browser.</Sr>
       <GlobeArt />
       <MotionAndPerformance />
       <AmbientSettings />
       <Notifications />
-      <div className="set-more">
-        <Disclosure id="data" title="Data freshness" aside="How current each live source is">
-          <DataFreshness />
-        </Disclosure>
-        <div ref={target}>
-          <Disclosure
-            id="achievements"
-            title="Achievements"
-            aside={<AchievementCount />}
-            open={wantAchievements}
-          >
-            <p className="set-note set-note-top">
-              Local to this browser. They teach the product; none of them reward grinding.
-            </p>
-            <AchievementList />
-          </Disclosure>
-        </div>
+      <Fold
+        id="data"
+        title="Data freshness"
+        aside="How current each live source is"
+        open={dataOpen}
+        onOpenChange={setDataOpen}
+      >
+        <DataFreshness />
+      </Fold>
+      <div ref={target}>
+        <Fold
+          id="achievements"
+          title="Achievements"
+          aside={<AchievementCount />}
+          open={achOpen}
+          onOpenChange={setAchOpen}
+        >
+          <p className="set-note set-note-top">
+            Local to this browser. They teach the product; none of them reward grinding.
+          </p>
+          <AchievementList />
+        </Fold>
       </div>
     </div>
   );
