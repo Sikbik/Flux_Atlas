@@ -1205,8 +1205,14 @@ export class GlobeEngine {
     const m = this.mesh;
     const e = m.add(a, b);
     if (e < 0) return -1;
-    m.resolveDirty = true;
-    m.resolve(this.nodes);
+    // Resolve just this edge's endpoints. (A full `resolve` per added link is O(edges): a mesh refresh adds thousands
+    // at once, which froze the page for one to two seconds every refresh. `add` left the store dirty, so the frame's
+    // own `resolve` still settles everything once.)
+    const slots = this.nodes.idToSlot;
+    const slotA = slots.get(m.ida[e]!);
+    const slotB = slots.get(m.idb[e]!);
+    m.sa[e] = slotA === undefined ? 0xffffffff : slotA;
+    m.sb[e] = slotB === undefined ? 0xffffffff : slotB;
     const sa = m.sa[e];
     const sb = m.sb[e];
     if (sa === 0xffffffff || sb === 0xffffffff) return e;
