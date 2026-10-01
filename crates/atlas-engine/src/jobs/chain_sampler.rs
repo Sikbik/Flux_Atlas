@@ -6,9 +6,12 @@
 //! for the whole chain, one `getblock` verbosity 1 request each). Recent blocks need no request:
 //! the block decoder and the block backfill store a row for every block they apply.
 //!
-//! - **Order:** coarse heights first (every 8th grid height, then every 4th, 2nd, all), newest
-//!   first within a level, so the year and all-time windows have a usable shape within minutes
-//!   and refine over about an hour.
+//! - **Order:** first the newest 30 days on a finer grid (every 120 blocks, about one an hour,
+//!   720 requests, newest first), so the 24 h, 7 d and 30 d windows are complete within minutes
+//!   of a fresh start, long before the per-block rows exist. Then the deep grid, coarse heights
+//!   first (every 8th grid height, then every 4th, 2nd, all), newest first within a level, so the
+//!   year and all-time windows have a usable shape within minutes and refine over about an hour.
+//!   The fine rows age out with the per-block tier (thinned to the deep grid after 31 days).
 //! - **Resumable and idempotent:** the stored rows are the progress. Each pass asks the store
 //!   which grid heights below `tip - depth` still lack a row with a difficulty and fetches only
 //!   those; a restart resumes where the last flushed chunk ended, and a fetched height is never
@@ -24,7 +27,7 @@ use std::time::{Duration, Instant};
 use atlas_core::now_ms;
 use atlas_flux::Clients;
 use atlas_flux::timefmt::parse_iso8601_ms;
-use atlas_store::{CHAIN_SAMPLE_GRID, ChainPoint, DAY_MS};
+use atlas_store::{CHAIN_DENSE_BLOCKS, CHAIN_DENSE_GRID, CHAIN_SAMPLE_GRID, ChainPoint, DAY_MS};
 
 use super::JobCtx;
 use crate::meta;
@@ -55,6 +58,23 @@ pub fn sample_order(missing: &[u32], grid: u32) -> Vec<u32> {
     let mut out = missing.to_vec();
     out.sort_unstable_by(|a, b| level(*b).cmp(&level(*a)).then(b.cmp(a)));
     out
+}
+
+/// The heights a pass fetches, given the newest height it may sample: first the missing
+/// [`CHAIN_DENSE_GRID`] heights of the newest [`CHAIN_DENSE_BLOCKS`] (newest first: the 24 h to
+/// 30 d windows complete in that order), then the missing deep-grid heights below them in
+/// [`sample_order`].
+pub fn plan(store: &atlas_store::Store, max_height: u32) -> atlas_store::Result<Vec<u32>> {
+    let dense_from = max_height.saturating_sub(CHAIN_DENSE_BLOCKS);
+    let mut out = store.chain_missing(CHAIN_DENSE_GRID, dense_from, max_height)?;
+    out.reverse();
+    let deep: Vec<u32> = store
+        .chain_grid_missing(CHAIN_SAMPLE_GRID, max_height)?
+        .into_iter()
+        .filter(|h| *h < dense_from)
+        .collect();
+    out.extend(sample_order(&deep, CHAIN_SAMPLE_GRID));
+    Ok(out)
 }
 
 /// Backoff after `failures` consecutive errors.
@@ -101,16 +121,13 @@ pub async fn run(ctx: JobCtx) {
             continue;
         };
         let max_height = tip.saturating_sub(cfg.depth);
-        let Some(missing) = ctx
-            .store_read(move |s| s.chain_grid_missing(CHAIN_SAMPLE_GRID, max_height))
-            .await
-        else {
+        let Some(order) = ctx.store_read(move |s| plan(s, max_height)).await else {
             if !ctx.sleep(Duration::from_secs(60)).await {
                 return;
             }
             continue;
         };
-        if missing.is_empty() {
+        if order.is_empty() {
             if meta_get(&ctx, meta::CHAIN_SAMPLED_MS).await.is_none() {
                 tracing::info!(
                     samples = counters.samples,
@@ -131,7 +148,6 @@ pub async fn run(ctx: JobCtx) {
             }
             continue;
         }
-        let order = sample_order(&missing, CHAIN_SAMPLE_GRID);
         tracing::info!(missing = order.len(), tip, "chain sampler running");
         let started = Instant::now();
         let (before_s, before_r) = (counters.samples, counters.requests);
@@ -378,6 +394,36 @@ mod tests {
         }
         store.commit(b).unwrap();
         assert!(store.chain_grid_missing(g, max).unwrap().is_empty());
+    }
+
+    /// A fresh store: the newest 30 days on the fine grid first (newest first), then the deep
+    /// grid below them; a restart resumes with exactly the rest.
+    #[test]
+    fn plan_samples_the_recent_month_first_and_resumes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = atlas_store::Store::open(dir.path().join("t.redb")).unwrap();
+        let max = 3_000_000;
+        let first = plan(&store, max).unwrap();
+        let dense_from = max - CHAIN_DENSE_BLOCKS;
+        let dense = first.iter().take_while(|h| **h >= dense_from).count();
+        assert_eq!(dense as u32, CHAIN_DENSE_BLOCKS / CHAIN_DENSE_GRID + 1);
+        assert_eq!(first[0], max - max % CHAIN_DENSE_GRID);
+        assert!(first[..dense].windows(2).all(|w| w[0] > w[1]));
+        assert!(
+            first[dense..]
+                .iter()
+                .all(|h| *h < dense_from && h % CHAIN_SAMPLE_GRID == 0)
+        );
+        assert_eq!(first[dense], 2_908_800, "the newest coarsest deep height");
+        let mut seen = std::collections::HashSet::new();
+        assert!(first.iter().all(|h| seen.insert(*h)), "no height twice");
+        // Fetch 100, restart.
+        let mut b = atlas_store::WriteBatch::new();
+        for &h in &first[..100] {
+            b.put_chain_point(h, point(h, Some(1.0)));
+        }
+        store.commit(b).unwrap();
+        assert_eq!(plan(&store, max).unwrap(), first[100..].to_vec());
     }
 
     fn point(h: u32, difficulty: Option<f64>) -> ChainPoint {

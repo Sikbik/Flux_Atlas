@@ -10,11 +10,12 @@
 //!
 //! **Time per block** of a bucket is `(time(last) - time(anchor)) / (last - anchor)`, where
 //! `last` is the bucket's last row and `anchor` the row just below its first one. With per-block
-//! rows the anchor is the previous block, so the mean is exact. With samples the span reaches
-//! back to the previous sample; it is used only while that sample lies within the two previous
-//! buckets (a sample interval can be a little wider than a bucket, leaving one empty). Otherwise (after a gap) the bucket's own rows give the span, from its first row to its
-//! last, and a bucket with a single row there has a `null` time per block: a gap is never
-//! smeared over.
+//! rows the anchor is the previous block, so the mean is exact. With samples (one every 120
+//! blocks for the last 30 days, every 720 before) the span reaches back to the previous sample:
+//! the two rows must be linked, i.e. at most one deep-grid interval (720 blocks) or three buckets
+//! apart. A bucket with no row inside a linked sample span gets that span's mean, an
+//! interpolated height and no difficulty (`sampled`). Wider spans are gaps: never smeared over.
+//! Where per-block rows do not cover a bucket, `block_time_max_s` is `null`.
 //!
 //! **Coverage** counts the heights covered by a known time per block against the window's
 //! heights (from the row at or before the window start, or estimated from the target spacing
@@ -143,19 +144,62 @@ pub fn build(
         }
     }
 
-    let mut points = Vec::with_capacity(spans.len());
+    // Two consecutive rows are linked (their mean time per block spans the heights between
+    // them) when they are adjacent blocks, consecutive samples (at most one deep-grid interval
+    // apart), or less than three buckets apart in time. Anything wider is a gap.
+    let linked = |a: usize, b: usize| {
+        let gap = rows[b].0.saturating_sub(rows[a].0);
+        gap >= 1 && (gap <= CHAIN_SAMPLE_GRID || t_eff[b] - t_eff[a] <= 3 * step)
+    };
+    let link_time = |a: usize, b: usize| {
+        let gap = rows[b].0 - rows[a].0;
+        seconds(rows[b].1.time_ms() as i64 - rows[a].1.time_ms() as i64) / f64::from(gap)
+    };
+
+    let mut points = Vec::with_capacity(n as usize);
     let mut covered: u64 = 0;
-    for &(b, first, last) in &spans {
+    for (si, &(b, first, last)) in spans.iter().enumerate() {
         let bucket_start = start_edge + b * step;
         let bucket_end = bucket_start + step;
+        // Buckets without a row between the previous row and this one: the mean of the
+        // sampled link that spans them (never across adjacent blocks, where an empty bucket
+        // just means no block was found in it).
+        if let Some(a) = first.checked_sub(1)
+            && rows[first].0 - rows[a].0 > 1
+            && linked(a, first)
+        {
+            let from_bucket = match si.checked_sub(1) {
+                Some(prev) => spans[prev].0 + 1,
+                None => 0,
+            };
+            let (ta, tb) = (t_eff[a], t_eff[first]);
+            let gap = rows[first].0 - rows[a].0;
+            for k in from_bucket..b {
+                let end_k = start_edge + (k + 1) * step;
+                if end_k <= ta {
+                    continue;
+                }
+                let frac = (end_k - ta) as f64 / (tb - ta).max(1) as f64;
+                let off = ((frac * f64::from(gap)) as u32).min(gap - 1);
+                points.push(ChainPointDto {
+                    t_ms: end_k,
+                    height: rows[a].0 + off,
+                    difficulty: None,
+                    difficulty_mean: None,
+                    block_time_s: Some(link_time(a, first)),
+                    block_time_max_s: None,
+                    sampled: true,
+                });
+            }
+        }
         let in_bucket = &rows[first..=last];
         let (h_last, p_last) = rows[last];
-        let anchor = first.checked_sub(1).map(|a| (rows[a], t_eff[a]));
-        let contiguous_anchor = anchor.is_some_and(|((h, _), _)| h + 1 == rows[first].0);
-        // Without a usable row below, the bucket's own first row is the base (its own span).
+        let anchor = first.checked_sub(1);
+        let contiguous_anchor = anchor.is_some_and(|a| rows[a].0 + 1 == rows[first].0);
+        // Without a linked row below, the bucket's own first row is the base (its own span).
         let base = anchor
-            .filter(|(_, t)| contiguous_anchor || *t >= bucket_start.saturating_sub(2 * step))
-            .map(|(row, _)| row)
+            .filter(|a| linked(*a, first))
+            .map(|a| rows[a])
             .or_else(|| (last > first).then(|| rows[first]));
         let block_time_s = base.and_then(|(h_a, p_a)| {
             let blocks = h_last.checked_sub(h_a).filter(|d| *d > 0)?;
@@ -195,6 +239,7 @@ pub fn build(
             difficulty_mean,
             block_time_s,
             block_time_max_s,
+            sampled: block_time_s.is_some() && !per_block,
         });
     }
 
@@ -511,9 +556,49 @@ mod tests {
             })
             .collect();
         let year = build(ChainWindow::Year, &rows, &[], NOON);
-        assert!(year.points.len() < 365);
+        assert_eq!(year.points.len(), 365);
         assert!(year.points.iter().all(|pt| pt.block_time_s == Some(30.0)));
+        // Days without a sample of their own: the span's mean, no difficulty.
+        assert!(
+            year.points
+                .iter()
+                .any(|pt| pt.sampled && pt.difficulty.is_none())
+        );
         assert!(year.coverage.complete, "{:?}", year.coverage);
+    }
+
+    #[test]
+    fn recent_samples_alone_complete_the_short_windows() {
+        // A fresh instance: no per-block rows yet, a sample every 120 blocks for 30 days.
+        let rows: Vec<(u32, ChainPoint)> = (0..=720u32)
+            .map(|i| {
+                let h = 3_000_000 - (720 - i) * 120;
+                let t = NOON - u64::from(720 - i) * 120 * 30_000;
+                (h, p(t + u64::from(i % 3) * 1_000, Some(0.1)))
+            })
+            .collect();
+        for w in [ChainWindow::Day, ChainWindow::Week, ChainWindow::Month] {
+            let dto = build(w, &rows, &[], NOON);
+            let (_, n) = buckets(w, NOON);
+            assert_eq!(dto.points.len() as u64, n, "{w:?}");
+            assert!(dto.coverage.complete, "{w:?} {:?}", dto.coverage);
+            assert!(
+                dto.points
+                    .iter()
+                    .all(|pt| pt.sampled && pt.block_time_max_s.is_none())
+            );
+            let bt = dto.points.iter().filter_map(|pt| pt.block_time_s);
+            assert_eq!(bt.clone().count() as u64, n);
+            assert!(bt.into_iter().all(|v| (v - 30.0).abs() < 0.1));
+            assert!(dto.points.windows(2).all(|w| w[0].t_ms < w[1].t_ms));
+            assert!(dto.points.windows(2).all(|w| w[0].height <= w[1].height));
+        }
+        // A missing sample run (more than 720 blocks) stays a gap.
+        let mut holed = rows.clone();
+        holed.retain(|r| !(3_000_000 - 20 * 120..3_000_000 - 12 * 120).contains(&r.0));
+        let day = build(ChainWindow::Day, &holed, &[], NOON);
+        assert!(!day.coverage.complete);
+        assert!(day.points.len() < 288);
     }
 
     #[test]

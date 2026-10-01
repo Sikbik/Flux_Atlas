@@ -3,7 +3,9 @@
 //! Recent blocks have a row each, written with the block (live and backfilled). Older history
 //! keeps only the [`CHAIN_SAMPLE_GRID`] heights: [`Store::thin_chain_points_before`] drops the
 //! other rows once they leave the per-block tier, and the engine's chain sampler fetches the
-//! grid heights nobody stored, so the whole chain is covered by about 4,200 rows.
+//! grid heights nobody stored, so the whole chain is covered by about 4,200 rows. The newest 30
+//! days are sampled on the finer [`crate::CHAIN_DENSE_GRID`] too (720 rows, thinned like the
+//! per-block rows as they age).
 
 use std::collections::BTreeSet;
 
@@ -73,11 +75,19 @@ impl Store {
     /// difficulty, ascending: what the chain sampler still has to fetch. Rows seeded from
     /// stored blocks lack the difficulty and are fetched again.
     pub fn chain_grid_missing(&self, grid: u32, max_height: u32) -> Result<Vec<u32>> {
+        self.chain_missing(grid, 0, max_height)
+    }
+
+    /// [`Self::chain_grid_missing`] for the heights `from..=max_height` only.
+    pub fn chain_missing(&self, grid: u32, from: u32, max_height: u32) -> Result<Vec<u32>> {
         let grid = grid.max(1);
+        if from > max_height {
+            return Ok(Vec::new());
+        }
         let have: BTreeSet<u32> = self.read(|txn| {
             let t = txn.open_table(tables::CHAIN_POINTS)?;
             let mut have = BTreeSet::new();
-            for item in t.range(..=max_height)? {
+            for item in t.range(from..=max_height)? {
                 let (k, v) = item?;
                 let h = k.value();
                 if h % grid == 0 && codec::decode::<ChainPoint>(v.value())?.difficulty.is_some() {
@@ -86,7 +96,7 @@ impl Store {
             }
             Ok(have)
         })?;
-        Ok((0..=max_height / grid)
+        Ok((from.div_ceil(grid)..=max_height / grid)
             .map(|i| i * grid)
             .filter(|h| !have.contains(h))
             .collect())

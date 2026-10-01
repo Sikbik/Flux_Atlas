@@ -712,8 +712,9 @@ impl Fixture {
 
 /// Per-block chain-history rows of the fixture: the last 7 days.
 pub const CHAIN_PER_BLOCK: u32 = 7 * 2_880;
-/// Per-block rows missing 3 days back (two hours: a restart gap in the 7-day window).
-pub const CHAIN_GAP: std::ops::Range<u32> = TIP - 3 * 2_880 - 240..TIP - 3 * 2_880;
+/// Per-block rows missing 3 days back: 12 hours (1,440 blocks, wider than a sample span), a gap
+/// in the 7-day and 30-day windows.
+pub const CHAIN_GAP: std::ops::Range<u32> = TIP - 3 * 2_880 - 1_440..TIP - 3 * 2_880;
 /// Lowest sampled height: the whole-chain window is only partly indexed.
 pub const CHAIN_SAMPLED_FROM: u32 = 1_500_480;
 

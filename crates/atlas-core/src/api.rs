@@ -844,6 +844,10 @@ pub struct ChainPointDto {
     /// Longest single gap between consecutive blocks in the bucket, when per-block data covers
     /// it; else `null`.
     pub block_time_max_s: Option<f64>,
+    /// `block_time_s` comes from sampled heights, not per-block rows. In a bucket that holds
+    /// no row itself, `height` is interpolated along the sample span and the difficulties are
+    /// `null`.
+    pub sampled: bool,
 }
 
 /// How much of a chain-history window is indexed.

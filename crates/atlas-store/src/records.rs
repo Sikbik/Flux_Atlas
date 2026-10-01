@@ -311,6 +311,13 @@ impl Resolution {
 /// are thinned away once older than the per-block tier (`HistoryRetention::chain_blocks_ms`).
 /// One sample every 720 blocks is 6 hours after Proof of Node and a day before it.
 pub const CHAIN_SAMPLE_GRID: u32 = 720;
+/// The newest [`CHAIN_DENSE_BLOCKS`] heights are also sampled on this finer grid (about one an
+/// hour), so the 24 h to 30 d windows are complete before the per-block rows exist. Off the deep
+/// grid these rows are thinned with the per-block ones once older than the per-block tier.
+pub const CHAIN_DENSE_GRID: u32 = 120;
+/// Heights below the tip sampled on [`CHAIN_DENSE_GRID`]: 30 days at 30 s, inside the 31-day
+/// per-block tier, so the thinning never removes a row the sampler would fetch again.
+pub const CHAIN_DENSE_BLOCKS: u32 = 30 * 2_880;
 
 /// Time and difficulty of one block (`chain_points`, keyed by height). Recent blocks have a row
 /// each (live blocks and the block backfill); older history keeps the [`CHAIN_SAMPLE_GRID`]
