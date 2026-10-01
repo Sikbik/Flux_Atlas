@@ -433,6 +433,8 @@
    never draws over the bar, whatever it is carrying below its own edge. */
 .wm-layer[data-layout="phone"] {
   clip-path: inset(0 0 calc(var(--tabbar-h) + var(--safe-bottom, 0px)) 0);
+  /* Above the header: a full sheet covers it (design 3.6), and nothing of the header shows through. */
+  z-index: calc(var(--z-topbar) + 1);
 }
 
 .wm-window[data-placement="sheet"] {

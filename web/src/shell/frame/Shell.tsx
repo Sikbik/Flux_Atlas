@@ -26,6 +26,7 @@ import { Boot } from '../../features/chrome/boot/Boot';
 import { bootInstant, finishBoot, useBootPhase } from '../../features/chrome/boot/state';
 import { useApplyLayers } from '../../features/chrome/layers';
 import { lazyCard } from '../../features/chrome/lazyCard';
+import { usePhone } from '../../features/chrome/phone';
 import { useRootPrefs } from '../../features/chrome/prefs';
 import { BlockRail } from '../../features/chrome/Rail';
 import { StatusBar } from '../../features/chrome/StatusBar';
@@ -52,7 +53,9 @@ import { ShellActionsContext } from './actions';
 import { Dock } from './Dock';
 import { useShellKeys } from './keys';
 import { useLauncher } from './launchers';
-import { PhoneTabs } from './regions';
+import { liveSheet } from './livegate';
+import { PhoneHeader } from './PhoneHeader';
+import { PhoneTabs } from './PhoneTabs';
 import { useGlobeInsetSync, useWindowRouting } from './routing';
 import { TopBar } from './TopBar';
 import './frame.css';
@@ -90,6 +93,9 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const { requestClose, focusWindow } = useWindowRouting(wm);
   const launch = useLauncher();
   const boot = useBootPhase();
+  const liveOpen = usePhone((s) => s.live);
+  const setLive = usePhone((s) => s.setLive);
+  const sheetOpen = useWm((s) => s.layout === 'phone' && visibleWindows(s).length > 0, Object.is);
   const actions = useMemo(() => ({ requestClose, focusWindow, launch }), [requestClose, focusWindow, launch]);
   useGlobeInsetSync(wm, ambient);
   useRootPrefs();
@@ -99,6 +105,19 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   useEffect(() => {
     if (ambient) finishBoot({ instant: true });
   }, [ambient]);
+
+  // The phone has one sheet. A window that opens over the bare globe takes it (the Live sheet gives way) and
+  // the sheet rises to half; the Live sheet opening rises to half too (design 3.6). A window retargeting or
+  // replacing another keeps the height the finger left.
+  const sheetKind = sheetOpen ? 'window' : phone && liveOpen ? 'live' : 'none';
+  const lastKind = useRef(sheetKind);
+  useEffect(() => {
+    const before = lastKind.current;
+    lastKind.current = sheetKind;
+    if (before === sheetKind) return;
+    if (sheetKind === 'window') setLive(false);
+    if (before === 'none' && sheetKind !== 'none') wm.dispatch({ t: 'setSheet', snap: 'half' });
+  }, [sheetKind, setLive, wm]);
 
   // Measure the workspace and hand it to the window manager (on resize and layout changes).
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-measures when the layout (ambient, phone) swaps regions
@@ -112,9 +131,15 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         ? (tabsRef.current?.getBoundingClientRect().top ?? v.h - 64)
         : (bottomRef.current?.getBoundingClientRect().top ?? v.h - 154);
       const left = isPhone ? 0 : (dockRef.current?.getBoundingClientRect().right ?? 76) + 8;
+      // The tab bar stands on the bottom safe area; the window manager's sheets stand on the tab bar, so the
+      // viewport it is given ends where the safe area begins.
+      const safeBottom =
+        isPhone && tabsRef.current
+          ? Number.parseFloat(getComputedStyle(tabsRef.current).paddingBottom) || 0
+          : 0;
       wm.dispatch({
         t: 'setViewport',
-        viewport: v,
+        viewport: { w: v.w, h: v.h - safeBottom },
         workspace: {
           x: left,
           y: top,
@@ -168,7 +193,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
           <MoonHint home={pathname === '/'} />
         </GlobeOverlay>
         <WindowTethers />
-        <TopBar ref={topRef} phone={phone} />
+        {phone ? <PhoneHeader ref={topRef} /> : <TopBar ref={topRef} />}
         {phone ? null : <Dock ref={dockRef} />}
         {phone ? null : <AimStrip />}
         {phone ? null : <pulse.Card />}
@@ -190,6 +215,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
           onRequestClose={requestClose}
           onFocusWindow={focusWindow}
         />
+        {phone && liveOpen && !sheetOpen ? <liveSheet.Card /> : null}
         <ToastHost />
         <CommandLayer />
         <Boot />

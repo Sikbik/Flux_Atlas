@@ -6,11 +6,14 @@
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { useCallback, useEffect } from 'react';
 import { isBooting, subscribeBoot } from '../../features/chrome/boot/state';
+import { usePhone } from '../../features/chrome/phone';
 import { useGlobeHandles } from '../../globe';
-import { globeInset } from '../wm/machine';
+import { globeInset, visibleWindows } from '../wm/machine';
 import { parseExtraWindows, pathForWindow, serializeExtraWindows, windowForPath } from '../wm/route';
+import { sheetHeights } from '../wm/sheet';
+import { TABBAR_H } from '../wm/specs';
 import { type WindowManager, wmKeyHandler } from '../wm/store';
-import type { WindowRef, WindowState } from '../wm/types';
+import type { Insets, WindowRef, WindowState, WmState } from '../wm/types';
 
 type Search = Record<string, unknown>;
 
@@ -110,6 +113,21 @@ export function useWindowRouting(wm: WindowManager) {
   return { requestClose, focusWindow };
 }
 
+/**
+ * The inset the globe centres in: the window manager's, and on the phone also the Live sheet (a sheet that is not
+ * a window, so the window manager does not know it) and the bottom safe area (the window manager's viewport ends
+ * where the safe area begins).
+ */
+export function insetFor(s: WmState, ambient: boolean, liveOpen: boolean): Insets {
+  if (ambient) return { left: 0, right: 0, top: 0, bottom: 0 };
+  const inset = globeInset(s);
+  if (s.layout !== 'phone') return inset;
+  const live = liveOpen && visibleWindows(s).length === 0;
+  const bottom = live ? TABBAR_H + sheetHeights(s.viewport.h)[s.sheet] : inset.bottom;
+  const safe = typeof window === 'undefined' ? 0 : Math.max(0, window.innerHeight - s.viewport.h);
+  return { ...inset, bottom: bottom + safe };
+}
+
 /** Keeps the globe centred in the free area the windows leave (engine.setInset, 300 ms). */
 export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
   const handles = useGlobeHandles();
@@ -119,8 +137,7 @@ export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
       const engine = handles.engine.get();
       // While the boot runs it places the globe itself (centred, then easing into the free area).
       if (!engine || isBooting()) return;
-      const s = wm.getState();
-      const inset = ambient ? { left: 0, right: 0, top: 0, bottom: 0 } : globeInset(s);
+      const inset = insetFor(wm.getState(), ambient, usePhone.getState().live);
       const key = `${inset.left},${inset.right},${inset.top},${inset.bottom}`;
       if (key === last) return;
       last = key;
@@ -136,7 +153,9 @@ export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
       last = '';
       apply();
     });
+    const offLive = usePhone.subscribe(apply);
     return () => {
+      offLive();
       offWm();
       offEngine();
       offBoot();

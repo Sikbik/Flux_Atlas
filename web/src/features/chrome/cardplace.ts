@@ -20,8 +20,10 @@ export const CARD_GAP_X = 14;
 export const CARD_GAP_Y = 8;
 /** A card keeps this far from the right edge of the screen. */
 export const CARD_EDGE = 12;
-/** Moon x below which its card opens to the right (so it never slides under the dock). */
-export const MOON_FLIP_X = 330;
+/** The moon's card sits this far from the moon's centre (the ring's radius and the card's own margin). */
+export const MOON_CARD_GAP = 64;
+/** On the desktop the moon's card keeps this far from the screen's left edge, so it never slides under the dock. */
+export const MOON_LEFT_CLEAR = 42;
 
 export interface Point {
   x: number;
@@ -45,10 +47,27 @@ export function cardFlips(p: Point, card: Size, viewW: number, top: number): { x
   };
 }
 
+/** The screen the moon's card has to fit: its width, and how far from the left edge the card must keep (the dock). */
+export interface MoonCardView {
+  w: number;
+  leftClear: number;
+}
+
 /**
- * The moon's card is centred beside the moon: on its left, or its right near the dock, and nudged down by
- * whatever keeps its top clear of the top chrome.
+ * The moon's card is centred beside the moon: on its left, or on its right when the left has no room and the
+ * right has (near the dock on a desktop; on a phone, where the moon sits near the right edge, it stays on the
+ * left), and nudged down by whatever keeps its top clear of the top chrome.
  */
-export function moonCardPlace(p: Point, card: Size, top: number): { flipX: boolean; nudge: number } {
-  return { flipX: p.x < MOON_FLIP_X, nudge: Math.max(0, Math.round(top - (p.y - card.h / 2))) };
+export function moonCardPlace(
+  p: Point,
+  card: Size,
+  top: number,
+  view: MoonCardView = { w: Number.POSITIVE_INFINITY, leftClear: MOON_LEFT_CLEAR },
+): { flipX: boolean; nudge: number } {
+  const leftRoom = p.x - MOON_CARD_GAP - card.w;
+  const rightRoom = view.w - CARD_EDGE - (p.x + MOON_CARD_GAP + card.w);
+  return {
+    flipX: leftRoom < view.leftClear && rightRoom >= 0,
+    nudge: Math.max(0, Math.round(top - (p.y - card.h / 2))),
+  };
 }

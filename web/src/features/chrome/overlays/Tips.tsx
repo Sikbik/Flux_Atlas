@@ -43,7 +43,10 @@ function useCardPlacement(mode: 'point' | 'moon') {
         let fy = false;
         let nudge = 0;
         if (mode === 'moon') {
-          const m = moonCardPlace(p, card.current, clearance.top);
+          const m = moonCardPlace(p, card.current, clearance.top, {
+            w: window.innerWidth,
+            leftClear: clearance.left,
+          });
           fx = m.flipX;
           nudge = m.nudge;
         } else {

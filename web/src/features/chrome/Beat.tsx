@@ -30,7 +30,7 @@ export function useBlockSince(): { height: number | null; since: number } {
   return { height, since };
 }
 
-function BeatRing({ height, since, phase }: { height: number | null; since: number; phase: string }) {
+export function BeatRing({ height, since, phase }: { height: number | null; since: number; phase: string }) {
   // A ping on every block after the first one seen.
   const prev = useRef<number | null>(height);
   const ping = prev.current !== null && height !== null && prev.current !== height;
@@ -59,8 +59,19 @@ function BeatRing({ height, since, phase }: { height: number | null; since: numb
   );
 }
 
-/** The Beat: ring, tip height, and what the next block is doing. */
-export function BeatChip() {
+export interface BeatView {
+  /** The tip's height, or null before the first block. */
+  height: number | null;
+  /** What the next block is doing, in words ("next in 12 s", "block late 8 s", "feed lost"). */
+  sub: string;
+  /** The ring's phase: the clock's own, or `lost` when the feed is gone. */
+  phase: string;
+  /** Milliseconds into the current block interval, for the ring's animation offset. */
+  since: number;
+}
+
+/** What the Beat shows, for the top bar's chip, the phone's header and the Live sheet. */
+export function useBeatView(): BeatView {
   const { clock } = useRuntime();
   const beat = useBeat(clock);
   const tip = useTip();
@@ -79,6 +90,12 @@ export function BeatChip() {
     } else sub = `chain quiet ${secs(beat.sinceMs)} s`;
   } else if (beat.phase === 'late') sub = `block late ${secs(beat.sinceMs)} s`;
   else sub = `next in ${Math.max(1, Math.ceil(beat.remainingMs / 1000))} s`;
+  return { height, sub, phase, since };
+}
+
+/** The Beat: ring, tip height, and what the next block is doing. */
+export function BeatChip() {
+  const { height, sub, phase, since } = useBeatView();
 
   const body = (
     <>

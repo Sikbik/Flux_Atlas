@@ -66,6 +66,7 @@
 .shell[data-boot="running"]
 :is(
   .topbar,
+  .phone-header,
   .dock,
   .railwrap,
   .statusbar,
@@ -79,7 +80,7 @@
   visibility: hidden;
 }
 
-.shell[data-boot="done"]:not([data-boot-instant]) .topbar {
+.shell[data-boot="done"]:not([data-boot-instant]) :is(.topbar, .phone-header) {
   animation: shell-in-top 700ms var(--ease-out) 0ms backwards;
 }
 
@@ -125,20 +126,31 @@
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"])
     .shell[data-boot="done"]
-    :is(.topbar, .dock, .railwrap, .statusbar, .shell-tabs) {
+    :is(.topbar, .phone-header, .dock, .railwrap, .statusbar, .shell-tabs) {
     animation: shell-in-fade 300ms var(--ease-standard) backwards;
   }
 }
 
 :root[data-motion="reduced"]
   .shell[data-boot="done"]
-  :is(.topbar, .dock, .railwrap, .statusbar, .shell-tabs) {
+  :is(.topbar, .phone-header, .dock, .railwrap, .statusbar, .shell-tabs) {
   animation: shell-in-fade 300ms var(--ease-standard) backwards;
 }
 
 :root[data-motion-off]
   .shell[data-boot="done"]
-  :is(.topbar, .dock, .railwrap, .statusbar, .shell-tabs, .pulse, .aimstrip, .wm-layer, .globe-overlay) {
+  :is(
+    .topbar,
+    .phone-header,
+    .dock,
+    .railwrap,
+    .statusbar,
+    .shell-tabs,
+    .pulse,
+    .aimstrip,
+    .wm-layer,
+    .globe-overlay
+  ) {
   animation: none;
 }
 
@@ -149,48 +161,14 @@
 }
 
 .shell[data-layout="phone"] .shell-stage {
-  inset: var(--topbar-h) 0 var(--tabbar-h) 0;
+  /* Below the header, which writes its own height to --phone-top; above the tab bar. */
+  inset: var(--phone-top, 190px) 0 calc(var(--tabbar-h) + var(--safe-bottom)) 0;
 }
 
 .shell[data-layout="phone"] .shell-page {
   left: var(--space-5);
   right: var(--space-5);
   max-width: none;
-}
-
-.shell[data-layout="phone"] .shell-tabs {
-  position: fixed;
-  inset: auto 0 0 0;
-  height: var(--tabbar-h);
-  padding-bottom: env(safe-area-inset-bottom);
-  z-index: var(--z-statusbar);
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-filter);
-  border-top: 1px solid var(--glass-border);
-}
-
-.shell-tab {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: var(--space-1);
-  min-height: var(--touch-min);
-  border: 0;
-  background: none;
-  color: var(--text-3);
-  font: inherit;
-  font-size: var(--fs-2xs, var(--fs-xs));
-  text-decoration: none;
-}
-
-.shell-tab[data-status="active"] {
-  color: var(--text-1);
-}
-
-.shell-tab:disabled {
-  opacity: 0.4;
 }
 
 /* Placeholder views inside a window: the window frame already draws the surface. */

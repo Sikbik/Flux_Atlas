@@ -323,7 +323,7 @@ export function Pulse() {
   return <PulseCard mode={mode} />;
 }
 
-function PulseCard({ mode }: { mode: PulseMode }) {
+export function PulseCard({ mode }: { mode: PulseMode }) {
   const { clock } = useRuntime();
   const filter = usePulsePrefs((s) => s.filter);
   const setFilter = usePulsePrefs((s) => s.setFilter);

@@ -15,6 +15,7 @@ re-centres in the free area, and the phone shows one sheet.
 | `react.tsx` | `WindowManagerProvider`, `useWm`, `useWmDispatch`, `useWindowManager`, `WindowLayer`, `WindowFrame`, `WindowDots`, `useWindowMeta` |
 | `wm.css` | the window chrome (`wm-` classes), imported by `react.tsx` |
 | `chrome.ts`, `ghost.ts`, `meta.tsx`, `scrollfade.ts`, `glyphs.tsx` | the chrome's pure geometry (FLIP, gutter, stable order), the exit ghost, the title bar meta, the body's "more to read" fade, the glyph and accent per window type |
+| `sheet.ts`, `useSheetDrag.ts`, `PhoneSheet.tsx` | the phone sheet: snap heights and the drag's decision (pure), the drag gesture, and the sheet chrome for a sheet that is not a window (the Live tab's) |
 | `index.ts` | re-exports everything but the React layer |
 
 ## The model
@@ -173,7 +174,8 @@ subtitle, freshness chip, controls), then `.wm-body`.
 
 State attributes on the wrapper, for CSS and for anything that wants to attach to a window:
 `data-window-type`, `data-window-id`, `data-placement` (`docked`, `floating`, `sheet`), `data-mode`
-(`normal`, `minimized`, `maximized`), `data-focused`, `data-dragging`, `data-accent` (a Flux blue tone or
+(`normal`, `minimized`, `maximized`), `data-snap` (phone sheets), `data-focused`, `data-dragging`, `data-sheet-drag`
+(a phone sheet under a finger), `data-accent` (a Flux blue tone or
 white) or `data-tier` (a node window wears its tier). Tests and tethers find windows by these; a ghost
 (below) never carries them.
 
@@ -217,8 +219,31 @@ the type's default (`WINDOW_ACCENT` in `glyphs.tsx`). The title itself stays the
 The chip uses the same rule as the status bar: fresh under 1.5x the cadence, aging to 3x, stale to 10x, dead
 beyond; an unknown time reads "Unknown".
 
+### The phone sheet (design 3.6)
+
+Under 720 px wide the window manager shows one window, the focused one, as a bottom sheet standing on the tab bar
+(`windowRect`). Its height is one of four snaps kept in `WmState.sheet` (`setSheet`): peek 132 px, half 372 px, tall
+(the viewport less the tab bar and 250 px) and full (the viewport less the tab bar and 16 px). The frame sets
+`data-placement="sheet"` and `data-snap`.
+
+| Behaviour | How |
+|---|---|
+| Heights and the drag's decision | `sheet.ts`, pure: `sheetHeights(viewportH)` restates the formula in `machine.ts` (`sheet.test.ts` runs both across viewport heights, so the two cannot drift), `nearestSnap` throws the sheet 180 ms of its speed past the finger, takes the nearest snap, lets a flick (0.45 px per ms or more) move it one snap its way, and dismisses a sheet carried below 60 percent of peek |
+| The gesture | `useSheetDrag.ts`: the grabber and the title bar. Pointer events with `touch-action: none`; 6 px of slop so a tap stays a tap; while the finger is down the sheet moves with a transform only (no state, no layout) and carries `data-sheet-drag`; past full it follows at a quarter of the travel |
+| On release | the snap is dispatched and the sheet, already in its final rectangle, is carried there from where it was let go with one FLIP of `translate3d` (340 ms, `--ease-out-expo`); a flick down from peek slides the sheet away (240 ms) and closes it (`data-sheet-gone` keeps the ghost from fading it a second time) |
+| Keyboard | the grabber is a button: Enter and a tap cycle the snaps, Arrow up and down step through them |
+| Clip and skirt | `.wm-layer[data-layout="phone"]` is clipped above the tab bar and sits above the header, and a sheet has a skirt of its own material under its edge, so a sheet pulled up shows no gap, one released low never draws over the bar, and a full sheet covers the header |
+| Scroll | the body scrolls only at tall and full (`scrollsAt`); at peek and half it is a preview, read by lifting the sheet |
+| Safe area | the frame gives the window manager a viewport that ends where the bottom safe area begins, because the sheet stands on the tab bar, which stands on the safe area |
+
+`PhoneSheet` draws the same sheet (the same classes, grabber, title bar, drag and snaps) for the one view that is
+not a route: the Live tab's. It is not a window: it never takes a window id or a route, the frame shows it when
+nothing else is in the sheet, and opening a window closes it. The globe's inset accounts for it
+(`insetFor` in `shell/frame/routing.ts`).
+
 ### Not built
 
 The aperture open (a clip-path circle out of the clicked launcher or marker, 6.4 A) and the pop-out are not
 here: the open is a plain scale and fade, which the motion layer can replace by attaching to the state
-attributes above. The phone sheet's grabber cycles peek, half, tall, full on click.
+attributes above. The moon does not park as a 24 px symbol in the header's Beat mini when a sheet is tall or full
+(7.10.6): that needs the engine.

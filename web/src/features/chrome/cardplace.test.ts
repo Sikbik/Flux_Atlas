@@ -7,7 +7,8 @@ import {
   CARD_GAP_Y,
   cardFlips,
   hoverKey,
-  MOON_FLIP_X,
+  MOON_CARD_GAP,
+  MOON_LEFT_CLEAR,
   moonCardPlace,
 } from './cardplace';
 
@@ -94,9 +95,27 @@ describe('moonCardPlace', () => {
   const card = { w: 224, h: 124 };
   const top = 114;
 
+  // Where the card's left edge would reach the dock's clearance.
+  const FLIP_X = MOON_LEFT_CLEAR + MOON_CARD_GAP + card.w;
+
   it('opens to the left of the moon, and to the right near the dock', () => {
-    expect(moonCardPlace({ x: MOON_FLIP_X, y: 400 }, card, top).flipX).toBe(false);
-    expect(moonCardPlace({ x: MOON_FLIP_X - 1, y: 400 }, card, top).flipX).toBe(true);
+    expect(moonCardPlace({ x: FLIP_X, y: 400 }, card, top).flipX).toBe(false);
+    expect(moonCardPlace({ x: FLIP_X - 1, y: 400 }, card, top).flipX).toBe(true);
+  });
+
+  it('stays on the left of a moon near the right edge of a phone, where the right has no room and there is no dock', () => {
+    const phone = { w: 390, leftClear: 0 };
+    // The moon at x 295 on a 390 px screen: 7 px to spare on the left, nothing on the right.
+    expect(moonCardPlace({ x: 295, y: 400 }, card, top, phone).flipX).toBe(false);
+    // With a dock's clearance the left would not do, but the right does not fit either: it still stays left.
+    expect(moonCardPlace({ x: 295, y: 400 }, card, top, { w: 390, leftClear: MOON_LEFT_CLEAR }).flipX).toBe(
+      false,
+    );
+  });
+
+  it('goes to the right of a moon near the left edge when the right fits', () => {
+    expect(moonCardPlace({ x: 100, y: 400 }, card, top, { w: 390, leftClear: 0 }).flipX).toBe(false);
+    expect(moonCardPlace({ x: 60, y: 400 }, card, top, { w: 800, leftClear: 0 }).flipX).toBe(true);
   });
 
   it('needs no nudge when the card is clear of the top chrome', () => {

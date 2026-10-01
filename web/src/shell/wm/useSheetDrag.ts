@@ -45,6 +45,24 @@ interface Drag {
   samples: { t: number; y: number }[];
 }
 
+/**
+ * Sends a sheet down off the screen (from where it is now, `from` px below its place) and calls `done` when it has
+ * gone. The end of the slide is held, so the sheet stays away until it is closed, and it leaves no ghost (ghost.ts).
+ */
+export function slideAway(el: HTMLElement, from: number, distance: number, done: () => void): void {
+  const away = `translate3d(0, ${distance}px, 0)`;
+  const slide = play(el, [{ transform: `translate3d(0, ${from}px, 0)` }, { transform: away }], {
+    duration: DISMISS_MS,
+    easing: cssValue('--ease-in', 'cubic-bezier(0.55, 0, 1, 0.45)'),
+  });
+  el.style.transform = away;
+  el.setAttribute('data-sheet-gone', '');
+  if (slide) {
+    slide.onfinish = done;
+    slide.oncancel = done;
+  } else done();
+}
+
 /** A press on one of these is theirs, not the sheet's: the close button, a link, a field. */
 const OWN_PRESS = 'a, input, select, textarea, [role="switch"], button:not(.wm-grabber)';
 
@@ -68,19 +86,7 @@ export function useSheetDrag(options: SheetDragOptions): {
       const outcome = nearestSnap({ from: snap, height: d.startHeight - d.dy, velocity }, heights);
       el.removeAttribute('data-sheet-drag');
       if (outcome.kind === 'dismiss') {
-        const away = `translate3d(0, ${d.startHeight + 32}px, 0)`;
-        const slide = play(el, [{ transform: `translate3d(0, ${d.dy}px, 0)` }, { transform: away }], {
-          duration: DISMISS_MS,
-          easing: cssValue('--ease-in', 'cubic-bezier(0.55, 0, 1, 0.45)'),
-        });
-        // Hold the end of the slide: the sheet stays away while it is closed, and leaves no ghost (ghost.ts).
-        el.style.transform = away;
-        el.setAttribute('data-sheet-gone', '');
-        const close = () => onDismiss();
-        if (slide) {
-          slide.onfinish = close;
-          slide.oncancel = close;
-        } else close();
+        slideAway(el, d.dy, d.startHeight + 32, onDismiss);
         return;
       }
       const visualTop = el.getBoundingClientRect().top;

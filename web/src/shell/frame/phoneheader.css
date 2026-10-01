@@ -1,0 +1,86 @@
+/* The phone's header (design 3.6). No bar and no border: a soft scrim keeps the text legible over the globe and
+   the stars, and the globe stays draggable between the controls (the header passes the pointer through; its
+   controls take it back). Three rows: the lockup with the Beat mini and the Live chip, the search pill, the aim
+   chips. */
+
+.phone-header {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: var(--z-topbar);
+  display: grid;
+  gap: var(--space-4);
+  padding: max(var(--safe-top), var(--space-4)) 0 var(--space-5);
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.88), rgb(0 0 0 / 0.58) 62%, transparent);
+  pointer-events: none;
+}
+
+.ph-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 0 var(--space-6) 0 var(--space-4);
+}
+
+.ph-row > * {
+  pointer-events: auto;
+}
+
+.phone-header .brand {
+  height: var(--touch-min);
+}
+
+.ph-live {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The search pill: 44 px, the palette's door. It reads as a field, and it is a button. */
+.ph-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--touch-min);
+  margin: 0 var(--space-6);
+  padding: 0 var(--space-6) 0 var(--space-5);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: rgb(8 12 22 / 0.62);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-inset-hi);
+  color: var(--text-3);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: text;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.ph-search:active {
+  border-color: var(--line-3);
+}
+
+.ph-search:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ph-search span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-header .aimstrip {
+  pointer-events: auto;
+}
+
+/* The Beat mini beside the lockup: the ring, the tip's height over what the next block is doing. */
+.phone-header .beat-txt {
+  display: grid;
+}

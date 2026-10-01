@@ -3,7 +3,8 @@
 // payees swap 2.6 s after each block, once the relay on the globe has finished (usePayoutLines holds the old
 // ones until then). A watched payee's chip is ringed in white. It steps aside in the time machine,
 // ambient, the weather layer, analytics and About Flux. The countdown is a visual; a polite status line
-// announces only when the three payees change, never the ticking.
+// announces only when the three payees change, never the ticking. On the phone (`inline`) it is the third row
+// of the header instead: no pill, always there, and the row scrolls sideways when the chips do not fit.
 
 import { useEffect, useRef, useState } from 'react';
 import { useRuntime } from '../../app/context';
@@ -43,12 +44,13 @@ const STRIP_ROOM = { wide: 650, narrow: 584 };
 
 const key = (l: PayoutLine) => `${l.tier}:${l.node ?? l.address}`;
 
-export function AimStrip() {
+export function AimStrip({ inline = false }: { inline?: boolean }) {
   const { clock } = useRuntime();
-  const allowed = useAimVisible();
+  const allowedHere = useAimVisible();
+  const allowed = inline || allowedHere;
   const { centre, width } = useFreeArea();
   const compact = useWm((s) => s.viewport.w < 1280, Object.is);
-  const visible = allowed && width >= (compact ? STRIP_ROOM.narrow : STRIP_ROOM.wide);
+  const visible = inline || (allowed && width >= (compact ? STRIP_ROOM.narrow : STRIP_ROOM.wide));
   const beat = useBeat(clock);
   const lines = usePayoutLines();
   const keyOf = useNodeKey();
@@ -61,7 +63,8 @@ export function AimStrip() {
   return (
     <fieldset
       className="aimstrip"
-      style={{ '--aim-x': `${centre}px` } as React.CSSProperties}
+      style={inline ? undefined : ({ '--aim-x': `${centre}px` } as React.CSSProperties)}
+      data-inline={inline || undefined}
       data-soon={soon || undefined}
       data-late={late || undefined}
       data-hidden={visible ? undefined : ''}
