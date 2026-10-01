@@ -50,6 +50,11 @@ export interface FleetData {
   pending: boolean;
   /** The roster request failed. */
   error: unknown;
+  /**
+   * A watchlist's per-node records are still arriving, so whether each node is reachable is not known yet:
+   * a claim of health would be a guess until they have.
+   */
+  settling: boolean;
 }
 
 /** The fleet of `addr` (a payment address), or of the user's watchlist for `watchlist`. */
@@ -57,7 +62,7 @@ export function useFleet(addr: string): FleetData {
   const watchlist = isWatchlist(addr);
   const op = useQuery({ ...queries.operator(addr), enabled: !watchlist });
   const watched = useUi((s) => s.watched);
-  const rows = useWatchRows(watched, watchlist);
+  const { rows, loading: rowsLoading } = useWatchRows(watched, watchlist);
   const { store } = useRuntime();
   const loaded = useNetwork((s) => s.loaded);
   // Re-run when any node changes: status, reachability, check-ins and paid heights live in the table.
@@ -82,6 +87,7 @@ export function useFleet(addr: string): FleetData {
     operator: op.data ?? null,
     pending: !watchlist && op.isPending,
     error: op.error,
+    settling: watchlist && rowsLoading,
   };
 }
 

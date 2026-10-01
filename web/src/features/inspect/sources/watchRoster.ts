@@ -17,17 +17,28 @@ export const watchNodeQuery = (id: number) => ({
   staleTime: 30 * 60_000,
 });
 
-/** Roster rows for the first watched nodes (the ones the server follows live), keyed by node id. */
-export function useWatchRows(ids: readonly number[], enabled: boolean): ReadonlyMap<number, NodeRow> {
+/**
+ * Roster rows for the first watched nodes (the ones the server follows live), keyed by node id, and whether
+ * any of those records is still on its way: until it has arrived a node's reachability is not known.
+ */
+export function useWatchRows(
+  ids: readonly number[],
+  enabled: boolean,
+): { rows: ReadonlyMap<number, NodeRow>; loading: boolean } {
   const results = useQueries({
     queries: ids.slice(0, WATCH_LIVE_LIMIT).map((id) => ({ ...watchNodeQuery(id), enabled })),
-    combine: (rs) => rs.map((r) => r.data?.node ?? null),
+    combine: (rs) => ({
+      nodes: rs.map((r) => r.data?.node ?? null),
+      loading: rs.some((r) => r.isLoading),
+    }),
   });
-  return useMemo(() => {
+  const { nodes, loading } = results;
+  const rows = useMemo(() => {
     const m = new Map<number, NodeRow>();
-    for (const node of results) if (node) m.set(node.id, rowFromDetail(node));
+    for (const node of nodes) if (node) m.set(node.id, rowFromDetail(node));
     return m;
-  }, [results]);
+  }, [nodes]);
+  return { rows, loading };
 }
 
 /**

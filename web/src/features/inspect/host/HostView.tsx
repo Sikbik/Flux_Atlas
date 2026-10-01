@@ -60,10 +60,15 @@ const WORD: Partial<Record<NodeStatusKind, string>> = {
 
 const coord = (v: number, pos: string, neg: string) => `${Math.abs(v).toFixed(2)} ${v >= 0 ? pos : neg}`;
 
-/** The host's health as chips: everything fine, or the problems by kind with how many nodes have each. */
-function HealthChips({ kinds }: { kinds: readonly NodeStatusKind[] }) {
+/**
+ * The host's health as chips: everything fine, or the problems by kind with how many nodes have each. While the
+ * server's node list, which says whether each node is reachable, is still arriving, a problem is shown as soon as
+ * it is known but "healthy" waits, since it would only be a guess.
+ */
+function HealthChips({ kinds, settling }: { kinds: readonly NodeStatusKind[]; settling: boolean }) {
   if (kinds.length === 0) return null;
   if (kinds.every(isQuietKind)) {
+    if (settling) return null;
     return <StatusChip status="confirmed" label={kinds.length === 1 ? 'Healthy' : 'All healthy'} size="sm" />;
   }
   const by = new Map<NodeStatusKind, number>();
@@ -121,7 +126,7 @@ export function HostView({ ip }: { ip: string }) {
   const tip = useTip()?.height;
   const engine = useGlobeEngine();
   const { live, other } = useHostLive(ip);
-  const { rows: apiRows } = useHostRows(ip);
+  const { rows: apiRows, pending: rowsPending } = useHostRows(ip);
   const queues = useQueues();
   const tiers = useTierInfo();
   const open = useOpenSet('host');
@@ -265,7 +270,7 @@ export function HostView({ ip }: { ip: string }) {
           </span>
         }
       >
-        <HealthChips kinds={kinds} />
+        <HealthChips kinds={kinds} settling={rowsPending && rows.some((n) => n.reachable === null)} />
         {mix.map((m) => (
           <TierChip
             key={m.tier}

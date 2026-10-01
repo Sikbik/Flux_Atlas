@@ -208,6 +208,7 @@ export function OperatorView({ addr }: { addr: string }) {
         addr={addr === WATCHLIST_KEY ? '' : addr}
         nodes={nodes}
         counts={counts}
+        settling={data.settling}
         onGlobe={onGlobe}
         onShowOnGlobe={showOnGlobe}
         watching={watching}
@@ -220,7 +221,13 @@ export function OperatorView({ addr }: { addr: string }) {
       ) : null}
       <AttentionCallouts groups={groups} />
       <Section>
-        <FleetStats total={nodes.length} counts={counts} next={summary.next} perDay={summary.perDay} />
+        <FleetStats
+          total={nodes.length}
+          counts={counts}
+          next={summary.next}
+          perDay={summary.perDay}
+          settling={data.settling}
+        />
       </Section>
       <EarningsSection
         earnings={earn.earnings}

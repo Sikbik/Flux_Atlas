@@ -26,10 +26,24 @@ const TONE: Record<FleetState, MapPoint['tone']> = {
   gone: 'off',
 };
 
-/** The fleet's one-line health as chips: everything fine, or the problems by weight. */
-function HealthChips({ counts, total }: { counts: Record<FleetState, number>; total: number }) {
+/**
+ * The fleet's one-line health as chips: everything fine, or the problems by weight. While the records that
+ * say whether each node is reachable are still arriving, a problem is shown as soon as it is known but
+ * "all healthy" waits, since it would only be a guess.
+ */
+function HealthChips({
+  counts,
+  total,
+  settling,
+}: {
+  counts: Record<FleetState, number>;
+  total: number;
+  settling: boolean;
+}) {
   if (total === 0) return null;
-  if (counts.ok === total) return <StatusChip status="confirmed" label="All healthy" size="sm" />;
+  if (counts.ok === total) {
+    return settling ? null : <StatusChip status="confirmed" label="All healthy" size="sm" />;
+  }
   return (
     <>
       {counts.down > 0 ? (
@@ -53,6 +67,8 @@ export interface FleetHeaderProps {
   addr: string;
   nodes: readonly FleetNode[];
   counts: Record<FleetState, number>;
+  /** Reachability is not known yet (see `FleetData.settling`), so the head makes no claim of health. */
+  settling: boolean;
   /** The fleet is on the globe (selection or watched filter in the URL). */
   onGlobe: boolean;
   onShowOnGlobe: () => void;
@@ -67,6 +83,7 @@ export function FleetHeader({
   addr,
   nodes,
   counts,
+  settling,
   onGlobe,
   onShowOnGlobe,
   watching,
@@ -136,7 +153,7 @@ export function FleetHeader({
           </span>
         }
       >
-        <HealthChips counts={counts} total={nodes.length} />
+        <HealthChips counts={counts} total={nodes.length} settling={settling} />
         {(['stratus', 'nimbus', 'cumulus'] as const).map((t) =>
           mix[t] > 0 ? (
             <TierChip key={t} tier={t} size="sm" label={`${formatInt(mix[t])} ${tierName(t)}`} />

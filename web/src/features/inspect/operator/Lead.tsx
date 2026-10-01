@@ -50,21 +50,28 @@ export function FleetStats({
   counts,
   next,
   perDay,
+  settling,
 }: {
   total: number;
   counts: Record<FleetState, number>;
   next: FleetNode | null;
   perDay: number | null;
+  /** Reachability is not known yet (see `FleetData.settling`): the healthy count would be a guess. */
+  settling: boolean;
 }) {
   const worry = counts.risk + counts.down + counts.pending + counts.gone;
   return (
     <StatGrid min={TRIO_MIN} className="ix-trio">
-      <Stat
-        label="Healthy"
-        value={<AnimatedNumber value={counts.ok} />}
-        unit={`of ${formatInt(total)}`}
-        caption={worry === 0 ? 'all confirmed' : `${formatInt(worry)} to look at`}
-      />
+      {settling ? (
+        <Stat label="Healthy" loading />
+      ) : (
+        <Stat
+          label="Healthy"
+          value={<AnimatedNumber value={counts.ok} />}
+          unit={`of ${formatInt(total)}`}
+          caption={worry === 0 ? 'all confirmed' : `${formatInt(worry)} to look at`}
+        />
+      )}
       <NextPayoutStat next={next} />
       <Stat
         label="Per day"
