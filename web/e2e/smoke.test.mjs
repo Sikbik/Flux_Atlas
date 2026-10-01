@@ -1,10 +1,13 @@
-// End-to-end smoke test: starts the Rust demo server (fast 3 s blocks) and `vite preview`, loads
-// the app in headless system Chromium, and asserts the WebSocket goes live and a block arrives.
+// End-to-end smoke test: starts the Rust demo server (fast 3 s blocks) and `vite preview` of a test
+// build (VITE_ATLAS_TEST=1 into dist-e2e, which exposes window.__atlasGlobeStats), loads the app in
+// headless system Chromium (SwiftShader WebGL), and asserts the WebSocket goes live, a block arrives,
+// the globe draws the network and plays a Beat, and the window manager follows the URL.
 //
 //   npm run e2e
 //
 // Env: ATLAS_DEMO_BIN (a prebuilt demo_server binary; default `cargo run --example demo_server`),
-// CARGO_TARGET_DIR (respected by cargo), CHROMIUM (browser path). Builds web/dist if missing.
+// CARGO_TARGET_DIR (respected by cargo), CHROMIUM (browser path), ATLAS_E2E_SKIP_BUILD=1 (reuse
+// web/dist-e2e).
 import assert from 'node:assert/strict';
 import { execSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -93,12 +96,16 @@ before(async () => {
   apiPort = await freePort();
   const webPort = await freePort();
   demo = startDemo();
-  if (!existsSync(join(webDir, 'dist', 'index.html'))) {
-    execSync('npm run build', { cwd: webDir, stdio: 'inherit', env });
+  if (!process.env.ATLAS_E2E_SKIP_BUILD || !existsSync(join(webDir, 'dist-e2e', 'index.html'))) {
+    execSync('npx vite build --outDir dist-e2e --emptyOutDir', {
+      cwd: webDir,
+      stdio: 'inherit',
+      env: { ...env, VITE_ATLAS_TEST: '1' },
+    });
   }
   preview = start(
     join(webDir, 'node_modules', '.bin', 'vite'),
-    ['preview', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'],
+    ['preview', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort', '--outDir', 'dist-e2e'],
     { cwd: webDir, env: { ...env, ATLAS_API_TARGET: `http://127.0.0.1:${apiPort}` } },
   );
   base = `http://127.0.0.1:${webPort}`;
@@ -112,7 +119,11 @@ before(async () => {
     throw e;
   }
   const exe = process.env.CHROMIUM || ['/usr/bin/chromium', '/usr/bin/google-chrome-stable'].find(existsSync);
-  browser = await chromium.launch({ executablePath: exe, headless: true });
+  browser = await chromium.launch({
+    executablePath: exe,
+    headless: true,
+    args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  });
 });
 
 after(async () => {
@@ -145,14 +156,15 @@ test('the WebSocket goes live and a block arrives', { timeout: 90_000 }, async (
   // A mainnet-sized snapshot loaded from nodes.bin.
   assert.ok((await intOf(page, 'store-nodes')) >= 6_700, 'nodes.bin loaded');
   const before = await intOf(page, 'last-block-height');
+  const seen = await intOf(page, 'live-blocks');
   await page.waitForFunction(
-    () => Number(document.querySelector('[data-testid=live-blocks]')?.textContent ?? '0') >= 1,
-    null,
+    (n) => Number(document.querySelector('[data-testid=live-blocks]')?.textContent ?? '0') > n,
+    seen,
     { timeout: 30_000 },
   );
   assert.ok((await intOf(page, 'last-block-height')) > before, 'the tip advanced');
   // The status line reads live too, and the runtime received block messages over the socket.
-  assert.equal(await page.getByTestId('live-status').getAttribute('data-status'), 'live');
+  assert.equal(await page.getByTestId('live-status').first().getAttribute('data-status'), 'live');
   const blocks = await page.evaluate(() => globalThis.__atlas.live.metrics().byType.block ?? 0);
   assert.ok(blocks >= 1, 'block messages received');
   await page.close();
@@ -219,6 +231,109 @@ test('a server restart is survived: reconnect, resync, live again', { timeout: 1
   await page.waitForFunction((n) => (globalThis.__atlas.live.metrics().byType.block ?? 0) > n, blocks, {
     timeout: 30_000,
   });
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+// ---- the globe ---------------------------------------------------------------------------------
+
+const globeReady = () => window.__atlasGlobeStats?.ready === true && window.__atlasGlobeStats.nodes > 0;
+
+test('the globe draws the live network (~6.7k nodes) from the store', { timeout: 120_000 }, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForFunction(() => globalThis.__atlas.store.loaded, null, { timeout: 30_000 });
+  const { drawn, store } = await page.evaluate(() => ({
+    drawn: window.__atlasGlobeStats.nodes,
+    store: globalThis.__atlas.store.nodes.count,
+  }));
+  assert.ok(drawn >= 6_600 && drawn <= 7_000, `globe draws ${drawn} nodes`);
+  assert.ok(Math.abs(drawn - store) <= 20, `globe (${drawn}) matches the store (${store})`);
+  assert.equal(await page.locator('canvas.globe-canvas').count(), 1);
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test('a Beat plays on the globe after a block lands', { timeout: 120_000 }, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  const before = await page.evaluate(() => ({
+    beats: window.__atlasGlobeStats.beats,
+    blocks: globalThis.__atlas.live.metrics().byType.block ?? 0,
+  }));
+  await page.waitForFunction(
+    (n) => (globalThis.__atlas.live.metrics().byType.block ?? 0) > n,
+    before.blocks,
+    {
+      timeout: 30_000,
+    },
+  );
+  // The Beat fires at t = 0; the relay's beams leave the moon from 1020 ms and land by 2140 ms.
+  await page.waitForFunction((n) => window.__atlasGlobeStats.beats > n, before.beats, { timeout: 10_000 });
+  await page.waitForFunction(
+    () => window.__atlasGlobeStats.downlinks > 0 && window.__atlasGlobeStats.payouts > 0,
+    null,
+    {
+      timeout: 10_000,
+    },
+  );
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test('the globe never remounts across routes; windows follow the URL', { timeout: 120_000 }, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.evaluate(() => {
+    window.__firstCanvas = document.querySelector('canvas.globe-canvas');
+  });
+  const key = await page.evaluate(() => globalThis.__atlas.store.nodes.endpoint(5));
+  const go = (p) =>
+    page.evaluate((path) => {
+      history.pushState({}, '', path);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, p);
+  await go(`/node/${encodeURIComponent(key)}`);
+  await page.waitForSelector('[data-window-type=node][data-placement=docked]', { timeout: 15_000 });
+  await go('/queue?w=about');
+  await page.waitForSelector('[data-window-type=queue]', { timeout: 15_000 });
+  await page.waitForSelector('[data-window-type=about]', { timeout: 15_000 });
+  assert.equal(await page.locator('[data-window-type=node]').count(), 0, 'the node window closed');
+  // Esc closes the topmost window through the URL.
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(
+    () => !location.pathname.startsWith('/queue') || !location.search.includes('w='),
+    null,
+    {
+      timeout: 10_000,
+    },
+  );
+  await go('/ambient');
+  await go('/');
+  const same = await page.evaluate(
+    () => window.__firstCanvas === document.querySelector('canvas.globe-canvas'),
+  );
+  assert.ok(same, 'one canvas for the whole session');
+  assert.equal(await page.evaluate(() => window.__atlasGlobeStats.generation), 0);
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test('a lost WebGL context comes back with a fresh engine', { timeout: 120_000 }, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  assert.ok(await page.evaluate(() => window.__atlasGlobe.loseContext()), 'WEBGL_lose_context available');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__atlasGlobe.restoreContext());
+  await page.waitForFunction(
+    () => window.__atlasGlobeStats?.generation === 1 && window.__atlasGlobeStats.ready,
+    null,
+    {
+      timeout: 30_000,
+    },
+  );
+  await page.waitForFunction(() => window.__atlasGlobeStats.nodes > 6_000, null, { timeout: 30_000 });
+  assert.equal(await page.locator('canvas.globe-canvas').count(), 1);
   await page.close();
   assert.deepEqual(pageErrors, []);
 });

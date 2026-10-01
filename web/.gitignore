@@ -3,6 +3,7 @@
 
 node_modules/
 dist/
+dist-*/
 test-results/
 e2e/artifacts/
 *.tsbuildinfo

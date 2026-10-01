@@ -3,8 +3,10 @@
 React 19 + TypeScript (strict) + Vite. The logic foundation of the live-first frontend: typed API
 layer, binary snapshot decoders, the WebSocket live client, the NetworkStore, the choreographer core,
 the shared event clock and formatters, a typed route tree for the whole IA, and a `/dev/live`
-inspector. The globe engine (`src/globe`) and the shell (`src/shell`) are placeholders reserved for
-the next work packages; the visual system comes from `docs/design` through `src/styles/tokens.css`.
+inspector. The globe (`src/globe`: the three.js engine ported from `labs/globe`, its bindings to the
+live runtime and the URL, labels and tethers) and the shell core (`src/shell`: the window manager and
+the structural frame) are in; the designed shell and feature views come next. The visual system comes
+from `docs/design` through `src/styles/tokens.css`.
 
 ## Run it
 
@@ -58,7 +60,9 @@ block, so a resync always lands on current data. Env: `ATLAS_DEMO_BIND`, `ATLAS_
 | `npm run typecheck` | `tsc --noEmit` (TypeScript 7, strict) |
 | `npm run lint` | Biome (lint and format check) |
 | `npm test` | Vitest: decoders (golden), store, live client, choreographer, formatters, clock, benchmarks |
-| `npm run e2e` | starts `demo_server` (3 s blocks) and `vite preview`, loads the app in headless Chromium, asserts the socket goes live, a block arrives, every route renders, and a server restart is survived |
+| `npm run e2e` | builds a test build (`VITE_ATLAS_TEST=1`, `dist-e2e/`), starts `demo_server` (3 s blocks) and `vite preview`, loads the app in headless Chromium (SwiftShader), asserts the socket goes live, a block arrives, the globe draws ~6.7k nodes and plays a Beat, windows follow the URL without remounting the globe, a lost WebGL context recovers, every route renders, and a server restart is survived |
+| `node scripts/globe-check.mjs fps` | real-GPU frame rate and frame times at 2560 x 1440 (`--w --h --path --seconds --base`) with the engine's GPU-synced cost per frame |
+| `node scripts/globe-check.mjs soak` | heap after forced GC once a minute while routes churn for `--minutes` (default 10) |
 | `npm run shot -- /dev/live out.png --base http://127.0.0.1:5173` | screenshot tool (playwright-core + system Chromium) |
 | `npm run sync-tokens` | copies `docs/design/tokens.css`, `tokens.json` and the fonts into `src/styles/` (`--from <dir>`, `--check`) |
 
@@ -77,8 +81,12 @@ src/
   app/        App.tsx, router.tsx (route tree), runtime.ts, context.tsx, errors.tsx, search.ts,
               placeholders/ (neutral views every route renders until the designed windows land)
   features/   dev/LiveInspector.tsx (/dev/live)
-  globe/      placeholder: the globe engine port lands here
-  shell/      placeholder: the shell lands here
+  globe/      engine/ (the three.js renderer, a lazy chunk), GlobeCanvas.tsx (mounted once as the living
+              wallpaper), bindings.ts (store + URL -> engine; engine -> intents), anchors.ts (labels,
+              tooltips and tethers from one loop), context.tsx (hooks), overlays.tsx, stats.ts
+  shell/      wm/ (window-manager core: state machine, route binding, minimal frame; see wm/README.md),
+              frame/ (structural regions: top bar, dock, stage, rail, status bar, phone tabs),
+              windowContent.tsx (what `?w=` extra windows render)
   styles/     tokens.css, tokens.json, fonts (synced), global.css (neutral, token-driven)
   testing/    fixtures for unit tests and benchmarks
 ```
@@ -117,3 +125,43 @@ src/
 - No emoji anywhere (code, comments, copy, docs, commits).
 - Visuals are token-driven only: never hard-code colours or fonts; the designers own the look.
 - `src/api/generated` is produced from Rust (`ts-rs`); change the Rust types, never these files.
+
+## The globe
+
+`GlobeCanvas` (in the root layout, outside every route) creates the engine once: `import('./engine')`
+is its own chunk, so the shell and the boot veil paint before three.js arrives. It never unmounts while
+the user navigates; a lost WebGL context is answered with a fresh engine on a fresh canvas (state comes
+back from the store and the URL). Preferences (`store/ui.ts`): the art style `globeArt` (`marble`
+default, `holo` = the dot-matrix planet, `neon`), the performance tier (`auto` lets the engine's
+governor lower the render scale, then the tier; the lite tier always draws the dot matrix; software GL
+starts there), and motion (`system` follows `prefers-reduced-motion`).
+
+`bindings.ts` is the only place the app talks to the engine about data (unit-tested with a fake engine):
+
+| Source | Engine |
+|---|---|
+| `store.loadSnapshot` / change sets | `setNodes` keyed by id (rows are unordered after deltas), `updateNodes` (added, removed, tier/status/flags), relocation for geo changes |
+| `mesh.bin`, `mesh` deltas | `setMesh`, `updateMesh` |
+| recent blocks | `seedMoonChain` (once) |
+| `tier`, `cc`, `org`, `ver`, `arcane`, `watched` | `setFilter` (masks plus an id allow-list) |
+| `l=mesh.off,mesh.sel,mesh.flow` | `setMeshMode` (default `selection`) |
+| `/node/$key`, `?sel=` | `select` (flies on `/node`) |
+| `/app/$name` | `showAppConstellation` (instances from the app API) |
+| `/host/$ip` | `flyTo` the host's site, close enough to fan the stack |
+| `/ambient` | `setMode('ambient')`: the moon blends from companion to orbit (900 ms) |
+| watchlist | `setWatched` |
+| the choreographer | `runtime.setEffectSink(shiftSink(engine.sink))` |
+| engine `select` / `hover` / `moonclick` / `wake` | intents (navigate to `/node/$key`, clear the selection, `/about`, leave ambient) and the hover signal |
+
+Node ids: the server interns ids from 0 and the engine reserves 0, so every id crossing the boundary
+is shifted by one (`toEngineId`, `shiftSink`); app code only ever sees store ids.
+
+Labels, tooltips and tethers use the anchor system (`anchors.ts`): `useGlobeAnchor(ref, anchor)`,
+`<GlobeLabel anchor>`, `<Tether from to>`. Anchors are world points (`engine.labelAnchors()`
+projects them once per frame, occlusion-culled behind the planet), nodes, the moon (its centre or the
+About tether point) and DOM elements. One loop, run on the engine's `frame` event, writes transforms
+directly: no React render per frame. Labels in a group are collision-culled and kept off the moon.
+
+`window.__atlasGlobeStats` (dev builds and `VITE_ATLAS_TEST=1`): nodes drawn, fps, frame and CPU ms,
+Beats, payouts, downlinks, quality, render scale, art, frames. `window.__atlasGlobe` adds the engine
+and `loseContext()` / `restoreContext()` for tests.
