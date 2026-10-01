@@ -25,6 +25,7 @@
 import { NodeFlag } from '../api/nodesBin';
 import type { EffectSink } from '../choreo/effects';
 import { type NetworkStore, Slice, type StoreChange } from '../store/network';
+import { resolveNodeKey } from '../store/nodeKeys';
 import { NodeField, type NodeTable, Reach } from '../store/nodeTable';
 import type { NodeColumns, NodeDelta, NodeFilter, PickInfo } from './engine/types';
 import type { GlobeTarget } from './target';
@@ -99,7 +100,7 @@ export interface GlobeFilterParams {
 export interface GlobeView {
   focus: GlobeFocus;
   ambient: boolean;
-  /** Node keys from `?sel=` (ip:port or ids). */
+  /** Node keys from `?sel=` (outpoints; older links: ip:port or ids). */
   sel: readonly string[];
   filter: GlobeFilterParams;
   /** `?l=` layers, for example `nodes,mesh.flow,-labels`. */
@@ -344,9 +345,9 @@ export interface GlobeBinding {
   home(): void;
   /** Watched nodes (store ids): the engine's dashed ring, and the `watched` filter. */
   setWatched(ids: readonly number[]): void;
-  /** The canonical key of a node for URLs: `ip:port`, else the id. */
+  /** The canonical key of a node for URLs: its outpoint, else `ip:port`, else the id. */
   keyOf(id: number): string;
-  /** A node id for a URL key (id or `ip:port`), or null. */
+  /** A node id for a URL key (outpoint, `ip:port` or a legacy id), or null. */
   resolveKey(key: string): number | null;
   /** The site of a host IP (first located node on it), for tethers and the camera. */
   hostSite(ip: string): { lat: number; lon: number } | null;
@@ -386,20 +387,29 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
   /** A past node table on screen (time machine), or null while the globe follows the live store. */
   let archive: NodeTable | null = null;
 
+  /** The table on screen: a past one in the time machine, else the live store. */
+  const shown = (): NodeTable => archive ?? t;
+
+  /** A node's URL key: its outpoint (stable on every instance), else `ip:port`, else the id. */
   const keyOf = (id: number): string => {
-    const i = t.indexOf(id);
-    const ep = i >= 0 ? t.endpoint(i) : '';
-    return ep || String(id);
+    const table = shown();
+    const i = table.indexOf(id);
+    if (i < 0) return String(id);
+    return table.outpoint(i) || table.endpoint(i) || String(id);
   };
 
-  const resolveKey = (key: string): number | null => {
-    const k = key.trim();
-    if (/^\d+$/.test(k)) {
-      const id = Number(k);
-      return t.has(id) ? id : null;
+  const resolveKey = (key: string): number | null => resolveNodeKey(shown(), key);
+
+  /** Watched (live ids) as ids of the shown table: an archive may number nodes differently. */
+  const watchedShown = (): readonly number[] => {
+    if (!archive) return watched;
+    const out: number[] = [];
+    for (const id of watched) {
+      const op = t.outpointOf(id);
+      const there = op ? archive.idOfOutpoint(op) : archive.has(id) ? id : -1;
+      if (there >= 0) out.push(there);
     }
-    for (let i = 0; i < t.count; i++) if (t.endpoint(i) === k) return t.ids[i]!;
-    return null;
+    return out;
   };
 
   const hostRows = (ip: string): number[] => {
@@ -553,7 +563,7 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
 
   const applyFilter = () => {
     if (!view) return;
-    const { filter, allow } = filterFor(view.filter, archive ?? t, watched);
+    const { filter, allow } = filterFor(view.filter, shown(), watchedShown());
     engine.setFilter(filter, allow);
   };
 

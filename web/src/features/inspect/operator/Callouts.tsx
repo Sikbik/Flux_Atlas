@@ -13,7 +13,7 @@ function NodeRef({ node }: { node: FleetNode }) {
   return node.endpoint ? (
     <Endpoint value={node.endpoint} />
   ) : (
-    <EntityLink kind="node" value={String(node.id)}>
+    <EntityLink kind="node" value={node.outpoint || node.endpoint || String(node.id)}>
       Node {node.id}
     </EntityLink>
   );

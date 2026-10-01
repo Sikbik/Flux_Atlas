@@ -28,11 +28,15 @@ function useSelection(): { id: number | null; set: (id: number | null) => void }
   const id = useResolvedId(key);
   const set = useCallback(
     (next: number | null) => {
-      const endpoint = next !== null ? readNodeLive(store, next)?.endpoint || String(next) : undefined;
+      // `?sel=` names the node by outpoint (ARCHITECTURE 8.1).
+      const key =
+        next !== null
+          ? store.nodes.outpointOf(next) || readNodeLive(store, next)?.endpoint || String(next)
+          : undefined;
       void navigate({
         to: '.',
         replace: true,
-        search: ((prev: Record<string, unknown>) => ({ ...prev, sel: endpoint })) as never,
+        search: ((prev: Record<string, unknown>) => ({ ...prev, sel: key })) as never,
       });
     },
     [navigate, store],

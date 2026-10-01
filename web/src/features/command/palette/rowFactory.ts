@@ -2,9 +2,10 @@
 // the server's hits so a node looks the same whichever side answered first.
 
 import type { SearchHit } from '../../../api/generated/SearchHit';
-import { type HitRoute, routeForHit } from '../../../app/searchRoutes';
+import { type HitRoute, nodeHitKey, routeForHit } from '../../../app/searchRoutes';
 import { formatInt, middleTruncate } from '../../../lib/format';
 import type { NetworkStore } from '../../../store/network';
+import { resolveNodeKey } from '../../../store/nodeKeys';
 import type { NavTarget } from '../navigation';
 import type { Place } from '../places';
 import {
@@ -27,14 +28,19 @@ const NODE_FLY_ALT = 0.34;
 
 const finite = (n: number) => Number.isFinite(n);
 
-/** A node row from the node table (row index `i`). */
+/**
+ * A node row from the node table (row index `i`). It links by outpoint (stable on every instance and
+ * what recents keep); the row id stays the endpoint so a server hit for the same node dedupes.
+ */
 export function nodeRow(store: NetworkStore, i: number, score: number): PaletteRow {
   const f = nodeFacts(store, i);
-  const key = f.endpoint || String(store.nodes.ids[i] ?? i);
+  const outpoint = store.nodes.outpoint(i);
+  const rowKey = f.endpoint || outpoint || String(store.nodes.ids[i] ?? i);
+  const key = outpoint || rowKey;
   const fly: FlyView | undefined =
     finite(f.lat) && finite(f.lon) ? { lat: f.lat, lon: f.lon, alt: NODE_FLY_ALT } : undefined;
   return {
-    id: `node:${key}`,
+    id: `node:${rowKey}`,
     group: 'nodes',
     kind: 'node',
     icon: 'node',
@@ -325,12 +331,16 @@ function navFromRoute(r: HitRoute): NavTarget {
   return r.to === '/' ? { to: '/', search: r.search, stay: true } : { to: r.to, params: r.params };
 }
 
-/** What a hit points at once the local table has had its say (node ids become endpoints). */
+/**
+ * What a hit points at once the local table has had its say. A node hit is matched by outpoint or
+ * endpoint (its id is the answering instance's, which can be the other one behind the domain).
+ */
 export function hitRow(hit: SearchHit, store: NetworkStore, total: number, score: number): PaletteRow | null {
   switch (hit.kind) {
     case 'node': {
-      const id = Number(hit.key);
-      const i = Number.isInteger(id) ? store.nodes.indexOf(id) : -1;
+      const key = nodeHitKey(hit);
+      const id = store.loaded ? resolveNodeKey(store.nodes, key) : null;
+      const i = id === null ? -1 : store.nodes.indexOf(id);
       if (i >= 0) return nodeRow(store, i, score);
       const word = hit.label.split(' ')[0]?.toLowerCase() ?? '';
       const tier = TIER_WORDS[word];
@@ -347,7 +357,7 @@ export function hitRow(hit: SearchHit, store: NetworkStore, total: number, score
         chip: 'Node',
         ...(tier ? { tier } : {}),
         score,
-        action: { type: 'go', target: { to: '/node/$key', params: { key: hit.key } } },
+        action: { type: 'go', target: { to: '/node/$key', params: { key } } },
         alongside: true,
         remember: true,
       };

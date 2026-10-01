@@ -8,12 +8,14 @@ import { useMemo } from 'react';
 import { api } from '../../../api/endpoints';
 import type { Geo } from '../../../api/generated/Geo';
 import type { NodeRow } from '../../../api/generated/NodeRow';
+import { canonicalNodeKey } from '../../../store/nodeKeys';
 import { rowFromDetail } from '../derive/operator';
 import { WATCH_LIVE_LIMIT } from '../watch/model';
 
-export const watchNodeQuery = (id: number) => ({
-  queryKey: ['atlas', 'inspect', 'watch-base', id] as const,
-  queryFn: ({ signal }: { signal: AbortSignal }) => api.node(id, { signal }),
+/** Keyed and fetched by outpoint when the snapshot knows the node (ids are per instance). */
+export const watchNodeQuery = (id: number, key = canonicalNodeKey(id)) => ({
+  queryKey: ['atlas', 'inspect', 'watch-base', key] as const,
+  queryFn: ({ signal }: { signal: AbortSignal }) => api.node(key, { signal }),
   staleTime: 30 * 60_000,
 });
 
@@ -25,19 +27,26 @@ export function useWatchRows(
   ids: readonly number[],
   enabled: boolean,
 ): { rows: ReadonlyMap<number, NodeRow>; loading: boolean } {
+  const asked = ids.slice(0, WATCH_LIVE_LIMIT);
   const results = useQueries({
-    queries: ids.slice(0, WATCH_LIVE_LIMIT).map((id) => ({ ...watchNodeQuery(id), enabled })),
+    queries: asked.map((id) => ({ ...watchNodeQuery(id), enabled })),
     combine: (rs) => ({
       nodes: rs.map((r) => r.data?.node ?? null),
       loading: rs.some((r) => r.isLoading),
     }),
   });
   const { nodes, loading } = results;
+  // Keyed by the session's id that was asked for: the record's own id is the answering instance's.
+  const key = asked.join(',');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the ids asked for
   const rows = useMemo(() => {
     const m = new Map<number, NodeRow>();
-    for (const node of nodes) if (node) m.set(node.id, rowFromDetail(node));
+    nodes.forEach((node, k) => {
+      const id = asked[k];
+      if (node && id !== undefined) m.set(id, { ...rowFromDetail(node), id });
+    });
     return m;
-  }, [nodes]);
+  }, [nodes, key]);
   return { rows, loading };
 }
 

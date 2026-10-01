@@ -1,6 +1,7 @@
 // Window specs: default placement, size, docking, tether and key per window type (design 2.3).
 // Sizes are the 1600 x 900 reference values; the reducer clamps them into the workspace.
 
+import { currentNodeTable, isOutpoint } from '../../store/nodeKeys';
 import tokens from '../../styles/tokens.json';
 import type { Placement, Rect, Size, WindowType } from './types';
 
@@ -85,8 +86,20 @@ const docked = (w: number, o: Partial<WindowSpec> = {}): Partial<WindowSpec> => 
 const short = (k: string) => (k.length > 20 ? `${k.slice(0, 10)}...${k.slice(-6)}` : k);
 const named = (base: string) => (key: string | null) => (key ? `${base} ${short(key)}` : base);
 
+/**
+ * A node window is keyed by outpoint (ARCHITECTURE 8.1), which reads poorly: the title names the
+ * node by its endpoint when the loaded snapshot knows it, and falls back to the shortened key.
+ */
+const nodeTitle = (key: string | null): string => {
+  if (!key) return 'Node';
+  const table = currentNodeTable();
+  const id = table && isOutpoint(key) ? table.idOfOutpoint(key) : -1;
+  const ep = id >= 0 && table ? table.endpoint(table.indexOf(id)) : '';
+  return `Node ${ep || short(key)}`;
+};
+
 export const WINDOW_SPECS: Record<WindowType, WindowSpec> = {
-  node: spec('node', named('Node'), docked(420, { tether: 'node', key: 'N' })),
+  node: spec('node', nodeTitle, docked(420, { tether: 'node', key: 'N' })),
   host: spec('host', named('Host'), docked(420, { tether: 'cluster' })),
   app: spec('app', named('App'), docked(452, { key: 'A' })),
   operator: spec('operator', named('Operator'), docked(440, { key: 'O' })),

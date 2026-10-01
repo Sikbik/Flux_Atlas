@@ -64,6 +64,8 @@ export interface LocalIndex {
   built: number;
   /** Snapshot the node table was loaded from. */
   snapshotSeq: number;
+  /** The store's snapshot load it was built after (a resync can land on another instance at the same seq). */
+  snapshotGen: number;
   total: number;
   countries: CountryEntry[];
   providers: ProviderEntry[];
@@ -227,6 +229,7 @@ export function buildLocalIndex(store: NetworkStore): LocalIndex {
   return {
     built: store.versions.Nodes,
     snapshotSeq: t.snapshotSeq,
+    snapshotGen: store.snapshotGen,
     total: n,
     countries,
     providers,
@@ -241,7 +244,13 @@ const cache = new WeakMap<NetworkStore, LocalIndex>();
 /** The cached index, rebuilt when a new snapshot loaded or 50 node changes have passed. */
 export function getLocalIndex(store: NetworkStore): LocalIndex {
   const cur = cache.get(store);
-  if (cur && cur.snapshotSeq === store.nodes.snapshotSeq && store.versions.Nodes - cur.built < 50) return cur;
+  if (
+    cur &&
+    cur.snapshotGen === store.snapshotGen &&
+    cur.snapshotSeq === store.nodes.snapshotSeq &&
+    store.versions.Nodes - cur.built < 50
+  )
+    return cur;
   const next = buildLocalIndex(store);
   cache.set(store, next);
   return next;

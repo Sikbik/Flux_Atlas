@@ -10,6 +10,7 @@ import {
   useInfiniteQuery,
   useQuery,
 } from '@tanstack/react-query';
+import { canonicalNodeKey } from '../store/nodeKeys';
 import {
   api,
   type BlocksParams,
@@ -56,30 +57,32 @@ export const queries = {
       staleTime: staleTimes.derived,
       placeholderData: keepPreviousData,
     }),
-  nodeDetail: (key: string | number) =>
+  // Node queries are keyed and fetched by outpoint whenever the snapshot knows the node: the same
+  // node on every instance behind the domain (ARCHITECTURE 8.1).
+  nodeDetail: (key: string | number, k = canonicalNodeKey(key)) =>
     queryOptions({
-      queryKey: qk.nodes.detail(key),
-      queryFn: ({ signal }) => api.node(key, { signal }),
+      queryKey: qk.nodes.detail(k),
+      queryFn: ({ signal }) => api.node(k, { signal }),
       staleTime: staleTimes.live,
     }),
-  nodeHistory: (key: string | number, p: RangeParams = {}) =>
+  nodeHistory: (key: string | number, p: RangeParams = {}, k = canonicalNodeKey(key)) =>
     queryOptions({
-      queryKey: qk.nodes.history(key, p),
-      queryFn: ({ signal }) => api.nodeHistory(key, p, { signal }),
+      queryKey: qk.nodes.history(k, p),
+      queryFn: ({ signal }) => api.nodeHistory(k, p, { signal }),
       staleTime: staleTimes.derived,
     }),
-  nodePayments: (key: string | number, p: Omit<CursorParams, 'cursor'> = {}) =>
+  nodePayments: (key: string | number, p: Omit<CursorParams, 'cursor'> = {}, k = canonicalNodeKey(key)) =>
     infiniteQueryOptions({
-      queryKey: qk.nodes.payments(key, p),
-      queryFn: ({ signal, pageParam }) => api.nodePayments(key, { ...p, cursor: pageParam }, { signal }),
+      queryKey: qk.nodes.payments(k, p),
+      queryFn: ({ signal, pageParam }) => api.nodePayments(k, { ...p, cursor: pageParam }, { signal }),
       initialPageParam: null as string | null,
       getNextPageParam: (last) => last.next_cursor ?? undefined,
       staleTime: staleTimes.live,
     }),
-  nodePeers: (key: string | number) =>
+  nodePeers: (key: string | number, k = canonicalNodeKey(key)) =>
     queryOptions({
-      queryKey: qk.nodes.peers(key),
-      queryFn: ({ signal }) => api.nodePeers(key, { signal }),
+      queryKey: qk.nodes.peers(k),
+      queryFn: ({ signal }) => api.nodePeers(k, { signal }),
       staleTime: staleTimes.derived,
     }),
   operator: (address: string) =>

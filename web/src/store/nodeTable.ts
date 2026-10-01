@@ -298,6 +298,11 @@ export class NodeTable {
     return this.outpointsExtra[-ref - 1] ?? '';
   }
 
+  /** True when rows carry outpoints (a server from B9 on). */
+  get hasOutpoints(): boolean {
+    return (this.outpointsBase?.known ?? false) || this.outpointsExtra.some(Boolean);
+  }
+
   /** Outpoint of node `id`, or '' when the node or its outpoint is unknown. */
   outpointOf(id: number): string {
     const i = this.index.get(id);

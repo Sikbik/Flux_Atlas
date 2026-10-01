@@ -66,7 +66,7 @@ const COLUMNS = [nodeColumn, paidColumn];
 
 const rowKey = (n: FleetNode) => n.id;
 const rowLink = (n: FleetNode) =>
-  n.present ? { kind: 'node' as const, value: n.endpoint || String(n.id) } : null;
+  n.present ? { kind: 'node' as const, value: n.outpoint || n.endpoint || String(n.id) } : null;
 
 /**
  * Every node of a fleet, soonest payout first. The kit's table: sorted by header, windowed past 200 rows,

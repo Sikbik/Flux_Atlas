@@ -48,7 +48,12 @@ function nodeColumns(nodes: ReadonlyMap<string, NodeTxDto>): readonly DataTableC
       cell: (t) => {
         const n = nodes.get(t.txid);
         return n ? (
-          <NodeLink id={n.node} fallbackEndpoint={n.endpoint} fallbackTier={n.benchmark_tier} />
+          <NodeLink
+            id={n.node}
+            outpoint={n.collateral}
+            fallbackEndpoint={n.endpoint}
+            fallbackTier={n.benchmark_tier}
+          />
         ) : null;
       },
       minWidth: 200,

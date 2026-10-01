@@ -2,6 +2,7 @@
 // types through ts-rs (`./generated`, never hand-edited). Every function takes an optional
 // AbortSignal and rejects with `ApiError` on failure.
 
+import { canonicalNodeKey } from '../store/nodeKeys';
 import type { AddressDto } from './generated/AddressDto';
 import type { AddressNodesDto } from './generated/AddressNodesDto';
 import type { AddressTxsPage } from './generated/AddressTxsPage';
@@ -92,6 +93,9 @@ export interface MetricsParams extends RangeParams {
 
 type O = RequestOptions;
 
+/** A node path segment: the outpoint when the snapshot knows the node, the key as given otherwise. */
+const nodeSeg = (key: string | number): string => seg(canonicalNodeKey(key));
+
 export const api = {
   // Hot snapshots.
   bootstrap: (o?: O) => getJson<BootstrapDto>('/bootstrap', undefined, o),
@@ -102,13 +106,18 @@ export const api = {
 
   // Nodes.
   nodes: (p: NodesParams = {}, o?: O) => getJson<NodesPage>('/nodes', { ...p }, o),
-  /** `key` is a node id, `ip:port`, or a collateral outpoint. */
-  node: (key: string | number, o?: O) => getJson<NodeDetailDto>(`/nodes/${seg(key)}`, undefined, o),
+  /**
+   * `key` is a node id, `ip:port`, or a collateral outpoint. Requests name the node by outpoint
+   * whenever the loaded snapshot knows it, so a request that reaches the other instance behind the
+   * domain still means the same node (ids are per instance, ARCHITECTURE 8.1).
+   */
+  node: (key: string | number, o?: O) => getJson<NodeDetailDto>(`/nodes/${nodeSeg(key)}`, undefined, o),
   nodeHistory: (key: string | number, p: RangeParams = {}, o?: O) =>
-    getJson<NodeHistoryDto>(`/nodes/${seg(key)}/history`, { ...p }, o),
+    getJson<NodeHistoryDto>(`/nodes/${nodeSeg(key)}/history`, { ...p }, o),
   nodePayments: (key: string | number, p: CursorParams = {}, o?: O) =>
-    getJson<NodePaymentsPage>(`/nodes/${seg(key)}/payments`, { ...p }, o),
-  nodePeers: (key: string | number, o?: O) => getJson<NodePeersDto>(`/nodes/${seg(key)}/peers`, undefined, o),
+    getJson<NodePaymentsPage>(`/nodes/${nodeSeg(key)}/payments`, { ...p }, o),
+  nodePeers: (key: string | number, o?: O) =>
+    getJson<NodePeersDto>(`/nodes/${nodeSeg(key)}/peers`, undefined, o),
   operator: (address: string, o?: O) => getJson<OperatorDto>(`/operator/${seg(address)}`, undefined, o),
 
   // Apps.

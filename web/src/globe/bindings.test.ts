@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { syntheticOutpoint } from '../api/bin/writer';
 import type { MeshBin } from '../api/meshBin';
 import { type EffectSink, recordingSink } from '../choreo/effects';
 import { NetworkStore } from '../store/network';
@@ -427,7 +428,7 @@ describe('engine -> app', () => {
   it('turns a node click into a selectNode intent with the canonical key, and empty space into a clear', () => {
     const { emit, intents } = setup();
     emit('select', { id: 8, isCluster: false } as PickInfo);
-    expect(intents).toEqual([{ kind: 'selectNode', id: 7, key: '5.0.0.7:16127' }]);
+    expect(intents).toEqual([{ kind: 'selectNode', id: 7, key: syntheticOutpoint(7) }]);
     emit('select', { id: 8, isCluster: true } as PickInfo);
     emit('select', null);
     expect(intents.at(-1)).toEqual({ kind: 'clearSelection' });
@@ -445,7 +446,7 @@ describe('engine -> app', () => {
   it('reports hover (store ids) and the moon; the moon click opens About', () => {
     const { emit, hovers, intents } = setup();
     emit('hover', { id: 1, isCluster: false } as PickInfo);
-    expect(hovers[0]).toMatchObject({ kind: 'node', id: 0, key: '5.0.0.0:16127' });
+    expect(hovers[0]).toMatchObject({ kind: 'node', id: 0, key: syntheticOutpoint(0) });
     emit('moonhover', { hovered: true, on: true, x: 10, y: 20, r: 30 });
     expect(hovers[1]).toEqual({ kind: 'moon', x: 10, y: 20, r: 30 });
     emit('moonclick', { x: 0, y: 0, key: true });

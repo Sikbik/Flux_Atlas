@@ -8,6 +8,7 @@ import type { NodeRow } from '../../../api/generated/NodeRow';
 import type { NodeStatus } from '../../../api/generated/NodeStatus';
 import { STATUS_CODES } from '../../../api/nodesBin';
 import { formatInt, parseEndpoint } from '../../../lib/format';
+import { localNodeId } from '../../../store/nodeKeys';
 import { type NodeTable, Reach } from '../../../store/nodeTable';
 import { countryName } from './appSpec';
 import { blocksSinceConfirm, CHECKIN, isAtRisk } from './expiry';
@@ -15,7 +16,10 @@ import { fluxPerDay, positionOf, QUEUE_TIERS, type QueueSnapshot, type QueueTier
 import { type VersionStanding, versionStanding } from './versions';
 
 export interface FleetNode {
+  /** The node id in the session's snapshot (the roster's own id when the table does not know the node). */
   id: number;
+  /** Collateral outpoint, the stable key links use; '' when unknown. */
+  outpoint: string;
   endpoint: string;
   ip: string;
   port: number | null;
@@ -66,8 +70,12 @@ export function buildFleet(
   payouts: TierPayouts,
 ): FleetNode[] {
   return roster.map((r) => {
-    const i = t.indexOf(r.id);
+    // The roster's ids are the answering instance's: match the row by outpoint (ARCHITECTURE 8.1).
+    const local = localNodeId(t, r);
+    const i = local === null ? -1 : t.indexOf(local);
     const known = i >= 0;
+    const id = local ?? r.id;
+    const outpoint = (known ? t.outpoint(i) : '') || r.outpoint || '';
     const tierName: QueueTier | 'unknown' = known
       ? (TIER_NAMES[t.tier[i]!] ?? 'unknown')
       : QUEUE_TIERS.includes(r.tier as QueueTier)
@@ -81,12 +89,13 @@ export function buildFleet(
     const status: NodeStatus = known ? (STATUS_CODES[t.status[i]!] ?? 'unknown') : r.status;
     const reach = known ? t.reachable[i]! : Reach.Unknown;
     const reachable = reach === Reach.Yes ? true : reach === Reach.No ? false : r.reachable;
-    const pos = positionOf(q, r.id);
+    const pos = known ? positionOf(q, id) : null;
     const size = pos?.size ?? 0;
     const payout = tierName === 'unknown' ? undefined : payouts[tierName];
     const version = known ? t.fluxOs(i) : (r.flux_os ?? '');
     return {
-      id: r.id,
+      id,
+      outpoint,
       endpoint,
       ip: ep?.host ?? '',
       port: ep?.port ?? null,

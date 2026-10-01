@@ -20,6 +20,7 @@ import { createLiveInvalidator } from '../api/liveInvalidation';
 import { qk } from '../api/queryKeys';
 import { Choreographer } from '../choreo/choreographer';
 import { type EffectSink, nullSink, recordingSink } from '../choreo/effects';
+import { migrateRecents } from '../features/command/palette/recents';
 import { EventClock } from '../lib/clock';
 import { NetworkStore } from '../store/network';
 import { resolveNodeKey, setNodeKeySource } from '../store/nodeKeys';
@@ -138,8 +139,10 @@ export function createRuntime(
       queryClient.removeQueries({ type: 'inactive' });
       void queryClient.resetQueries();
     }
-    // Stable keys to this origin's ids, before the new subscription sends `watch`.
+    // Stable keys to this origin's ids, before the new subscription sends `watch`; stored ids from
+    // older clients become outpoints once.
     useUi.getState().resolveWatched(store.nodes);
+    migrateRecents(store.nodes);
     resolveSelected();
     syncFocus();
     queryClient.setQueryData(qk.bootstrap(), bootstrap);

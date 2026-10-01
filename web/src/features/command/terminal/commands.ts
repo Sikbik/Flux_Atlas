@@ -6,8 +6,10 @@
 // `help` lists a short core; the rest appears with `help all`, so the first screen stays quiet.
 
 import { QUEUE_TIERS } from '../../../app/search';
+import { nodeHitKey } from '../../../app/searchRoutes';
 import { formatAgo, formatEta, formatInt, formatPercent, formatUtcTime } from '../../../lib/format';
 import { type NetworkStore, Slice } from '../../../store/network';
+import { resolveNodeKey } from '../../../store/nodeKeys';
 import { feedSentence } from '../feedText';
 import { activeFilters, describeFilters, parseFilterExpr } from '../filters';
 import { layerHidden, meshLabel, parseLayers } from '../layers';
@@ -77,8 +79,9 @@ export function findNodes(store: NetworkStore, text: string): NodeLookup {
   return { kind: 'prefix', rows: found.nodes.map((n) => n.row), total: found.total };
 }
 
+/** A node's link key: its outpoint (the same node on every instance), else its endpoint, else its id. */
 const nodeKeyOf = (store: NetworkStore, row: number): string =>
-  store.nodes.endpoint(row) || String(store.nodes.ids[row] ?? row);
+  store.nodes.outpoint(row) || store.nodes.endpoint(row) || String(store.nodes.ids[row] ?? row);
 
 const nodeTarget = (store: NetworkStore, row: number) => ({
   to: '/node/$key',
@@ -214,11 +217,14 @@ const node: Command = {
     const s = env.store;
     let found = findNodes(s, text);
     if (found.kind === 'none' && classifyText(text).kind === 'outpoint') {
-      // Collateral outpoints are not in the node table: the server resolves them.
-      const hits = await env.searchHits(text).catch(() => []);
-      const hit = hits.find((h) => h.kind === 'node');
-      const id = hit ? Number(hit.key) : Number.NaN;
-      const row = Number.isInteger(id) ? s.nodes.indexOf(id) : -1;
+      // The node table knows outpoints; a server that sends none resolves them in search.
+      let id = resolveNodeKey(s.nodes, text);
+      if (id === null) {
+        const hits = await env.searchHits(text).catch(() => []);
+        const hit = hits.find((h) => h.kind === 'node');
+        id = hit ? resolveNodeKey(s.nodes, nodeHitKey(hit)) : null;
+      }
+      const row = id === null ? -1 : s.nodes.indexOf(id);
       if (row >= 0) found = { kind: 'node', row };
     }
     switch (found.kind) {

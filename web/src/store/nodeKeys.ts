@@ -37,6 +37,19 @@ export function resolveNodeKey(table: NodeTable, key: string): number | null {
   return null;
 }
 
+/**
+ * The id in `table` of a node a server record names. The record's own id is the answering
+ * instance's, which can be the other one behind the domain, so its outpoint decides whenever the
+ * table has outpoints; only a table without them (an older server) falls back to the id.
+ */
+export function localNodeId(table: NodeTable, ref: { id: number; outpoint?: string | null }): number | null {
+  if (ref.outpoint && table.hasOutpoints) {
+    const id = table.idOfOutpoint(ref.outpoint);
+    return id < 0 ? null : id;
+  }
+  return table.has(ref.id) ? ref.id : null;
+}
+
 /** The outpoint of node `id` in `table`, or null when the node or its outpoint is unknown. */
 export function outpointOfId(table: NodeTable, id: number): string | null {
   return table.outpointOf(id) || null;

@@ -112,8 +112,10 @@ export function useFleetEarnings(data: FleetData): FleetEarnings {
   const results = useQueries({
     queries: data.nodes.map((n) => ({
       // A node's own paid height is part of the key: a new payment fetches fresh payments, nothing polls.
-      queryKey: ['atlas', 'inspect', 'fleet-pay', n.id, n.lastPaid ?? 0],
-      queryFn: ({ signal }: { signal: AbortSignal }) => api.nodePayments(n.id, { limit: 50 }, { signal }),
+      // By outpoint: the same node whichever instance answers (ARCHITECTURE 8.1).
+      queryKey: ['atlas', 'inspect', 'fleet-pay', n.outpoint || n.id, n.lastPaid ?? 0],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        api.nodePayments(n.outpoint || n.id, { limit: 50 }, { signal }),
       enabled: small,
       staleTime: 10 * 60_000,
       placeholderData: keepPreviousData,

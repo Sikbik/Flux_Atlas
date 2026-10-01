@@ -60,7 +60,11 @@ export function NodeView({ nodeKey }: { nodeKey: string }) {
   const resolved = useResolvedId(nodeKey);
   const loaded = useNetwork((s) => s.loaded);
   const detail = q.data;
-  const id = detail?.node.id ?? resolved;
+  // The id in this session's snapshot. The detail's own id is the answering instance's, which can
+  // be the other one behind the domain: it is used only through the detail's outpoint.
+  const byOutpoint = useResolvedId(detail?.node.outpoint ?? '');
+  const id = resolved ?? byOutpoint;
+  const outpoint = useNetwork((s) => (id === null ? '' : s.nodes.outpointOf(id)));
   const live = useNodeLive(id);
   const node = detail?.node;
   const tier = live?.tier ?? node?.tier ?? 'unknown';
@@ -76,9 +80,9 @@ export function NodeView({ nodeKey }: { nodeKey: string }) {
       tier,
       endpoint,
       ip: ipOfEndpoint(endpoint),
-      apiKey: id ?? nodeKey,
+      apiKey: detail?.node.outpoint || outpoint || nodeKey,
     }),
-    [nodeKey, id, detail, node, live, tier, endpoint],
+    [nodeKey, id, detail, node, live, tier, endpoint, outpoint],
   );
 
   if (q.isError && !live) {

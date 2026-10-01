@@ -187,7 +187,7 @@ test('the WebSocket goes live and a block arrives', { timeout: blockWaitMs + 60_
 test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: skipExternal }, async () => {
   const routes = [
     ['/', null],
-    ['/node/1', 'Node 1'],
+    ['/node/1', /^Node 5\.0\.0\.1:/],
     ['/host/5.0.0.1', 'Host 5.0.0.1'],
     ['/app/kadenanode', 'App kadenanode'],
     ['/app/kadenanode/history/2', 'Revision 2'],
@@ -216,6 +216,43 @@ test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: 
       await page.waitForSelector('[data-globe]', { timeout: 15_000 });
     }
     await page.close();
+  }
+  assert.deepEqual(pageErrors, []);
+});
+
+test('older node links become outpoint links; a malformed escape is a 404, not a crash', {
+  timeout: 90_000,
+  skip: skipExternal,
+}, async () => {
+  // A legacy numeric id resolves against the loaded snapshot and the URL is replaced (one redirect).
+  const legacy = await open('/node/1?l=mesh');
+  try {
+    await legacy.waitForFunction(() => /^\/node\/[0-9a-f]{64}%3A\d+$/.test(location.pathname), null, {
+      timeout: 30_000,
+    });
+    assert.equal(new URL(legacy.url()).searchParams.get('l'), 'mesh', 'the search survives the redirect');
+    await legacy
+      .getByRole('article', { name: /^Node / })
+      .first()
+      .waitFor({ timeout: 15_000 });
+  } finally {
+    await legacy.close();
+  }
+  // `%ZZ` is not a valid escape: the shell and the globe stay, the node window says not found. The
+  // preview server refuses such a URL itself (the Rust server serves the app), so the app navigates.
+  const bad = await open('/');
+  try {
+    await bad.waitForSelector('[data-globe]', { timeout: 15_000 });
+    await bad.evaluate(() => {
+      history.pushState({}, '', '/node/%ZZ');
+      dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+    });
+    await bad.getByRole('heading', { name: 'No such page' }).first().waitFor({ timeout: 30_000 });
+    assert.equal(await bad.locator('.fatal').count(), 0, 'the app was not replaced by the crash view');
+    assert.equal(await bad.locator('[data-window=error]').count(), 0, 'no route error view');
+    await bad.waitForSelector('[data-globe]', { timeout: 15_000 });
+  } finally {
+    await bad.close();
   }
   assert.deepEqual(pageErrors, []);
 });
