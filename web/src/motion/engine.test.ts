@@ -2,7 +2,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUi } from '../store/ui';
 import { attach, rules } from './attach';
-import { installCount, installEngine, powerOff, powerOn, pulse, resetEngine, stats, useHost } from './engine';
+import {
+  current,
+  installCount,
+  installEngine,
+  powerOff,
+  powerOn,
+  pulse,
+  resetEngine,
+  stats,
+  useHost,
+} from './engine';
 import type { Anim, Animate, Fx } from './fxRunners';
 import { MODE_ATTR, ROOT_ATTR } from './mode';
 
@@ -519,6 +529,20 @@ describe('engine', () => {
       expect(keys[1]?.clipPath).toBe('circle(436px at -5px -5px)');
     });
 
+    it('starts a Current after its delay, for a card that lands a beat after it mounts', () => {
+      const el = html('<div style="position: relative">card</div>');
+      box(el, 10, 10, 200, 80);
+      const h = current(el, { edge: 'perimeter', delay: 90 });
+      expect(h).not.toBeNull();
+      const mine = driver.anims.filter((a) => el.contains(a.el) || a.el.closest('.fx-layer'));
+      expect(mine.length).toBeGreaterThan(0);
+      for (const a of mine) expect(a.options.delay).toBe(90);
+      h?.cancel();
+      driver.anims.length = 0;
+      current(el, { edge: 'top' });
+      for (const a of driver.anims) expect(a.options.delay ?? 0).toBe(0);
+    });
+
     it('holds a far origin to 48 px outside the window, so the first frame already shows it', () => {
       const el = html('<div>window</div>');
       box(el, 10, 10, 300, 200);
@@ -530,7 +554,17 @@ describe('engine', () => {
       const keys = reveal?.keyframes as { clipPath: string }[];
       expect(keys[0]?.clipPath).toBe('circle(0px at 348px 248px)');
       const scale = driver.anims.find((a) => a.el === el && (a.keyframes as object[]).length === 3);
-      expect((scale?.keyframes as { transformOrigin: string }[])[0]?.transformOrigin).toBe('348px 248px');
+      const entrance = (scale?.keyframes ?? []) as { transformOrigin: string }[];
+      expect(entrance[0]?.transformOrigin).toBe('348px 248px');
+    });
+
+    it('takes an origin as a point on the element itself (a toast grows out of its right edge)', () => {
+      const el = html('<div>toast</div>');
+      box(el, 10, 10, 300, 200);
+      powerOn(el, { origin: { fx: 1, fy: 0.5 }, variant: 'panel' });
+      const scale = driver.anims.find((a) => a.el === el && (a.keyframes as object[]).length === 3);
+      const entrance = (scale?.keyframes ?? []) as { transformOrigin: string }[];
+      expect(entrance[0]?.transformOrigin).toBe('300px 100px');
     });
 
     it('stops listening when the last installer lets go (StrictMode double install is one install)', async () => {

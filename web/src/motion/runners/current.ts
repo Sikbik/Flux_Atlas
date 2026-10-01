@@ -25,6 +25,8 @@ export interface CurrentOptions {
   duration?: number;
   /** Tail length in px. */
   tail?: number;
+  /** Milliseconds to wait before the light starts: for a host that is itself still arriving, so it starts when the host shows. */
+  delay?: number;
   /** An inline track already positioned inside the host; the comet is drawn in it instead of an overlay. */
   track?: HTMLElement | null;
   /**
@@ -141,6 +143,7 @@ export function current(fx: Fx, host: HTMLElement, opts: CurrentOptions = {}): F
   if (rect.width < 24 || rect.height < 8 || offscreen(rect)) return null;
   const run = fx.begin('current', opts.track ?? host);
   if (!run) return null;
+  run.delay = Math.max(0, opts.delay ?? 0);
   const edge = opts.edge ?? 'top';
 
   let container: HTMLElement;
@@ -165,5 +168,5 @@ export function current(fx: Fx, host: HTMLElement, opts: CurrentOptions = {}): F
     mode === 'reduced'
       ? drawEdgeFlash(fx, run, container, rect, edge)
       : drawEdge(fx, run, container, host, rect, opts);
-  return run.endWhenDone(ms);
+  return run.endWhenDone(ms + run.delay);
 }
