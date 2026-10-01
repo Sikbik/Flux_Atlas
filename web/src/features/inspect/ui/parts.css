@@ -53,12 +53,6 @@
   color: var(--text-3);
 }
 
-/* Data in the mono face with tabular figures (the kit's `ui-mono`, kept for the queue view's older markup). */
-.ix-mono {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
 /* A small explanatory paragraph under a block. */
 .ix-cap {
   margin: var(--space-5) 0 0;
