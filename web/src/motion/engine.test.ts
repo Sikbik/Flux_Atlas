@@ -373,6 +373,32 @@ describe('engine', () => {
       expect(comets()).toBe(0);
     });
 
+    it('draws the streak inside a positioned row, so the light goes where the row goes, and takes it away', async () => {
+      const row = html('<div data-fx="current" data-fx-edge="bottom" style="position: relative">row</div>');
+      box(row, 20, 20, 400, 40);
+      row.setAttribute('data-fresh', '');
+      await tick();
+      const track = row.querySelector('.fx-current');
+      expect(track).not.toBeNull();
+      expect(track?.getAttribute('data-edge')).toBe('bottom');
+      expect(track?.getAttribute('aria-hidden')).toBe('true');
+      expect(track?.querySelectorAll('.fx-comet')).toHaveLength(1);
+      expect(layer()).toBeNull(); // no overlay: nothing is positioned over the rectangle
+      driver.finishAll();
+      await tick();
+      expect(row.querySelector('.fx-current')).toBeNull();
+      expect(row.textContent).toBe('row');
+    });
+
+    it('does not run for a row that was created with data-fresh already on it', async () => {
+      // The contract the views keep through useFresh: the attribute has to APPEAR on an element that exists.
+      const row = html('<div data-fx="current" data-fresh style="position: relative">row</div>');
+      box(row, 20, 20, 400, 40);
+      await tick();
+      expect(comets()).toBe(0);
+      expect(row.querySelector('.fx-current')).toBeNull();
+    });
+
     it('leaves rows that did not opt in to the kit', async () => {
       const row = html('<div class="ui-table__row">row</div>');
       box(row, 20, 20, 400, 40);
@@ -491,6 +517,20 @@ describe('engine', () => {
       expect(keys[0]?.clipPath).toBe('circle(0px at -5px -5px)');
       // the farthest corner is 368 px away (hypot(305, 205) rounded up), plus 4 px, plus the bleed
       expect(keys[1]?.clipPath).toBe('circle(436px at -5px -5px)');
+    });
+
+    it('holds a far origin to 48 px outside the window, so the first frame already shows it', () => {
+      const el = html('<div>window</div>');
+      box(el, 10, 10, 300, 200);
+      // a dock icon a thousand pixels to the lower right: the circle starts at the window's nearest corner zone
+      powerOn(el, { origin: { x: 1100, y: 1000 }, aperture: true });
+      const reveal = driver.anims.find(
+        (a) => a.el === el && (a.keyframes as { clipPath?: string }[])[0]?.clipPath !== undefined,
+      );
+      const keys = reveal?.keyframes as { clipPath: string }[];
+      expect(keys[0]?.clipPath).toBe('circle(0px at 348px 248px)');
+      const scale = driver.anims.find((a) => a.el === el && (a.keyframes as object[]).length === 3);
+      expect((scale?.keyframes as { transformOrigin: string }[])[0]?.transformOrigin).toBe('348px 248px');
     });
 
     it('stops listening when the last installer lets go (StrictMode double install is one install)', async () => {

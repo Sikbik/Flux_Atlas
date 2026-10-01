@@ -27,6 +27,12 @@ export interface CurrentOptions {
   tail?: number;
   /** An inline track already positioned inside the host; the comet is drawn in it instead of an overlay. */
   track?: HTMLElement | null;
+  /**
+   * Draw into a track the run itself puts inside the host and removes when it ends, so the light goes where
+   * the host goes (a row that is sliding in, a card in a list that scrolls). The host must be positioned;
+   * otherwise the overlay over its rectangle is used, as without this option.
+   */
+  inline?: boolean;
 }
 
 const WIRE_INSET = 0.75;
@@ -140,6 +146,13 @@ export function current(fx: Fx, host: HTMLElement, opts: CurrentOptions = {}): F
   let container: HTMLElement;
   if (opts.track) {
     container = opts.track;
+  } else if (opts.inline && getComputedStyle(host).position !== 'static') {
+    // The same track a <Current> renders (motion.css), made for this run and removed with it.
+    const t = fx.doc.createElement('span');
+    t.className = 'fx-current';
+    t.setAttribute('data-edge', edge);
+    t.setAttribute('aria-hidden', 'true');
+    container = run.node(host, t);
   } else {
     // An overlay box over the host; drawEdge clips straight edges to the span between the corners.
     container = fx.box(run, rect, null);

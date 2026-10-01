@@ -10,7 +10,8 @@
 //   data-pressed appears    Pulse at the press point (or the top centre for a key press)
 //   data-state turns on     Spark where the control lit (a switch's knob, a copy glyph), after a real
 //                           input, never for a change the app made on its own
-//   data-fresh appears      Current along the top edge of a row or card that opted in
+//   data-fresh appears      Current along the top edge of a row or card that opted in, on an element that
+//                           already exists (see fresh.ts: a view writes the attribute with `useFresh`)
 //   pointer over a button   the edge light follows the pointer (the CSS draws it)
 //   data-fx tokens          the same for elements outside the kit: press, toggle, charge, current
 //
@@ -201,7 +202,8 @@ function toggled(el: HTMLElement, attr: string, before: string | null): void {
 function fresh(el: HTMLElement): void {
   if (!isRuled(el, 'fresh') || !once(el, 'current')) return;
   const edge = el.getAttribute('data-fx-edge') as Edge | null;
-  current(el, { edge: edge ?? 'top' });
+  // Inline: the light is drawn inside the row, so it goes where the row goes while the row slides into place.
+  current(el, { edge: edge ?? 'top', inline: true });
 }
 
 function onMutations(records: MutationRecord[]): void {

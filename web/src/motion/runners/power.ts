@@ -55,6 +55,14 @@ export function coverRadius(ox: number, oy: number, w: number, h: number): numbe
  */
 const APERTURE_BLEED = 64;
 
+/**
+ * How far outside the element the origin may be. A window summoned from a dock icon a thousand pixels away
+ * would otherwise open as a circle that has not reached it yet (nothing to see for the first frames, which
+ * is a wait) and scale about a far point (it would slide). Held to the rectangle plus this slack, the first
+ * frame already shows the window and the light still comes in from the side the source is on.
+ */
+export const ORIGIN_SLACK = 48;
+
 function canClip(el: Element): boolean {
   const cs = getComputedStyle(el);
   return cs.clipPath === 'none' && cs.maskImage === 'none' && cs.boxShadow === 'none' && cs.filter === 'none';
@@ -64,8 +72,8 @@ function canClip(el: Element): boolean {
 function measure(el: Element, opts: PowerOptions) {
   const rect = el.getBoundingClientRect();
   const o = resolveOrigin(opts.origin, rect);
-  const ox = clamp(o.x - rect.left, -4000, 4000);
-  const oy = clamp(o.y - rect.top, -4000, 4000);
+  const ox = clamp(o.x - rect.left, -ORIGIN_SLACK, rect.width + ORIGIN_SLACK);
+  const oy = clamp(o.y - rect.top, -ORIGIN_SLACK, rect.height + ORIGIN_SLACK);
   const aperture = opts.aperture === true || (opts.aperture !== false && canClip(el));
   return {
     rect,
