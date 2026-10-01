@@ -1,0 +1,612 @@
+/* The terminal (F2b, design 8.7). It fills whatever window body it is given; the frame supplies the title
+   bar. Plex Mono at 13 px on a 20 px line; structure comes from a hairline rail per command, not boxes.
+   Local custom properties are prefixed --term-. Motion is opacity and transform only, on design tokens. */
+
+.term {
+  --term-fs: 13px;
+  --term-lh: 20px;
+  --term-gap: 10px;
+  --term-px: 16px;
+  --term-rail: var(--line-1);
+  --term-rail-hot: rgb(79 122 212 / 0.6);
+  --term-indent: 15px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--term-fs) / var(--term-lh) var(--font-mono);
+  font-variant-ligatures: none;
+  background: radial-gradient(90% 46% at 50% 118%, rgb(43 97 209 / 0.1), transparent 72%);
+}
+
+.term-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.term-screen {
+  flex: 1;
+  min-height: 0;
+  padding: 16px var(--term-px) 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+  cursor: text;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px);
+  mask-image: linear-gradient(to bottom, transparent, #000 14px);
+}
+
+/* ---- First use ------------------------------------------------------------------------------- */
+
+.term-intro {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 20px;
+  animation: term-fade var(--dur-slow) var(--ease-out) both;
+}
+
+.term-intro p {
+  margin: 0;
+}
+
+.term-intro-title {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.term-intro-title b {
+  color: var(--accent-400);
+  font-weight: var(--fw-medium);
+}
+
+.term-intro-sub {
+  color: var(--text-3);
+}
+
+.term-tries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.term-try {
+  padding: 4px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: rgb(255 255 255 / 0.02);
+  color: var(--text-2);
+  font: var(--fw-medium) 12px / 18px var(--font-mono);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+}
+
+.term-try:hover {
+  border-color: var(--accent-500);
+  background: var(--accent-soft);
+  color: var(--text-1);
+}
+
+.term-try:active {
+  transform: scale(0.97);
+}
+
+.term-try:focus-visible,
+.term-link:focus-visible,
+.term-cand:focus-visible,
+.term-stop:focus-visible,
+.term-jump:focus-visible,
+.term-tabkey:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ---- Output ---------------------------------------------------------------------------------- */
+
+.term-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--term-gap);
+}
+
+.term-group {
+  position: relative;
+}
+
+/* The rail: a hairline that hangs the output under its prompt line; the newest one carries the Flux blue. */
+.term-group::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: var(--term-lh);
+  bottom: 0;
+  width: 1px;
+  background: var(--term-rail);
+}
+
+.term-group[data-latest]::before {
+  background: linear-gradient(to bottom, var(--term-rail-hot), var(--term-rail) 75%);
+}
+
+.term-group:has(> .term-line:only-child)::before {
+  display: none;
+}
+
+.term-line {
+  min-height: var(--term-lh);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.term-line:not([data-kind="cmd"]) {
+  padding-left: var(--term-indent);
+}
+
+.term-line[data-kind="hint"],
+.term-line[data-kind="sys"] {
+  color: var(--text-3);
+}
+
+.term-line[data-kind="err"] {
+  color: var(--status-crit);
+}
+
+.term-line:not([data-old]) {
+  animation: term-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes term-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(3px * var(--motion-scale)));
+  }
+}
+
+@keyframes term-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.term [data-s="val"] {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.term [data-s="cmd"] {
+  color: var(--text-1);
+  font-weight: var(--fw-semibold);
+}
+
+.term [data-s="dim"] {
+  color: var(--text-3);
+}
+
+.term [data-s="key"] {
+  color: var(--accent-300);
+  font-weight: var(--fw-medium);
+}
+
+.term [data-s="accent"] {
+  color: var(--accent-400);
+  font-weight: var(--fw-medium);
+}
+
+.term [data-s="ok"] {
+  color: var(--status-ok);
+}
+
+.term [data-s="warn"] {
+  color: var(--status-warn);
+}
+
+.term [data-s="crit"] {
+  color: var(--status-crit);
+}
+
+.term [data-s="cumulus"] {
+  color: var(--tier-cumulus);
+}
+
+.term [data-s="nimbus"] {
+  color: var(--tier-nimbus);
+}
+
+.term [data-s="stratus"] {
+  color: var(--tier-stratus);
+}
+
+/* A span that opens something. No padding or border, so columns stay on the character grid. */
+.term-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.16);
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.term-link:hover {
+  background: var(--accent-soft);
+  color: var(--text-1);
+  box-shadow: 0 1px 0 var(--accent-400);
+}
+
+/* A share bar: sixteen character cells wide, filled from the left. */
+.term-bar {
+  position: relative;
+  display: inline-block;
+  width: 16ch;
+  height: 6px;
+  margin-bottom: 2px;
+  overflow: hidden;
+  vertical-align: middle;
+  border-radius: 1px;
+  background: var(--ink-3);
+}
+
+.term-bar i {
+  position: absolute;
+  inset: 0;
+  transform: scaleX(var(--f, 0));
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--accent-600), var(--accent-400));
+  animation: term-bar var(--dur-slow) var(--ease-out-expo) both;
+}
+
+.term-line[data-old] .term-bar i {
+  animation: none;
+}
+
+@keyframes term-bar {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* ---- The prompt ------------------------------------------------------------------------------ */
+
+.term-prompt {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  margin-top: var(--term-gap);
+}
+
+.term-log:empty + .term-prompt {
+  margin-top: 0;
+}
+
+/* While a stream runs the prompt is hidden but stays in the page, so it keeps the keyboard (Ctrl+C). */
+.term-prompt[data-hidden] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.term-prompt::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -7px;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-400), transparent);
+  opacity: 0;
+  transform: scaleX(0.35);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out-expo);
+}
+
+.term[data-focused] .term-prompt::after {
+  opacity: 0.5;
+  transform: scaleX(1);
+}
+
+.term-ps1 {
+  flex: none;
+  margin-right: 1ch;
+  white-space: pre;
+  user-select: none;
+}
+
+.term-ps1-who {
+  color: var(--accent-400);
+  font-weight: var(--fw-medium);
+}
+
+.term-ps1-dir {
+  color: var(--text-1);
+}
+
+.term-edit {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.term-mirror {
+  min-height: var(--term-lh);
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.term-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.term-input::selection {
+  background: var(--selection-bg);
+  color: transparent;
+}
+
+.term-head-known {
+  color: var(--text-1);
+  font-weight: var(--fw-semibold);
+}
+
+.term-head-unknown {
+  color: var(--status-warn);
+}
+
+.term-arg {
+  color: var(--text-1);
+}
+
+.term-ghost {
+  color: var(--text-4);
+}
+
+/* The block cursor: it inverts the character under it, blinks at 1 Hz, and is a hollow box when the prompt is not focused. */
+.term-cursor {
+  border-radius: 1px;
+  background: var(--accent-400);
+  color: var(--ink-0);
+  animation: term-blink 1s steps(1, end) infinite;
+}
+
+.term-cursor:not([data-focused]) {
+  background: transparent;
+  color: inherit;
+  box-shadow: inset 0 0 0 1px var(--accent-500);
+  animation: none;
+}
+
+@keyframes term-blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.term-spin {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 3px 0 0 8px;
+  border: 1.5px solid var(--line-3);
+  border-top-color: var(--accent-400);
+  border-radius: 50%;
+  animation: term-spin 0.8s linear infinite;
+}
+
+@keyframes term-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Tab as a button, for keyboards that have none. */
+.term-tabkey {
+  display: none;
+  flex: none;
+  align-items: center;
+  margin: 1px 0 0 8px;
+  padding: 0 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-xs);
+  background: rgb(255 255 255 / 0.03);
+  color: var(--text-3);
+  font: var(--fw-medium) 10.5px / 17px var(--font-mono);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .term-tabkey {
+    display: inline-flex;
+  }
+}
+
+/* ---- Streaming ------------------------------------------------------------------------------- */
+
+.term-live {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: var(--term-gap);
+  color: var(--text-3);
+}
+
+.term-live-dot {
+  position: relative;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-ok);
+}
+
+.term-live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--status-ok);
+  animation: term-ping 2.4s var(--ease-out) infinite;
+}
+
+@keyframes term-ping {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(3.2);
+  }
+}
+
+.term-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font: var(--fw-medium) 11.5px / 16px var(--font-mono);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+}
+
+.term-stop:hover {
+  border-color: var(--status-crit);
+  background: var(--status-crit-soft);
+  color: var(--text-1);
+}
+
+.term-stop:active {
+  transform: scale(0.97);
+}
+
+/* ---- Completions ----------------------------------------------------------------------------- */
+
+.term-cands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin-top: 14px;
+  color: var(--text-3);
+  animation: term-fade var(--dur-fast) var(--ease-out) both;
+}
+
+.term-cand {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.term-cand:hover {
+  color: var(--text-1);
+}
+
+.term-cands-more {
+  color: var(--text-4);
+}
+
+/* ---- Back to the newest output --------------------------------------------------------------- */
+
+.term-jump {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: rgb(15 19 25 / 0.92);
+  box-shadow: var(--shadow-glass);
+  color: var(--text-1);
+  font: var(--fw-medium) 11.5px / 16px var(--font-mono);
+  cursor: pointer;
+  animation: term-fade var(--dur-base) var(--ease-out) both;
+}
+
+@media (max-width: 720px) {
+  .term {
+    --term-px: 12px;
+  }
+
+  .term-bar {
+    width: 10ch;
+  }
+}
+
+/* Looping motion stops under reduced motion (the cursor stays solid, the spinner a still arc). */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .term-cursor,
+  :root:not([data-motion="full"]) .term-spin,
+  :root:not([data-motion="full"]) .term-live-dot::after {
+    animation: none;
+  }
+}
+
+:root[data-motion="reduced"] .term-cursor,
+:root[data-motion="reduced"] .term-spin,
+:root[data-motion="reduced"] .term-live-dot::after {
+  animation: none;
+}
