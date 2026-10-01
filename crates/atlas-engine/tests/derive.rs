@@ -1038,16 +1038,30 @@ fn mesh_diff() {
     let d = m.merge(vec![(n(2), rep(&[1], &[], 20))], &cross);
     assert!(d.added.is_empty());
     assert_eq!(d.reflagged, vec![(n(1), n(2), 1)]);
-    // 1 drops 100 but keeps 2: 1-100 removed, 1-2 unchanged and still bidirectional.
+    // 1 drops 100 but keeps 2: one report without the link is not evidence enough (hysteresis),
+    // nothing changes yet.
     let d = m.merge(vec![(n(1), rep(&[2], &[], 30))], &cross);
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!(m.edge_count(), 2);
+    // The next report covering 1-100 without it removes it.
+    let d = m.merge(vec![(n(1), rep(&[2], &[], 32))], &cross);
     assert_eq!(d.removed, vec![(n(1), n(100))]);
     assert!(d.reflagged.is_empty() && d.added.is_empty());
     assert_eq!(m.edge_count(), 1);
-    // 2 reports again without 1: the newer report wins over 1's older list, so the dropped
-    // connection disappears instead of lingering until 1 reports again.
+    // 2 reports without 1 while 1 still lists 2 (the two lists disagree, as they do for a while
+    // after a reconnect): the link stays, no longer bidirectional.
     let d = m.merge(vec![(n(2), rep(&[3], &[], 40))], &cross);
-    assert_eq!(d.removed, vec![(n(1), n(2))]);
+    assert!(d.removed.is_empty());
     assert_eq!(d.added, vec![(n(2), n(3), 0)]);
+    assert_eq!(d.reflagged, vec![(n(1), n(2), 0)]);
+    // 1 lists 2 again: the miss streak resets, so a later single omission still keeps it.
+    let d = m.merge(vec![(n(1), rep(&[2], &[], 41))], &cross);
+    assert!(d.is_empty(), "{d:?}");
+    let d = m.merge(vec![(n(2), rep(&[3], &[], 42))], &cross);
+    assert!(d.removed.is_empty(), "{d:?}");
+    // Two consecutive covering reports without it (one from each side): gone.
+    let d = m.merge(vec![(n(1), rep(&[], &[], 43))], &cross);
+    assert_eq!(d.removed, vec![(n(1), n(2))]);
     // Duplicate reporting of one connection from both sides is still one undirected edge.
     let d = m.merge(vec![(n(3), rep(&[], &[2], 45))], &cross);
     assert_eq!(d.reflagged, vec![(n(2), n(3), 1)]);

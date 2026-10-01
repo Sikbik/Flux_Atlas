@@ -196,9 +196,23 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   the expected payees, emits `reorg` (+ a feed item), and **triggers an immediate NodeRegistry reconcile**. The
 >   replacement blocks then arrive as ordinary `block` messages. A reorg deeper than the window is logged as an
 >   error and treated as a discontinuity.
-> - **Mesh expiry.** Each TopologySweep reporter's peer list replaces its previous one; an undirected edge is decided
->   by the newer of its two reports. A report not refreshed for **1 h** (about two sweep cycles) expires and its edges
->   are removed (streamed as a `mesh` delta).
+> - **Mesh expiry.** Each TopologySweep reporter's peer list replaces its previous one. A report not refreshed for
+>   **1 h** (about two sweep cycles) expires, and an edge no unexpired report lists is removed (streamed as a `mesh`
+>   delta).
+> - **Mesh hysteresis (B6).** An edge appears as soon as a report from either endpoint lists it, and is removed only
+>   when **two consecutive reports covering it** (new reports from either endpoint) omit it, or when no unexpired
+>   report lists it. Before, the newer of the two endpoints' reports decided alone, and a single omission removed the
+>   link. Measured on 3106 with that rule: about 320 links added and 310 removed per 12 s call (out of about
+>   134,000), and 31.7% of the removed links came back within 10 minutes (20.6% of all additions re-added a link
+>   removed within the previous 30 minutes): the copies of a reporter's list that different queried nodes hold
+>   differ in age, and the two endpoints disagree for a while after a reconnect. Every added link is a handshake
+>   on the globe, so that noise was visible. A real disconnect now leaves the globe one covering report later
+>   (typically the next call that includes either endpoint, up to one sweep cycle, about 30 min). Measured over a
+>   2 h soak with this rule (747 calls): 7.3% of removed links came back within 10 minutes (16.2% within 30). What
+>   churn remains comes mostly from a few queried hosts (5.230.173.205 and .206, every port) whose copies of the
+>   reporters' lists hold far more links than other nodes' copies: a call to one of them adds 2,400 to 3,900 links
+>   where a typical call adds about 250, and the next covering reports from other nodes remove them again.
+>   `bidirectional` still means both latest reports list each other.
 > - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
 >   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
 > - **Mempool classification.** The socket `tx` push carries no fluxnode type, no OP_RETURN and no size. Its
