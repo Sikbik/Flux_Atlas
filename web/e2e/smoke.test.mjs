@@ -778,7 +778,8 @@ test('watched-node alerts start from the shell once the boot is over and look up
   timeout: 150_000,
 }, async () => {
   const CHUNK = /\/assets\/WatchAlerts-[\w-]+\.js$/;
-  const LOOKUP = /\/api\/v1\/nodes\/(\d+)$/;
+  // A node is looked up by its stable key (the collateral outpoint) since B9; a numeric id is an old, per-instance key.
+  const LOOKUP = /\/api\/v1\/nodes\/([^/?]+)$/;
   const until = async (done, ms) => {
     for (let t = 0; t < ms && !done(); t += 100) await new Promise((r) => setTimeout(r, 100));
     return done();
@@ -803,7 +804,7 @@ test('watched-node alerts start from the shell once the boot is over and look up
     );
     page.on('request', (r) => {
       const m = LOOKUP.exec(new URL(r.url()).pathname);
-      if (m) lookups.push(Number(m[1]));
+      if (m) lookups.push(decodeURIComponent(m[1]));
     });
     await page.goto(`${base}/`, { waitUntil: 'load' });
     await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
@@ -818,19 +819,22 @@ test('watched-node alerts start from the shell once the boot is over and look up
   await none.page.waitForTimeout(2000);
   assert.deepEqual(none.asked, ['done'], 'the chunk is asked for once, after the boot');
   assert.deepEqual(none.lookups, [], 'nothing is watched, so nothing is looked up');
-  const id = await none.page.evaluate(
-    async () => (await (await fetch('/api/v1/nodes?limit=1')).json()).items[0].id,
+  const { id, outpoint } = await none.page.evaluate(
+    async () => (await (await fetch('/api/v1/nodes?limit=1')).json()).items[0],
   );
   assert.equal(Number.isInteger(id), true, 'the demo network has a node to watch');
+  assert.match(outpoint, /^[0-9a-f]{64}:\d+$/, 'and it has a collateral outpoint');
   await none.context.close();
+  const lookedUp = (v) => v.lookups.includes(outpoint) || v.lookups.includes(String(id));
 
-  // One node watched: the engine looks it up, once the boot is over.
-  const watching = await visit([id]);
-  assert.equal(
-    await until(() => watching.lookups.includes(id), 20_000),
-    true,
-    'the engine looked the node up',
-  );
+  // A watchlist saved before outpoints (numeric ids) migrates once and still watches the node.
+  const legacy = await visit([id]);
+  assert.equal(await until(() => lookedUp(legacy), 20_000), true, 'the migrated watch looked the node up');
+  await legacy.context.close();
+
+  // One node watched by its outpoint: the engine looks it up, once the boot is over.
+  const watching = await visit([outpoint]);
+  assert.equal(await until(() => lookedUp(watching), 20_000), true, 'the engine looked the node up');
   assert.deepEqual(watching.asked, ['done'], 'the chunk is asked for once, after the boot');
 
   // The dock's Operator launcher opens the watchlist.
