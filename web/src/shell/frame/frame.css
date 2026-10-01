@@ -40,6 +40,9 @@
 .shell-stage {
   position: fixed;
   inset: var(--topbar-h) 0 calc(var(--rail-h) + var(--timeline-h) + var(--statusbar-h)) 0;
+  /* A page route lives here: it paints over the globe's labels and the rail, like a window (the windows' own
+     layer, .wm-layer, is a sibling at the same level and comes later, so a window is always above a page). */
+  z-index: var(--z-window);
   pointer-events: none;
 }
 
