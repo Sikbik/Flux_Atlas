@@ -418,19 +418,20 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /nodes/{id}/peers` | the node's peers with geo, for selection-reveal |
 | `GET /nodes?…` | JSON node table with filters/sort/pagination (`tier`, `status`, `country`, `org`, `q`, `sort`, `cursor`). Rows carry `city` and `region` (`null` when unknown). `total` counts the rows matching the filters: unfiltered, every tracked node (`listed_count`, see Node counts below) |
 | `GET /nodes/{id\|ip\|outpoint}` | full node detail: record, geo, hw, versions, rank + payment ETA, hosted apps, recent events |
-| `GET /nodes/{id}/history?from&to` | status timeline, uptime %, events |
-| `GET /nodes/{id}/payments?cursor` | payment history |
+| `GET /nodes/{id}/history?from&to` | status timeline, uptime %, events. `uptime_pct` is the share of the window's *known* time spent confirmed; `null` (B7, was 0) when no part of the window is known |
+| `GET /nodes/{id}/payments?cursor` | payment history. Only payments this server attributed to the node: every payout of a block applied live, and in backfilled blocks only payouts to an address that one node of the tier used. `total_paid` sums those, so it is a recorded total, not a lifetime one (per-node attribution of older payouts to a shared address is impossible; see the operator earnings below for address-level sums) |
 | `GET /apps` / `GET /apps/{name}` | app index / full app: normalized spec, components, instances (node ids), history |
 | `GET /apps/{name}/history` | spec versions with diffs |
-| `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates. The summary's counts are defined under Node counts below |
+| `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization?top` | analytics aggregates. The summary's counts are defined under Node counts below. Decentralization (B7): `top` (1 to 5,000, default 25) is the number of `top_operators` rows; `operator_count` counts every operator and `operator_sizes` is the whole distribution as `[{nodes, operators}]` (ascending by `nodes`: how many operators run exactly that many confirmed nodes), so the long tail needs no long list |
+| `GET /network/app-economy?days&top` | app economy (B7), see App economy below |
 | `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
-| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
-| `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations) |
+| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. `limit` is 1 to 1,000 (B7, was 100; default 20); page with `before = next_before`. A page wholly below the finality window is immutable and served from a cache keyed by `(before, limit)`. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
+| `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations). An app payment (`kind: app_message`) carries `app_ref` (B7, typed optional): `{name, display_name, kind: register\|update, spec_version, message_hash, height, paid}` from the permanent message its OP_RETURN names, or from the pending message while it is unmined (`height` and `paid` null). Absent when the tx is no app payment or the message is not known yet. `/address/{addr}/txs` items carry it too |
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
 | `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket transfers in real time, node txs from the 20 s reconcile, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
 | `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; cached 60 s per t). Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
-| `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |
+| `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs. Earnings (B7) are address-level sums over the stored blocks' payouts, see Operator earnings below: `earned_24h`, `earned_7d`, `earned_30d` (`null` when the stored blocks do not cover the whole window), `earnings_from_height` / `earnings_from_ms` (start of the contiguous stored block history used, at most 30 days back) and `earned_covered` (the sum from there to the tip) |
 | `GET /ws` | WebSocket live stream (§8) |
 | `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine) |
 
@@ -457,6 +458,36 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > built from the copy the BlockDecoder already fetched (`EngineHandle::recent_raw_block`) instead of a second
 > `getblock` (155 ms before, under 1 ms now), and node detail no longer waits for the hosted-apps map rebuild (every
 > 30 s a request paid about 35 ms reading every app record); a stale map is served while one task rebuilds it.
+
+> **Operator earnings (B7).** `earned_24h` used to equal `earned_30d`: both summed the `payments` table, which
+> holds only payouts attributed to an exact node, i.e. the blocks applied live since this server's first ingest, plus
+> backfilled payouts to an address that one node of the tier used (11% of the backfilled payouts: the large operators
+> pay hundreds of nodes to one address). Every window therefore counted the same few hours. The earnings now sum the
+> payouts of the stored blocks by payment address, which needs no node attribution: a window of the last 2,880
+> (24 h), 20,160 (7 d) or 86,400 (30 d) blocks up to the tip counts when every block of it is stored (the block
+> backfill keeps 7 days by default, `ATLAS_BACKFILL_DAYS`), and is `null` otherwise. Which payouts belong to the
+> operator: for a payment-address key, every payout to that address; for a ZelID, every payout to the payment
+> addresses of its nodes, except that an address also used by another operator's node counts only payouts attributed
+> to one of this operator's nodes. The server keeps an index of the last 30 days of payouts by address, rebuilt from
+> the store in the background when the tip moves (at most every 20 s; a 7-day store reads 63,000 payout rows in
+> about 5 ms), so the endpoint stays a memory read.
+>
+> **App economy (B7).** `GET /network/app-economy?days=90&top=20` (`days` 1 to 365, `top` 1 to 100), derived from the
+> permanent app messages (the one-time `permanentmessages` backfill holds all 6 years, about 71,000 messages, and the
+> chain feed adds each new one):
+> - `paid_24h`, `paid_7d`, `paid_30d`: FLUX paid for register and update messages mined in the last 2,880, 20,160 and
+>   86,400 blocks; `registrations_30d`, `updates_30d`; `paid_all_time`, `messages_total`.
+> - `days`: one row per UTC day, oldest first, today last (partial): `{day_ms, registrations, updates, paid,
+>   active_apps}`. A message falls on the day of its block; block times are estimated from the height (tip time
+>   minus 30 s per block), which is within minutes over the range.
+> - `active_apps` (per day and at the tip): apps whose latest spec at the end of the day had not expired (the expiry
+>   rule of `app_expire_height`). At the tip it matches the live app count.
+> - `top_apps_30d`, `top_apps_all_time`: `{name, display_name, paid, messages, last_height}` by FLUX paid.
+> - `history_complete`: false until the backfill has finished; until then every figure covers only the messages this
+>   server has seen and the windows are `null`.
+> Renewals (an update that only extends `expire`) count as updates. Not derivable: who paid beyond the paying
+> transaction, any fiat price paid off chain, the USD value at payment time before this server's own price history,
+> and running instances before the first ingest (the `instance_count` metric starts then).
 
 ## 7. Binary node snapshot — `nodes.bin` (format v1)
 
