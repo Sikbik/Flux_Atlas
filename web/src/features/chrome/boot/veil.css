@@ -70,21 +70,113 @@
   }
 }
 
+/* ---- when Atlas does not answer (BootFail.tsx) ------------------------------------------------------------------- */
+
+/* The offline state, shared by the quick path and the full boot (which places it by the log, boot.css): what is wrong,
+   what the connection is doing now, and the two ways forward. */
+.boot-fail {
+  display: grid;
+  gap: 8px;
+  width: min(380px, calc(100vw - 48px));
+  padding: 16px 18px;
+  border: 1px solid color-mix(in oklab, var(--status-crit) 40%, transparent);
+  border-radius: var(--r-lg);
+  background: var(--glass-bg-strong);
+  box-shadow: var(--shadow-pop);
+  animation: boot-in 280ms var(--ease-out) both;
+}
+
+.boot-fail b {
+  font: var(--fw-semibold) var(--fs-md) / 1.3 var(--font-display);
+}
+
+.boot-fail p {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+/* What the connection is doing right now ("Reconnecting in 3 s"), in the mono of the status bar. */
+.boot-fail .boot-fail-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.boot-fail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.boot-btn {
+  height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--accent-600);
+  color: #fff;
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.boot-btn:hover {
+  background: var(--accent-600-hover);
+}
+
+.boot-btn[data-quiet] {
+  background: var(--ink-3);
+  color: var(--text-1);
+}
+
+.boot-btn[data-quiet]:hover {
+  background: var(--ink-4);
+}
+
+.boot-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The quick path has nothing else on screen: the panel stands in the middle. */
+.boot[data-mode="instant"] .boot-fail {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+}
+
 /* ---- motion preferences: nothing travels ------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) .boot-brand {
+  :root:not([data-motion="full"]) .boot-brand,
+  :root:not([data-motion="full"]) .boot-fail {
     animation-name: boot-fade;
   }
 }
 
-:root[data-motion="reduced"] .boot-brand {
+:root[data-motion="reduced"] .boot-brand,
+:root[data-motion="reduced"] .boot-fail {
   animation-name: boot-fade;
 }
 
-:root[data-motion-off] .boot-brand {
+:root[data-motion-off] .boot-brand,
+:root[data-motion-off] .boot-fail {
   animation: none;
   opacity: 1;
+}
+
+@media (forced-colors: active) {
+  .boot-btn:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
 }
 
 @keyframes boot-fade {

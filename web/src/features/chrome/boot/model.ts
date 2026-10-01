@@ -313,3 +313,45 @@ function firstUndone(done: BootSignals['done']): StageId | null {
   for (const s of STAGES) if (done[s.id] === undefined) return s.id;
   return null;
 }
+
+/** The quick path's veil gives the globe this long once the data is in; then it shows the shell with what it has. */
+export const QUICK_GIVE_UP_MS = 6000;
+
+export interface QuickInput {
+  nowMs: number;
+  startMs: number;
+  /** The snapshot is in the store. */
+  loaded: boolean;
+  /** The globe engine is not up yet. */
+  globeLoading: boolean;
+  live: boolean;
+  status: string;
+  retriedAtMs: number | null;
+}
+
+/** What the quick veil does this frame: lift, or keep waiting (and say so when Atlas has not answered). */
+export type QuickStep = { kind: 'end' } | { kind: 'wait'; failed: StageId | null };
+
+/**
+ * The quick path's veil, frame by frame. It lifts when the data and the globe are ready, or when the data is in and
+ * only the globe is slow (`QUICK_GIVE_UP_MS`: the shell shows what it has). With no data there is nothing to show:
+ * the veil stays, and once Atlas has not answered for long enough to be a failure and not a hiccup (`detectFailure`:
+ * 3 s of refusals, 10 s of silence) it says so, with a retry, the way the full boot does. When the data does come,
+ * the veil lifts by itself.
+ */
+export function quickStep(i: QuickInput): QuickStep {
+  if (i.loaded && (!i.globeLoading || i.nowMs - i.startMs > QUICK_GIVE_UP_MS)) return { kind: 'end' };
+  if (i.loaded) return { kind: 'wait', failed: null };
+  const failed = detectFailure(
+    {
+      nowMs: i.nowMs,
+      startMs: i.startMs,
+      loadedAtMs: null,
+      live: i.live,
+      status: i.status,
+      retriedAtMs: i.retriedAtMs,
+    },
+    {},
+  );
+  return { kind: 'wait', failed };
+}

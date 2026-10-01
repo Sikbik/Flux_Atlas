@@ -3,21 +3,20 @@
 // sequence (the log, the numeral, the symbol's four pieces: FullBoot.tsx) is its own chunk, fetched only when a
 // first-visit, return or reduced-motion boot is the one to play. The quick path (a reload in the same tab, a
 // driven browser, `?boot=off`) is this file and nothing else: the veil with the lockup, then a 300 ms fade as
-// soon as the data and the globe are ready. Esc, any key or a click skips either one.
+// soon as the data and the globe are ready; if Atlas does not answer it says so, with a retry (`quickStep`).
+// Esc, any key or a click skips either one.
 
 import { type ComponentType, lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { useRuntime } from '../../../app/context';
+import { useNetwork, useRuntime } from '../../../app/context';
 import { useGlobeHandles } from '../../../globe/context';
 import { globeInset } from '../../../shell/wm/machine';
 import { useWindowManager } from '../../../shell/wm/react';
 import { FluxRound } from '../brand';
+import { BootFail } from './BootFail';
 import { type BootChoice, chooseBootNow, markBootedNow } from './mode';
-import type { BootMode } from './model';
+import { type BootMode, quickStep, type StageId } from './model';
 import { bootPhase, finishBoot } from './state';
 import './veil.css';
-
-/** A quick path that has seen neither data nor globe by now lets the shell show what is wrong (design 8.8). */
-const QUICK_GIVE_UP_MS = 6000;
 
 const reducedNow = (): boolean =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -43,14 +42,20 @@ export function Boot() {
   );
 }
 
-/** The quick path: the lockup on black until the data and the globe are ready, then a fade. */
+/**
+ * The quick path: the lockup on black until the data and the globe are ready, then a fade. With no answer from Atlas
+ * it says so after a few seconds (the same offline state as the full boot), and lifts by itself once the data comes.
+ */
 function QuickBoot(_: { choice?: BootMode }) {
   const runtime = useRuntime();
   const handles = useGlobeHandles();
   const wm = useWindowManager();
   const [gone, setGone] = useState(false);
+  const [failed, setFailed] = useState<StageId | null>(null);
+  const hasSnapshot = useNetwork((s) => s.loaded);
   const rootRef = useRef<HTMLDivElement>(null);
   const skipRef = useRef<() => void>(() => {});
+  const retryRef = useRef<() => void>(() => {});
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: set up once per mount; everything it reads is a ref or a store
   useEffect(() => {
@@ -60,6 +65,8 @@ function QuickBoot(_: { choice?: BootMode }) {
     let ended = false;
     let raf = 0;
     let timer = 0;
+    let retriedAt: number | null = null;
+    let shown: StageId | null = null;
     const end = () => {
       if (ended) return;
       ended = true;
@@ -71,11 +78,33 @@ function QuickBoot(_: { choice?: BootMode }) {
     };
     const tick = () => {
       if (ended) return;
-      const ready = runtime.store.loaded && handles.status.get() !== 'loading';
-      if (ready || performance.now() - t0 > QUICK_GIVE_UP_MS) end();
-      else raf = requestAnimationFrame(tick);
+      const status: string = runtime.store.connection.status;
+      const step = quickStep({
+        nowMs: performance.now(),
+        startMs: t0,
+        loaded: runtime.store.loaded,
+        globeLoading: handles.status.get() === 'loading',
+        live: status === 'live',
+        status,
+        retriedAtMs: retriedAt,
+      });
+      if (step.kind === 'end') {
+        end();
+        return;
+      }
+      if (step.failed !== shown) {
+        shown = step.failed;
+        setFailed(step.failed);
+      }
+      raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
+    retryRef.current = () => {
+      retriedAt = performance.now();
+      shown = null;
+      setFailed(null);
+      runtime.live.reconnectNow();
+    };
     skipRef.current = () => {
       if (ended) return;
       // Jump to the assembled shell: the globe takes the shell's inset at once.
@@ -84,6 +113,8 @@ function QuickBoot(_: { choice?: BootMode }) {
     };
     const onKey = (e: KeyboardEvent) => {
       if (['Shift', 'Control', 'Alt', 'Meta', 'Tab', 'CapsLock'].includes(e.key)) return;
+      // Enter and Space on the offline state's buttons press them; they are not a skip.
+      if ((e.target as HTMLElement | null)?.closest?.('.boot-fail')) return;
       skipRef.current();
     };
     window.addEventListener('keydown', onKey, true);
@@ -101,12 +132,22 @@ function QuickBoot(_: { choice?: BootMode }) {
       className="boot"
       data-testid="boot"
       data-mode="instant"
-      onPointerDown={() => skipRef.current()}
+      onPointerDown={(e) => {
+        if (!(e.target as HTMLElement).closest('.boot-fail')) skipRef.current();
+      }}
     >
       <header className="boot-brand">
         <FluxRound size={34} />
         <b className="boot-word">Atlas</b>
       </header>
+      {failed ? (
+        <BootFail
+          failed={failed}
+          hasSnapshot={hasSnapshot}
+          onRetry={() => retryRef.current()}
+          onContinue={() => skipRef.current()}
+        />
+      ) : null}
       <p className="sr-only" role="status">
         Loading Flux Atlas
       </p>

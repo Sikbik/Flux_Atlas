@@ -20,6 +20,7 @@ import { globeInset } from '../../../shell/wm/machine';
 import { useWindowManager } from '../../../shell/wm/react';
 import { TierGlyph } from '../../../ui';
 import { FluxMarkWhite, FluxRound } from '../brand';
+import { BootFail } from './BootFail';
 import { announce, type BootFacts, lineValue } from './lines';
 import { markBootedNow } from './mode';
 import {
@@ -396,22 +397,12 @@ export function FullBoot({ choice }: { choice: BootMode }) {
         skip the boot
       </p>
       {failed ? (
-        <div className="boot-fail" role="alert">
-          <b>{failed === 'stream' ? 'The live stream did not open' : 'Atlas did not answer'}</b>
-          <p>
-            {failed === 'stream'
-              ? 'The map is the last snapshot and may be out of date. Atlas keeps trying in the background.'
-              : 'Check the connection. Atlas keeps trying in the background.'}
-          </p>
-          <div className="boot-fail-actions">
-            <button type="button" className="boot-btn" onClick={() => actions.current.retry()}>
-              Retry
-            </button>
-            <button type="button" className="boot-btn" data-quiet="" onClick={() => actions.current.skip()}>
-              {hasSnapshot ? 'Continue with the last snapshot' : 'Continue without data'}
-            </button>
-          </div>
-        </div>
+        <BootFail
+          failed={failed}
+          hasSnapshot={hasSnapshot}
+          onRetry={() => actions.current.retry()}
+          onContinue={() => actions.current.skip()}
+        />
       ) : null}
       <p className="sr-only" role="status">
         {said}
