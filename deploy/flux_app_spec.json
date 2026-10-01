@@ -1,0 +1,30 @@
+{
+  "version": 8,
+  "name": "atlas",
+  "description": "Flux Atlas: a live map and explorer of the Flux network. Every node, app and block streams to a 3D globe as it happens.",
+  "owner": "196GJWyLxzAw3MirTT7Bqs2iGpUQio29GH",
+  "compose": [
+    {
+      "name": "atlas",
+      "description": "Flux Atlas: a live map and explorer of the Flux network. Every node, app and block streams to a 3D globe as it happens.",
+      "repotag": "littlestache/flux-atlas:latest",
+      "ports": [33889],
+      "domains": [""],
+      "environmentParameters": [],
+      "commands": [],
+      "containerPorts": [3000],
+      "containerData": "/app/backend/data",
+      "cpu": 1,
+      "ram": 2500,
+      "hdd": 10,
+      "repoauth": ""
+    }
+  ],
+  "instances": 2,
+  "contacts": ["F_S_CONTACTS=https://storage.runonflux.io/v1/contacts/60521733226044"],
+  "geolocation": [],
+  "expire": 88000,
+  "nodes": [],
+  "staticip": false,
+  "enterprise": ""
+}
