@@ -213,6 +213,7 @@ function fresh(el: HTMLElement): void {
     light();
     return;
   }
+  if (modeOf(el) === 'off') return; // nothing would be drawn: no timer either
   setTimeout(() => {
     if (el.isConnected && el.hasAttribute('data-fresh')) light();
   }, wait);

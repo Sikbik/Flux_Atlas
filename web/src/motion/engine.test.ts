@@ -444,6 +444,19 @@ describe('engine', () => {
         expect(stats()?.dropped).toBe(0);
       });
 
+      it('starts no timer at all when motion is off', async () => {
+        useUi.setState({ motion: 'off' });
+        const timers = vi.spyOn(globalThis, 'setTimeout');
+        const row = html('<div data-fx="current" data-fx-delay="40" style="position: relative">row</div>');
+        box(row, 20, 20, 400, 40);
+        timers.mockClear();
+        row.setAttribute('data-fresh', '');
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(timers.mock.calls.filter(([, ms]) => ms === 40)).toHaveLength(0);
+        timers.mockRestore();
+      });
+
       it('draws nothing when the row went away, or stopped being fresh, while it waited', async () => {
         document.body.innerHTML = `
           <div id="gone" data-fx="current" data-fx-delay="30" style="position: relative">a</div>
