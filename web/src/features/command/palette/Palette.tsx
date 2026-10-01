@@ -16,6 +16,7 @@ import { track } from '../../achievements/events';
 import { hasMod } from '../keys';
 import { writePaletteText } from '../paletteUrl';
 import { drainTypeAhead } from '../typeAhead';
+import { KindStrip } from './KindStrip';
 import { loadRecents } from './recents';
 import { KeyCap, optionId, RowSkeletons, RowView } from './rows';
 import { type RunCtx, type RunMode, runRow } from './run';
@@ -388,31 +389,16 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
           <span>{model.input.text ? 'Enter runs the first match' : 'Type after the word to search'}</span>
         </div>
       ) : (
-        <div className="pal-kinds" role="radiogroup" aria-label="Kind of result">
-          {KIND_CHIPS.map((k) => {
-            const n = model.counts[k.id];
-            return (
-              // biome-ignore lint/a11y/useSemanticElements: a segmented control inside a combobox popup; native radios would take the input's focus
-              <button
-                key={k.id}
-                type="button"
-                role="radio"
-                aria-checked={chip === k.id}
-                tabIndex={-1}
-                className="pal-kind"
-                data-on={chip === k.id ? '' : undefined}
-                onClick={() => {
-                  setChip(k.id);
-                  setUserActive(null);
-                  inputRef.current?.focus();
-                }}
-              >
-                {k.label}
-                {text && k.id !== 'all' && n > 0 ? <i>{n}</i> : null}
-              </button>
-            );
-          })}
-        </div>
+        <KindStrip
+          chip={chip}
+          counts={model.counts}
+          showCounts={text !== ''}
+          onPick={(id) => {
+            setChip(id);
+            setUserActive(null);
+            inputRef.current?.focus();
+          }}
+        />
       )}
 
       {server === 'error' ? (

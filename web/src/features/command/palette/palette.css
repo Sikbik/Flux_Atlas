@@ -225,6 +225,37 @@
   display: none;
 }
 
+/* Chips out of sight on a narrow card: the strip fades toward them (KindStrip sets data-fade). */
+.pal-kinds[data-fade="end"] {
+  --pal-fade: 28px;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--pal-fade)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--pal-fade)), transparent);
+}
+
+.pal-kinds[data-fade="start"] {
+  --pal-fade: 28px;
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - var(--pal-fade)), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - var(--pal-fade)), transparent);
+}
+
+.pal-kinds[data-fade="both"] {
+  --pal-fade: 28px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--pal-fade),
+    #000 calc(100% - var(--pal-fade)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--pal-fade),
+    #000 calc(100% - var(--pal-fade)),
+    transparent
+  );
+}
+
 .pal-kind {
   flex: none;
   display: inline-flex;
