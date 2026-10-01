@@ -28,6 +28,8 @@ export class NodeStore {
   live = 0;
   /** Nodes currently fading out. */
   dying = 0;
+  /** Counts selections as they start, so the node layer can time the lock-on of the selected marker. */
+  selectionSerial = 0;
 
   id!: Uint32Array;
   lat!: Float32Array;
@@ -427,6 +429,7 @@ export class NodeStore {
     if (next !== cur) {
       this.state[slot] = next;
       this.markAttr(slot);
+      if (on && (bit & NodeState.Selected) !== 0) this.selectionSerial++;
     }
   }
 
