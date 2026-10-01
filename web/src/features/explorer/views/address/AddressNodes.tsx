@@ -1,44 +1,25 @@
-// The nodes an address is paid for: a map of where they run, counts by tier with the collateral they
-// lock, and the list (windowed, filterable by tier). Every row is a link to the node.
+// The nodes an address is paid for: a map of where they run and the list, filterable by tier. Every row
+// is a link to the node.
 
 import { useMemo, useState } from 'react';
 import type { NodeRow } from '../../../../api/generated/NodeRow';
 import { formatInt } from '../../../../lib/format';
-import { DotMap, type MapSite } from '../../../analytics/viz/DotMap';
 import {
+  Chip,
+  DataTable,
+  type DataTableColumn,
   EmptyState,
   EntityLink,
-  Skeleton,
+  Row,
   StatusChip,
-  TIER_LABEL,
-  TierGlyph,
+  TierChip,
   type TierName,
-  ToggleChip,
-  Windowed,
-} from '../../parts';
+  tierLabel,
+} from '../../../../ui';
+import { DotMap, type MapSite } from '../../../analytics/viz/DotMap';
 import { NodeLink } from '../shared';
 
 const TIER_RANK: Record<string, number> = { stratus: 0, nimbus: 1, cumulus: 2, unknown: 3 };
-const ROW_H = 58;
-
-const STATUS: Record<string, 'ok' | 'pending' | 'warn' | 'crit' | 'off'> = {
-  confirmed: 'ok',
-  started: 'pending',
-  dos: 'crit',
-  offline: 'crit',
-  expired: 'crit',
-  departed: 'off',
-  unknown: 'off',
-};
-const STATUS_WORD: Record<string, string> = {
-  confirmed: 'Confirmed',
-  started: 'Started',
-  dos: 'DoS listed',
-  offline: 'Offline',
-  expired: 'Expired',
-  departed: 'Departed',
-  unknown: 'Unknown',
-};
 
 export function sortNodes(nodes: readonly NodeRow[]): NodeRow[] {
   return [...nodes].sort(
@@ -95,36 +76,59 @@ export function NodesMap({ nodes }: { nodes: readonly NodeRow[] }) {
   );
 }
 
-function Row({ n }: { n: NodeRow }) {
-  const tier = n.tier as TierName | 'unknown';
-  const lastPaid = n.last_paid_height;
-  return (
-    <div className="ex-nrow" data-tier={tier === 'unknown' ? undefined : tier}>
-      <TierGlyph tier={tier} size={18} />
-      <div className="ex-nrow__main">
-        <NodeLink id={n.id} fallbackEndpoint={n.endpoint} fallbackTier={n.tier} glyph={false} />
-        <span className="ex-nrow__sub">
-          {n.org ? <EntityLink kind="provider" value={n.org} /> : null}
-          {n.country_code ? (
-            <EntityLink kind="country" value={n.country_code}>
-              {n.country ?? n.country_code}
-            </EntityLink>
-          ) : null}
-        </span>
-      </div>
-      <StatusChip status={STATUS[n.status] ?? 'off'} label={STATUS_WORD[n.status] ?? n.status} size="sm" />
-      <span className="ex-nrow__paid ex-mono">
-        {lastPaid === null ? (
-          'never paid'
-        ) : (
-          <>
-            paid at <EntityLink kind="block" value={lastPaid} />
-          </>
-        )}
-      </span>
-    </div>
-  );
-}
+const COLUMNS: readonly DataTableColumn<NodeRow>[] = [
+  {
+    id: 'node',
+    header: 'Node',
+    minWidth: 190,
+    cell: (n) => <NodeLink id={n.id} fallbackEndpoint={n.endpoint} fallbackTier={n.tier} glyph={false} />,
+  },
+  {
+    id: 'tier',
+    header: 'Tier',
+    minWidth: 110,
+    sortable: true,
+    sortValue: (n) => TIER_RANK[n.tier] ?? 9,
+    cell: (n) => <TierChip tier={n.tier as TierName | 'unknown'} size="sm" />,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    minWidth: 120,
+    cell: (n) => <StatusChip status={n.status} size="sm" />,
+  },
+  {
+    id: 'where',
+    header: 'Where',
+    minWidth: 180,
+    cell: (n) =>
+      n.country_code ? (
+        <EntityLink kind="country" value={n.country_code}>
+          {n.country ?? n.country_code}
+        </EntityLink>
+      ) : null,
+  },
+  {
+    id: 'org',
+    header: 'Provider',
+    minWidth: 180,
+    cell: (n) => (n.org ? <EntityLink kind="provider" value={n.org} /> : null),
+  },
+  {
+    id: 'paid',
+    header: 'Last paid',
+    numeric: true,
+    minWidth: 130,
+    sortable: true,
+    sortValue: (n) => n.last_paid_height,
+    cell: (n) =>
+      n.last_paid_height === null ? (
+        <span className="ex-muted">never paid</span>
+      ) : (
+        <EntityLink kind="block" value={n.last_paid_height} />
+      ),
+  },
+];
 
 export function AddressNodesList({
   nodes,
@@ -140,44 +144,37 @@ export function AddressNodesList({
     for (const n of sorted) c[n.tier] = (c[n.tier] ?? 0) + 1;
     return c;
   }, [sorted]);
-  const shown = tier ? sorted.filter((n) => n.tier === tier) : sorted;
-  if (loading) {
-    return (
-      <div role="status" aria-busy="true" aria-label="Loading nodes">
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} h={ROW_H - 10} radius={12} style={{ marginBottom: 10 }} />
-        ))}
-      </div>
-    );
-  }
-  if (sorted.length === 0)
+  const shown = useMemo(() => (tier ? sorted.filter((n) => n.tier === tier) : sorted), [sorted, tier]);
+  if (!loading && sorted.length === 0) {
     return (
       <EmptyState title="No nodes are paid to this address">
         Payments to this address do not come from a node, or its nodes have left the network.
       </EmptyState>
     );
+  }
   return (
-    <div>
-      <fieldset className="ex-filters">
-        <legend className="ex-sr">Filter by tier</legend>
-        <ToggleChip pressed={tier === null} onClick={() => setTier(null)}>
+    <>
+      <Row gap={3} wrap className="ex-filters" role="group" aria-label="Filter by tier">
+        <Chip selected={tier === null} onClick={() => setTier(null)}>
           All {formatInt(sorted.length)}
-        </ToggleChip>
+        </Chip>
         {(['stratus', 'nimbus', 'cumulus'] as const).map((t) =>
           counts[t] ? (
-            <ToggleChip key={t} tier={t} pressed={tier === t} onClick={() => setTier(tier === t ? null : t)}>
-              {TIER_LABEL[t]} {formatInt(counts[t])}
-            </ToggleChip>
+            <Chip key={t} selected={tier === t} onClick={() => setTier(tier === t ? null : t)}>
+              {tierLabel(t)} {formatInt(counts[t])}
+            </Chip>
           ) : null,
         )}
-      </fieldset>
-      <Windowed
-        key={tier ?? 'all'}
-        count={shown.length}
-        rowHeight={ROW_H}
-        label="Nodes"
-        renderRow={(i) => <Row n={shown[i]!} />}
+      </Row>
+      <DataTable
+        aria-label="Nodes of this address"
+        rows={shown}
+        columns={COLUMNS}
+        rowKey={(n) => n.id}
+        rowLink={(n) => (n.endpoint ? { kind: 'node', value: n.endpoint } : null)}
+        loading={loading}
+        maxHeight={520}
       />
-    </div>
+    </>
   );
 }

@@ -1,10 +1,4 @@
-/* The block view: the producer's mark, the notes, and the ghost of a block that is not mined yet. */
-
-.ex-note {
-  margin: 0;
-  color: var(--text-3);
-  text-wrap: pretty;
-}
+/* The block view: the producer's mark and the ghost of a block that is not mined yet. */
 
 /* ---- producer ---------------------------------------------------------------------------------- */
 

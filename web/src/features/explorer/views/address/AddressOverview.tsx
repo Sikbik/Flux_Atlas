@@ -1,5 +1,5 @@
-// The address overview: three totals and the balance over time. An address that runs nodes gets one
-// line about them and a way into the Nodes tab; the map, the payouts and the list live there.
+// The address overview: the balance over time. An address that runs nodes gets one line about them and
+// a way into the Nodes tab; the map, the payouts and the list live there.
 
 import { useQuery } from '@tanstack/react-query';
 import { Layers, TrendingUp, Zap } from 'lucide-react';
@@ -7,34 +7,34 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { AddressDto } from '../../../../api/generated/AddressDto';
 import { queries } from '../../../../api/queries';
 import { useRuntime } from '../../../../app/context';
-import { formatInt, formatSats, parseFlux } from '../../../../lib/format';
+import { formatCompact, formatInt, formatSats, parseFlux } from '../../../../lib/format';
 import { useNow } from '../../../../lib/useClock';
-import { TimeChart } from '../../../analytics/viz/TimeChart';
-import { useCollateral } from '../../hooks/useCollateral';
-import { useVisible } from '../../hooks/useDom';
-import { useAddressNodes, useAddressTxsLive } from '../../hooks/useExplorerData';
-import { balanceSeries, payoutEvents, thinPoints } from '../../lib/addressTxs';
-import { knownEntity } from '../../lib/entities';
 import {
   Amount,
   Button,
-  Chip,
-  CompactAmount,
   EntityLink,
   Section,
-  Skeleton,
+  ShareBar,
+  Stack,
   Stat,
   StatGrid,
-  TIER_LABEL,
-  TierGlyph,
   type TierName,
-} from '../../parts';
+  TimeSeries,
+  tierLabel,
+} from '../../../../ui';
+import { useCollateral } from '../../hooks/useCollateral';
+import { useVisible } from '../../hooks/useDom';
+import { useAddressNodes, useAddressTxsLive } from '../../hooks/useExplorerData';
+import { balanceSeries, holdSeries, payoutEvents } from '../../lib/addressTxs';
 import { AddressNodesList, NodesMap } from './AddressNodes';
 import { PayoutStrip } from './PayoutStrip';
 import './address.css';
 
 const HISTORY_TARGET = 200;
+const SAMPLES = 240;
 const TIERS: TierName[] = ['stratus', 'nimbus', 'cumulus'];
+
+const fluxText = (v: number) => formatSats(BigInt(Math.round(v * 1e8)), { decimals: 2, unit: false });
 
 function BalanceSection({ addr, balance, txCount }: { addr: string; balance: bigint; txCount: number }) {
   const q = useAddressTxsLive(addr, 50);
@@ -52,13 +52,7 @@ function BalanceSection({ addr, balance, txCount }: { addr: string; balance: big
   );
   const { clock } = useRuntime();
   const now = useNow(clock);
-  const chart = useMemo(() => {
-    const pts = thinPoints(series.points, 360);
-    if (pts.length === 0) return null;
-    const t = [...pts.map((p) => p.t), Math.max(now, pts.at(-1)!.t)];
-    const v = [...pts.map((p) => p.balance), Number(balance) / 1e8];
-    return { t, v };
-  }, [series, now, balance]);
+  const chart = useMemo(() => holdSeries(series, now, SAMPLES), [series, now]);
   const span = complete
     ? `all ${formatInt(q.items.length)} transactions`
     : `the last ${formatInt(q.items.length)} of ${formatInt(txCount)} transactions`;
@@ -66,35 +60,27 @@ function BalanceSection({ addr, balance, txCount }: { addr: string; balance: big
     <Section
       title="Balance over time"
       icon={TrendingUp}
-      aside={q.items.length > 0 ? span : undefined}
       actions={
         !complete && q.hasNextPage ? (
-          <Button onClick={() => void q.fetchNextPage()} disabled={q.isFetchingNextPage}>
-            {q.isFetchingNextPage ? 'Loading' : 'Load older'}
+          <Button size="sm" onClick={() => void q.fetchNextPage()} loading={q.isFetchingNextPage}>
+            Load older
           </Button>
         ) : undefined
       }
     >
       <div ref={ref}>
-        {q.isPending ? (
-          <Skeleton h={220} radius={14} />
-        ) : chart && chart.t.length > 1 ? (
-          <TimeChart
-            title="Balance"
-            summary={`Balance of this address over ${span}`}
-            t={chart.t}
-            series={[
-              { key: 'balance', label: 'Balance', color: 'var(--viz-1)', values: chart.v, fill: true },
-            ]}
-            mode="step"
-            height={220}
-            live
-            yFormat={(x) => formatSats(BigInt(Math.round(x * 1e8)), { decimals: 2 })}
-            unit="FLUX"
-          />
-        ) : (
-          <p className="ex-muted">Not enough confirmed history to draw a balance curve yet.</p>
-        )}
+        <TimeSeries
+          label={`Balance of this address over ${span}`}
+          t={chart.t}
+          series={[
+            { key: 'balance', label: 'Balance', values: chart.v, format: (v) => `${fluxText(v)} FLUX` },
+          ]}
+          height={220}
+          yFormat={(v) => formatCompact(v)}
+          loading={q.isPending}
+          emptyText="This address has no confirmed history to draw yet."
+        />
+        {q.items.length > 0 ? <p className="ex-caption">Drawn from {span}.</p> : null}
       </div>
     </Section>
   );
@@ -104,24 +90,29 @@ function NodesTeaser({ counts, onOpen }: { counts: AddressDto['node_counts']; on
   const collateral = useCollateral();
   const locked = TIERS.reduce((s, t) => s + BigInt(counts[t]) * collateral[t], 0n);
   return (
-    <Section title="Nodes" icon={Layers}>
-      <div className="ex-teaser">
-        <div className="ex-teaser__tiers">
-          {TIERS.map((t) =>
-            counts[t] > 0 ? (
-              <span key={t} className="ex-teaser__tier" data-tier={t}>
-                <TierGlyph tier={t} size={15} />
-                <b>{formatInt(counts[t])}</b>
-                {TIER_LABEL[t]}
-              </span>
-            ) : null,
-          )}
-        </div>
-        <p className="ex-teaser__text">
-          Together they lock <CompactAmount value={locked} /> of collateral.
+    <Section
+      title="Nodes"
+      icon={Layers}
+      actions={
+        <Button size="sm" onClick={onOpen}>
+          See the nodes
+        </Button>
+      }
+    >
+      <Stack gap={4}>
+        <ShareBar
+          label="Nodes of this address by tier"
+          segments={TIERS.filter((t) => counts[t] > 0).map((t) => ({
+            id: t,
+            label: tierLabel(t),
+            value: counts[t],
+            tier: t,
+          }))}
+        />
+        <p className="ex-note">
+          Together they lock <Amount value={locked} decimals={0} /> of collateral.
         </p>
-        <Button onClick={onOpen}>See the nodes</Button>
-      </div>
+      </Stack>
     </Section>
   );
 }
@@ -136,29 +127,8 @@ export function AddressOverview({
   onOpenNodes: () => void;
 }) {
   const balance = parseFlux(data.balance) ?? 0n;
-  const entity = knownEntity(addr);
-  const pending = parseFlux(data.unconfirmed_balance) ?? 0n;
   return (
     <>
-      <Section>
-        <StatGrid columns={3}>
-          <Stat label="Received" value={<CompactAmount value={data.received} unit={false} />} unit="FLUX" />
-          <Stat label="Sent" value={<CompactAmount value={data.sent} unit={false} />} unit="FLUX" />
-          <Stat label="Transactions" value={formatInt(data.tx_count)} />
-        </StatGrid>
-        {pending !== 0n ? (
-          <p className="ex-entity-note">
-            <Chip>Unconfirmed</Chip>
-            <Amount value={pending} decimals={2} sign="always" tone="signed" /> is on its way and not in the
-            balance yet.
-          </p>
-        ) : null}
-        {entity ? (
-          <p className="ex-entity-note">
-            <Chip tone="accent">{entity.label}</Chip> {entity.note}
-          </p>
-        ) : null}
-      </Section>
       <BalanceSection addr={addr} balance={balance} txCount={data.tx_count} />
       {data.node_counts.total > 0 ? <NodesTeaser counts={data.node_counts} onOpen={onOpenNodes} /> : null}
     </>
@@ -187,7 +157,7 @@ export function AddressNodesTab({ addr, counts }: { addr: string; counts: Addres
           </span>
         }
         actions={
-          <EntityLink kind="operator" value={addr} className="ex-action">
+          <EntityLink kind="operator" value={addr}>
             Operator view
           </EntityLink>
         }
@@ -197,12 +167,7 @@ export function AddressNodesTab({ addr, counts }: { addr: string; counts: Addres
             <Stat
               key={t}
               tier={t}
-              label={
-                <span className="ex-tierlabel">
-                  <TierGlyph tier={t} size={14} />
-                  {TIER_LABEL[t]}
-                </span>
-              }
+              label={tierLabel(t)}
               value={formatInt(counts[t])}
               unit="nodes"
               caption={
@@ -218,7 +183,7 @@ export function AddressNodesTab({ addr, counts }: { addr: string; counts: Addres
           ))}
         </StatGrid>
         {op ? (
-          <p className="ex-note ex-note--below">
+          <p className="ex-note ex-after">
             Earned <Amount value={op.earned_24h} decimals={2} /> in the last 24 hours
             {op.earned_30d !== op.earned_24h ? (
               <>
@@ -231,22 +196,18 @@ export function AddressNodesTab({ addr, counts }: { addr: string; counts: Addres
         ) : null}
       </Section>
       <Section title="Where they run" collapsible defaultOpen>
-        {nodes.isPending ? (
-          <Skeleton h={180} radius={14} />
-        ) : nodes.data ? (
-          <NodesMap nodes={nodes.data.nodes} />
-        ) : null}
+        {nodes.data ? <NodesMap nodes={nodes.data.nodes} /> : null}
       </Section>
       <Section
         title="Payouts"
         icon={Zap}
         collapsible
         defaultOpen={false}
-        aside={events.length > 0 ? `${formatInt(events.length)} in the loaded transactions` : undefined}
+        aside={events.length > 0 ? `${formatInt(events.length)} loaded` : undefined}
       >
-        {tx.isPending ? <Skeleton h={130} radius={14} /> : <PayoutStrip events={events} now={now} />}
+        <PayoutStrip events={events} now={now} />
       </Section>
-      <Section title="All nodes" aside={`${formatInt(counts.total)}`}>
+      <Section title="All nodes" aside={`${formatInt(counts.total)}`} flush>
         <AddressNodesList nodes={nodes.data?.nodes} loading={nodes.isPending} />
       </Section>
     </>

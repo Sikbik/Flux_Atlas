@@ -8,8 +8,8 @@ import { formatInt, formatSats, formatUtcDateTime } from '../../../../lib/format
 import { linear, timeTicks } from '../../../analytics/viz/scale';
 import { useSize } from '../../../analytics/viz/useSize';
 import '../../../analytics/viz/viz.css';
+import { TierGlyph, type TierName, tierLabel } from '../../../../ui';
 import type { PayoutEvent } from '../../lib/addressTxs';
-import { TIER_LABEL, TierGlyph, type TierName } from '../../parts';
 import './address.css';
 
 const LANES: readonly TierName[] = ['stratus', 'nimbus', 'cumulus'];
@@ -53,7 +53,7 @@ export function PayoutStrip({ events, now }: { events: readonly PayoutEvent[]; n
           height={height}
           viewBox={`0 0 ${width} ${height}`}
           role="img"
-          aria-label={`Payouts to this address: ${LANES.map((l) => `${TIER_LABEL[l]} ${counts[l]}`).join(', ')}`}
+          aria-label={`Payouts to this address: ${LANES.map((l) => `${tierLabel(l)} ${counts[l]}`).join(', ')}`}
         >
           <g className="vz-grid">
             {LANES.map((l, i) => (
@@ -94,7 +94,7 @@ export function PayoutStrip({ events, now }: { events: readonly PayoutEvent[]; n
                 key={`${e.txid}:${e.n}`}
                 role="button"
                 tabIndex={0}
-                aria-label={`${TIER_LABEL[e.role as TierName]} payout of ${formatSats(e.sats, { decimals: 2 })}, block ${formatInt(e.height)}`}
+                aria-label={`${tierLabel(e.role as TierName)} payout of ${formatSats(e.sats, { decimals: 2 })}, block ${formatInt(e.height)}`}
                 className="ex-dot"
                 data-hot={hot === k || undefined}
                 onPointerEnter={() => setHot(k)}
@@ -138,7 +138,7 @@ export function PayoutStrip({ events, now }: { events: readonly PayoutEvent[]; n
               style={{ top: M.top + i * LANE_H, height: LANE_H, width: M.left - 12 }}
             >
               <TierGlyph tier={l} size={13} />
-              <span>{TIER_LABEL[l]}</span>
+              <span>{tierLabel(l)}</span>
               <b>{formatInt(counts[l] ?? 0)}</b>
             </div>
           ))

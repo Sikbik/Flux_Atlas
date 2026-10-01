@@ -4,8 +4,8 @@ import {
   addressDeltaSats,
   balanceSeries,
   describeTxForAddress,
+  holdSeries,
   payoutEvents,
-  thinPoints,
 } from './addressTxs';
 
 const ME = 't1Me';
@@ -146,18 +146,33 @@ describe('balanceSeries', () => {
   });
 });
 
-describe('thinPoints', () => {
-  it('keeps everything under the cap', () => {
-    const pts = Array.from({ length: 5 }, (_, k) => ({ t: k, v: k }));
-    expect(thinPoints(pts, 10)).toHaveLength(5);
+describe('holdSeries', () => {
+  const point = (t: number, balance: number) => ({ t, balance, delta: 0, height: 1, txid: 'x' });
+
+  it('holds each balance until the next transaction', () => {
+    const s = { points: [point(1_000, 10), point(3_000, 25)], startBalance: 0 };
+    const h = holdSeries(s, 5_000, 5);
+    expect(h.t).toHaveLength(5);
+    expect(h.v[0]).toBe(0);
+    expect(h.v.at(-1)).toBe(25);
+    // A balance never takes a value it did not hold: only 0, 10 and 25 appear.
+    expect(new Set(h.v)).toEqual(new Set([0, 10, 25]));
   });
 
-  it('keeps the last point of each bucket and the last point overall', () => {
-    const pts = Array.from({ length: 1000 }, (_, k) => ({ t: k * 1000, v: k }));
-    const thin = thinPoints(pts, 100);
-    expect(thin.length).toBeLessThanOrEqual(100);
-    expect(thin.at(-1)!.v).toBe(999);
-    for (let k = 1; k < thin.length; k++) expect(thin[k]!.t).toBeGreaterThan(thin[k - 1]!.t);
+  it('keeps time strictly increasing and ends at the requested time', () => {
+    const s = { points: [point(1_000, 1), point(2_000, 2)], startBalance: 0 };
+    const h = holdSeries(s, 9_000, 50);
+    for (let k = 1; k < h.t.length; k++) expect(h.t[k]!).toBeGreaterThan(h.t[k - 1]!);
+    expect(h.t.at(-1)).toBe(9_000);
+  });
+
+  it('starts from the balance before the oldest loaded transaction', () => {
+    const s = { points: [point(10_000, 80)], startBalance: 70 };
+    expect(holdSeries(s, 20_000, 4).v[0]).toBe(70);
+  });
+
+  it('is empty without transactions', () => {
+    expect(holdSeries({ points: [], startBalance: 0 }, 1_000, 10)).toEqual({ t: [], v: [] });
   });
 });
 

@@ -1,4 +1,60 @@
-/* Pieces shared by several explorer views: node and address links, the kind tile. */
+/* Pieces shared by several explorer views: the hero row and tab strip under a header, notes, node and
+   address links, the kind tile. Everything is a token; there are no local custom properties here. */
+
+.ex-hero {
+  padding: var(--space-6) var(--space-6) 0;
+}
+
+.ex-tabs {
+  padding: var(--space-4) var(--space-6) 0;
+}
+
+.ex-muted {
+  color: var(--text-3);
+}
+
+.ex-note {
+  margin: 0 0 var(--space-5);
+  color: var(--text-3);
+  text-wrap: pretty;
+}
+
+/* The small line under a chart: what it was drawn from. */
+.ex-caption {
+  margin: var(--space-4) 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* A note that stands alone in a flush section keeps the section's gutter. */
+.ex-note.ex-pad {
+  margin: 0;
+  padding: 0 var(--space-6) var(--space-5);
+}
+
+/* A note inside a table cell has no bottom gap. */
+.ui-table__cell .ex-note {
+  margin: 0;
+}
+
+.ex-code {
+  margin-left: var(--space-3);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+/* The line under a long table: how much is loaded, and the way to load more. */
+.ex-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
 
 .ex-nodelink {
   display: inline-flex;

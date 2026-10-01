@@ -44,7 +44,6 @@ import { payoutSchedule } from '../lib/emission';
 import { buildFlow } from '../lib/txflow';
 import { NODE_TX_KINDS, TX_KINDS } from '../lib/txkinds';
 import { AddressTag, NodeLink } from './shared';
-import './tx.css';
 
 type TabId = 'overview' | 'io' | 'raw';
 
@@ -219,7 +218,7 @@ function CoinbaseCard({ tx }: { tx: TxDetailDto }) {
   ];
   return (
     <Section
-      title="How this reward is split"
+      title="Reward split"
       icon={Layers}
       aside={`subsidy ${formatSats(sched.subsidy, { decimals: 2 })}`}
       collapsible
@@ -506,8 +505,9 @@ export function TxView({ txid }: { txid: string }) {
 
       <TabPanel tabsId={tabsId} id="overview" value={tab}>
         {hasIo ? (
-          <Section title="Where the value went" aside="band width is proportional to the amount">
+          <Section title="Where the value went">
             <FlowDiagram tx={tx} pending={pending} />
+            <p className="ex-caption">Band width is proportional to the amount.</p>
           </Section>
         ) : null}
         {tx.node_tx ? <NodeTxCard n={tx.node_tx} /> : null}

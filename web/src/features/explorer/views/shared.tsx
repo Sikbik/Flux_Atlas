@@ -2,6 +2,7 @@
 // labels, and the glyph tile of a transaction kind. Built from the kit; what is here is only what needs
 // the live store or this feature's knowledge of entities.
 
+import { type LinkOptions, useLinkProps } from '@tanstack/react-router';
 import {
   ArrowLeftRight,
   Boxes,
@@ -13,6 +14,7 @@ import {
   Server,
   ShieldCheck,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { TxKind } from '../../../api/generated/TxKind';
 import { useNetwork } from '../../../app/context';
 import { shallowEqual } from '../../../store/react';
@@ -97,6 +99,32 @@ export function AddressTag({
         </Chip>
       ) : null}
     </span>
+  );
+}
+
+/**
+ * A link to a window route that has no key (`/richlist`, `/mempool`, `/supply`, `/analytics`). The kit's
+ * EntityLink covers entities; this covers the views themselves, keeping the camera and filters in the URL.
+ */
+export function RouteLink({
+  to,
+  search,
+  children,
+  className,
+}: {
+  to: string;
+  search?: Record<string, unknown>;
+  children: ReactNode;
+  className?: string;
+}) {
+  const props = useLinkProps({
+    to,
+    search: (prev: Record<string, unknown>) => ({ ...prev, ...search }),
+  } as unknown as LinkOptions);
+  return (
+    <a {...props} className={cx('ui-entity', className)}>
+      {children}
+    </a>
   );
 }
 

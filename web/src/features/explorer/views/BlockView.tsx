@@ -272,14 +272,7 @@ export function BlockView({ blockKey }: { blockKey: string }) {
         />
       </Section>
 
-      <Section
-        title="Where the reward went"
-        aside={
-          <span>
-            <Amount value={b.reward} decimals={2} /> reward, <Amount value={b.fees} decimals={8} /> fees
-          </span>
-        }
-      >
+      <Section title="Where the reward went" aside={<Amount value={b.reward} decimals={2} />}>
         {slices.length > 0 ? (
           <RewardSplit slices={slices} />
         ) : (
@@ -323,6 +316,8 @@ export function BlockView({ blockKey }: { blockKey: string }) {
               ),
             },
             { label: 'Version', value: formatInt(d.version), mono: true },
+            { label: 'Reward', value: <Amount value={b.reward} decimals={8} /> },
+            { label: 'Fees', value: <Amount value={b.fees} decimals={8} /> },
             { label: 'Value out', value: <Amount value={d.value_out} decimals={8} /> },
             { label: 'Dev fund output', value: <Amount value={d.dev_fund} decimals={8} /> },
             {

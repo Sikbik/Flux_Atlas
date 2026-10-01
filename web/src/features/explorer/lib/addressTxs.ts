@@ -141,23 +141,35 @@ export function balanceSeries(
   return { points, startBalance: toFlux(startSats), complete };
 }
 
-/** Keeps at most `max` points, the last of each equal time bucket (the balance at the end of it). */
-export function thinPoints<T extends { t: number }>(points: readonly T[], max: number): T[] {
-  if (points.length <= max) return [...points];
-  const t0 = points[0]!.t;
-  const t1 = points.at(-1)!.t;
-  const span = Math.max(1, t1 - t0);
-  const out: T[] = [];
-  let bucket = -1;
-  for (const p of points) {
-    const b = Math.min(max - 1, Math.floor(((p.t - t0) / span) * max));
-    if (b === bucket) out[out.length - 1] = p;
-    else {
-      out.push(p);
-      bucket = b;
-    }
+/**
+ * A balance is a step function: it holds until the next transaction. This samples it onto an even time
+ * grid (`samples` points from just before the first transaction to `endMs`), each sample the last known
+ * balance at that time, so a line chart draws the steps instead of slopes between transactions. The
+ * first sample is the balance before the oldest loaded transaction.
+ */
+export function holdSeries(
+  series: Pick<BalanceSeries, 'points' | 'startBalance'>,
+  endMs: number,
+  samples: number,
+): { t: number[]; v: number[] } {
+  const pts = series.points;
+  if (pts.length === 0 || samples < 2) return { t: [], v: [] };
+  const first = pts[0]!.t;
+  const end = Math.max(endMs, pts.at(-1)!.t);
+  // Start a sliver before the first transaction so the opening balance shows as a step.
+  const start = first - Math.max(1, (end - first) * 0.01);
+  const span = end - start;
+  const t: number[] = [];
+  const v: number[] = [];
+  let k = 0;
+  let held = series.startBalance;
+  for (let i = 0; i < samples; i++) {
+    const at = i === samples - 1 ? end : start + (span * i) / (samples - 1);
+    while (k < pts.length && pts[k]!.t <= at) held = pts[k++]!.balance;
+    t.push(Math.round(at));
+    v.push(held);
   }
-  return out;
+  return { t, v };
 }
 
 export interface PayoutEvent {

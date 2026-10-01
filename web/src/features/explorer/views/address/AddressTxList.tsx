@@ -1,43 +1,47 @@
-// An address's transaction history: newest first, windowed, paged from the server as you scroll. A new
+// An address's transaction history: newest first, one table, paged from the server on request. A new
 // transaction appears at the top the moment its block lands (the head is refreshed on every tip).
 
-import { ArrowDownLeft, ArrowUpRight, Coins, Repeat2, Server } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Coins, type LucideIcon, Repeat2, Server } from 'lucide-react';
 import { useMemo } from 'react';
 import type { TxDetailDto } from '../../../../api/generated/TxDetailDto';
 import { formatInt } from '../../../../lib/format';
-import { liveConfirmations, useTipHeight } from '../../hooks/useChain';
-import { useAddressTxsLive } from '../../hooks/useExplorerData';
-import { describeTxForAddress, type TxForAddress } from '../../lib/addressTxs';
-import { TX_KINDS } from '../../lib/txkinds';
 import {
   Amount,
-  ConfirmationGauge,
+  Button,
+  DataTable,
+  type DataTableColumn,
   EmptyState,
   EntityLink,
   ErrorState,
   RelativeTime,
-  Skeleton,
   StatusChip,
-  TIER_LABEL,
   type TierName,
-} from '../../parts';
+  tierLabel,
+} from '../../../../ui';
+import { ConfirmationGauge } from '../../gauge/ConfirmationGauge';
+import { liveConfirmations, useTipHeight } from '../../hooks/useChain';
+import { useAddressTxsLive } from '../../hooks/useExplorerData';
+import { describeTxForAddress, type TxForAddress } from '../../lib/addressTxs';
+import { TX_KINDS } from '../../lib/txkinds';
 import { AddressTag } from '../shared';
 
-const ROW_H = 66;
-
-function dirIcon(d: TxForAddress['direction'], role: TxForAddress['role']) {
-  if (d === 'payout') return <Coins size={16} strokeWidth={1.5} />;
-  if (d === 'in') return <ArrowDownLeft size={16} strokeWidth={1.6} />;
-  if (d === 'out') return <ArrowUpRight size={16} strokeWidth={1.6} />;
-  if (d === 'self') return <Repeat2 size={16} strokeWidth={1.5} />;
-  void role;
-  return <Server size={15} strokeWidth={1.5} />;
+interface AddrTx {
+  tx: TxDetailDto;
+  d: TxForAddress;
 }
+
+const ICON: Record<TxForAddress['direction'], LucideIcon> = {
+  payout: Coins,
+  in: ArrowDownLeft,
+  out: ArrowUpRight,
+  self: Repeat2,
+  none: Server,
+};
 
 function label(d: TxForAddress): string {
   if (d.direction === 'payout') {
     if (d.role === 'stratus' || d.role === 'nimbus' || d.role === 'cumulus')
-      return `${TIER_LABEL[d.role]} payout`;
+      return `${tierLabel(d.role as TierName)} payout`;
     if (d.role === 'devfund') return 'Dev fund payout';
     return 'Block payout';
   }
@@ -47,74 +51,89 @@ function label(d: TxForAddress): string {
   return TX_KINDS[d.kind].label;
 }
 
-export function TxRow({ tx, addr, tip }: { tx: TxDetailDto; addr: string; tip: number | null }) {
-  const d = useMemo(() => describeTxForAddress(tx, addr), [tx, addr]);
+/** The confirmation state of one row; it reads the live tip itself so the rows stay stable between blocks. */
+function Standing({ tx }: { tx: TxDetailDto }) {
+  const tip = useTipHeight();
   const pending = tx.height === null;
   const conf = liveConfirmations(tip, tx.height, tx.confirmations);
-  const tier =
-    d.role === 'stratus' || d.role === 'nimbus' || d.role === 'cumulus' ? (d.role as TierName) : undefined;
-  return (
-    <div className="ex-atx" data-dir={d.direction} data-tier={tier} data-pending={pending || undefined}>
-      <span className="ex-atx__tile" aria-hidden="true">
-        {dirIcon(d.direction, d.role)}
-      </span>
-      <div className="ex-atx__main">
-        <span className="ex-atx__title">
-          <EntityLink kind="tx" value={tx.txid} className="ex-atx__link" />
-          <span className="ex-atx__label">{label(d)}</span>
-        </span>
-        <span className="ex-atx__sub">
-          {d.counterparties.length > 0 ? (
-            <>
-              {d.direction === 'in' ? 'from' : 'to'} <AddressTag address={d.counterparties[0]} />
-              {d.moreCounterparties + d.counterparties.length - 1 > 0 ? (
-                <span>and {formatInt(d.moreCounterparties + d.counterparties.length - 1)} more</span>
-              ) : null}
-            </>
-          ) : tx.height !== null ? (
-            <span>
-              in block <EntityLink kind="block" value={tx.height} />
-            </span>
-          ) : null}
-        </span>
-      </div>
-      <div className="ex-atx__side">
-        {d.direction === 'none' ? null : (
-          <Amount
-            value={d.deltaSats}
-            decimals={d.deltaSats % 1_000_000n === 0n ? 2 : 8}
-            sign="always"
-            tone="signed"
-            unit="FLUX"
-          />
-        )}
-        <span className="ex-atx__meta">
-          {pending ? (
-            <StatusChip status="pending" label="Pending" size="sm" />
-          ) : conf < 10 ? (
-            <ConfirmationGauge confirmations={conf} size="sm" label={false} />
-          ) : null}
-          {tx.time_ms !== null ? <RelativeTime ts={tx.time_ms} /> : null}
-        </span>
-      </div>
-    </div>
-  );
+  // Finality fills ten cells while it is young; after that the row says how long ago it happened.
+  if (pending) return <StatusChip status="pending" label="Pending" size="sm" />;
+  if (conf < 10) return <ConfirmationGauge confirmations={conf} size="sm" label={false} />;
+  return tx.time_ms !== null ? <RelativeTime ts={tx.time_ms} /> : null;
 }
+
+const COLUMNS: readonly DataTableColumn<AddrTx>[] = [
+  {
+    id: 'what',
+    header: 'What',
+    minWidth: 170,
+    cell: ({ d }) => {
+      const Icon = ICON[d.direction];
+      return (
+        <span className="ex-what" data-dir={d.direction}>
+          <Icon size={14} strokeWidth={1.6} aria-hidden="true" />
+          {label(d)}
+        </span>
+      );
+    },
+  },
+  // The amount sits next to what happened, so on a phone (the table scrolls sideways) it stays in view.
+  {
+    id: 'amount',
+    header: 'Amount',
+    numeric: true,
+    minWidth: 130,
+    cell: ({ d }) =>
+      d.direction === 'none' ? null : (
+        <Amount
+          value={d.deltaSats}
+          decimals={d.deltaSats % 1_000_000n === 0n ? 2 : 8}
+          sign="always"
+          tone="signed"
+        />
+      ),
+  },
+  {
+    id: 'tx',
+    header: 'Transaction',
+    minWidth: 130,
+    cell: ({ tx }) => <EntityLink kind="tx" value={tx.txid} />,
+  },
+  {
+    id: 'with',
+    header: 'With',
+    minWidth: 170,
+    cell: ({ tx, d }) =>
+      d.counterparties.length > 0 ? (
+        <span>
+          {d.direction === 'in' ? 'from ' : 'to '}
+          <AddressTag address={d.counterparties[0]} hideLabel />
+          {d.moreCounterparties + d.counterparties.length - 1 > 0
+            ? ` and ${formatInt(d.moreCounterparties + d.counterparties.length - 1)} more`
+            : ''}
+        </span>
+      ) : tx.height !== null ? (
+        <span>
+          in block <EntityLink kind="block" value={tx.height} />
+        </span>
+      ) : null,
+  },
+  { id: 'when', header: 'Status', minWidth: 150, cell: ({ tx }) => <Standing tx={tx} /> },
+];
 
 export function AddressTxList({ addr }: { addr: string }) {
   const q = useAddressTxsLive(addr, 50);
-  const tip = useTipHeight();
+  const rows = useMemo<AddrTx[]>(
+    () => q.items.map((tx) => ({ tx, d: describeTxForAddress(tx, addr) })),
+    [q.items, addr],
+  );
   if (q.isPending) {
     return (
-      <div className="ex-atx-skel" aria-busy="true" role="status" aria-label="Loading transactions">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <Skeleton key={i} h={ROW_H - 10} radius={12} style={{ marginBottom: 10 }} />
-        ))}
-      </div>
+      <DataTable aria-label="Transactions" rows={[]} columns={COLUMNS} rowKey={(r) => r.tx.txid} loading />
     );
   }
   if (q.isError && q.items.length === 0) {
-    return <ErrorState title="Could not load the history" onRetry={() => void q.refetch()} />;
+    return <ErrorState error={q.error} title="Could not load the history" onRetry={() => void q.refetch()} />;
   }
   if (q.items.length === 0) {
     return (
@@ -124,44 +143,29 @@ export function AddressTxList({ addr }: { addr: string }) {
     );
   }
   return (
-    <div className="ex-atx-list">
-      <WindowedTxs
-        items={q.items}
-        addr={addr}
-        tip={tip}
-        onNearEnd={() => q.hasNextPage && !q.isFetchingNextPage && void q.fetchNextPage()}
-      />
-      <p className="ex-atx-foot" aria-live="polite">
-        {q.isFetchingNextPage
-          ? 'Loading older transactions'
-          : q.hasNextPage
-            ? `${formatInt(q.items.length)} of ${formatInt(q.total)} loaded; scroll for more`
-            : `All ${formatInt(q.items.length)} transactions loaded`}
-      </p>
-    </div>
-  );
-}
-
-import { Windowed } from '../../parts';
-
-function WindowedTxs({
-  items,
-  addr,
-  tip,
-  onNearEnd,
-}: {
-  items: readonly TxDetailDto[];
-  addr: string;
-  tip: number | null;
-  onNearEnd: () => void;
-}) {
-  return (
-    <Windowed
-      count={items.length}
-      rowHeight={ROW_H}
-      label="Transactions"
-      onNearEnd={onNearEnd}
-      renderRow={(i) => <TxRow tx={items[i]!} addr={addr} tip={tip} />}
+    <DataTable
+      aria-label="Transactions"
+      rows={rows}
+      columns={COLUMNS}
+      rowKey={(r) => r.tx.txid}
+      rowLink={(r) => ({ kind: 'tx', value: r.tx.txid })}
+      maxHeight={560}
+      footer={
+        <div className="ex-foot">
+          <span aria-live="polite">
+            {q.isFetchingNextPage
+              ? 'Loading older transactions'
+              : q.hasNextPage
+                ? `${formatInt(q.items.length)} of ${formatInt(q.total)} loaded`
+                : `All ${formatInt(q.items.length)} transactions loaded`}
+          </span>
+          {q.hasNextPage ? (
+            <Button size="sm" onClick={() => void q.fetchNextPage()} loading={q.isFetchingNextPage}>
+              Load older
+            </Button>
+          ) : null}
+        </div>
+      }
     />
   );
 }

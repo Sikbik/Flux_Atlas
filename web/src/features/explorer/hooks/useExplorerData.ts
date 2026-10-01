@@ -9,9 +9,10 @@
 // - An address changes with every block that touches it, so it refetches on a new tip.
 
 import { type InfiniteData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { api } from '../../../api/endpoints';
 import type { AddressTxsPage } from '../../../api/generated/AddressTxsPage';
+import type { TxDetailDto } from '../../../api/generated/TxDetailDto';
 import { isApiError } from '../../../api/http';
 import { queries, useAddressNodes, useAddressTxs, useAddressUtxos } from '../../../api/queries';
 import { qk } from '../../../api/queryKeys';
@@ -106,7 +107,19 @@ export function useAddressTxsLive(addr: string, limit = 25) {
       });
     });
   });
-  const items = q.data?.pages.flatMap((p) => p.items) ?? [];
+  // Pages are cut by offset, so a transaction that lands while the reader pages can show up on two
+  // pages: each id is listed once, at its first (newest) position.
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    const out: TxDetailDto[] = [];
+    for (const p of q.data?.pages ?? [])
+      for (const t of p.items) {
+        if (seen.has(t.txid)) continue;
+        seen.add(t.txid);
+        out.push(t);
+      }
+    return out;
+  }, [q.data]);
   const total = q.data?.pages[0]?.total ?? null;
   return { ...q, items, total };
 }
