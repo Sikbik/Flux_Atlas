@@ -704,22 +704,89 @@ export class GlobeEngine {
   }
 
   /**
-   * The boot reveal wave (design 7.12): only land and nodes within `thetaRad` of the origin node are
-   * drawn, and a thin ring marks the front. `null` ends it. Drive `thetaRad` from the boot's progress.
+   * The boot reveal wave (design 7.10.9, 7.12): only land and nodes within `thetaRad` of the origin are
+   * drawn, and a soft front of light marks the edge. The origin is a node (engine id) or a point
+   * (`{lat, lon}`), so the boot can start before the nodes are in. With `aperture` the whole picture
+   * (the planet's body, its atmosphere, the sky) is drawn only inside a circle that widens on screen from
+   * the origin with the wave: at `thetaRad` 0 the planet is hidden and the screen is the void; the moon
+   * and the boot's symbol are always drawn whole. `null` ends it.
    */
-  setReveal(originNodeId: number | null, thetaRad = 0): void {
+  setReveal(
+    origin: number | { lat: number; lon: number } | null,
+    thetaRad = 0,
+    opts: { aperture?: boolean } = {},
+  ): void {
     const v = this.u.uReveal.value;
-    if (originNodeId === null) {
+    this.revealAperture = false;
+    if (origin === null) {
       v.set(0, 0, 1, -1);
       return;
     }
-    const slot = this.nodes.slotOf(originNodeId);
-    if (slot < 0) {
-      v.set(0, 0, 1, -1);
-      return;
+    if (typeof origin === 'number') {
+      const slot = this.nodes.slotOf(origin);
+      if (slot < 0) {
+        v.set(0, 0, 1, -1);
+        return;
+      }
+      const d = this.nodes.dir;
+      v.set(d[slot * 3]!, d[slot * 3 + 1]!, d[slot * 3 + 2]!, Math.max(0, thetaRad));
+    } else {
+      const la = origin.lat * DEG;
+      const lo = origin.lon * DEG;
+      v.set(Math.cos(la) * Math.sin(lo), Math.sin(la), Math.cos(la) * Math.cos(lo), Math.max(0, thetaRad));
     }
-    const d = this.nodes.dir;
-    v.set(d[slot * 3]!, d[slot * 3 + 1]!, d[slot * 3 + 2]!, Math.max(0, thetaRad));
+    this.revealAperture = opts.aperture === true;
+  }
+  private revealAperture = false;
+  private readonly apertureBuf = { x: 0.5, y: 0.5, r: 0, feather: 0.02 };
+
+  /** The aperture for this frame (post.ts): a circle on screen around the reveal's origin that holds the wave's front. */
+  private aperture(): { x: number; y: number; r: number; feather: number } | null {
+    const v = this.u.uReveal.value;
+    if (!this.revealAperture || v.w < 0) return null;
+    const theta = v.w;
+    if (theta >= 3.1) return null;
+    const pt = this.tmpScreen;
+    this.rig.project(v.x, v.y, v.z, this.cssW, this.cssH, pt);
+    const h = Math.max(1, this.cssH);
+    const d = Math.max(1.0002, this.rig.distance);
+    const planet = this.rig.projScale / Math.sqrt(d * d - 1);
+    // The front's chord on screen, a little ahead of the wave so the planet's body is there when the land
+    // arrives; past a quarter turn the circle opens to the whole viewport.
+    const chord = planet * 2 * Math.sin(Math.min(theta, Math.PI) / 2) * 1.12;
+    const open = smoothstep(1.4, 2.9, theta);
+    const diag = Math.hypot(this.cssW, this.cssH) * 1.2;
+    const a = this.apertureBuf;
+    a.x = pt.x / Math.max(1, this.cssW);
+    a.y = 1 - pt.y / h;
+    a.r = (chord + (diag - chord) * open) / h;
+    a.feather = Math.max(0.03, 0.35 * a.r);
+    return a;
+  }
+
+  /**
+   * Scales the framed planet (1 is the framing's size): eases there over `ms` (ease-out). The boot
+   * drifts the camera in while the planet reveals and lets the globe settle from 0.94 when the chrome
+   * assembles (design 6.4 J). Picking, labels and the moon follow, since it is the lens.
+   */
+  setViewScale(scale: number, ms = 0): void {
+    this.viewScaleFrom = this.viewScaleNow;
+    this.viewScaleTo = clamp(scale, 0.3, 1);
+    this.viewScaleT = ms > 0 ? 0 : 1;
+    this.viewScaleDur = Math.max(0.001, ms / 1000);
+    if (ms <= 0) this.viewScaleNow = this.viewScaleTo;
+  }
+  private viewScaleNow = 1;
+  private viewScaleFrom = 1;
+  private viewScaleTo = 1;
+  private viewScaleT = 1;
+  private viewScaleDur = 0.001;
+
+  private stepViewScale(dt: number): void {
+    if (this.viewScaleT >= 1) return;
+    this.viewScaleT = Math.min(1, this.viewScaleT + dt / this.viewScaleDur);
+    const e = 1 - (1 - this.viewScaleT) ** 3;
+    this.viewScaleNow = this.viewScaleFrom + (this.viewScaleTo - this.viewScaleFrom) * e;
   }
 
   /** True while reduced motion is on (the OS setting, or `setReduced`). */
@@ -1620,6 +1687,51 @@ export class GlobeEngine {
     return rig.setAnchor(v, 'lock');
   }
 
+  /** The F key (design 10.4): back to the selection, centred and locked. False when nothing is selected. */
+  flyToSelection(): boolean {
+    if (this.mode !== 'explore' || this.selectedSlot < 0 || this.nodes.alive[this.selectedSlot] !== 1)
+      return false;
+    void this.flyToNode(this.selectedId, Math.min(this.rig.rangeD, 0.5));
+    return true;
+  }
+
+  // ---- keyboard camera (design 7.2, 10.4) ---------------------------------------------------
+  // Steps scale with the view, so a press moves the picture by about the same share of the screen at
+  // any zoom. Reduced motion takes them at once; otherwise the rig's springs glide (a short ease).
+
+  /** Arrow keys: turns the globe by `x`, `y` steps (+x shows more of what is right, +y of what is above). */
+  orbitStep(x: number, y: number): void {
+    if (this.mode !== 'explore') return;
+    this.keyInput();
+    const a = 0.22 * this.rig.viewSpan;
+    this.rig.panBy(x * a, y * a);
+    if (this.reducedMotion) this.rig.settleNow();
+  }
+
+  /** Shift and arrows: turns the heading and the pitch by steps (about the selection while it is locked). */
+  turnStep(heading: number, tilt: number): void {
+    if (this.mode !== 'explore') return;
+    this.keyInput();
+    this.rig.orbitBy(heading * 0.14, tilt * 0.09);
+    if (this.reducedMotion) this.rig.settleNow();
+  }
+
+  /** `+` and `-`: zooms by `steps` (positive is in), holding the selection still while it is on screen. */
+  zoomStep(steps: number): void {
+    if (this.mode !== 'explore' || steps === 0) return;
+    this.keyInput();
+    if (!this.anchorSelection()) this.rig.clearAnchor('zoom');
+    this.rig.zoomBy(0.72 ** steps);
+    if (this.reducedMotion) this.rig.settleNow();
+  }
+
+  private keyInput(): void {
+    this.lastInputT = this.time;
+    this.director?.interrupt();
+    this.moonView = null;
+    this.rig.releaseFree(7);
+  }
+
   /** Fly to a co-location cluster so its stack unfurls. */
   flyToCluster(cluster: number, alt?: number): Promise<boolean> {
     const s = this.nodes;
@@ -2209,6 +2321,83 @@ export class GlobeEngine {
 
   // ---- projection & info ------------------------------------------------------------------
 
+  private readonly densityBuf = { frame: -1, cols: 0, rows: 0, sat: new Uint32Array(0) };
+  private readonly densityApi = {
+    count: (x0: number, y0: number, x1: number, y1: number): number => this.densityCount(x0, y0, x1, y1),
+  };
+  private static readonly DENSITY_CELL = 12;
+
+  /**
+   * Nodes on screen this frame as a summed-area table of 12 px cells: `count(x0, y0, x1, y1)` is the
+   * number of visible nodes in a box (CSS px), in constant time. Built at most once a frame, on demand
+   * (the place labels keep off dense clusters with it).
+   */
+  nodeDensity(): { count(x0: number, y0: number, x1: number, y1: number): number } {
+    const d = this.densityBuf;
+    if (d.frame !== this.frameNo) this.buildDensity();
+    return this.densityApi;
+  }
+
+  private buildDensity(): void {
+    const d = this.densityBuf;
+    d.frame = this.frameNo;
+    const C = GlobeEngine.DENSITY_CELL;
+    const cols = Math.max(1, Math.ceil(this.cssW / C));
+    const rows = Math.max(1, Math.ceil(this.cssH / C));
+    const n = (cols + 1) * (rows + 1);
+    if (d.sat.length < n) d.sat = new Uint32Array(n);
+    const sat = d.sat;
+    sat.fill(0, 0, n);
+    d.cols = cols;
+    d.rows = rows;
+    const cam = this.rig.camera;
+    const m = this.tmpMat.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).elements;
+    const cp = this.rig.position;
+    const s = this.nodes;
+    const pos = s.pos;
+    const W = cols + 1;
+    for (let i = 0; i < s.high; i++) {
+      if (s.alive[i] !== 1) continue;
+      const o = i * 4;
+      if (pos[o + 3]! <= 0) continue;
+      const x = pos[o]!;
+      const y = pos[o + 1]!;
+      const z = pos[o + 2]!;
+      // Over the horizon: hidden by the planet.
+      if (x * cp.x + y * cp.y + z * cp.z < x * x + y * y + z * z) continue;
+      const w = m[3]! * x + m[7]! * y + m[11]! * z + m[15]!;
+      if (w <= 1e-3) continue;
+      const sx = ((m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) / w) * 0.5 + 0.5;
+      const sy = 0.5 - ((m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) / w) * 0.5;
+      const cx = Math.floor((sx * this.cssW) / C);
+      const cy = Math.floor((sy * this.cssH) / C);
+      if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+      sat[(cy + 1) * W + cx + 1]!++;
+    }
+    for (let r = 1; r <= rows; r++) {
+      let run = 0;
+      for (let c = 1; c <= cols; c++) {
+        run += sat[r * W + c]!;
+        sat[r * W + c] = sat[(r - 1) * W + c]! + run;
+      }
+    }
+  }
+
+  private densityCount(x0: number, y0: number, x1: number, y1: number): number {
+    const d = this.densityBuf;
+    if (d.frame < 0) return 0;
+    const C = GlobeEngine.DENSITY_CELL;
+    const W = d.cols + 1;
+    const c0 = clamp(Math.floor(x0 / C), 0, d.cols);
+    const c1 = clamp(Math.ceil(x1 / C), 0, d.cols);
+    const r0 = clamp(Math.floor(y0 / C), 0, d.rows);
+    const r1 = clamp(Math.ceil(y1 / C), 0, d.rows);
+    if (c1 <= c0 || r1 <= r0) return 0;
+    const t = d.sat;
+    return t[r1 * W + c1]! - t[r0 * W + c1]! - t[r1 * W + c0]! + t[r0 * W + c0]!;
+  }
+  private readonly tmpMat = new THREE.Matrix4();
+
   /** Projects a lat/lon (and radius, default 1) to CSS pixels on the canvas. */
   project(lat: number, lon: number, radius: number, out: ScreenPoint): boolean {
     const la = lat * DEG;
@@ -2353,7 +2542,7 @@ export class GlobeEngine {
       this.framingSpec,
     );
     rig.setViewShift(f.shiftX, f.shiftY);
-    rig.setFit(f.fit);
+    rig.setFit(f.fit * this.viewScaleNow);
     this.frameNow = f;
   }
 
@@ -2685,6 +2874,7 @@ export class GlobeEngine {
     // The globe is framed in the free area of the viewport (the part the chrome and docked windows
     // leave open): optically centred, and fitted with clearance at the home zoom (framing.ts).
     this.stepInset(dt);
+    this.stepViewScale(dt);
     this.applyFraming();
     u.uViewShift.value.set(this.rig.shiftNdcX, this.rig.shiftNdcY);
     this.rig.update(dt, this.time);
@@ -2886,6 +3076,7 @@ export class GlobeEngine {
       bloomEnabled: this.effects.bloom,
       time: this.time,
       fade: this.fade * this.sceneFade,
+      aperture: this.aperture(),
     };
     this.post.render(
       this.scene,

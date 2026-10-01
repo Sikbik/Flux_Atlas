@@ -9,7 +9,6 @@ export {
   type GlobeBinding,
   type GlobeHover,
   type GlobeIntent,
-  type GlobeTarget,
   type GlobeView,
   globeViewFromLocation,
 } from './bindings';
@@ -28,3 +27,14 @@ export {
 } from './context';
 export { effectiveArt, GlobeCanvas, loadEngine } from './GlobeCanvas';
 export { GlobeOverlay, GlobeTooltip, MoonProxy, PlaceLabels } from './overlays';
+export type {
+  GlobeFraming,
+  GlobeTarget,
+  HubInfo,
+  MoonBoot,
+  MoonPark,
+  MoonState,
+  NodeDensity,
+  RevealOrigin,
+  ScreenPoint,
+} from './target';

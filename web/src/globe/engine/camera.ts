@@ -590,6 +590,40 @@ export class CameraRig {
     this.rangeD = clamp(this.rangeD * factor, MIN_RANGE, MAX_RANGE);
   }
 
+  /**
+   * Turns the globe under the view by `x`, `y` (radians, screen directions: +x brings what is to the
+   * right toward the centre, +y what is above). Lets go of any anchor, like a drag.
+   */
+  panBy(x: number, y: number): void {
+    this.cancelFlight(false);
+    this.anchorKindV = null;
+    this.omega.set(0, 0, 0);
+    _v0.copy(this.target).normalize();
+    if (x !== 0) {
+      _v1.crossVectors(_v0, this.right).normalize();
+      _q0.setFromAxisAngle(_v1, x);
+      this.qD.premultiply(_q0).normalize();
+    }
+    if (y !== 0) {
+      _v1.crossVectors(_v0, this.up).normalize();
+      _q0.setFromAxisAngle(_v1, y);
+      this.qD.premultiply(_q0).normalize();
+    }
+  }
+
+  /** The springs' goal, now: no ease (reduced motion's keyboard moves). */
+  settleNow(): void {
+    if (this.flying) return;
+    this.q.copy(this.qD);
+    this.range = this.rangeD;
+    this.tilt = this.tiltD;
+  }
+
+  /** Half the height of the view at the surface below the camera, in radians of the globe (for steps that feel the same at any zoom). */
+  get viewSpan(): number {
+    return Math.min(0.9, this.range * Math.tan((this.fovV * DEG) / 2));
+  }
+
   /** Begins an orbit drag (middle or right button, a modifier drag, a two-finger tilt). */
   orbitStart(now: number): void {
     this.cancelFlight(false);
