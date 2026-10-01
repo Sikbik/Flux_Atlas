@@ -8,7 +8,7 @@ import {
   useRef,
 } from 'react';
 import { KbdCombo } from '../controls/Kbd';
-import { mergeRefs } from '../popover/refs';
+import { mergeRefs } from '../internal/refs';
 import { describedBy, FieldFrame, hasContent } from './Field';
 import './TextField.css';
 

@@ -13,7 +13,7 @@ import {
   type Ref,
   type RefCallback,
 } from 'react';
-import { mergeRefs } from './refs';
+import { mergeRefs } from '../internal/refs';
 
 /** What an overlay injects into its trigger. Spread these onto the element when using a render function. */
 export interface TriggerProps<Popup extends string> {

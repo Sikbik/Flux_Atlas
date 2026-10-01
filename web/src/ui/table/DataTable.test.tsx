@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { click, type Mounted, mount, press } from '../internal/testing';
 import { DataTable } from './DataTable';
@@ -84,6 +84,28 @@ describe('DataTable structure', () => {
     );
     expect(qa(mounted.container, '.ui-table__row')).toHaveLength(3);
     expect(q(mounted.container, '.ui-table__skeleton')).toBeNull();
+  });
+});
+
+describe('DataTable attach points', () => {
+  it('forwards ref, className and style to its root, and keeps its own sizing properties', () => {
+    const ref = createRef<HTMLDivElement>();
+    mounted = mount(
+      <DataTable
+        ref={ref}
+        aria-label="Nodes"
+        rows={mk(3)}
+        columns={columns}
+        rowKey={(r) => r.id}
+        className="x"
+        style={{ margin: 4, ['--ui-table-row-h' as string]: '99px' }}
+        rowHeight={30}
+      />,
+    );
+    expect(ref.current).toBe(mounted.container.querySelector('.ui-table'));
+    expect(ref.current?.className).toContain('x');
+    expect(ref.current?.style.margin).toBe('4px');
+    expect(ref.current?.style.getPropertyValue('--ui-table-row-h')).toBe('30px');
   });
 });
 

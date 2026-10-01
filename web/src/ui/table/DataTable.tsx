@@ -26,6 +26,7 @@ import { flushSync } from 'react-dom';
 import '../base.css';
 import { type EntityRef, entityHref, entityRoute } from '../identity/entityRoute';
 import { cx } from '../internal/cx';
+import { mergeRefs } from '../internal/refs';
 import { useMotionMode } from '../internal/useMotion';
 import { EmptyState } from '../states/EmptyState';
 import { Skeleton } from '../states/Skeleton';
@@ -202,6 +203,8 @@ export function DataTable<Row>({
   overscan = 8,
   footer,
   className,
+  style,
+  ref,
 }: DataTableProps<Row>) {
   const uid = useId();
   const router = useRouter({ warn: false }) as ReturnType<typeof useRouter> | undefined;
@@ -211,6 +214,7 @@ export function DataTable<Row>({
   const rowH = resolveRowHeight(rowHeight, coarse && interactive);
 
   const rootRef = useRef<HTMLDivElement>(null);
+  const setRoot = useMemo(() => mergeRefs(rootRef, ref), [ref]);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const shifterRef = useRef<HTMLDivElement>(null);
@@ -539,9 +543,9 @@ export function DataTable<Row>({
 
   return (
     <div
-      ref={rootRef}
+      ref={setRoot}
       className={cx('ui-table', className)}
-      style={rootStyle}
+      style={style ? { ...style, ...rootStyle } : rootStyle}
       data-virtual={virtual || undefined}
       data-scrolls={scrolls || undefined}
       data-bounded={bounded || undefined}

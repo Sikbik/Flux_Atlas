@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { Plus } from 'lucide-react';
-import { act } from 'react';
+import { act, createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { click, mount } from '../internal/testing';
 import { Button, IconButton } from './Button';
@@ -128,6 +128,16 @@ describe('Kbd', () => {
     const m = mount(<KbdCombo keys={['Ctrl', 'K']} />);
     expect(m.container.querySelectorAll('kbd').length).toBe(2);
     expect(m.container.querySelector('.ui-kbd-combo__sr')?.textContent).toMatch(/Ctrl.*K/);
+    m.unmount();
+  });
+
+  it('KbdCombo forwards ref, className, style and data attributes to its root', () => {
+    const ref = createRef<HTMLSpanElement>();
+    const m = mount(<KbdCombo ref={ref} keys={['K']} className="x" style={{ margin: 3 }} data-test="y" />);
+    expect(ref.current).toBe(m.container.firstElementChild);
+    expect(ref.current?.className).toBe('ui-kbd-combo x');
+    expect(ref.current?.style.margin).toBe('3px');
+    expect(ref.current?.getAttribute('data-test')).toBe('y');
     m.unmount();
   });
 });

@@ -41,14 +41,14 @@ export function Gallery() {
   return (
     <Portal>
       <div className="kit-gallery" data-testid="kit-gallery">
-        <header className="kg-head">
+        <div className="kg-head">
           <h1>Component kit</h1>
           <p>
             Every component in every state, drawn from the design tokens and fed by the live server where a
             real value exists. Compose views from these; if something is missing, say so before building a
             one-off.
           </p>
-        </header>
+        </div>
         <nav className="kg-nav" aria-label="Kit sections">
           {NAV.map(([id, label]) => (
             <a key={id} href={`#${id}`}>
@@ -69,7 +69,7 @@ export function Gallery() {
         <LiveSection />
         <FormsSection />
         <OverlaySection />
-        <footer className="kg-foot">Flux Atlas UI kit. Dev gallery: not part of the product shell.</footer>
+        <div className="kg-foot">Flux Atlas UI kit. Dev gallery: not part of the product shell.</div>
       </div>
     </Portal>
   );

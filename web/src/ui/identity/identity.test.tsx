@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { mount } from '../internal/testing';
 import { Amount, formatAmountText } from './Amount';
@@ -286,5 +287,15 @@ describe('Unknown', () => {
     const b = mount(<Unknown>Not reported</Unknown>);
     expect(b.container.textContent).toBe('Not reported');
     b.unmount();
+  });
+
+  it('forwards ref, className, style and data attributes to its span', () => {
+    const ref = createRef<HTMLSpanElement>();
+    const m = mount(<Unknown ref={ref} className="x" style={{ margin: 2 }} data-test="y" />);
+    expect(ref.current).toBe(m.container.firstElementChild);
+    expect(ref.current?.className).toBe('ui-unknown x');
+    expect(ref.current?.style.margin).toBe('2px');
+    expect(ref.current?.getAttribute('data-test')).toBe('y');
+    m.unmount();
   });
 });

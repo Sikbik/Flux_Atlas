@@ -16,9 +16,9 @@ import type { Placement } from '../internal/position';
 import { pressHandlers } from '../internal/press';
 import { AnchoredLayer, type DismissReason } from './AnchoredLayer';
 import './Menu.css';
+import { mergeRefs } from '../internal/refs';
 import { useControllableState } from '../internal/useControllable';
 import { buildMenu, type MenuItem } from './menu';
-import { mergeRefs } from './refs';
 import { renderTrigger, type TriggerProp, type TriggerProps, triggerIdOf } from './trigger';
 import { isTypeaheadKey, nextTypeahead, type TypeaheadState, typeaheadActive } from './typeahead';
 

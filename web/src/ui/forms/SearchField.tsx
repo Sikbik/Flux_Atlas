@@ -1,8 +1,8 @@
 import { LoaderCircle, Search, X } from 'lucide-react';
 import { type KeyboardEvent, useRef } from 'react';
 import { pressHandlers } from '../internal/press';
+import { mergeRefs } from '../internal/refs';
 import { useControllableState } from '../internal/useControllable';
-import { mergeRefs } from '../popover/refs';
 import { TextField, type TextFieldProps } from './TextField';
 import { useDebouncedCallback } from './useDebouncedCallback';
 

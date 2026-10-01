@@ -1,8 +1,10 @@
+import type { ComponentPropsWithRef } from 'react';
 import { cx } from '../internal/cx';
 import { TIER_NAMES, type TierName, tierLabel } from '../internal/status';
 import './TierGlyph.css';
 
-export interface TierGlyphProps {
+/** Props of a TierGlyph: the options below, plus `className`, `style`, `ref` and the other `<svg>` attributes. */
+export interface TierGlyphProps extends Omit<ComponentPropsWithRef<'svg'>, 'children' | 'width' | 'height'> {
   /** The tier to draw: one capsule lit for Cumulus, two for Nimbus, three for Stratus, none for `unknown`. */
   tier: TierName | 'unknown' | null | undefined;
   /** Pixel size of the square glyph (the design uses 12, 14, 16 and 24; default 14). */
@@ -11,7 +13,6 @@ export interface TierGlyphProps {
   label?: string;
   /** `tier` (default) paints the lit capsules in the tier colour; `current` uses the surrounding text colour. */
   tone?: 'tier' | 'current';
-  className?: string;
 }
 
 /** Number of lit capsules for a tier (0 for unknown). */
@@ -21,7 +22,7 @@ export function litCapsules(tier: TierGlyphProps['tier']): number {
 }
 
 /** The tier meter: three stacked capsules, lit bottom-up, so tier reads in greyscale too (design 5.4). */
-export function TierGlyph({ tier, size = 14, label, tone = 'tier', className }: TierGlyphProps) {
+export function TierGlyph({ tier, size = 14, label, tone = 'tier', className, ...rest }: TierGlyphProps) {
   const lit = litCapsules(tier);
   const key = tier ?? 'unknown';
   return (
@@ -36,6 +37,7 @@ export function TierGlyph({ tier, size = 14, label, tone = 'tier', className }: 
       aria-label={label}
       aria-hidden={label ? undefined : true}
       focusable="false"
+      {...rest}
     >
       {[0, 1, 2].map((k) => (
         <rect

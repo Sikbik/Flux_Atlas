@@ -10,8 +10,8 @@ import {
   useState,
 } from 'react';
 import { cx } from '../internal/cx';
+import { mergeRefs } from '../internal/refs';
 import { useAnimate } from '../internal/useMotion';
-import { mergeRefs } from '../popover/refs';
 import { clamp01, easeOut, r2 } from './scale';
 import './Sparkline.css';
 import {

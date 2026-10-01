@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode, Ref } from 'react';
 import type { EntityRef } from '../identity/entityRoute';
 import type { SortDir, SortState, SortValue } from './sorting';
 
@@ -96,5 +96,10 @@ export interface DataTableProps<Row> {
   overscan?: number;
   /** Content below the rows, outside the scroller (counts, a load-more button). */
   footer?: ReactNode;
+  /** Extra class for the root element. */
   className?: string;
+  /** Inline style for the root element (the table's own sizing properties win). */
+  style?: CSSProperties;
+  /** Ref to the root element. */
+  ref?: Ref<HTMLDivElement>;
 }

@@ -21,7 +21,7 @@ import { Portal, useDismiss, useFloatingPosition } from '../internal/floating';
 import { type Placement, parsePlacement } from '../internal/position';
 import { useMotionMode } from '../internal/useMotion';
 import './Layer.css';
-import { mergeRefs } from './refs';
+import { mergeRefs } from '../internal/refs';
 import { usePresence } from './usePresence';
 
 /** Why a layer asks to close: a press outside it, or Escape. */

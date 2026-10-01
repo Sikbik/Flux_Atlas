@@ -17,9 +17,9 @@ import {
 import { navigateIndex, typeaheadIndex } from '../internal/keys';
 import type { Placement } from '../internal/position';
 import { pressHandlers } from '../internal/press';
+import { mergeRefs } from '../internal/refs';
 import { useControllableState } from '../internal/useControllable';
 import { AnchoredLayer } from '../popover/AnchoredLayer';
-import { mergeRefs } from '../popover/refs';
 import { isTypeaheadKey, nextTypeahead, type TypeaheadState, typeaheadActive } from '../popover/typeahead';
 import { describedBy, FieldFrame, fieldIds, hasContent } from './Field';
 import './Select.css';

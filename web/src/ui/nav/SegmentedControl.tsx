@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import { type ComponentPropsWithRef, type CSSProperties, useRef } from 'react';
 import { cx } from '../internal/cx';
 import { pressHandlers } from '../internal/press';
-import { mergeRefs } from '../popover/refs';
+import { mergeRefs } from '../internal/refs';
 import './SegmentedControl.css';
 import { useRoving } from './useRoving';
 

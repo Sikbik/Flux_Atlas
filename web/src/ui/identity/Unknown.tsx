@@ -1,17 +1,18 @@
-import type { ReactNode } from 'react';
+import type { ComponentPropsWithRef } from 'react';
 import { UNKNOWN } from '../../lib/format';
 import { cx } from '../internal/cx';
 import '../base.css';
 
-export interface UnknownProps {
-  /** Replaces the word "Unknown" (for example "Not reported"). Keep it a word, never a zero or a dash. */
-  children?: ReactNode;
-  className?: string;
-}
+/** Props of an Unknown: the replacement word, plus `className`, `style`, `ref` and the other `<span>` attributes. */
+export type UnknownProps = ComponentPropsWithRef<'span'>;
 
 /** The one rendering of "no value": the word Unknown in muted text. Honest data: never 0, never blank. */
-export function Unknown({ children = UNKNOWN, className }: UnknownProps) {
-  return <span className={cx('ui-unknown', className)}>{children}</span>;
+export function Unknown({ children = UNKNOWN, className, ...rest }: UnknownProps) {
+  return (
+    <span className={cx('ui-unknown', className)} {...rest}>
+      {children}
+    </span>
+  );
 }
 
 /** True when a value should render as Unknown: null, undefined, an empty string or NaN. */

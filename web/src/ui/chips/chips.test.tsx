@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { click, mount } from '../internal/testing';
 import { Badge } from './Badge';
@@ -38,6 +39,17 @@ describe('TierGlyph', () => {
     const svg = m.container.querySelector('svg');
     expect(svg?.getAttribute('role')).toBe('img');
     expect(svg?.getAttribute('aria-label')).toBe('Stratus tier');
+    m.unmount();
+  });
+
+  it('forwards ref, className, style and data attributes to the svg', () => {
+    const ref = createRef<SVGSVGElement>();
+    const m = mount(<TierGlyph ref={ref} tier="nimbus" className="x" style={{ margin: 2 }} data-test="y" />);
+    expect(ref.current).toBe(m.container.querySelector('svg'));
+    expect(ref.current?.getAttribute('class')).toBe('ui-tier-glyph x');
+    expect(ref.current?.style.margin).toBe('2px');
+    expect(ref.current?.getAttribute('data-test')).toBe('y');
+    expect(ref.current?.getAttribute('data-tier')).toBe('nimbus');
     m.unmount();
   });
 });
