@@ -115,17 +115,26 @@ export function useWindowRouting(wm: WindowManager) {
 
 /**
  * The inset the globe centres in: the window manager's, and on the phone also the Live sheet (a sheet that is not
- * a window, so the window manager does not know it) and the bottom safe area (the window manager's viewport ends
- * where the safe area begins).
+ * a window, so the window manager does not know it), the time machine's sheet (`tmSheet`, its height in px while
+ * it rests on the tab bar) and the bottom safe area (the window manager's viewport ends where the safe area
+ * begins). On the desktop the time machine's strip is part of the rail, which the workspace already measures.
  */
-export function insetFor(s: WmState, ambient: boolean, liveOpen: boolean): Insets {
+export function insetFor(s: WmState, ambient: boolean, liveOpen: boolean, tmSheet = 0): Insets {
   if (ambient) return { left: 0, right: 0, top: 0, bottom: 0 };
   const inset = globeInset(s);
   if (s.layout !== 'phone') return inset;
   const live = liveOpen && visibleWindows(s).length === 0;
-  const bottom = live ? TABBAR_H + sheetHeights(s.viewport.h)[s.sheet] : inset.bottom;
+  const sheet = live ? TABBAR_H + sheetHeights(s.viewport.h)[s.sheet] : inset.bottom;
+  const bottom = Math.max(sheet, tmSheet > 0 ? TABBAR_H + tmSheet : 0);
   const safe = typeof window === 'undefined' ? 0 : Math.max(0, window.innerHeight - s.viewport.h);
   return { ...inset, bottom: bottom + safe };
+}
+
+/** The height of the time machine's sheet on the phone, which it writes to the shell while the sheet is up. */
+function readTmSheet(shell: Element | null): number {
+  const v =
+    shell instanceof HTMLElement ? Number.parseFloat(shell.style.getPropertyValue('--tm-sheet-h')) : 0;
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
 }
 
 /** Keeps the globe centred in the free area the windows leave (engine.setInset, 300 ms). */
@@ -133,11 +142,12 @@ export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
   const handles = useGlobeHandles();
   useEffect(() => {
     let last = '';
+    const shell = document.querySelector('.shell');
     const apply = () => {
       const engine = handles.engine.get();
       // While the boot runs it places the globe itself (centred, then easing into the free area).
       if (!engine || isBooting()) return;
-      const inset = insetFor(wm.getState(), ambient, usePhone.getState().live);
+      const inset = insetFor(wm.getState(), ambient, usePhone.getState().live, readTmSheet(shell));
       const key = `${inset.left},${inset.right},${inset.top},${inset.bottom}`;
       if (key === last) return;
       last = key;
@@ -154,7 +164,11 @@ export function useGlobeInsetSync(wm: WindowManager, ambient: boolean) {
       apply();
     });
     const offLive = usePhone.subscribe(apply);
+    // The time machine's sheet announces its height as a style on the shell, the way the phone header does.
+    const watch = shell ? new MutationObserver(apply) : null;
+    if (shell) watch?.observe(shell, { attributes: true, attributeFilter: ['style'] });
     return () => {
+      watch?.disconnect();
       offLive();
       offWm();
       offEngine();
