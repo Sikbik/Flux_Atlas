@@ -14,7 +14,7 @@ manager (see its own README).
 | Desktop | `TopBar.tsx`, `topmenus.tsx`, `menus.tsx`, `Dock.tsx`, `dock.ts`, `Rail.tsx`, `rail.ts`, `StatusBar.tsx`, `Pulse.tsx`, `pulse.ts`, `AimStrip.tsx` |
 | Phone | `PhoneHeader.tsx`, `PhoneTabs.tsx`, `phonetabs.ts`, `LiveSheet.tsx`, `LivePanel.tsx`, `phone.ts` (UI state of the Live sheet), the sheet in `shell/wm/PhoneSheet.tsx` and `useSheetDrag.ts` |
 | The globe's text | `globe/overlays.tsx` (gates), `overlays/` (labels, tips, moon card, clearance), `cardplace.ts`, `GlobeHome.tsx` (the text twin) |
-| Boot | `boot/Boot.tsx` (eager gate and the quick path), `boot/FullBoot.tsx` (the full timeline, lazy), `veil.css` (eager), `boot.css` (lazy) |
+| Boot | `boot/Boot.tsx` (eager gate and the quick path), `boot/FullBoot.tsx` (the full timeline, lazy), `boot/BootFail.tsx` (the offline state both paths show), `boot/model.ts` (the pure parts: stall detection, the settle flight, the quick path's steps), `veil.css` (eager), `boot.css` (lazy) |
 | Toasts | `toasthost.tsx` (gate), `Toasts.tsx` (the stack), `toaststack.ts` (pure clocks and reconcile), contract in `app/toasts.ts` |
 | Shared pieces | `Beat.tsx` (the beat, the ring, the chip), `archive.ts` (the time machine's moment and "t minus"), `live.ts` (one connection summary for every surface), `freshness.ts`, `data.ts`, `glyphs.tsx`, `lazyCard.tsx` |
 
@@ -49,6 +49,18 @@ A block's card and a feed row that arrive after the first fill carry `data-fresh
 the motion language reads an attribute that *appears on an element that exists* (a created element that already
 has it fires nothing), and because a later re-render (a second store update, a reorg timer) must not end the
 moment early. The first fill, a resync and a filter change are not arrivals.
+
+## When Atlas does not answer
+
+The veil covers each view's own loading state, so it must not outlast the data it waits for in silence. Both boot
+paths ask the same pure question (`detectFailure` in `boot/model.ts`: 3 s of refused or retrying connections, or 10 s
+without a snapshot, or a snapshot with no stream) and show the same panel (`boot/BootFail.tsx`): what is wrong
+("Atlas did not answer", or "The live stream did not open" when there is a snapshot to go on with), what the
+connection is doing right now ("Reconnecting in 3 s", from `useLiveView`), **Retry** (the live client reconnects
+now and the stall clock restarts; the veil lifts by itself the moment the data is in) and **Continue without data**
+(or "with the last snapshot"), which shows the shell with its own empty and offline states. It is announced as an
+alert. The quick path (`quickStep`) has nothing else on screen and centres it; the full boot places it by the log
+(`boot.css`). With the data in and only the globe slow, the quick path lifts after 6 s (`QUICK_GIVE_UP_MS`).
 
 ## Loaded on demand
 

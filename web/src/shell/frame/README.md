@@ -16,6 +16,7 @@ workspace, hands it over, binds windows to the URL, keeps the globe centred in t
 | `launchers.tsx`, `keys.ts`, `actions.tsx`, `nav.ts` | the one list behind the dock, menus, tabs and keys; the keyboard map; the shared actions; navigation by URL |
 | `routing.ts` | the URL to window manager binding, and the globe's inset (`insetFor`, `useGlobeInsetSync`) |
 | `ShellLink.tsx` | a link that opens its subject as a window and still works as a link |
+| `skip.ts` | where "Skip to content" goes (pure): the open window's body, else the page panel, else the stage |
 
 ## Contracts
 
@@ -35,6 +36,12 @@ a kind's prefix (`PALETTE_SEED` in `launchers.tsx`: `node `, `app `), and a pref
 space, which is why the `q` validator (`text` in `app/search.ts`) keeps the end of what it is given. The Operator
 launcher needs no subject: it opens the watchlist (`/operator/watchlist`, `WATCHLIST` in `launchers.tsx`), or raises
 an operator window that is already open.
+
+**Skip to content.** The first stop of the tab order, hidden above the screen until it has focus (`.skip-link`,
+`frame.css`). It does not follow its fragment: it moves focus to what is open (`focusContent`, `skip.ts`), the
+focused window's body (past its title bar's controls), else the topmost window's, else the page panel, else the
+globe's stage, and the next Tab lands on that thing's first control. On a phone the one window shown is the sheet.
+The targets take focus with `tabindex="-1"`, so the arrow keys scroll them and they stay out of the tab order.
 
 **The globe's inset.** `globeInset` (`wm/machine.ts`) gives the workspace edges plus the windows: docked windows
 always reserve their side, a maximized window reserves nothing, and a floating window reserves its side only
