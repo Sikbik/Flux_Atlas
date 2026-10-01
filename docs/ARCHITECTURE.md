@@ -190,8 +190,12 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >     live database untouched; leftovers of an interrupted update are removed at the next start.
 >   - *Read:* the file is memory-mapped (`maxminddb` over `memmap2`, `MADV_RANDOM`), never read onto the heap.
 >     Measured on the 2026-09 file (127 MB): open 21 us, 2,655 node hosts looked up in 3 ms warm / 145 ms cold,
->     heap (RssAnon) unchanged, mapped file pages (RssFile) +10 MB cold, up to +39 MB when the file is already in
->     the page cache (clean pages the kernel can drop).
+>     heap (RssAnon) unchanged. In the server (3105, 10 min after start): RssFile 11.8 MB without GeoIP, 13.2 MB
+>     with it after a cold start, 19.1 MB 10 min after an install (the freshly written file is in the page cache,
+>     so fault-around maps neighbouring pages; +44 MB right after the install). These are clean file pages the
+>     kernel can drop. RssAnon varied 207 to 248 MB across runs with and without GeoIP (engine noise; the
+>     database adds no heap beyond the city strings, which fit inline). Restart cost: under 4 ms warm, about
+>     120 ms with a cold page cache (complete locations skip the lookup).
 >   - *Use:* a node's geo gets the DB-IP city, and the region when its source has none. Country, org and ASN are
 >     never overridden (an empty country is filled), and nothing is taken when DB-IP disagrees with the source on
 >     the country. A node without usable coordinates gets DB-IP's (city-level, approximate) with
