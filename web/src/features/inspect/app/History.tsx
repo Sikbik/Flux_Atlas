@@ -272,7 +272,7 @@ export function AppHistoryView({ name, n }: { name: string; n: number }) {
             item.type === 'registered'
               ? null
               : isCurrent
-                ? 'Values are today’s, because this is the current revision.'
+                ? "Values are today's, because this is the current revision."
                 : 'Atlas records which fields each message changed, not their earlier values.',
             spec?.enterprise ? 'Enterprise apps are encrypted, so only public fields appear.' : null,
             'Environment values are never shown.',
