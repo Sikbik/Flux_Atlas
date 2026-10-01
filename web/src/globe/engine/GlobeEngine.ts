@@ -2437,8 +2437,11 @@ export class GlobeEngine {
   private readonly onContextLost = (e: Event): void => {
     e.preventDefault();
     this.contextLost = true;
+    this.contextEverLost = true;
     this.stop();
   };
+  /** Once lost, every GPU object belongs to a dead context: dispose() leaves them to the collector. */
+  private contextEverLost = false;
 
   private readonly onContextRestored = (): void => {
     this.contextLost = false;
@@ -2457,6 +2460,14 @@ export class GlobeEngine {
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.director?.stop();
     this.controls.dispose();
+    this.choreo.dispose();
+    this.listeners.clear();
+    if (this.contextEverLost) {
+      // Deleting them would only make the browser warn ("object does not belong to this context")
+      // once the context is restored; stop late asset uploads and let the rest go.
+      this.assets.dispose(false);
+      return;
+    }
     for (const k of Object.keys(this.bodies) as ArtDirection[]) this.bodies[k]?.dispose();
     this.nodeLayer.dispose();
     this.clusterLayer.dispose();
@@ -2472,9 +2483,7 @@ export class GlobeEngine {
     this.atmosphere.dispose();
     this.post.dispose();
     this.assets.dispose();
-    this.choreo.dispose();
     this.renderer.dispose();
-    this.listeners.clear();
   }
 
   // ---- frame ------------------------------------------------------------------------------

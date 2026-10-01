@@ -28,6 +28,11 @@ import { exposeGlobeStats } from './stats';
 /** Loads the engine chunk (three.js and the renderer). */
 export const loadEngine = () => import('./engine');
 
+/** Waits before each fresh engine when a lost WebGL context is not restored by the browser, ms. */
+const RECOVERY_MS = [1500, 4000, 10_000, 20_000, 30_000] as const;
+/** An engine that has drawn this long resets the recovery backoff, seconds. */
+const HEALTHY_S = 20;
+
 const QUALITY: Record<PerfPref, QualityLevel> = {
   auto: 'auto',
   high: 'high',
@@ -78,6 +83,14 @@ export function GlobeCanvas() {
   const nav = useRef({ navigate, location });
   nav.current = { navigate, location };
 
+  // Context-loss recovery: a fresh engine on the browser's restore event, or, when the browser never
+  // restores (a blocked GPU, a reset it will not undo), after a backoff (RECOVERY_MS). `attempts`
+  // resets once an engine has drawn for HEALTHY_S seconds.
+  const recovery = useRef<{ attempts: number; timer: ReturnType<typeof setTimeout> | null }>({
+    attempts: 0,
+    timer: null,
+  });
+
   // ---- create the engine (once per generation) ----------------------------------------------
   // biome-ignore lint/correctness/useExhaustiveDependencies: preferences are applied by the effects below; the engine is created once per generation
   useEffect(() => {
@@ -85,6 +98,21 @@ export function GlobeCanvas() {
     if (!host) return;
     let cancelled = false;
     let dispose: (() => void) | null = null;
+    const rec = recovery.current;
+    const scheduleRecovery = () => {
+      if (cancelled || rec.timer !== null) return;
+      if (rec.attempts >= RECOVERY_MS.length) {
+        console.error('[globe] the WebGL context did not come back');
+        handles.status.set('error');
+        return;
+      }
+      const delay = RECOVERY_MS[rec.attempts]!;
+      rec.attempts++;
+      rec.timer = setTimeout(() => {
+        rec.timer = null;
+        setGeneration((g) => g + 1);
+      }, delay);
+    };
     handles.status.set('loading');
     loadEngine().then(
       ({ GlobeEngine, tokensFromCss }) => {
@@ -105,6 +133,11 @@ export function GlobeCanvas() {
           });
         } catch (err) {
           canvas.remove();
+          // After a context loss WebGL can be briefly unavailable: keep trying before giving up.
+          if (generation > 0 && rec.attempts < RECOVERY_MS.length) {
+            scheduleRecovery();
+            return;
+          }
           handles.status.set((err as Error)?.name === 'GlobeUnsupportedError' ? 'unsupported' : 'error');
           if ((err as Error)?.name !== 'GlobeUnsupportedError') console.error('[globe]', err);
           return;
@@ -135,7 +168,9 @@ export function GlobeCanvas() {
 
         // The moon's ring is the Beat clock; its glow tells a late chain or a lost feed.
         let moonStatus: 'live' | 'late' | 'offline' = 'live';
+        const born = performance.now();
         const offFrame = e.on('frame', () => {
+          if (rec.attempts > 0 && performance.now() - born > HEALTHY_S * 1000) rec.attempts = 0;
           const beat = runtime.clock.beat();
           e.setBeat(beat.height === null ? 0 : beat.progress);
           const conn = runtime.store.connection.status;
@@ -158,10 +193,16 @@ export function GlobeCanvas() {
         const onLost = (ev: Event) => {
           ev.preventDefault();
           handles.status.set('loading');
+          host.dataset.globe = 'loading';
+          scheduleRecovery();
         };
         // A restored context gets a fresh engine on a fresh canvas (simpler and safer than
         // re-uploading every GPU resource of the old one).
-        const onRestored = () => setGeneration((g) => g + 1);
+        const onRestored = () => {
+          if (rec.timer !== null) clearTimeout(rec.timer);
+          rec.timer = null;
+          setGeneration((g) => g + 1);
+        };
         canvas.addEventListener('webglcontextlost', onLost);
         canvas.addEventListener('webglcontextrestored', onRestored);
 
@@ -202,6 +243,8 @@ export function GlobeCanvas() {
     );
     return () => {
       cancelled = true;
+      if (rec.timer !== null) clearTimeout(rec.timer);
+      rec.timer = null;
       dispose?.();
       if (host.dataset.globe === 'ready') host.dataset.globe = 'loading';
     };
