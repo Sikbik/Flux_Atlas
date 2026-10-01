@@ -24,11 +24,12 @@ pub mod replay;
 pub mod state;
 pub mod stats;
 pub mod timemachine;
+pub mod watchset;
 
 #[cfg(test)]
 mod engine_tests;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -337,9 +338,6 @@ pub struct WatchSet {
     pub apps: HashSet<String>,
 }
 
-/// Per-connection watches: `conn_id -> (nodes, apps)`.
-type Watches = HashMap<u64, (Vec<NodeId>, Vec<String>)>;
-
 struct Inner {
     config: EngineConfig,
     server: ServerInfo,
@@ -354,7 +352,8 @@ struct Inner {
     tasks: std::sync::Mutex<Vec<JoinHandle<()>>>,
     stats: stats::StatsCell,
     freshness: freshness::Freshness,
-    watches: std::sync::Mutex<Watches>,
+    /// Every connection's watches; the union in `watch_tx` changes under this lock.
+    watches: std::sync::Mutex<watchset::WatchIndex>,
     watch_tx: watch::Sender<WatchSet>,
     shutdown_tx: watch::Sender<bool>,
     obs_tx: std::sync::Mutex<Option<mpsc::Sender<Obs>>>,
@@ -424,7 +423,7 @@ impl Engine {
             tasks: std::sync::Mutex::new(Vec::new()),
             stats: stats::StatsCell::default(),
             freshness: freshness::Freshness::default(),
-            watches: std::sync::Mutex::new(HashMap::new()),
+            watches: std::sync::Mutex::new(watchset::WatchIndex::default()),
             watch_tx,
             shutdown_tx,
             obs_tx: std::sync::Mutex::new(Some(obs_tx.clone())),
@@ -739,26 +738,19 @@ impl EngineHandle {
         self.inner.published.store(Arc::new(next));
     }
 
-    /// Replaces the watches of one connection. The union over all connections drives
-    /// WatchProbe (direct `/flux/version` every 60 s per watched host) and hot-app polling
-    /// (`/apps/location/<name>` every few seconds); watched nodes' events are never coalesced.
+    /// Replaces the watches of one connection, in the client's order (its selection first).
+    /// The connections' watches drive WatchProbe (direct `/flux/version` every 60 s per
+    /// watched host) and hot-app polling (`/apps/location/<name>` every few seconds), both
+    /// picked by fair share ([`Self::hot_apps`], [`Self::probe_nodes`]); watched nodes' events
+    /// are never coalesced. Costs O(this connection's lists), not O(every connection).
     pub fn set_watch(&self, conn_id: u64, nodes: Vec<NodeId>, apps: Vec<String>) {
         let mut w = self
             .inner
             .watches
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let apps = apps
-            .into_iter()
-            .map(|a| a.trim().to_ascii_lowercase())
-            .filter(|a| !a.is_empty())
-            .collect();
-        if nodes.is_empty() && Vec::<String>::is_empty(&apps) {
-            w.remove(&conn_id);
-        } else {
-            w.insert(conn_id, (nodes, apps));
-        }
-        self.update_watch(&w);
+        let delta = w.set(conn_id, nodes, apps);
+        self.update_watch(&delta);
     }
 
     /// Drops the watches of a closed connection.
@@ -768,25 +760,36 @@ impl EngineHandle {
             .watches
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if w.remove(&conn_id).is_some() {
-            self.update_watch(&w);
-        }
+        let delta = w.clear(conn_id);
+        self.update_watch(&delta);
     }
 
-    fn update_watch(&self, w: &Watches) {
-        let mut set = WatchSet::default();
-        for (nodes, apps) in w.values() {
-            set.nodes.extend(nodes.iter().copied());
-            set.apps.extend(apps.iter().cloned());
+    /// Applies a union change. Called with the index lock held, so deltas reach the channel in
+    /// the order the index produced them.
+    fn update_watch(&self, delta: &watchset::WatchDelta) {
+        if delta.is_empty() {
+            return;
         }
-        self.inner.watch_tx.send_if_modified(|cur| {
-            if *cur == set {
-                false
-            } else {
-                *cur = set;
-                true
-            }
-        });
+        self.inner.watch_tx.send_if_modified(|cur| delta.apply(cur));
+    }
+
+    /// Up to `n` watched apps to poll, by fair share across connections (most-watched first;
+    /// one connection votes for a few of its apps only).
+    pub fn hot_apps(&self, n: usize) -> Vec<String> {
+        self.inner
+            .watches
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .hot_apps(n)
+    }
+
+    /// Up to `n` watched nodes to probe, by fair share across connections.
+    pub fn probe_nodes(&self, n: usize) -> Vec<NodeId> {
+        self.inner
+            .watches
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .probe_nodes(n)
     }
 
     /// The current union of watches.
@@ -915,6 +918,11 @@ mod tests {
         assert!(w.apps.is_empty());
         h.set_watch(2, vec![], vec![]);
         assert!(h.watch_set().nodes.is_empty());
+        // Fair-share picks read the same index.
+        h.set_watch(3, vec![NodeId(7)], vec!["b".into(), "a".into()]);
+        h.set_watch(4, vec![NodeId(8)], vec!["a".into()]);
+        assert_eq!(h.hot_apps(1), vec!["a".to_owned()]);
+        assert_eq!(h.probe_nodes(8).len(), 2);
         h.shutdown().await;
     }
 }

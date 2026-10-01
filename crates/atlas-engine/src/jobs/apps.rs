@@ -111,17 +111,17 @@ pub async fn placement(ctx: JobCtx) {
     }
 }
 
-/// Hot apps (open in a client): `/apps/location/<name>` every few seconds.
+/// Apps polled per hot round.
+pub const HOT_APPS: usize = 16;
+
+/// Hot apps (open in a client): `/apps/location/<name>` every few seconds, for at most
+/// [`HOT_APPS`] apps picked by fair share across connections (most-watched first, each
+/// connection voting for a few of its apps only), never alphabetically. The server accepts
+/// only names in the app catalog.
 pub async fn hot(ctx: JobCtx) {
     let iv = ctx.cfg.hot_app_interval;
     loop {
-        let apps: Vec<String> = {
-            let w = ctx.watch.borrow();
-            let mut v: Vec<String> = w.apps.iter().cloned().collect();
-            v.sort();
-            v.truncate(16);
-            v
-        };
+        let apps = ctx.handle.hot_apps(HOT_APPS);
         for app in apps {
             match ctx
                 .call(
