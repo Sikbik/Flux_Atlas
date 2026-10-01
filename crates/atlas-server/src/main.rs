@@ -43,6 +43,9 @@ enum Cmd {
         /// Directory holding `atlas.redb`.
         #[arg(long, env = "ATLAS_DATA_DIR", default_value = "/data")]
         data_dir: PathBuf,
+        /// Compact the file first (reclaims free pages) and report how long it took.
+        #[arg(long)]
+        compact: bool,
     },
     /// Write the TypeScript API bindings (ts-rs) into a directory.
     ExportTypes {
@@ -205,17 +208,7 @@ fn main() -> ExitCode {
                     Duration::from_secs(timeout_s),
                 ))
             }),
-        Cmd::DbStats { data_dir } => {
-            let path = data_dir.join("atlas.redb");
-            atlas_store::db_stats_at(&path)
-                .map(|st| print!("{}\n{}", path.display(), st.render()))
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "reading {}: {e} (stop the server first: redb locks the file)",
-                        path.display()
-                    )
-                })
-        }
+        Cmd::DbStats { data_dir, compact } => db_stats(&data_dir.join("atlas.redb"), compact),
         Cmd::ExportTypes { out } => atlas_core::export_typescript(&out)
             .map(|()| eprintln!("wrote TypeScript bindings to {}", out.display()))
             .map_err(anyhow::Error::from),
@@ -227,6 +220,34 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `atlas db-stats [--compact]` on a database no server has open.
+fn db_stats(path: &std::path::Path, compact: bool) -> anyhow::Result<()> {
+    let locked = |e: &dyn std::fmt::Display| {
+        anyhow::anyhow!(
+            "reading {}: {e} (stop the server first: redb locks the file)",
+            path.display()
+        )
+    };
+    anyhow::ensure!(path.exists(), "no database at {}", path.display());
+    if compact {
+        let before = atlas_store::FileUsage::of(path)?;
+        let store = atlas_store::Store::open(path).map_err(|e| locked(&e))?;
+        let started = std::time::Instant::now();
+        store.compact()?;
+        drop(store);
+        let after = atlas_store::FileUsage::of(path)?;
+        println!(
+            "compacted in {:.1} s: {:.1} MiB -> {:.1} MiB on disk",
+            started.elapsed().as_secs_f64(),
+            before.disk_bytes as f64 / 1_048_576.0,
+            after.disk_bytes as f64 / 1_048_576.0
+        );
+    }
+    let st = atlas_store::db_stats_at(path).map_err(|e| locked(&e))?;
+    print!("{}\n{}", path.display(), st.render());
+    Ok(())
 }
 
 #[cfg(test)]
