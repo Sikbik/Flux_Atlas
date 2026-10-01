@@ -1,4 +1,4 @@
-// /analytics/$tab: nine questions about the network, one answer each. Every tab opens on its headline
+// /analytics/$tab: ten questions about the network, one answer each. Every tab opens on its headline
 // (the number that answers the question), then one instrument, then detail one step away. Charts are
 // linked to the globe behind the window: choosing a bar or a band sets a filter in the URL.
 
@@ -9,6 +9,7 @@ import '../../explorer/views/view.css';
 import { useAggregateRefresh } from '../hooks/useAggregates';
 import { ArchaeologyTab } from '../tabs/Archaeology';
 import { CapacityTab } from '../tabs/Capacity';
+import { ChainTab } from '../tabs/Chain';
 import { ChurnTab } from '../tabs/Churn';
 import { EconomicsTab } from '../tabs/Economics';
 import { FairnessTab } from '../tabs/Fairness';
@@ -28,6 +29,7 @@ const LABELS: Record<AnalyticsTab, string> = {
   archaeology: 'Archaeology',
   economics: 'Economics',
   fairness: 'Fairness',
+  chain: 'Chain',
 };
 
 const ITEMS = ANALYTICS_TABS.map((id) => ({ id, label: LABELS[id] }));
@@ -53,6 +55,8 @@ function Body({ tab }: { tab: AnalyticsTab }) {
       return <EconomicsTab />;
     case 'fairness':
       return <FairnessTab />;
+    case 'chain':
+      return <ChainTab />;
   }
 }
 
