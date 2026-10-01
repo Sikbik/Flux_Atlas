@@ -854,3 +854,189 @@ button.ix-chip:hover {
   height: 28px;
   font-size: var(--fs-xs);
 }
+
+/* ---- disclosure ---------------------------------------------------------------------------------
+   A row that tells what is inside on one line and opens on demand. The row is a button inside a
+   heading; the body is a region that grows with grid rows (and goes inert while closed). */
+
+.ix-discs {
+  display: grid;
+  margin-top: 16px;
+}
+
+.ix-disc {
+  position: relative;
+}
+
+.ix-disc::before {
+  content: "";
+  position: absolute;
+  inset: 0 var(--ix-pad) auto;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line-2), var(--line-1) 55%, transparent);
+}
+
+.ix-disc-h {
+  margin: 0;
+  font: inherit;
+}
+
+.ix-disc-btn {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px var(--ix-pad);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.ix-disc-btn:hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent, var(--accent-500)) 9%, transparent),
+    transparent 85%
+  );
+}
+
+.ix-disc-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent-400);
+}
+
+.ix-disc-ico {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--line-1);
+  background: var(--ink-2);
+  color: var(--text-3);
+  transition:
+    color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
+}
+
+.ix-disc[data-open] .ix-disc-ico,
+.ix-disc-btn:hover .ix-disc-ico {
+  color: var(--accent-300);
+  border-color: color-mix(in oklab, var(--accent-400) 45%, transparent);
+  background: var(--accent-soft);
+}
+
+.ix-disc-t {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ix-disc-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+  color: var(--text-1);
+}
+
+.ix-disc-sum {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.ix-disc-sum > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ix-disc-chev {
+  color: var(--text-4);
+  transition:
+    rotate var(--dur-base) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.ix-disc-btn:hover .ix-disc-chev {
+  color: var(--text-2);
+}
+
+.ix-disc[data-open] .ix-disc-chev {
+  rotate: 90deg;
+}
+
+.ix-disc-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-slow) var(--ease-out-expo);
+}
+
+.ix-disc[data-open] > .ix-disc-body {
+  grid-template-rows: 1fr;
+}
+
+.ix-disc-in {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ix-disc-pad {
+  padding: 4px var(--ix-pad) 20px;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.ix-disc[data-open] .ix-disc-pad {
+  opacity: 1;
+  transition-delay: 70ms;
+}
+
+.ix-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status, var(--status-off));
+  box-shadow: 0 0 8px -1px var(--status, transparent);
+}
+
+/* A block inside a disclosure: a small heading with an optional aside, then its content. */
+.ix-blk + .ix-blk {
+  margin-top: 20px;
+}
+
+.ix-blk-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 9px;
+  font-family: var(--font-display);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+  color: var(--text-2);
+}
+
+.ix-blk-h > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ix-blk-h > span:first-child > svg {
+  color: var(--text-3);
+}

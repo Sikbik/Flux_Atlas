@@ -88,6 +88,7 @@ interface Palette {
   tier: Record<string, string>;
   tone: Record<string, string>;
   land: string;
+  landLit: string;
   line: string;
   text: string;
   halo: string;
@@ -110,7 +111,8 @@ function readPalette(el: Element): Palette {
       crit: v('--status-crit', '#ff5470'),
       off: v('--status-off', '#717171'),
     },
-    land: 'rgb(134 161 218 / 0.34)',
+    land: 'rgb(134 161 218 / 0.3)',
+    landLit: 'rgb(176 200 255 / 0.92)',
     line: v('--line-2', 'rgb(255 255 255 / 0.1)'),
     text: v('--text-2', '#d5d7db'),
     halo: 'rgb(8 10 15 / 0.9)',
@@ -150,28 +152,47 @@ interface DrawArgs {
 function draw(a: DrawArgs): void {
   const { ctx, w, h, mask, view, points, links, pal, fresh } = a;
   ctx.clearRect(0, 0, w, h);
+  const xy = points.map((p) => project(view, w, h, p.lat, p.lon));
 
-  // Land as a dot matrix on a staggered grid.
+  // Land as a dot matrix on a staggered grid, brighter near the subject so the eye lands on it.
   if (mask) {
     const step = Math.max(3.6, Math.min(6, view.ppd * 1.6));
     const rowH = step * 0.866;
-    ctx.fillStyle = pal.land;
-    ctx.beginPath();
+    const spots = xy.length > 0 && xy.length <= 24 ? xy : null;
+    const reach = Math.max(54, Math.min(w, h) * 0.62);
+    const reach2 = reach * reach;
+    const dim = new Path2D();
+    const mid = new Path2D();
+    const lit = new Path2D();
     for (let r = 0, y = rowH / 2; y < h; r++, y += rowH) {
       const off = r % 2 ? step / 2 : 0;
       for (let x = off + step / 2; x < w; x += step) {
         const lon = view.lon0 + (x - w / 2) / (view.ppd * view.cos0);
         const lat = view.lat0 - (y - h / 2) / view.ppd;
-        if (isLand(mask, lon, lat)) {
-          ctx.moveTo(x + 1.05, y);
-          ctx.arc(x, y, 1.05, 0, Math.PI * 2);
+        if (!isLand(mask, lon, lat)) continue;
+        let k = 0;
+        if (spots) {
+          let best = reach2;
+          for (const s of spots) {
+            const d2 = (s[0] - x) * (s[0] - x) + (s[1] - y) * (s[1] - y);
+            if (d2 < best) best = d2;
+          }
+          k = 1 - best / reach2;
         }
+        const path = k > 0.62 ? lit : k > 0.25 ? mid : dim;
+        const rad2 = k > 0.62 ? 1.45 : k > 0.25 ? 1.2 : 1.05;
+        path.moveTo(x + rad2, y);
+        path.arc(x, y, rad2, 0, Math.PI * 2);
       }
     }
-    ctx.fill();
+    ctx.fillStyle = pal.land;
+    ctx.fill(dim);
+    ctx.globalAlpha = 0.62;
+    ctx.fillStyle = pal.landLit;
+    ctx.fill(mid);
+    ctx.globalAlpha = 1;
+    ctx.fill(lit);
   }
-
-  const xy = points.map((p) => project(view, w, h, p.lat, p.lon));
 
   // Routes between points: dashed, hairline white.
   if (links.length) {

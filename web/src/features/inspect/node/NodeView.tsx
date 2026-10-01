@@ -1,18 +1,27 @@
-import { SearchX, WifiOff } from 'lucide-react';
+import { Cpu, Fingerprint, HeartPulse, History, Layers, Network, SearchX, WifiOff } from 'lucide-react';
 import { useMemo } from 'react';
 import { isApiError } from '../../../api/http';
 import { useNodeDetail } from '../../../api/queries';
 import { useNetwork } from '../../../app/context';
 import { ipOfEndpoint } from '../sources/host';
 import { useNodeLive, useResolvedId } from '../sources/live';
-import { Alert, Btn, Sk, State } from '../ui';
+import { Btn, Disclosure, Disclosures, Sk, State, useOpenSet } from '../ui';
 import { NodeContext, type NodeCtx } from './context';
-import { HealthSection, HostSection } from './Health';
+import { HealthBody, HostBlock } from './Health';
 import { Hero } from './Hero';
-import { IdentitySection } from './Identity';
-import { PeersSection, RelatedSection } from './Network';
-import { PaymentBlock, PaymentHistory } from './Payment';
-import { HardwareSection, ReachSection, VersionsSection } from './Specs';
+import { IdentityBody } from './Identity';
+import { ActivityBody, PeersBlock } from './Network';
+import { PaymentBlock, PaymentHistoryBody } from './Payment';
+import { HardwareBlock, ReachBlock, VersionsBlock } from './Specs';
+import { StatusAlert } from './StatusAlert';
+import {
+  ActivitySummary,
+  HardwareSummary,
+  HealthSummary,
+  IdentitySummary,
+  NetworkSummary,
+  PaymentsSummary,
+} from './Summaries';
 import './node.css';
 
 function NodeSkeleton() {
@@ -98,29 +107,85 @@ export function NodeView({ nodeKey }: { nodeKey: string }) {
   }
   if (!live && !detail && (q.isPending || !loaded)) return <NodeSkeleton />;
 
-  const gone = node?.status === 'departed' || (node?.departed_ms ?? null) !== null;
   return (
     <NodeContext.Provider value={ctx}>
-      <article className="ix ix-node" data-tier={tier} aria-label={`Node ${endpoint || nodeKey}`}>
-        <Hero />
-        {gone ? (
-          <section className="ix-sec" data-bare="">
-            <Alert tone="off" title="This node has left the network">
-              It no longer appears on the node list, so it is not paid. Its history stays here.
-            </Alert>
-          </section>
-        ) : null}
-        <PaymentBlock />
-        <PaymentHistory />
-        <HostSection />
-        <HealthSection />
-        <HardwareSection />
-        <VersionsSection />
-        <ReachSection />
-        <PeersSection />
-        <RelatedSection />
-        <IdentitySection />
-      </article>
+      <NodeBody tier={tier} label={endpoint || nodeKey} />
     </NodeContext.Provider>
+  );
+}
+
+/** The inspector body: the lead facts first, everything else one row away. */
+function NodeBody({ tier, label }: { tier: string; label: string }) {
+  const open = useOpenSet('node');
+  const row = (id: string) => ({
+    open: open.isOpen(id),
+    onToggle: (next: boolean) => open.setOpen(id, next),
+  });
+  const icon = (Icon: typeof History) => <Icon size={15} strokeWidth={1.75} />;
+  return (
+    <article className="ix ix-node" data-tier={tier} aria-label={`Node ${label}`}>
+      <Hero />
+      <StatusAlert onOpenHealth={() => open.setOpen('health', true)} />
+      <PaymentBlock />
+      <Disclosures>
+        <Disclosure
+          index={2}
+          title="Payment history"
+          icon={icon(History)}
+          summary={<PaymentsSummary />}
+          {...row('payments')}
+        >
+          <PaymentHistoryBody />
+        </Disclosure>
+        <Disclosure
+          index={3}
+          title="Health"
+          icon={icon(HeartPulse)}
+          summary={<HealthSummary />}
+          {...row('health')}
+        >
+          <HealthBody />
+        </Disclosure>
+        <Disclosure
+          index={4}
+          title="Hardware and software"
+          icon={icon(Cpu)}
+          summary={<HardwareSummary />}
+          {...row('hardware')}
+        >
+          <HardwareBlock />
+          <VersionsBlock />
+        </Disclosure>
+        <Disclosure
+          index={5}
+          title="Network"
+          icon={icon(Network)}
+          summary={<NetworkSummary />}
+          {...row('network')}
+        >
+          <HostBlock />
+          <ReachBlock />
+          <PeersBlock />
+        </Disclosure>
+        <Disclosure
+          index={6}
+          title="Apps and activity"
+          icon={icon(Layers)}
+          summary={<ActivitySummary />}
+          {...row('activity')}
+        >
+          <ActivityBody />
+        </Disclosure>
+        <Disclosure
+          index={7}
+          title="Identity"
+          icon={icon(Fingerprint)}
+          summary={<IdentitySummary />}
+          {...row('identity')}
+        >
+          <IdentityBody />
+        </Disclosure>
+      </Disclosures>
+    </article>
   );
 }

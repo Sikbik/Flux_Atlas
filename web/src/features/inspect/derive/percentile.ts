@@ -51,11 +51,11 @@ export function medianOf(sorted: ArrayLike<number>): number | null {
   return n % 2 ? sorted[(n - 1) / 2]! : (sorted[n / 2 - 1]! + sorted[n / 2]!) / 2;
 }
 
-/** Plain-language rank: `Above 73% of Stratus nodes`, or `Typical for Stratus` near the middle. */
+/** Plain-language rank: `Above 73% of Stratus`, or `Typical for Stratus` near the middle. */
 export function describePercentile(p: number | null, tierName: string): string | null {
   if (p === null) return null;
   const r = Math.round(p);
   if (r >= 45 && r <= 55) return `Typical for ${tierName}`;
-  if (r > 55) return `Above ${r}% of ${tierName} nodes`;
-  return `Below ${100 - r}% of ${tierName} nodes`;
+  if (r > 55) return `Above ${r}% of ${tierName}`;
+  return `Below ${100 - r}% of ${tierName}`;
 }

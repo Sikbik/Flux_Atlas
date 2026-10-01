@@ -1,4 +1,4 @@
-import { Activity, Check, HeartPulse, Network, OctagonX, ShieldAlert, TriangleAlert } from 'lucide-react';
+import { Activity, Check, Network, OctagonX, TriangleAlert } from 'lucide-react';
 import { type CSSProperties, useMemo } from 'react';
 import type { NodeHistoryDto } from '../../../api/generated/NodeHistoryDto';
 import { useNodeHistory } from '../../../api/queries';
@@ -18,7 +18,7 @@ import { heartbeatTicks, ipHistory, uptimeCells } from '../derive/uptime';
 import { useFirstIngestMs, useHostRows } from '../sources/hooks';
 import { LADDER_PORTS, useHostNodes } from '../sources/host';
 import { type NodeLive, readNodeLive, useQueues } from '../sources/live';
-import { Alert, Digits, HostLink, NodeLink, OperatorLink, Section, Sk, TierGlyph, tierLabel } from '../ui';
+import { Block, Digits, HostLink, NodeLink, OperatorLink, Sk, TierGlyph, tierLabel } from '../ui';
 import { useNodeCtx } from './context';
 
 const DAY_MS = 86_400_000;
@@ -26,7 +26,7 @@ const DAY_MS = 86_400_000;
 // ---- host ladder ------------------------------------------------------------------------------------
 
 /** The host's eight UPnP ports with the node on each, and who is paid. */
-export function HostSection() {
+export function HostBlock() {
   const { ip, id } = useNodeCtx();
   const store = useRuntime().store;
   const ids = useHostNodes(ip);
@@ -50,10 +50,9 @@ export function HostSection() {
   const single = addresses.size === 1 ? [...addresses][0]! : null;
 
   return (
-    <Section
+    <Block
       title={`Host ${ip}`}
-      icon={<Network size={16} strokeWidth={1.75} />}
-      index={3}
+      icon={<Network size={14} strokeWidth={1.75} />}
       aside={`${used} of ${LADDER_PORTS.length} ports in use`}
     >
       <ul className="ix-ladder" aria-label={`Nodes on ${ip}`}>
@@ -117,7 +116,7 @@ export function HostSection() {
           `${used} nodes on this host.`
         )}
       </p>
-    </Section>
+    </Block>
   );
 }
 
@@ -136,7 +135,7 @@ const STAGE_INDEX: Record<string, number> = {
   unknown: -1,
 };
 
-function useSince(): number | null {
+export function useSince(): number | null {
   const { node, live } = useNodeCtx();
   const tip = useTip();
   const lastConfirmed = Math.max(live?.lastConfirmed ?? 0, node?.last_confirmed_height ?? 0);
@@ -392,31 +391,17 @@ function Strips({ hist }: { hist: { data: NodeHistoryDto | undefined; isPending:
 }
 
 /** Lifecycle, check-in gauge, heartbeat timeline, uptime and IP history. */
-export function HealthSection() {
-  const { node, live, apiKey } = useNodeCtx();
+export function HealthBody() {
+  const { apiKey } = useNodeCtx();
   const { clock } = useRuntime();
   // A day-aligned window keeps the query key stable across renders.
   const from = Math.floor(clock.now() / DAY_MS) * DAY_MS - 89 * DAY_MS;
   const hist = useNodeHistory(apiKey, { from });
-  const status = live?.status ?? node?.status ?? 'unknown';
   return (
-    <Section
-      title="Health"
-      icon={<HeartPulse size={16} strokeWidth={1.75} />}
-      index={4}
-      aside={hist.data ? `uptime ${formatPercent(hist.data.uptime_pct / 100)}` : undefined}
-    >
-      {status === 'dos' ? (
-        <div className="ix-gap">
-          <Alert tone="crit" icon={<ShieldAlert size={16} strokeWidth={1.75} />} title="DoS listed">
-            This node is banned for 720 blocks after a failed benchmark or a network violation. It is skipped
-            by the payment queue until the ban ends.
-          </Alert>
-        </div>
-      ) : null}
+    <>
       <Stepper />
       <Gauge />
       <Strips hist={hist} />
-    </Section>
+    </>
   );
 }

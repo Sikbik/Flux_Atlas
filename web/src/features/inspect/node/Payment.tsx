@@ -1,14 +1,14 @@
-import { Coins, History } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Coins } from 'lucide-react';
+import { type CSSProperties, useMemo, useState } from 'react';
 import { useNodePayments } from '../../../api/queries';
 import { useNetwork, useRuntime } from '../../../app/context';
 import { fluxToNumber, formatAgo, formatFlux, formatInt, formatUtcDateTime } from '../../../lib/format';
-import { etaParts } from '../derive/eta';
+import { etaClock } from '../derive/eta';
 import { paymentDays, windowTotals } from '../derive/payments';
 import { cycleHours, estimatePayment, fluxPerDay, positionOf, queueProgress } from '../derive/queue';
 import { useFirstIngestMs, useRiseFlash } from '../sources/hooks';
 import { useChainClock, useQueues, useTierInfo } from '../sources/live';
-import { BlockLink, Btn, Digits, Grid, MiniBars, Section, Sk, Swap, Tile, tierLabel } from '../ui';
+import { BlockLink, Btn, Digits, Grid, MiniBars, Sk, Swap, Tile, tierLabel } from '../ui';
 import { useNodeCtx } from './context';
 
 const DAY_MS = 86_400_000;
@@ -20,7 +20,7 @@ const NOT_QUEUED: Record<string, string> = {
   departed: 'This node has left the network',
 };
 
-/** The next-payment tile: queue position, ETA that counts down, amount and how far through the queue. */
+/** The next-payment tile: queue position, a countdown that ticks, the amount and the walk through the queue. */
 function PayTile() {
   const { id, tier, live, node, detail } = useNodeCtx();
   const queues = useQueues();
@@ -44,8 +44,8 @@ function PayTile() {
   const since = tip !== null && lastPaid > 0 ? Math.max(0, tip - lastPaid) : null;
   const next = queued && position === 0;
   const label = flash ? 'Paid just now' : next ? 'Paid in the next block' : 'Next payment';
-  const parts = est && !next ? etaParts(est.etaMs) : null;
-  const nextIn = est && next ? etaParts(est.etaMs) : null;
+  const clock = est ? etaClock(est.etaMs) : null;
+  const progress = queued ? queueProgress(position, size) : 0;
 
   return (
     <div
@@ -55,36 +55,50 @@ function PayTile() {
       data-next={next || undefined}
       aria-live="off"
     >
-      <div className="ix-pay-k">
-        <Coins size={14} strokeWidth={1.75} aria-hidden="true" />
-        <Swap k={label}>{label}</Swap>
+      <div className="ix-pay-top">
+        <div className="ix-pay-k">
+          <Coins size={14} strokeWidth={1.75} aria-hidden="true" />
+          <Swap k={label}>{label}</Swap>
+        </div>
+        {queued ? (
+          <span
+            className="ix-pay-flag"
+            title="Atlas derives this from the live queue; the network does not publish it"
+          >
+            Estimate
+          </span>
+        ) : null}
       </div>
       <div className="ix-pay-big">
-        {queued && est ? (
+        {queued && est && clock ? (
           next ? (
             <b className="ix-pay-eta">
               <Swap k="next">Next block</Swap>
-              {nextIn ? (
-                <small className="ix-pay-in">
-                  {est.etaMs > 0 ? (
-                    <>
-                      in <Digits value={nextIn.value} /> {nextIn.unit}
-                    </>
-                  ) : (
-                    'any moment'
-                  )}
-                </small>
-              ) : null}
+              <small className="ix-pay-in">
+                {est.etaMs > 0 ? (
+                  <>
+                    in <Digits value={clock.a} /> {clock.aUnit}
+                  </>
+                ) : (
+                  'any moment'
+                )}
+              </small>
             </b>
-          ) : parts ? (
+          ) : (
             <b className="ix-pay-eta">
-              <span className="ix-sr">{`Next payment ${parts.phrase}`}</span>
-              <span aria-hidden="true">
-                <Digits value={parts.value} />
-                {parts.unit ? <small>{parts.unit}</small> : null}
+              <span className="ix-sr">{`Next payment ${clock.phrase}`}</span>
+              <span className="ix-pay-fig" aria-hidden="true">
+                <Digits value={clock.a} />
+                <small>{clock.aUnit}</small>
+                {clock.b !== undefined ? (
+                  <>
+                    <Digits value={clock.b} />
+                    <small>{clock.bUnit}</small>
+                  </>
+                ) : null}
               </span>
             </b>
-          ) : null
+          )
         ) : (
           <b className="ix-pay-eta" data-muted="">
             {size === 0 && !pos && status === 'confirmed' ? 'Unknown' : 'Not queued'}
@@ -92,33 +106,75 @@ function PayTile() {
         )}
         {amount ? <em className="ix-pay-amt">{amount} FLUX</em> : null}
       </div>
-      <div className="ix-pay-sub">
+
+      {queued ? (
+        <div className="ix-pay-walk">
+          {/* biome-ignore lint/a11y/useSemanticElements: a styled progress track; a native meter cannot take the glowing head */}
+          <div
+            className="ix-pay-track"
+            role="meter"
+            aria-label="How far through the queue"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress * 100)}
+            style={{ '--ix-p': progress } as CSSProperties}
+          >
+            <i className="ix-pay-fill" />
+            <i className="ix-pay-head" />
+          </div>
+          <div className="ix-pay-ends" aria-hidden="true">
+            <span>Back of the queue</span>
+            <span>Paid</span>
+          </div>
+        </div>
+      ) : (
+        <p className="ix-pay-why">{NOT_QUEUED[status] ?? 'The payment queue position is not known yet'}</p>
+      )}
+
+      {queued ? (
+        <dl className="ix-pay-facts">
+          <div>
+            <dt>Position</dt>
+            <dd>
+              <b className="ix-mono">#{formatInt(position + 1)}</b>
+              <small>of {formatInt(size)}</small>
+            </dd>
+          </div>
+          <div>
+            <dt>Full cycle</dt>
+            <dd>
+              <b className="ix-mono">{cycleHours(size).toFixed(1)}</b>
+              <small>hours</small>
+            </dd>
+          </div>
+          <div>
+            <dt>Last paid</dt>
+            <dd>
+              {since !== null ? (
+                <>
+                  <b className="ix-mono">{formatInt(since)}</b>
+                  <small>blocks ago</small>
+                </>
+              ) : (
+                <small>none seen yet</small>
+              )}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+      <p className="ix-pay-note">
         {queued ? (
           <>
-            Queue position <span className="ix-mono">#{formatInt(position + 1)}</span> of{' '}
-            <span className="ix-mono">{formatInt(size)}</span>
-            {since !== null ? (
+            About 30 s per block; {tierLabel(tier)} pays one node every block.
+            {since !== null && lastPaid > 0 ? (
               <>
                 {' '}
-                · last paid <span className="ix-mono">{formatInt(since)}</span> blocks ago (block{' '}
-                <BlockLink height={lastPaid}>{formatInt(lastPaid)}</BlockLink>)
+                Last paid in block <BlockLink height={lastPaid}>{formatInt(lastPaid)}</BlockLink>.
               </>
-            ) : (
-              ' · no payment seen yet'
-            )}
+            ) : null}
           </>
-        ) : (
-          (NOT_QUEUED[status] ?? 'The payment queue position is not known yet')
-        )}
-      </div>
-      <div className="ix-pay-foot">
-        <span className="ix-pay-est">
-          {queued ? `Estimate at about 30 s per block. ${tierLabel(tier)} pays one node every block.` : ' '}
-        </span>
-      </div>
-      <div className="ix-pay-bar" aria-hidden="true">
-        <i style={{ transform: `scaleX(${queued ? queueProgress(position, size) : 0})` }} />
-      </div>
+        ) : null}
+      </p>
     </div>
   );
 }
@@ -172,7 +228,7 @@ function PayStats() {
         label="Per day"
         value={perDay === null ? 'Unknown' : <Digits value={perDay.toFixed(2)} />}
         unit={perDay === null ? undefined : 'FLUX'}
-        detail={size > 0 ? `estimate, cycle ${cycleHours(size).toFixed(1)} h` : 'estimate'}
+        detail="estimate"
         detailTone="accent"
       />
       <Tile label="Payout history" detail="30 d">
@@ -187,40 +243,35 @@ function PayStats() {
 /** The payment block: the tile and the three statistics under it. */
 export function PaymentBlock() {
   return (
-    <Section
-      title="Payment"
-      icon={<Coins size={16} strokeWidth={1.75} />}
-      index={1}
-      bare
-      className="ix-sec-pay"
-    >
+    <div className="ix-sec-pay ix-rise" style={{ '--ix-i': 1 } as CSSProperties}>
       <PayTile />
       <div className="ix-gap">
         <PayStats />
       </div>
-    </Section>
+    </div>
   );
 }
 
 /** The latest payments from our own ledger. */
-export function PaymentHistory() {
+export function PaymentHistoryBody() {
   const { apiKey } = useNodeCtx();
   const q = useNodePayments(apiKey, { limit: 50 });
   const first = useFirstIngestMs();
   const { clock } = useRuntime();
   const [shown, setShown] = useState(5);
   const flat = useMemo(() => q.data?.pages.flatMap((p) => p.items) ?? [], [q.data]);
-  const total = q.data?.pages[0]?.total_paid ?? null;
+  const total = fluxToNumber(q.data?.pages[0]?.total_paid ?? null) ?? 0;
   const now = clock.now();
   const more = flat.length > shown || q.hasNextPage;
 
   return (
-    <Section
-      title="Recent payments"
-      icon={<History size={16} strokeWidth={1.75} />}
-      index={2}
-      aside={total ? `${formatFlux(total)} since first ingest` : undefined}
-    >
+    <>
+      {total > 0 ? (
+        <p className="ix-cap ix-hist-total">
+          <span className="ix-mono">{formatFlux(q.data?.pages[0]?.total_paid)}</span> paid since our first
+          ingest.
+        </p>
+      ) : null}
       {q.isPending ? (
         <div className="ix-plist" aria-hidden="true">
           {[0, 1, 2].map((i) => (
@@ -264,6 +315,6 @@ export function PaymentHistory() {
           </Btn>
         </div>
       ) : null}
-    </Section>
+    </>
   );
 }

@@ -1,5 +1,5 @@
 import { CircleCheck, CircleDashed, Loader, OctagonX, ShieldAlert, TriangleAlert } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ComponentPropsWithRef, ReactNode } from 'react';
 import type { Tier } from '../../../api/generated/Tier';
 import type { StateChip, StateIcon, Tone } from '../derive/nodeState';
 import { cx } from './cx';
@@ -13,6 +13,8 @@ const TIER_LABEL: Record<string, string> = {
 };
 
 export const tierLabel = (tier: string): string => TIER_LABEL[tier] ?? tier;
+
+type SpanRest = Omit<ComponentPropsWithRef<'span'>, 'children' | 'className' | 'title'>;
 
 interface ChipBase {
   children?: ReactNode;
@@ -33,9 +35,11 @@ export function Chip({
   mono,
   ring,
   icon,
-}: ChipBase & { icon?: ReactNode }) {
+  ...rest
+}: ChipBase & SpanRest & { icon?: ReactNode }) {
   return (
     <span
+      {...rest}
       className={cx('ix-chip', className)}
       title={title}
       data-size={size}
@@ -49,9 +53,16 @@ export function Chip({
 }
 
 /** The accent-tinted pill used for links and applied filters. */
-export function AccentChip({ children, className, title, size, icon }: ChipBase & { icon?: ReactNode }) {
+export function AccentChip({
+  children,
+  className,
+  title,
+  size,
+  icon,
+  ...rest
+}: ChipBase & SpanRest & { icon?: ReactNode }) {
   return (
-    <span className={cx('ix-chip', className)} title={title} data-size={size} data-accent="">
+    <span {...rest} className={cx('ix-chip', className)} title={title} data-size={size} data-accent="">
       {icon}
       {children}
     </span>
@@ -65,9 +76,11 @@ export function TierChip({
   size,
   ring,
   className,
-}: { tier: Tier | string; label?: string } & Pick<ChipBase, 'size' | 'ring' | 'className'>) {
+  ...rest
+}: { tier: Tier | string; label?: string } & Pick<ChipBase, 'size' | 'ring' | 'className'> & SpanRest) {
   return (
     <span
+      {...rest}
       className={cx('ix-chip', className)}
       data-tier={tier}
       data-size={size}
@@ -97,10 +110,12 @@ export function StatusChip({
   title,
   size,
   className,
-}: { tone: Tone; icon?: StateIcon } & Pick<ChipBase, 'children' | 'title' | 'size' | 'className'>) {
+  ...rest
+}: { tone: Tone; icon?: StateIcon } & Pick<ChipBase, 'children' | 'title' | 'size' | 'className'> &
+  SpanRest) {
   const Icon = STATE_ICONS[icon];
   return (
-    <span className={cx('ix-chip', className)} data-status={tone} data-size={size} title={title}>
+    <span {...rest} className={cx('ix-chip', className)} data-status={tone} data-size={size} title={title}>
       <Icon size={size === 'sm' ? 11 : 13} strokeWidth={1.75} aria-hidden="true" />
       {children}
     </span>

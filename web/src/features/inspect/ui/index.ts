@@ -8,9 +8,10 @@ export { AccentChip, Chip, StateChips, StatusChip, TierChip, tierLabel } from '.
 export { Btn, CopyButton, Switch } from './controls';
 export { cx } from './cx';
 export { Digits, Swap } from './digits';
+export { Disclosure, Disclosures, Dot, useOpenSet } from './disclosure';
 export { FeedLine } from './FeedLine';
 export { ArcaneGlyph, TierGlyph } from './glyphs';
-export { Alert, Grid, Kv, KvRow, Meter, Section, Sk, State, Tile } from './layout';
+export { Alert, Block, Grid, Kv, KvRow, Meter, Section, Sk, State, Tile } from './layout';
 export {
   AddressLink,
   AppLink,

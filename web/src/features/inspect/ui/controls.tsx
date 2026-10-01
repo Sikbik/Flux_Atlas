@@ -1,14 +1,15 @@
 import { Check, Copy } from 'lucide-react';
-import { type ButtonHTMLAttributes, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ComponentPropsWithRef, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { cx } from './cx';
 
-type BtnProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'> & {
+type BtnProps = Omit<ComponentPropsWithRef<'button'>, 'type'> & {
   variant?: 'primary' | 'ghost';
   icon?: ReactNode;
   size?: 'icon';
 };
 
-/** A secondary button; `aria-pressed` turns it into a toggle with the lit state. */
+/** A secondary button; `aria-pressed` turns it into a toggle with the lit state. `ref`, `className` and
+ * every `data-*` attribute pass through, so the shared interaction layer can attach to it later. */
 export function Btn({ variant, icon, size, className, children, ...rest }: BtnProps) {
   return (
     <button

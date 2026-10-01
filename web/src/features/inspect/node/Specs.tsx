@@ -7,7 +7,7 @@ import { useUi } from '../../../store/ui';
 import { describePercentile, medianOf, percentileOf } from '../derive/percentile';
 import { latestVersion, mostCommon, shareOf, versionStanding } from '../derive/versions';
 import { tierColumnsFor } from '../sources/live';
-import { Alert, Chip, Grid, Meter, Section, StatusChip, Tile, tierLabel } from '../ui';
+import { Alert, Block, Chip, Grid, Meter, StatusChip, Tile, tierLabel } from '../ui';
 import { useNodeCtx } from './context';
 
 /** Sorted benchmark columns of a tier, rebuilt at most once per node-slice change and shared by views. */
@@ -18,7 +18,7 @@ function usePercentiles(tier: string) {
 const pctVar = (p: number | null) => ({ '--ix-p': p === null ? 0 : p / 100 }) as CSSProperties;
 
 /** Benchmarked hardware with its standing inside the node's own tier. */
-export function HardwareSection() {
+export function HardwareBlock() {
   const { node, live, tier } = useNodeCtx();
   const hw = node?.hardware ?? null;
   const cap = useNetworkCapacity();
@@ -57,10 +57,9 @@ export function HardwareSection() {
           : 'No benchmark seen';
 
   return (
-    <Section
+    <Block
       title="Hardware"
-      icon={<Cpu size={16} strokeWidth={1.75} />}
-      index={5}
+      icon={<Cpu size={14} strokeWidth={1.75} />}
       aside={
         <StatusChip
           tone={benchTone}
@@ -140,7 +139,7 @@ export function HardwareSection() {
             label="Download against twice the tier average"
           />
           <div className="ix-tile-d">
-            {hw && avgDown && avgUp ? `tier average ${formatBandwidth(avgDown)} down` : ' '}
+            {hw && avgDown && avgUp ? `tier avg ${formatBandwidth(avgDown)}` : ' '}
           </div>
         </Tile>
       </Grid>
@@ -157,7 +156,7 @@ export function HardwareSection() {
           The benchmark qualified this node for {tierLabel(hw.bench_tier)}, not {tierName}.
         </p>
       ) : null}
-    </Section>
+    </Block>
   );
 }
 
@@ -211,7 +210,7 @@ function VersionRow({
 }
 
 /** Every software version on the node with a "latest" marker where there is one. */
-export function VersionsSection() {
+export function VersionsBlock() {
   const { node, live } = useNodeCtx();
   const v = useNetworkVersions();
   const flux = node?.versions.flux_os ?? (live?.fluxOs || null);
@@ -224,7 +223,7 @@ export function VersionsSection() {
   const arcane = node?.versions.arcane ?? null;
 
   return (
-    <Section title="Versions" icon={<GitBranch size={16} strokeWidth={1.75} />} index={6}>
+    <Block title="Versions" icon={<GitBranch size={14} strokeWidth={1.75} />}>
       <dl className="ix-vlist">
         <VersionRow
           label="FluxOS"
@@ -267,14 +266,14 @@ export function VersionsSection() {
         The latest release is the newest version that a real share of the network runs, so a single test build
         never counts.
       </p>
-    </Section>
+    </Block>
   );
 }
 
 // ---- reachability -----------------------------------------------------------------------------------
 
 /** The node's reachability from the stats round, and whether Atlas is probing it live. */
-export function ReachSection() {
+export function ReachBlock() {
   const { id, node, live } = useNodeCtx();
   const { clock } = useRuntime();
   const watched = useUi((s) => id !== null && s.watched.includes(id));
@@ -283,46 +282,39 @@ export function ReachSection() {
   const swept = node?.last_swept_ms ?? null;
 
   return (
-    <Section title="Reachability" icon={<RadioTower size={16} strokeWidth={1.75} />} index={7}>
-      <dl className="ix-kv">
-        <dt>Stats round</dt>
-        <dd data-sans="">
-          {reachable === true ? (
-            <StatusChip tone="ok" icon="check" size="sm">
-              Reachable
-            </StatusChip>
-          ) : reachable === false ? (
-            <StatusChip tone="off" icon="dashed" size="sm">
-              Unreachable
-            </StatusChip>
-          ) : (
-            <StatusChip tone="off" icon="dashed" size="sm">
-              Not checked yet
-            </StatusChip>
-          )}
-        </dd>
-        <dt>Last checked</dt>
-        <dd>{swept ? `${formatAgo(now - swept)}` : 'Unknown'}</dd>
-        <dt>WatchProbe</dt>
-        <dd data-sans="">
-          {watched ? (
-            <StatusChip
-              tone="ok"
-              icon="check"
-              size="sm"
-              title="Atlas probes this node ahead of the regular sweep"
-            >
-              Probing live
-            </StatusChip>
-          ) : (
-            <span className="ix-dim">Watch the node to probe it live</span>
-          )}
-        </dd>
-        <dt>First seen</dt>
-        <dd>{node ? formatUtcDateTime(node.first_seen_ms) : 'Unknown'}</dd>
-        <dt>Last seen</dt>
-        <dd>{node ? formatAgo(now - node.last_seen_ms) : 'Unknown'}</dd>
-      </dl>
-    </Section>
+    <Block title="Reachability" icon={<RadioTower size={14} strokeWidth={1.75} />}>
+      <div className="ix-chips">
+        {reachable === true ? (
+          <StatusChip tone="ok" icon="check" size="sm">
+            Reachable
+          </StatusChip>
+        ) : reachable === false ? (
+          <StatusChip tone="off" icon="dashed" size="sm">
+            Unreachable
+          </StatusChip>
+        ) : (
+          <StatusChip tone="off" icon="dashed" size="sm">
+            Not checked yet
+          </StatusChip>
+        )}
+        {watched ? (
+          <StatusChip
+            tone="ok"
+            icon="check"
+            size="sm"
+            title="Atlas probes this node ahead of the regular sweep"
+          >
+            Probing live
+          </StatusChip>
+        ) : null}
+      </div>
+      <p className="ix-cap">
+        {swept ? `Last checked ${formatAgo(now - swept)}.` : 'Not checked in a stats round yet.'}
+        {node
+          ? ` First seen ${formatUtcDateTime(node.first_seen_ms)}; last seen ${formatAgo(now - node.last_seen_ms)}.`
+          : ''}
+        {watched ? '' : ' Watch the node to probe it live.'}
+      </p>
+    </Block>
   );
 }

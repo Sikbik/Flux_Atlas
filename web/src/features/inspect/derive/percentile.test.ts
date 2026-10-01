@@ -31,8 +31,8 @@ describe('percentileOf', () => {
   it('describes a rank in words', () => {
     expect(describePercentile(null, 'Stratus')).toBeNull();
     expect(describePercentile(50, 'Stratus')).toBe('Typical for Stratus');
-    expect(describePercentile(81.4, 'Stratus')).toBe('Above 81% of Stratus nodes');
-    expect(describePercentile(12, 'Cumulus')).toBe('Below 88% of Cumulus nodes');
+    expect(describePercentile(81.4, 'Stratus')).toBe('Above 81% of Stratus');
+    expect(describePercentile(12, 'Cumulus')).toBe('Below 88% of Cumulus');
   });
 });
 

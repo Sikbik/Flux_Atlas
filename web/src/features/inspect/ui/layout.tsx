@@ -1,5 +1,5 @@
 import { CircleAlert, TriangleAlert } from 'lucide-react';
-import { type CSSProperties, type ReactNode, useId } from 'react';
+import { type ComponentPropsWithRef, type CSSProperties, type ReactNode, useId } from 'react';
 import type { Tone } from '../derive/nodeState';
 import { cx } from './cx';
 
@@ -45,6 +45,35 @@ export function Section({
   );
 }
 
+/** A block inside a disclosure: a small heading (icon, title, aside), then the content. */
+export function Block({
+  title,
+  icon,
+  aside,
+  children,
+  className,
+}: {
+  title: ReactNode;
+  icon?: ReactNode;
+  aside?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const hid = useId();
+  return (
+    <section className={cx('ix-blk', className)} aria-labelledby={hid}>
+      <h4 className="ix-blk-h" id={hid}>
+        <span>
+          {icon}
+          {title}
+        </span>
+        {aside ? <span className="ix-dim">{aside}</span> : null}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
 export function Grid({
   cols = 2,
   children,
@@ -72,7 +101,8 @@ export function Tile({
   spark,
   className,
   children,
-}: {
+  ...rest
+}: Omit<ComponentPropsWithRef<'div'>, 'children' | 'className'> & {
   label: ReactNode;
   icon?: ReactNode;
   value?: ReactNode;
@@ -84,7 +114,7 @@ export function Tile({
   children?: ReactNode;
 }) {
   return (
-    <div className={cx('ix-tile', className)}>
+    <div {...rest} className={cx('ix-tile', className)}>
       <div className="ix-tile-k">
         {icon}
         {label}

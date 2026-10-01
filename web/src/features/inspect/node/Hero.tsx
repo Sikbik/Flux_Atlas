@@ -20,6 +20,9 @@ import {
 } from '../ui';
 import { useNodeCtx } from './context';
 
+const formatCoord = (v: number, pos: string, neg: string) =>
+  `${Math.abs(v).toFixed(2)} ${v >= 0 ? pos : neg}`;
+
 function placeOf(ctx: ReturnType<typeof useNodeCtx>): { city: string; sub: string } {
   const geo = ctx.node?.geo;
   const cc = geo?.country_code || ctx.live?.country || '';
@@ -77,6 +80,7 @@ export function Hero() {
         ) : (
           <div className="ix-hero-map ix-hero-lattice" aria-hidden="true" />
         )}
+        {points.length ? <div className="ix-hero-reticle" aria-hidden="true" /> : null}
         <div className="ix-hero-veil" aria-hidden="true" />
         <div className="ix-hero-in">
           <div className="ix-chips">
@@ -98,9 +102,17 @@ export function Hero() {
               </Chip>
             ) : null}
           </div>
-          <div className="ix-hero-place">
-            <div className="ix-hero-city">{place.city}</div>
-            {place.sub ? <div className="ix-hero-sub">{place.sub}</div> : null}
+          <div className="ix-hero-foot">
+            <div className="ix-hero-place">
+              <div className="ix-hero-city">{place.city}</div>
+              {place.sub ? <div className="ix-hero-sub">{place.sub}</div> : null}
+            </div>
+            {lat !== null && lon !== null ? (
+              <div className="ix-hero-coord" title="Approximate: placed from the IP address">
+                <span>{formatCoord(lat, 'N', 'S')}</span>
+                <span>{formatCoord(lon, 'E', 'W')}</span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -127,6 +139,7 @@ export function Hero() {
         >
           {watched ? 'Watching' : 'Watch'}
         </Btn>
+        <span className="ix-actions-gap" aria-hidden="true" />
         {copyValue ? (
           <span className="ix-actions-copy">
             <CopyButton value={copyValue} label="Copy IP and port" />
@@ -148,10 +161,11 @@ export function Hero() {
             href={node.ui_url}
             target="_blank"
             rel="noopener noreferrer"
+            data-size="icon"
+            aria-label="Open the node's FluxOS panel (new tab)"
             title="Open the node's FluxOS panel"
           >
             <ExternalLink size={14} strokeWidth={1.75} />
-            FluxOS
           </a>
         ) : null}
       </div>

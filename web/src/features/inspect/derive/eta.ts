@@ -36,6 +36,34 @@ export function etaParts(ms: number): EtaParts {
   return { value: v, unit: '', phrase: `in ${v}` };
 }
 
+export interface EtaClock {
+  /** The leading figure and its unit: `12` `h`. */
+  a: string;
+  aUnit: string;
+  /** The trailing figure and unit when there is one: `05` `m`. Zero padded so the width holds. */
+  b?: string;
+  bUnit?: string;
+  /** For text and assistive technology: `in 12 h 5 min`. */
+  phrase: string;
+}
+
+/**
+ * A countdown in two figures that tick on their own: days and hours, hours and minutes, minutes and
+ * seconds, or seconds alone. The trailing figure is zero padded, so tabular digits never shift.
+ */
+export function etaClock(ms: number): EtaClock {
+  const t = Math.max(0, Math.round(ms / S));
+  const d = Math.floor(t / 86_400);
+  const h = Math.floor((t % 86_400) / 3_600);
+  const m = Math.floor((t % 3_600) / 60);
+  const s = t % 60;
+  const two = (n: number) => String(n).padStart(2, '0');
+  if (d >= 1) return { a: String(d), aUnit: 'd', b: two(h), bUnit: 'h', phrase: `in ${d} d ${h} h` };
+  if (h >= 1) return { a: String(h), aUnit: 'h', b: two(m), bUnit: 'm', phrase: `in ${h} h ${m} min` };
+  if (m >= 1) return { a: String(m), aUnit: 'm', b: two(s), bUnit: 's', phrase: `in ${m} min ${s} s` };
+  return { a: String(s), aUnit: 's', phrase: `in ${s} s` };
+}
+
 /** `8 min`, `3.2 h`, `2d 3h`: a span without the leading "in" (ages, durations). */
 export function spanText(ms: number): string {
   const p = etaParts(ms);

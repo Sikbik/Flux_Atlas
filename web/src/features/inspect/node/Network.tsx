@@ -1,4 +1,4 @@
-import { Boxes, Hexagon, History, Layers, Waypoints } from 'lucide-react';
+import { Blocks, Boxes, Hexagon, History, Waypoints } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../api/endpoints';
 import type { PeerDto } from '../../../api/generated/PeerDto';
@@ -7,7 +7,7 @@ import { useChainBlocks, useRuntime, useSummary } from '../../../app/context';
 import { formatAgo, formatInt } from '../../../lib/format';
 import { useMeshLayer } from '../sources/hooks';
 import { readNodeLive } from '../sources/live';
-import { AppLink, BlockLink, Btn, Chip, FeedLine, NodeLink, Section, Sk, Switch, TierGlyph } from '../ui';
+import { AppLink, Block, BlockLink, Btn, Chip, FeedLine, NodeLink, Sk, Switch, TierGlyph } from '../ui';
 import { useNodeCtx } from './context';
 
 // ---- peers ------------------------------------------------------------------------------------------
@@ -59,7 +59,7 @@ function PeerDiagram({ peers }: { peers: readonly PeerDto[] }) {
 }
 
 /** Peer links from the topology sweep, with the switch that reveals them on the globe. */
-export function PeersSection() {
+export function PeersBlock() {
   const { apiKey, node } = useNodeCtx();
   const q = useNodePeers(apiKey);
   const mesh = useMeshLayer();
@@ -79,10 +79,9 @@ export function PeersSection() {
   );
 
   return (
-    <Section
+    <Block
       title="Mesh"
-      icon={<Waypoints size={16} strokeWidth={1.75} />}
-      index={8}
+      icon={<Waypoints size={14} strokeWidth={1.75} />}
       aside={
         <span className="ix-mono">
           {outCount} out, {inCount} in
@@ -132,7 +131,7 @@ export function PeersSection() {
         Filled dots are peers this node connects to, hollow dots connect to it
         {q.data?.swept_ms ? `. Swept ${formatAgo(now - q.data.swept_ms)}` : ''}.
       </p>
-    </Section>
+    </Block>
   );
 }
 
@@ -178,13 +177,16 @@ function Produced() {
   const all = [...mine.map((b) => b.height), ...(extra?.heights ?? [])];
   const scanned = ring.length + (extra?.blocks ?? 0);
   return (
-    <div className="ix-produced">
-      <div className="ix-sub-h">
-        <span>Blocks produced</span>
-        <span className="ix-dim ix-mono">
+    <Block
+      title="Blocks produced"
+      icon={<Blocks size={14} strokeWidth={1.75} />}
+      aside={
+        <span className="ix-mono">
           {all.length} of the last {formatInt(scanned)}
         </span>
-      </div>
+      }
+      className="ix-produced"
+    >
       {all.length ? (
         <div className="ix-chips">
           {all.map((h) => (
@@ -206,12 +208,12 @@ function Produced() {
           {busy ? 'Looking back' : extra ? 'Looked back 400 more' : 'Look back 400 blocks'}
         </Btn>
       </div>
-    </div>
+    </Block>
   );
 }
 
 /** Hosted apps, co-hosted nodes, blocks produced and the node's recent events. */
-export function RelatedSection() {
+export function ActivityBody() {
   const { detail, ip } = useNodeCtx();
   const store = useRuntime().store;
   const { clock } = useRuntime();
@@ -221,81 +223,77 @@ export function RelatedSection() {
   const events = detail?.recent_events ?? [];
 
   return (
-    <Section title="Related" icon={<Layers size={16} strokeWidth={1.75} />} index={9}>
-      <div className="ix-sub-h">
-        <span>
-          <Boxes size={14} strokeWidth={1.75} aria-hidden="true" /> Apps
-        </span>
-        <span className="ix-dim">{detail ? `${apps.length} running` : ''}</span>
-      </div>
-      {!detail ? (
-        <Sk h={26} w="70%" />
-      ) : apps.length ? (
-        <div className="ix-chips">
-          {apps.map((a) => (
-            <AppLink
-              key={a.name}
-              name={a.name}
-              className="ix-chip ix-appchip"
-              title={`Open ${a.display_name}`}
-            >
-              <Boxes size={13} strokeWidth={1.75} aria-hidden="true" />
-              {a.display_name}
-            </AppLink>
-          ))}
-        </div>
-      ) : (
-        <p className="ix-cap">No apps run on this node.</p>
-      )}
-
-      <div className="ix-sub-h">
-        <span>
-          <Hexagon size={14} strokeWidth={1.75} aria-hidden="true" /> Co-hosted nodes
-        </span>
-        <span className="ix-dim">{ip ?? ''}</span>
-      </div>
-      {!detail ? (
-        <Sk h={26} w="60%" />
-      ) : co.length ? (
-        <div className="ix-chips">
-          {co.map((cid) => {
-            const n = readNodeLive(store, cid);
-            return (
-              <NodeLink
-                key={cid}
-                nodeKey={n?.endpoint || cid}
-                className="ix-chip"
-                data-tier={n?.tier ?? 'unknown'}
+    <>
+      <Block
+        title="Apps"
+        icon={<Boxes size={14} strokeWidth={1.75} />}
+        aside={detail ? `${apps.length} running` : undefined}
+      >
+        {!detail ? (
+          <Sk h={26} w="70%" />
+        ) : apps.length ? (
+          <div className="ix-chips">
+            {apps.map((a) => (
+              <AppLink
+                key={a.name}
+                name={a.name}
+                className="ix-chip ix-appchip"
+                title={`Open ${a.display_name}`}
               >
-                <TierGlyph tier={n?.tier ?? 'unknown'} size={12} />
-                {n?.endpoint ? `:${n.endpoint.split(':').pop()}` : `Node ${cid}`}
-              </NodeLink>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="ix-cap">The only node on this IP.</p>
-      )}
+                <Boxes size={13} strokeWidth={1.75} aria-hidden="true" />
+                {a.display_name}
+              </AppLink>
+            ))}
+          </div>
+        ) : (
+          <p className="ix-cap">No apps run on this node.</p>
+        )}
+      </Block>
+
+      <Block title="Co-hosted nodes" icon={<Hexagon size={14} strokeWidth={1.75} />} aside={ip ?? undefined}>
+        {!detail ? (
+          <Sk h={26} w="60%" />
+        ) : co.length ? (
+          <div className="ix-chips">
+            {co.map((cid) => {
+              const n = readNodeLive(store, cid);
+              return (
+                <NodeLink
+                  key={cid}
+                  nodeKey={n?.endpoint || cid}
+                  className="ix-chip"
+                  data-tier={n?.tier ?? 'unknown'}
+                >
+                  <TierGlyph tier={n?.tier ?? 'unknown'} size={12} />
+                  {n?.endpoint ? `:${n.endpoint.split(':').pop()}` : `Node ${cid}`}
+                </NodeLink>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="ix-cap">The only node on this IP.</p>
+        )}
+      </Block>
 
       <Produced />
 
-      <div className="ix-sub-h">
-        <span>
-          <History size={14} strokeWidth={1.75} aria-hidden="true" /> Recent events
-        </span>
-        <span className="ix-dim">{detail ? `${events.length} recorded` : ''}</span>
-      </div>
-      {!detail ? (
-        <Sk h={34} />
-      ) : events.length ? (
-        <ul className="ix-evlist">
-          {events.slice(0, 8).map((e) => (
-            <FeedLine key={`${e.kind}:${e.ts_ms}`} item={e} nowMs={now} />
-          ))}
-        </ul>
-      ) : (
-        <p className="ix-cap">No events recorded for this node yet. History starts at our first ingest.</p>
-      )}
-    </Section>
+      <Block
+        title="Recent events"
+        icon={<History size={14} strokeWidth={1.75} />}
+        aside={detail ? `${events.length} recorded` : undefined}
+      >
+        {!detail ? (
+          <Sk h={34} />
+        ) : events.length ? (
+          <ul className="ix-evlist">
+            {events.slice(0, 8).map((e) => (
+              <FeedLine key={`${e.kind}:${e.ts_ms}`} item={e} nowMs={now} />
+            ))}
+          </ul>
+        ) : (
+          <p className="ix-cap">No events recorded for this node yet. History starts at our first ingest.</p>
+        )}
+      </Block>
+    </>
   );
 }
