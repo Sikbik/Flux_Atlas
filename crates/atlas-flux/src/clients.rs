@@ -181,6 +181,41 @@ impl FluxOsClient {
         .await
     }
 
+    /// `getblock/<hash>` verbosity 2, validated before it is accepted from any upstream (the
+    /// gateway or a community node of the failover pool): the answer must be the requested
+    /// block (same hash) at a plausible height (`1..=max_height`). A wrong answer is rejected
+    /// and penalised (a fault, and a direct node leaves the pool) and the request fails over.
+    /// Returns the block and the label of the direct node that served it (`None` for a
+    /// primary).
+    pub async fn get_block_checked(
+        &self,
+        hash: &Hash32,
+        max_height: u32,
+    ) -> Result<(DaemonBlock, Option<String>)> {
+        let want = hash.to_hex();
+        let path = format!("daemon/getblock/{want}/2");
+        let opts = RequestOpts::default();
+        let (want, path, opts) = (&want, &path, &opts);
+        self.set
+            .run(|u| async move {
+                match fetch_on(&self.http, &u, path, opts).await? {
+                    Fetched::Body(b) => {
+                        let block: DaemonBlock = parse_envelope("getblock", &b.bytes)?;
+                        if let Err(reason) = check_block(&block, want, max_height) {
+                            return Err(self.set.reject(&u, "getblock", &reason));
+                        }
+                        let from = u.node.map(|_| u.label.clone());
+                        Ok(((block, from), b.elapsed))
+                    }
+                    Fetched::NotModified => Err(FluxError::Parse {
+                        what: "getblock",
+                        message: "unexpected 304".into(),
+                    }),
+                }
+            })
+            .await
+    }
+
     /// `getblockheader/<hash>` (header fields only).
     pub async fn get_block_header(&self, hash: &str) -> Result<DaemonBlock> {
         self.get(
@@ -489,6 +524,27 @@ impl FluxOsClient {
         )
         .await
     }
+}
+
+/// Checks that a `getblock` answer is the requested block at a plausible height.
+pub fn check_block(
+    block: &DaemonBlock,
+    want_hex: &str,
+    max_height: u32,
+) -> std::result::Result<(), String> {
+    if !block.hash.trim().eq_ignore_ascii_case(want_hex) {
+        return Err(format!(
+            "asked for block {want_hex}, got {}",
+            block.hash.trim()
+        ));
+    }
+    if block.height == 0 || block.height > max_height {
+        return Err(format!(
+            "block height {} outside 1..={max_height}",
+            block.height
+        ));
+    }
+    Ok(())
 }
 
 /// Insight explorer client with mirror failover.

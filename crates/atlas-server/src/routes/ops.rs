@@ -841,6 +841,20 @@ fn render_engine(s: &AppState, out: &mut String) {
     );
     family(
         out,
+        "atlas_upstream_answers_rejected_total",
+        "counter",
+        "FluxOS answers rejected by validation (wrong block, implausible height).",
+        s.engine.clients().fluxos.failover().rejected(),
+    );
+    family(
+        out,
+        "atlas_failover_pool_nodes",
+        "gauge",
+        "Direct nodes in the FluxOS failover pool (admitted within 2 blocks of the tip).",
+        s.engine.clients().fluxos.failover().nodes().len(),
+    );
+    family(
+        out,
         "atlas_store_commit_fail_streak",
         "gauge",
         "Consecutive failed store commits (0 after a success; /readyz fails at 3).",
