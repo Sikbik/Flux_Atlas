@@ -494,6 +494,13 @@
   mask: none;
 }
 
+/* Full height: the sheet is the whole screen (design 3.6), so nothing behind it may show through; the material goes
+   solid. */
+.wm-window[data-placement="sheet"][data-snap="full"] .wm-slab,
+.wm-window[data-placement="sheet"][data-snap="full"]::after {
+  background: var(--slab-spill), var(--slab-bg-solid);
+}
+
 .wm-window[data-placement="sheet"] .wm-cut {
   display: none;
 }
@@ -556,6 +563,8 @@
   height: var(--space-6);
   padding: 0;
   border: 0;
+  /* A capsule, so the focus ring (a keyboard user's) hugs the handle instead of boxing it. */
+  border-radius: var(--r-pill);
   background: transparent;
   cursor: pointer;
   touch-action: none;

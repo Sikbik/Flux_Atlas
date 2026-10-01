@@ -96,6 +96,9 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const liveOpen = usePhone((s) => s.live);
   const setLive = usePhone((s) => s.setLive);
   const sheetOpen = useWm((s) => s.layout === 'phone' && visibleWindows(s).length > 0, Object.is);
+  // The bare globe: no window of any kind and no Live sheet. The first-visit hint belongs to it alone.
+  const anyWindow = useWm((s) => visibleWindows(s).length > 0, Object.is);
+  const bareGlobe = pathname === '/' && !anyWindow && !(phone && liveOpen);
   const actions = useMemo(() => ({ requestClose, focusWindow, launch }), [requestClose, focusWindow, launch]);
   useGlobeInsetSync(wm, ambient);
   useRootPrefs();
@@ -110,6 +113,8 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   // the sheet rises to half; the Live sheet opening rises to half too (design 3.6). A window retargeting or
   // replacing another keeps the height the finger left.
   const sheetKind = sheetOpen ? 'window' : phone && liveOpen ? 'live' : 'none';
+  // A full sheet is the whole screen: what it covers (the header) is out of reach for the keyboard and for a screen reader too.
+  const sheetFull = useWm((st) => st.sheet === 'full', Object.is) && sheetKind !== 'none';
   const lastKind = useRef(sheetKind);
   useEffect(() => {
     const before = lastKind.current;
@@ -190,10 +195,10 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
           <PlaceLabels />
           <GlobeTooltip />
           <MoonProxy />
-          <MoonHint home={pathname === '/'} />
+          <MoonHint home={bareGlobe} />
         </GlobeOverlay>
         <WindowTethers />
-        {phone ? <PhoneHeader ref={topRef} /> : <TopBar ref={topRef} />}
+        {phone ? <PhoneHeader ref={topRef} inert={sheetFull || undefined} /> : <TopBar ref={topRef} />}
         {phone ? null : <Dock ref={dockRef} />}
         {phone ? null : <AimStrip />}
         {phone ? null : <pulse.Card />}
