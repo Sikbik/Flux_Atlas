@@ -10,6 +10,7 @@ import { useRuntime } from '../../../../app/context';
 import { formatInt, formatSats, parseFlux } from '../../../../lib/format';
 import { useNow } from '../../../../lib/useClock';
 import { TimeChart } from '../../../analytics/viz/TimeChart';
+import { useCollateral } from '../../hooks/useCollateral';
 import { useVisible } from '../../hooks/useDom';
 import { useAddressNodes, useAddressTxsLive } from '../../hooks/useExplorerData';
 import { balanceSeries, payoutEvents, thinPoints } from '../../lib/addressTxs';
@@ -28,7 +29,7 @@ import {
   TierGlyph,
   type TierName,
 } from '../../parts';
-import { AddressNodesList, NodesMap, useCollateral } from './AddressNodes';
+import { AddressNodesList, NodesMap } from './AddressNodes';
 import { PayoutStrip } from './PayoutStrip';
 import './address.css';
 

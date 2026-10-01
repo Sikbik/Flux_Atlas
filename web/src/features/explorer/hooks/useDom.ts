@@ -69,6 +69,19 @@ export function useCopy(): { copied: boolean; copy: (text: string) => void } {
   return { copied, copy };
 }
 
+/**
+ * True once the caller has stayed mounted for `ms`. A row in a long list that has to fetch something
+ * waits this long first, so scrolling past a thousand rows asks the server for none of them.
+ */
+export function useDwell(ms: number): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setOn(true), ms);
+    return () => clearTimeout(id);
+  }, [ms]);
+  return on;
+}
+
 /** Re-renders the caller when the element's own size changes (width only). */
 export function useWidth(ref: RefObject<Element | null>): number {
   const [w, setW] = useState(0);

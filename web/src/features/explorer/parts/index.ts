@@ -21,7 +21,7 @@ export {
   Unknown,
 } from './basics';
 export { ConfirmationGauge } from './ConfirmationGauge';
-export { EntityHead, HeroAmount, Numeral } from './EntityHead';
+export { EntityHead, HeroAmount, HeroNumber, Numeral } from './EntityHead';
 export {
   Amount,
   CompactAmount,

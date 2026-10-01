@@ -1,0 +1,326 @@
+/* The rich list: a concentration bar as the headline, then ranked rows. */
+
+/* ---- the concentration bar ---------------------------------------------------------------------- */
+
+.ex-conc {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ex-conc__bar {
+  display: flex;
+  gap: 2px;
+  height: 38px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ex-conc__seg {
+  position: relative;
+  flex-basis: 0;
+  min-width: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: var(--seg);
+  transform-origin: 0 50%;
+  animation: ex-conc-in var(--dur-slower) var(--ease-out-expo) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    filter var(--dur-base) var(--ease-out);
+}
+
+button.ex-conc__seg {
+  cursor: pointer;
+}
+
+.ex-conc__seg[data-rest] {
+  background: repeating-linear-gradient(135deg, var(--ink-3) 0 3px, var(--ink-2) 3px 7px);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+/* Something is picked or hovered: the rest step back, the chosen one holds. */
+.ex-conc__bar:has(.is-hot) .ex-conc__seg:not(.is-hot),
+.ex-conc[data-picked] .ex-conc__seg:not(.is-on) {
+  opacity: 0.38;
+}
+
+.ex-conc__seg.is-hot,
+.ex-conc__seg.is-on {
+  filter: brightness(1.12) saturate(1.05);
+}
+
+.ex-conc__seg:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  z-index: 1;
+}
+
+.ex-conc__legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: var(--space-5) var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ex-conc__legend li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  grid-template-areas:
+    "dot name"
+    ". pct"
+    ". count";
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  align-items: center;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.ex-conc__dot {
+  grid-area: dot;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--seg);
+}
+
+.ex-conc__dot[data-rest] {
+  background: var(--ink-4);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+.ex-conc__name {
+  grid-area: name;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1.2 var(--font-sans);
+}
+
+.ex-conc__name em {
+  color: var(--accent-300);
+  font-style: normal;
+}
+
+.ex-conc__legend b {
+  grid-area: pct;
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-lg) / 1.1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-conc__count {
+  grid-area: count;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1.2 var(--font-sans);
+}
+
+.ex-conc__bar:has(.is-hot) ~ .ex-conc__legend li:not(.is-hot) {
+  opacity: 0.5;
+}
+
+@keyframes ex-conc-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.2);
+  }
+}
+
+/* ---- rows ---------------------------------------------------------------------------------------- */
+
+.ex-rhead,
+.ex-rrow {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  column-gap: var(--space-5);
+  align-items: center;
+}
+
+.ex-rhead {
+  display: none;
+  padding: 0 var(--space-4) var(--space-3);
+  margin-inline: calc(var(--space-4) * -1);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ex-rhead > span:nth-child(3),
+.ex-rrow__bal {
+  justify-self: end;
+}
+
+.ex-rrow {
+  grid-template-areas:
+    "rank main bal"
+    "rank share nodes";
+  row-gap: 4px;
+  height: 100%;
+  padding: 0 var(--space-4);
+  margin-inline: calc(var(--space-4) * -1);
+  border-radius: var(--r-md);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ex-rrow:hover {
+  background: var(--ink-1);
+}
+
+.ex-rrow__rank {
+  grid-area: rank;
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-rrow[data-top] .ex-rrow__rank {
+  color: var(--accent-300);
+}
+
+.ex-rrow__main {
+  grid-area: main;
+  min-width: 0;
+}
+
+.ex-rrow__bal {
+  grid-area: bal;
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-rrow__share {
+  grid-area: share;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-rrow__pct {
+  flex: none;
+  min-width: 52px;
+}
+
+.ex-rrow__bar,
+.ex-rrow__lockbar {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ink-3);
+  overflow: hidden;
+}
+
+.ex-rrow__bar > i,
+.ex-rrow__lockbar > i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent-400);
+  transform: scaleX(var(--w, 0));
+  transform-origin: 0 50%;
+  transition: transform var(--dur-slow) var(--ease-out-expo);
+}
+
+.ex-rrow__nodes {
+  grid-area: nodes;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1.1 var(--font-sans);
+}
+
+.ex-rrow__count {
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-rrow__lock {
+  display: grid;
+  gap: 3px;
+  width: 78px;
+  color: var(--text-3);
+}
+
+.ex-rrow__lock[data-state="wait"] .ex-rrow__lockbar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.14), transparent);
+  transform: translateX(-100%);
+  animation: ex-shimmer 1.4s var(--ease-in-out) infinite;
+}
+
+.ex-rrow__lockbar > i {
+  background: var(--accent-200);
+}
+
+.ex-rrow__locktext {
+  display: block;
+  min-height: 1em;
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@container ex (min-width: 640px) {
+  .ex-rhead,
+  .ex-rrow {
+    grid-template-columns: 44px minmax(0, 1fr) 128px 150px 170px;
+  }
+
+  .ex-rhead {
+    display: grid;
+  }
+
+  .ex-rrow {
+    grid-template-areas: "rank main bal share nodes";
+    row-gap: 0;
+  }
+
+  .ex-rrow__nodes {
+    justify-content: space-between;
+  }
+}
+
+.ex-rrow__nodes.is-none {
+  justify-content: flex-end;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ex-conc__seg,
+  :root:not([data-motion="full"]) .ex-rrow__lock[data-state="wait"] .ex-rrow__lockbar::after {
+    animation: none;
+  }
+
+  :root:not([data-motion="full"]) .ex-rrow__bar > i,
+  :root:not([data-motion="full"]) .ex-rrow__lockbar > i {
+    transition-duration: 1ms;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-conc__seg,
+:root:is([data-motion="reduced"], [data-motion="off"])
+  .ex-rrow__lock[data-state="wait"]
+  .ex-rrow__lockbar::after {
+  animation: none;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-rrow__bar > i,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-rrow__lockbar > i {
+  transition-duration: 1ms;
+}

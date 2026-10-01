@@ -263,16 +263,28 @@ export function ToggleChip({
   onClick,
   children,
   tier,
-}: {
+  icon: Icon,
+  className,
+  ...rest
+}: Omit<ComponentPropsWithoutRef<'button'>, 'onClick' | 'children'> & {
   pressed: boolean;
   onClick: () => void;
   children: ReactNode;
   tier?: TierName;
+  icon?: LucideIcon;
 }) {
   return (
-    <button type="button" className="ex-toggle" aria-pressed={pressed} data-tier={tier} onClick={onClick}>
+    <button
+      type="button"
+      className={cx('ex-toggle', className)}
+      aria-pressed={pressed}
+      data-tier={tier}
+      onClick={onClick}
+      {...rest}
+    >
       {tier ? <TierGlyph tier={tier} size={13} /> : null}
       {children}
+      {Icon ? <Icon size={12} strokeWidth={1.75} aria-hidden="true" /> : null}
     </button>
   );
 }

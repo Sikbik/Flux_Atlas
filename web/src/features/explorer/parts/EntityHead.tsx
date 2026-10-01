@@ -30,6 +30,28 @@ export function Numeral({ value, className }: { value: number | string; classNam
   );
 }
 
+/** A hero figure: the whole part in white, an optional quiet fraction, a small unit. */
+export function HeroNumber({
+  whole,
+  frac,
+  unit,
+  className,
+}: {
+  whole: ReactNode;
+  /** Quiet text right after the whole part (`.50`, `%`). */
+  frac?: ReactNode;
+  unit?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={cx('ex-hero', className)}>
+      <span className="ex-hero__whole">{whole}</span>
+      {frac ? <span className="ex-hero__frac">{frac}</span> : null}
+      {unit ? <span className="ex-hero__unit">{unit}</span> : null}
+    </span>
+  );
+}
+
 /** A hero amount: the whole part in white, the fraction quiet, the unit small. */
 export function HeroAmount({
   sats,
@@ -44,13 +66,7 @@ export function HeroAmount({
   const dot = text.indexOf('.');
   const whole = dot >= 0 ? text.slice(0, dot) : text;
   const frac = dot >= 0 ? text.slice(dot) : '';
-  return (
-    <span className="ex-hero">
-      <span className="ex-hero__whole">{whole}</span>
-      {frac ? <span className="ex-hero__frac">{frac}</span> : null}
-      <span className="ex-hero__unit">{unit}</span>
-    </span>
-  );
+  return <HeroNumber whole={whole} frac={frac} unit={unit} />;
 }
 
 export interface EntityHeadProps {
