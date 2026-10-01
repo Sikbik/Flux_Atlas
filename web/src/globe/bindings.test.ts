@@ -581,6 +581,22 @@ describe('archive view (time machine)', () => {
     expect(named('setMoonStatus').length).toBe(1);
   });
 
+  it('keeps the moon in its archive state when the canvas re-sets it for a late feed', () => {
+    const { binding, engine, emit, named, last } = setup();
+    const frame = {} as EngineEvents['frame'];
+    binding.setArchive(past());
+    // The canvas flips the moon to late; the next frame puts the archive state back.
+    engine.setMoonStatus('late');
+    emit('frame', frame);
+    expect(last('setMoonStatus')!.args).toEqual(['archive']);
+    // Leaving stops holding it: the live status is the canvas's again.
+    binding.setArchive(null);
+    expect(last('setMoonStatus')!.args).toEqual(['live']);
+    const calls = named('setMoonStatus').length;
+    emit('frame', frame);
+    expect(named('setMoonStatus').length).toBe(calls);
+  });
+
   it('applies the URL filters to the archived rows', () => {
     const { binding, view, last } = setup();
     view('/time', { cc: 'FI' });

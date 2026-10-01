@@ -694,6 +694,9 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
     if (view?.filter.watched) applyFilter();
   };
 
+  /** Stops holding the moon in its archive state (frame listener). */
+  let releaseMoon: (() => void) | null = null;
+
   const setArchive = (table: NodeTable | null) => {
     if (disposed) return;
     if (table) {
@@ -703,6 +706,9 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
         // The present stops talking to the globe: no live effects, no mesh, and the moon knows.
         deps.setEffectSink(null);
         engine.setMoonStatus('archive');
+        // The canvas sets the moon's status whenever the live feed flips between live, late and
+        // offline; while the archive shows, that must not bring the ring back.
+        releaseMoon = engine.on('frame', () => engine.setMoonStatus('archive'));
         engine.setMesh(new Uint32Array(0), new Uint32Array(0));
         if (selected !== null) {
           engine.select(null, { silent: true });
@@ -716,6 +722,8 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
     }
     if (archive === null) return;
     archive = null;
+    releaseMoon?.();
+    releaseMoon = null;
     engine.setMoonStatus('live');
     deps.setEffectSink(shiftSink(engine.sink));
     loadAll();
@@ -779,6 +787,8 @@ export function bindGlobe(engine: GlobeTarget, deps: GlobeBindingDeps): GlobeBin
       disposed = true;
       unsubscribe();
       for (const off of offs) off();
+      releaseMoon?.();
+      releaseMoon = null;
       for (const h of timers) cancel(h);
       timers.clear();
       deps.setEffectSink(null);
