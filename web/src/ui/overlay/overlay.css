@@ -1,0 +1,36 @@
+/* Tooltips and hover cards (design 8.17): glass, a hairline rim, a deep pop shadow. They float above
+   everything (--z-tooltip), never move the layout, and appear with a plain fast fade. */
+
+.ui-tooltip,
+.ui-hovercard {
+  z-index: var(--z-tooltip);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-pop), var(--shadow-inset-hi);
+  color: var(--text-1);
+  animation: ui-overlay-fade var(--dur-fast) var(--ease-out) both;
+}
+
+.ui-tooltip {
+  max-width: 280px;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--r-md);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  pointer-events: none;
+}
+
+.ui-hovercard {
+  min-width: 224px;
+  max-width: 360px;
+  padding: var(--space-5);
+  border-radius: var(--r-lg);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-normal) var(--font-sans);
+}
+
+@keyframes ui-overlay-fade {
+  from {
+    opacity: 0;
+  }
+}

@@ -1,0 +1,235 @@
+/* ShareBar (design 5.7): a stacked bar of parts of a whole. Segments are cut apart by 2 px gaps of the
+   surface behind them (the bar is a flex row with a gap, nothing is painted between), round at the two
+   outer ends only, and glide to new widths (a flex-grow transition). The painted bar is 10 px (16 px at
+   size lg) inside a taller hit area, so hovering it is easy and nothing around it ever moves.
+
+   Custom properties
+     --ui-sb-h      painted bar height (set by data-size; consumers may override)
+     --ui-sb-c      a segment's or legend key's fill colour (set from the data)
+     --ui-sb-share  a segment's weight, in thousandths of the whole (set by the component) */
+
+.ui-sharebar {
+  --ui-sb-h: 10px;
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-sharebar[data-size="lg"] {
+  --ui-sb-h: 16px;
+}
+
+.ui-sharebar__bar {
+  display: flex;
+  height: calc(var(--ui-sb-h) + 12px);
+  gap: 2px;
+}
+
+.ui-sharebar__seg {
+  position: relative;
+  flex: var(--ui-sb-share, 1) 1 0%;
+  min-width: 3px;
+  transition:
+    flex-grow var(--dur-slow) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-sharebar__seg::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: var(--ui-sb-h);
+  margin-top: calc(var(--ui-sb-h) / -2);
+  border-radius: 2px;
+  background: var(--ui-sb-c, var(--viz-1));
+  /* A faint lit top edge: depth without a shadow. */
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--hot) 20%, transparent);
+}
+
+/* Only the two outer ends of the whole bar are fully rounded; joints stay tight. */
+.ui-sharebar__seg:first-child::before {
+  border-start-start-radius: var(--r-xs);
+  border-end-start-radius: var(--r-xs);
+}
+
+.ui-sharebar__seg:last-child::before {
+  border-start-end-radius: var(--r-xs);
+  border-end-end-radius: var(--r-xs);
+}
+
+/* The unknown share: the reserved gray with a 135 degree hatch, never a data colour. */
+.ui-sharebar__seg[data-unknown]::before {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 3px,
+      color-mix(in oklab, var(--hot) 22%, transparent) 3px 5px
+    ),
+    var(--status-off);
+}
+
+/* What the total has that no segment covers: an empty track. */
+.ui-sharebar__seg[data-rest]::before {
+  background: var(--ink-3);
+  box-shadow: none;
+}
+
+.ui-sharebar__seg[data-empty] {
+  flex: 1 1 0%;
+}
+
+.ui-sharebar__seg[data-empty]::before {
+  background: repeating-linear-gradient(90deg, var(--ink-4) 0 4px, transparent 4px 9px);
+  box-shadow: none;
+}
+
+/* A part under the pointer (bar or legend): the rest recede. */
+.ui-sharebar__bar[data-active] .ui-sharebar__seg {
+  opacity: 0.4;
+}
+
+.ui-sharebar__bar[data-active] .ui-sharebar__seg[data-active] {
+  opacity: 1;
+}
+
+.ui-sharebar__none {
+  margin: 0;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1.3 var(--font-sans);
+}
+
+/* Legend ----------------------------------------------------------------------------------------- */
+
+.ui-sharebar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-sharebar__item {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.ui-sharebar__legend[data-active] .ui-sharebar__item {
+  opacity: 0.5;
+}
+
+.ui-sharebar__legend[data-active] .ui-sharebar__item[data-active] {
+  opacity: 1;
+}
+
+.ui-sharebar__key {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--ui-sb-c, var(--viz-1));
+}
+
+.ui-sharebar__key[data-unknown] {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 2px,
+      color-mix(in oklab, var(--hot) 24%, transparent) 2px 3px
+    ),
+    var(--status-off);
+}
+
+.ui-sharebar__glyph {
+  margin-inline: -2px;
+}
+
+.ui-sharebar__name {
+  overflow: hidden;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1.25 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-sharebar__item[data-active] .ui-sharebar__name {
+  color: var(--text-1);
+}
+
+.ui-sharebar__val {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1.25 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-sharebar__val[data-unknown] {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+}
+
+.ui-sharebar__pct {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1.25 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The list legend aligns key, name, amount and share in columns across rows (a subgrid). */
+.ui-sharebar[data-legend="list"] .ui-sharebar__legend {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  column-gap: var(--space-4);
+  row-gap: 0;
+}
+
+.ui-sharebar[data-legend="list"][data-show="value"] .ui-sharebar__legend,
+.ui-sharebar[data-legend="list"][data-show="percent"] .ui-sharebar__legend {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.ui-sharebar[data-legend="list"] .ui-sharebar__item {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.ui-sharebar[data-legend="list"] .ui-sharebar__val,
+.ui-sharebar[data-legend="list"] .ui-sharebar__pct {
+  text-align: right;
+}
+
+/* Loading: the same bar and legend rows, so nothing shifts when the data lands. */
+.ui-sharebar .ui-sharebar__skeleton-bar {
+  align-self: center;
+  height: var(--ui-sb-h);
+  margin-block: 6px;
+}
+
+.ui-sharebar[data-state="loading"] .ui-sharebar__bar {
+  display: block;
+}
+
+.ui-sharebar[data-state="loading"][data-legend="list"] .ui-sharebar__legend {
+  display: grid;
+  gap: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-sharebar__seg,
+  :root:not([data-motion="full"]) .ui-sharebar__item {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-sharebar__seg,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-sharebar__item {
+  transition: none;
+}

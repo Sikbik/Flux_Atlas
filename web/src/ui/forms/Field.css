@@ -1,0 +1,137 @@
+/* Form fields (design 8.9): a Montserrat label, a 38 px control on ink-1 that lights up in Flux blue
+   when focused and in the critical colour when invalid, and one message line that is always there
+   once a hint or error is in play, so nothing below it moves when an error appears. */
+
+.ui-field {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  min-width: 0;
+}
+
+.ui-field[data-disabled] {
+  opacity: 0.45;
+}
+
+.ui-field__label {
+  color: var(--text-2);
+  font: var(--fw-semibold) var(--fs-xs) / var(--lh-snug) var(--font-display);
+  letter-spacing: 0;
+}
+
+.ui-field__foot {
+  min-height: 16px;
+}
+
+.ui-field__msg {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 16px var(--font-sans);
+}
+
+.ui-field__msg[data-kind="error"] {
+  color: var(--status-crit);
+}
+
+.ui-field__msg svg {
+  flex: none;
+  margin-top: 1.5px;
+}
+
+/* The control chrome, shared by the text input (a div around the input) and the select trigger (a
+   button). */
+.ui-field__box {
+  --ui-field-h: var(--ui-h-md);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-width: 0;
+  height: var(--ui-field-h);
+  margin: 0;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--ink-1);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--text-1) 3%, transparent);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-sm) / 1.25 var(--font-sans);
+  text-align: left;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.ui-field__box[data-size="sm"] {
+  --ui-field-h: var(--ui-h-sm);
+  padding: 0 var(--space-4);
+}
+
+/* A button in the trailing slot sits inset: 8 px shorter than the field, inside its border. */
+.ui-field .ui-field__box > .ui-button {
+  height: calc(var(--ui-field-h) - 8px);
+  border-radius: var(--r-sm);
+}
+
+.ui-field .ui-field__box > .ui-button[data-icon-only] {
+  width: calc(var(--ui-field-h) - 8px);
+}
+
+/* :where keeps hover at the lowest specificity, so focus and error borders always win over it. */
+@media (hover: hover) {
+  .ui-field__box:where(:hover:not([data-disabled], :disabled)) {
+    border-color: var(--line-3);
+  }
+}
+
+/* Focus: the border takes the accent and a 3 px halo at 18% spills out of it. */
+.ui-field__box:has(:focus-visible),
+.ui-field__box:focus-visible,
+.ui-field__box[aria-expanded="true"] {
+  border-color: var(--accent-400);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--accent-500) 18%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--text-1) 3%, transparent);
+  outline: none;
+}
+
+.ui-field__box[data-readonly] {
+  background: var(--ink-0);
+}
+
+/* Error: critical border and a 3 px halo at 14%, kept while focused. */
+.ui-field__box[data-invalid],
+.ui-field__box[data-invalid]:has(:focus-visible),
+.ui-field__box[data-invalid]:focus-visible,
+.ui-field__box[data-invalid][aria-expanded="true"] {
+  border-color: var(--status-crit);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--status-crit) 14%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--text-1) 3%, transparent);
+}
+
+.ui-field__box[data-disabled],
+.ui-field__box:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* A standalone control (no FieldFrame) dims itself; inside a frame the frame dims as a whole. */
+.ui-field[data-disabled] .ui-field__box[data-disabled],
+.ui-field[data-disabled] .ui-field__box:disabled {
+  opacity: 1;
+}
+
+/* Touch: a 44 px control with 16 px text (so iOS does not zoom the page on focus). */
+@media (pointer: coarse) {
+  .ui-field__box,
+  .ui-field__box[data-size="sm"] {
+    --ui-field-h: var(--touch-min);
+    font-size: 16px;
+  }
+}

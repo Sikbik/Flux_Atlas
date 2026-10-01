@@ -1,0 +1,519 @@
+/* DataTable (design 8.12): dense, hairline, lit from the left. A div grid so the header and the first
+   column can both stick. Light is implied: accent washes, a rim on the sticky header edge, a glow on
+   the selected bar; no boxes. Motion is transform and opacity only.
+
+   Custom properties (set on the root; override on a parent via `.ui-table` for another surface):
+     --ui-table-bg      surface the table sits on (opaque; sticky cells repaint it)    default --ink-0
+     --ui-table-zebra   every second row                                              default --ink-1
+     --ui-table-hover   hovered row (ink-2 with a Blue Wave cast)                      default 6% accent-500 in --ink-2
+     --ui-table-cols    grid-template-columns (set by the component)
+     --ui-table-min     narrowest width before horizontal scroll (set by the component)
+     --ui-table-row-h   row height (set by the component)
+     --ui-table-head-h  header height                                                 default 32px (44px on coarse pointers)
+     --ui-row-bg        a row's current background (internal, per row state)
+     --ui-shift         live-insert slide distance (internal) */
+
+:where(.ui-table) {
+  --ui-table-bg: var(--ink-0);
+  --ui-table-zebra: var(--ink-1);
+  --ui-table-hover: color-mix(in oklab, var(--accent-500) 6%, var(--ink-2));
+}
+
+.ui-table {
+  --ui-table-head-h: 32px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--ui-table-bg);
+  color: var(--text-2);
+  font: var(--fw-regular) 12.5px / 1.3 var(--font-sans);
+}
+
+.ui-table[data-fill] {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* Virtualised with no bound given: the table needs a viewport, so it gets a relative maximum. */
+.ui-table[data-virtual]:not([data-bounded]) {
+  max-height: min(70vh, 720px);
+}
+
+/* ---- Scroller --------------------------------------------------------------------------------- */
+
+.ui-table__scroller {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+}
+
+.ui-table[data-scrolls] .ui-table__scroller {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* Natural height: no inner scroller (the header sticks to the window body) until the columns do not
+   fit, then the table scrolls sideways on its own. */
+.ui-table[data-hscroll] .ui-table__scroller {
+  overflow-x: auto;
+  scrollbar-gutter: auto;
+}
+
+.ui-table__scroller:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: -2px;
+}
+
+/* ---- Header ----------------------------------------------------------------------------------- */
+
+.ui-table__header {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: var(--ui-table-cols);
+  align-items: stretch;
+  min-width: var(--ui-table-min);
+  height: var(--ui-table-head-h);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--accent-500) 7%, transparent), transparent),
+    color-mix(in oklab, var(--ui-table-bg) 90%, transparent);
+  -webkit-backdrop-filter: blur(var(--blur-hud));
+  backdrop-filter: blur(var(--blur-hud));
+  box-shadow: inset 0 -1px 0 var(--line-2);
+  color: var(--text-3);
+  font: var(--fw-semibold) 11.5px / 1 var(--font-display);
+  letter-spacing: 0;
+  transition: box-shadow var(--dur-base) var(--ease-out);
+}
+
+.ui-table__header[data-sticky-header] {
+  position: sticky;
+  top: 0;
+}
+
+/* The lit edge: Flux blue strongest at the left, gone before the right. */
+.ui-table__header::after {
+  content: "";
+  z-index: 3;
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent-400) 60%, transparent),
+    color-mix(in oklab, var(--accent-400) 14%, transparent) 36%,
+    transparent 82%
+  );
+  pointer-events: none;
+}
+
+/* Rows have scrolled under the header: it lifts. */
+.ui-table[data-scrolled-y] .ui-table__header {
+  box-shadow:
+    inset 0 -1px 0 var(--line-2),
+    0 12px 16px -14px color-mix(in oklab, var(--void) 90%, transparent);
+}
+
+.ui-table__th {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 var(--space-5);
+}
+
+.ui-table__th[data-align="center"] {
+  justify-content: center;
+}
+
+.ui-table__th[data-align="end"] {
+  justify-content: flex-end;
+}
+
+.ui-table__th[data-sorted] {
+  color: var(--text-1);
+}
+
+.ui-table__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-table__sort {
+  /* Fills the header cell so the whole 32 px height is the hit target. */
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% + var(--space-5));
+  margin: 0 calc(-1 * var(--space-3));
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.ui-table__th[data-align="end"] .ui-table__sort {
+  flex-direction: row-reverse;
+}
+
+.ui-table__sort:hover {
+  color: var(--text-1);
+}
+
+.ui-table__sort:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: -2px;
+}
+
+/* The arrow always takes its space, so a header never changes width when it becomes the sort. */
+.ui-table__arrow {
+  flex: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.ui-table__sort:hover .ui-table__arrow,
+.ui-table__sort:focus-visible .ui-table__arrow {
+  opacity: 0.45;
+  transform: none;
+}
+
+.ui-table__arrow[data-dir] {
+  opacity: 1;
+  transform: none;
+  color: var(--accent-400);
+}
+
+.ui-table__arrow[data-dir="desc"] {
+  transform: rotate(180deg);
+}
+
+/* ---- Body and rows ---------------------------------------------------------------------------- */
+
+.ui-table__body {
+  position: relative;
+  min-width: var(--ui-table-min);
+}
+
+.ui-table[data-virtual] .ui-table__window {
+  will-change: transform;
+}
+
+.ui-table__row {
+  --ui-row-bg: var(--ui-table-bg);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: var(--ui-table-cols);
+  align-items: center;
+  height: var(--ui-table-row-h);
+  background: var(--ui-row-bg);
+  scroll-margin-top: var(--ui-table-head-h);
+}
+
+.ui-table__row[data-striped] {
+  --ui-row-bg: var(--ui-table-zebra);
+}
+
+.ui-table__row:hover:not([data-skeleton]) {
+  --ui-row-bg: var(--ui-table-hover);
+}
+
+.ui-table[data-interactive] .ui-table__row[data-link]:not([data-skeleton]) {
+  cursor: pointer;
+}
+
+/* Overlays above the cells (and above the opaque sticky cell): selection/active wash and the new-row wash. */
+.ui-table__row::before,
+.ui-table__row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Selected: a left-to-right accent wash with a rim top and bottom, and a lit bar at the left. */
+.ui-table__row[data-selected]::before {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent-500) 20%, transparent),
+    color-mix(in oklab, var(--accent-500) 5%, transparent)
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--accent-400) 22%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, var(--accent-400) 12%, transparent);
+}
+
+/* Active (the roving keyboard row): only while the grid has focus. */
+.ui-table__scroller:focus .ui-table__row[data-active]::before {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent-400) 14%, transparent),
+    color-mix(in oklab, var(--accent-400) 3%, transparent)
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-400) 28%, transparent);
+}
+
+.ui-table__row[data-selected] > .ui-table__cell:first-child::before,
+.ui-table__scroller:focus .ui-table__row[data-active] > .ui-table__cell:first-child::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--accent-500);
+  box-shadow: 0 0 12px color-mix(in oklab, var(--accent-500) 70%, transparent);
+}
+
+.ui-table__scroller:focus .ui-table__row[data-active] > .ui-table__cell:first-child::before {
+  background: var(--accent-400);
+}
+
+/* New row: it slides in with the list and a white wash decays over --dur-fresh. */
+.ui-table__row[data-fresh] {
+  animation: ui-table-arrive var(--dur-enter) var(--ease-out) both;
+}
+
+.ui-table__row[data-fresh]::after {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--text-1) 10%, transparent),
+    color-mix(in oklab, var(--text-1) 2%, transparent) 70%,
+    transparent
+  );
+  animation: ui-table-fresh var(--dur-fresh) var(--ease-out) both;
+}
+
+/* A top insert slides the whole list down by the inserted height (the FLIP of design 6.4 F). */
+.ui-table__shifter[data-shift] {
+  animation: ui-table-shift var(--dur-enter) var(--ease-out) both;
+}
+
+/* First paint of data: the rows fade in together as the skeleton fades out. `data-enter` is also an
+   attach point for the Flux motion primitives. */
+.ui-table[data-enter] .ui-table__row:not([data-skeleton]) {
+  animation: ui-table-fade var(--dur-base) var(--ease-out) both;
+}
+
+/* ---- Cells ------------------------------------------------------------------------------------ */
+
+.ui-table__cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--space-5);
+  /* The hairline divider lives on the cells so the opaque sticky cell does not paint over it. */
+  box-shadow: inset 0 -1px 0 var(--line-1);
+}
+
+.ui-table__cell[data-align="center"] {
+  justify-content: center;
+  text-align: center;
+}
+
+.ui-table__cell[data-align="end"] {
+  justify-content: flex-end;
+  text-align: end;
+}
+
+/* The content box clips text with an ellipsis; the 4 px of padding it gives back through a negative
+   margin keeps focus rings of links inside a cell from being cut off at the sides. */
+.ui-table__content {
+  min-width: 0;
+  max-width: 100%;
+  margin-inline: -4px;
+  padding-inline: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-table__cell[data-mono] {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-table__cell[data-primary] {
+  color: var(--text-1);
+}
+
+.ui-table__cell[data-sorted] {
+  color: var(--text-1);
+}
+
+/* ---- Sticky first column ---------------------------------------------------------------------- */
+
+.ui-table__cell[data-sticky],
+.ui-table__th[data-sticky] {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+
+.ui-table__cell[data-sticky] {
+  background: var(--ui-row-bg);
+}
+
+.ui-table__th[data-sticky] {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--accent-500) 7%, transparent), transparent),
+    var(--ui-table-bg);
+  box-shadow: inset 0 -1px 0 var(--line-2);
+}
+
+/* Once the table scrolls sideways the sticky column casts a soft shadow onto what slides under it. */
+.ui-table__cell[data-sticky]::after,
+.ui-table__th[data-sticky]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: 14px;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--void) 55%, transparent), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.ui-table[data-scrolled-x] .ui-table__cell[data-sticky]::after,
+.ui-table[data-scrolled-x] .ui-table__th[data-sticky]::after {
+  opacity: 1;
+}
+
+/* ---- Skeleton, ghost, empty, footer ----------------------------------------------------------- */
+
+/* Skeleton rows hand over to real rows with a cross-fade: the skeleton lingers on top and fades out. */
+.ui-table__ghost {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 5;
+  pointer-events: none;
+  animation: ui-table-ghost var(--dur-base) var(--ease-in-out) forwards;
+}
+
+.ui-table__empty {
+  display: block;
+  min-width: 0;
+  padding: var(--space-4) 0;
+}
+
+.ui-table__empty > [role="gridcell"] {
+  position: sticky;
+  left: 0;
+  display: block;
+  max-width: 100%;
+  width: min(100%, var(--ui-table-min));
+}
+
+.ui-table__footer {
+  flex: none;
+  border-top: 1px solid var(--line-1);
+  background: var(--ui-table-bg);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* ---- Touch ------------------------------------------------------------------------------------ */
+
+@media (pointer: coarse) {
+  .ui-table {
+    --ui-table-head-h: var(--touch-min);
+  }
+}
+
+/* ---- Motion ----------------------------------------------------------------------------------- */
+
+@keyframes ui-table-fresh {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-table-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes ui-table-shift {
+  from {
+    transform: translateY(var(--ui-shift, 0px));
+  }
+}
+
+@keyframes ui-table-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-table-ghost {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion: cross-fades only, no slides; Off: nothing moves (a new row keeps a still wash). */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-table__row[data-fresh] {
+    animation-name: ui-table-fade;
+  }
+
+  :root:not([data-motion="full"]) .ui-table__shifter[data-shift] {
+    animation: none;
+  }
+
+  :root:not([data-motion="full"]) .ui-table__arrow {
+    transition-property: opacity, color;
+  }
+}
+
+:root[data-motion="reduced"] .ui-table__row[data-fresh] {
+  animation-name: ui-table-fade;
+}
+
+:root[data-motion="reduced"] .ui-table__shifter[data-shift] {
+  animation: none;
+}
+
+:root[data-motion="off"] .ui-table__row,
+:root[data-motion="off"] .ui-table[data-enter] .ui-table__row:not([data-skeleton]),
+:root[data-motion="off"] .ui-table__row[data-fresh]::after,
+:root[data-motion="off"] .ui-table__shifter[data-shift] {
+  animation: none;
+}
+
+:root[data-motion="off"] .ui-table__ghost {
+  display: none;
+}
+
+:root[data-motion="off"] .ui-table__arrow,
+:root[data-motion="off"] .ui-table__sort,
+:root[data-motion="off"] .ui-table__header {
+  transition: none;
+}
