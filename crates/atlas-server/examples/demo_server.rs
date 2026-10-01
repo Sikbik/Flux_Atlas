@@ -19,6 +19,9 @@
 //!   `app_installing` -> `apps` instance spawns; occasional instance removals
 //! - `mesh` deltas per simulated topology-sweep call, occasional node expiry (`nodes` status,
 //!   then removal) and a full rank `reconcile` every 20 blocks
+//! - `/network/chain-history` from the fixture's chain rows (`fixtures::chain_points`: 7 days
+//!   per block with a two-hour hole, samples from height 1,500,480 across the 120 s to 30 s
+//!   Proof of Node target change, so 30 d and all are partly indexed), plus a row per demo block
 //!
 //! It also serves `web/dist` (the SPA) when it exists. Env: `ATLAS_DEMO_BIND`,
 //! `ATLAS_DEMO_BLOCK_MS`, `ATLAS_DEMO_SEED`, `ATLAS_LOG`.
@@ -47,7 +50,7 @@ use atlas_engine::{EngineConfig, EngineHandle, IngestConfig};
 use atlas_server::fixtures::{self, Fixture, FixtureSpec};
 use atlas_server::views::node_ref;
 use atlas_server::{AppState, ServerConfig, router};
-use atlas_store::WriteBatch;
+use atlas_store::{ChainPoint, WriteBatch};
 use tokio::sync::watch;
 use tokio::time::sleep_until;
 
@@ -494,6 +497,14 @@ impl Demo {
         }
         let mut batch = WriteBatch::new();
         batch.put_block(summary);
+        // Chain history: the block's time and a PoN-like difficulty (0.002 to 0.4).
+        batch.put_chain_point(
+            height,
+            ChainPoint {
+                time_s: (time_ms / 1000) as u32,
+                difficulty: Some(0.002 + self.rng.unit().powi(3) * 0.4),
+            },
+        );
         if let Err(e) = self.engine.store().commit(batch) {
             tracing::warn!(error = %e, "could not store demo block");
         }

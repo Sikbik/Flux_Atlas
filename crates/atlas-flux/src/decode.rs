@@ -45,9 +45,11 @@ pub struct SpentOutpoint {
 }
 
 /// Everything derived from one block.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DecodedBlock {
     pub summary: BlockSummary,
+    /// Block difficulty (the chain-history row; [`BlockSummary`]'s stored layout has none).
+    pub difficulty: Option<f64>,
     pub node_txs: Vec<NodeTx>,
     pub transfers: Vec<TransferTx>,
     pub app_payments: Vec<AppPayment>,
@@ -322,6 +324,7 @@ pub fn decode_block_with(block: &DaemonBlock, app_address: &str) -> Result<Decod
     };
     Ok(DecodedBlock {
         summary,
+        difficulty: block.difficulty.filter(|d| d.is_finite()),
         node_txs,
         transfers,
         app_payments,

@@ -13,6 +13,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod body;
+pub mod chain_history;
 pub mod config;
 pub mod derived;
 pub mod error;

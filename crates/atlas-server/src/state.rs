@@ -58,6 +58,9 @@ pub struct Inner {
     pub recent_blocks_cache: moka::future::Cache<(u32, u32, u64), Arc<CachedBody>>,
     /// `/network/app-economy` bodies keyed by `(tip, days, top)` (60 s).
     pub economy_cache: moka::future::Cache<(u32, u32, u32), Arc<CachedBody>>,
+    /// `/network/chain-history` bodies keyed by `(window, period)`: one computation per window
+    /// per reuse period (30 s to 10 min, see [`crate::chain_history::cache_policy`]).
+    pub chain_cache: moka::future::Cache<(atlas_core::api::ChainWindow, u64), Arc<CachedBody>>,
     /// Payouts of the last 30 days by address (operator earnings).
     pub payouts: Arc<Slot<PayoutLedger>>,
     /// Every permanent app message, compact (app economy).
@@ -171,6 +174,10 @@ impl AppState {
                 economy_cache: moka::future::Cache::builder()
                     .max_capacity(32)
                     .time_to_live(Duration::from_secs(60))
+                    .build(),
+                chain_cache: moka::future::Cache::builder()
+                    .max_capacity(16)
+                    .time_to_live(Duration::from_secs(600))
                     .build(),
                 payouts: Arc::default(),
                 app_messages: Arc::default(),

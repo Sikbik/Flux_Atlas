@@ -4,6 +4,7 @@
 mod apps;
 mod backfill;
 pub(crate) mod chain;
+mod chain_sampler;
 pub(crate) mod geoip;
 mod maintenance;
 mod market;
@@ -288,6 +289,10 @@ pub fn spawn_all(
         (
             "backfill",
             tokio::spawn(backfill::run(ctx.for_job("backfill"))),
+        ),
+        (
+            "chain_sampler",
+            tokio::spawn(chain_sampler::run(ctx.for_job("chain_sampler"))),
         ),
         (
             "maintenance",

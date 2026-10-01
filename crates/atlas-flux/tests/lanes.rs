@@ -119,6 +119,35 @@ async fn interactive_lane_shares_nothing_but_the_pool() {
     assert!(user.fluxos.failover().nodes().is_empty());
 }
 
+#[tokio::test]
+async fn bulk_lane_is_the_smallest_and_its_own() {
+    let (base, hits) = fake_upstream().await;
+    let ingest = clients(&base);
+    let bulk = ingest.bulk();
+    assert_eq!(bulk.lane(), Lane::Bulk);
+    assert_eq!(Lane::Bulk.as_str(), "bulk");
+    // One request at a time, once a second, whatever the host.
+    let p = bulk.http.config().policy_for("127.0.0.1");
+    assert_eq!(p, HostPolicy::new(1, 1, 1));
+    assert_eq!(
+        bulk.http.config().attempts,
+        1,
+        "capped by the ingest attempts"
+    );
+    // Own breakers and no direct-node failover.
+    assert!(!std::ptr::eq(
+        ingest.fluxos.failover(),
+        bulk.fluxos.failover()
+    ));
+    assert!(bulk.fluxos.failover().is_strict());
+    // Bulk requests are counted on their own lane.
+    let _: u32 = bulk.fluxos.get("one", "/one", &once()).await.unwrap();
+    assert_eq!(hits.get("/one"), 1);
+    let ok: u64 = bulk.http.lane_stats().iter().map(|h| h.ok).sum();
+    assert_eq!(ok, 1);
+    assert!(ingest.http.lane_stats().iter().all(|h| h.ok == 0));
+}
+
 /// (a) User faults do not open the ingest breaker; (c) the interactive lane's own breaker opens
 /// on its own faults and then fails fast without reaching the upstream.
 #[tokio::test]

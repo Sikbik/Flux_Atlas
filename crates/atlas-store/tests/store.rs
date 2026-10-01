@@ -13,9 +13,9 @@ use atlas_core::event::{AppMessageKind, Event, EventEnvelope};
 use atlas_core::ids::{Hash32, NodeId, Outpoint};
 use atlas_core::node::{Geo, NodeRecord, Tier};
 use atlas_store::{
-    DAY_MS, EventKey, HOUR_MS, MINUTE_MS, MeshChangeRecord, MeshEdgeRecord, MeshReporter,
-    MetricsRow, Order, Resolution, RetentionPolicy, SCHEMA_VERSION, Store, StoreError,
-    StoreOptions, WriteBatch, meta_keys,
+    CHAIN_SAMPLE_GRID, ChainPoint, DAY_MS, EventKey, HOUR_MS, MINUTE_MS, MeshChangeRecord,
+    MeshEdgeRecord, MeshReporter, MetricsRow, Order, Resolution, RetentionPolicy, SCHEMA_VERSION,
+    Store, StoreError, StoreOptions, WriteBatch, meta_keys,
 };
 
 fn tmp() -> (TempDir, std::path::PathBuf) {
@@ -167,7 +167,7 @@ fn open_creates_tables_and_schema_version() {
     );
     assert!(store.meta_u64(meta_keys::CREATED_MS).unwrap().is_some());
     let counts = store.table_counts().unwrap();
-    assert_eq!(counts.len(), 23);
+    assert_eq!(counts.len(), 25);
     assert!(counts.iter().all(|(name, n)| *name == "meta" || *n == 0));
 }
 
@@ -486,6 +486,97 @@ fn reorg_deletes_blocks_and_dependent_rows() {
     assert_eq!(
         store.payments_for_node(NodeId(4), None, 10).unwrap().len(),
         3
+    );
+}
+
+fn point(time_s: u32, difficulty: Option<f64>) -> ChainPoint {
+    ChainPoint { time_s, difficulty }
+}
+
+#[test]
+fn chain_points_reorg_overwrite_and_delete() {
+    let (_dir, path) = tmp();
+    let store = Store::open(&path).unwrap();
+    let mut b = WriteBatch::new();
+    for h in 100..110u32 {
+        b.put_block(block(h, 1, &[]));
+        b.put_chain_point(h, point(h * 30, Some(1.0)));
+    }
+    store.commit(b).unwrap();
+    // A reorg at 105: the old rows above the fork go, the replacement blocks overwrite.
+    let mut b = WriteBatch::new();
+    b.delete_blocks_from(105);
+    b.put_chain_point(105, point(105 * 30 + 7, Some(2.0)));
+    store.commit(b).unwrap();
+    let rows = store.chain_points(100, 200).unwrap();
+    assert_eq!(rows.len(), 6);
+    assert_eq!(rows.last().unwrap(), &(105, point(105 * 30 + 7, Some(2.0))));
+    assert_eq!(store.chain_point(107).unwrap(), None);
+    // Replacing a height without a delete (a sample fetched again) also overwrites.
+    let mut b = WriteBatch::new();
+    b.put_chain_point(104, point(1, Some(3.0)));
+    store.commit(b).unwrap();
+    assert_eq!(store.chain_point(104).unwrap(), Some(point(1, Some(3.0))));
+    assert_eq!(store.latest_chain_point().unwrap().unwrap().0, 105);
+    assert!(store.chain_points(9, 3).unwrap().is_empty());
+}
+
+#[test]
+fn chain_points_thin_to_the_grid_and_list_missing_samples() {
+    let (_dir, path) = tmp();
+    let store = Store::open(&path).unwrap();
+    let g = CHAIN_SAMPLE_GRID;
+    // Per-block rows for heights 0..=3g at 30 s, the newest third newer than the cutoff.
+    let mut b = WriteBatch::new();
+    for h in 0..=3 * g {
+        b.put_chain_point(h, point(1_000_000 + h * 30, Some(f64::from(h))));
+    }
+    store.commit(b).unwrap();
+    let cutoff_ms = u64::from(1_000_000 + 2 * g * 30) * 1000;
+    let removed = store.thin_chain_points_before(cutoff_ms).unwrap();
+    // Every row older than the cutoff goes except the grid heights 0 and g.
+    assert_eq!(removed, u64::from(2 * g - 2));
+    let rows = store.chain_points(0, 3 * g).unwrap();
+    assert_eq!(rows[0].0, 0);
+    assert_eq!(rows[1].0, g);
+    assert_eq!(rows[2].0, 2 * g);
+    assert_eq!(rows.len() as u32, g + 3);
+    assert_eq!(store.thin_chain_points_before(cutoff_ms).unwrap(), 0);
+
+    // Missing samples: grid heights without a row with a difficulty.
+    assert!(store.chain_grid_missing(g, 3 * g).unwrap().is_empty());
+    let mut b = WriteBatch::new();
+    b.put_chain_point(g, point(5, None));
+    store.commit(b).unwrap();
+    assert_eq!(
+        store.chain_grid_missing(g, 6 * g + 1).unwrap(),
+        vec![g, 4 * g, 5 * g, 6 * g]
+    );
+}
+
+#[test]
+fn chain_points_seed_from_stored_blocks_once() {
+    let (_dir, path) = tmp();
+    let store = Store::open(&path).unwrap();
+    let mut b = WriteBatch::new();
+    for h in 100..110u32 {
+        b.put_block(block(h, 1, &[]));
+    }
+    b.put_chain_point(108, point(9, Some(4.0)));
+    b.put_chain_daily(DAY_MS, 11.5);
+    b.put_chain_daily(0, 10.5);
+    store.commit(b).unwrap();
+    // Blocks at or after 103 (time_ms = height x 30 s) without a row get one, time only.
+    assert_eq!(
+        store.seed_chain_points_from_blocks(103 * 30_000).unwrap(),
+        6
+    );
+    assert_eq!(store.seed_chain_points_from_blocks(0).unwrap(), 3);
+    assert_eq!(store.chain_point(104).unwrap(), Some(point(104 * 30, None)));
+    assert_eq!(store.chain_point(108).unwrap(), Some(point(9, Some(4.0))));
+    assert_eq!(
+        store.chain_daily().unwrap(),
+        vec![(0, 10.5), (DAY_MS, 11.5)]
     );
 }
 

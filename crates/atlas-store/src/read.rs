@@ -606,6 +606,8 @@ impl Store {
                 "mesh_edges" => tables::MESH_EDGES,
                 "mesh_events" => tables::MESH_EVENTS,
                 "geo_cache" => tables::GEO_CACHE,
+                "chain_points" => tables::CHAIN_POINTS,
+                "chain_daily" => tables::CHAIN_DAILY,
             ))
         })
     }

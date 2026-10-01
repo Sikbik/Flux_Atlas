@@ -696,6 +696,16 @@ impl Reducer {
             Obs::Probe { ip, ok } => self.probe(tick, ip, ok),
             Obs::BackfillBlocks(blocks) => self.backfill_blocks(tick, &blocks),
             Obs::HistoryStats(points) => self.history_stats(tick, &points),
+            Obs::ChainPoints(points) => {
+                for (h, p) in points {
+                    tick.batch.put_chain_point(h, p);
+                }
+            }
+            Obs::ChainDaily(days) => {
+                for (day_ms, d) in days {
+                    tick.batch.put_chain_daily(day_ms, d);
+                }
+            }
             Obs::Meta { key, value } => {
                 tick.batch.set_meta_u64(key, value);
             }
@@ -1266,6 +1276,8 @@ impl Reducer {
             Vec<atlas_core::chain::NodeTx>,
         )> = Vec::new();
         for d in blocks {
+            tick.batch
+                .put_chain_point(d.summary.height, crate::derive::block::chain_point(d));
             let mut s = d.summary.clone();
             for p in &mut s.payouts {
                 if let Some(v) = by_addr.get(&(p.tier, p.address.as_str()))

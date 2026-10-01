@@ -36,6 +36,12 @@ pub mod cache {
     pub const EXPLORER_DEEP: &str = "public, max-age=300";
     /// Slow-moving upstream aggregates (rich list, supply).
     pub const SLOW: &str = "public, max-age=60";
+    /// Chain history over 24 h and 7 d (a new block every 30 s).
+    pub const CHAIN_SHORT: &str = "public, max-age=30";
+    /// Chain history over 30 d.
+    pub const CHAIN_MEDIUM: &str = "public, max-age=60";
+    /// Chain history over a year and the whole chain (day-wide buckets).
+    pub const CHAIN_LONG: &str = "public, max-age=600";
     /// Hashed static assets.
     pub const IMMUTABLE: &str = "public, max-age=31536000, immutable";
     /// Documents that must revalidate (index.html).

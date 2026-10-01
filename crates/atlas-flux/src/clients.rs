@@ -240,6 +240,28 @@ impl FluxOsClient {
             .await
     }
 
+    /// `getblock/<height>` at verbosity 1 (header fields and txids): one small request for the
+    /// time and difficulty of a height. The answer must be the requested height.
+    pub async fn get_block_brief(&self, height: u32) -> Result<DaemonBlock> {
+        let block: DaemonBlock = self
+            .get(
+                "getblock (brief)",
+                &format!("daemon/getblock/{height}/1"),
+                &RequestOpts::default(),
+            )
+            .await?;
+        if block.height != height || block.time == 0 {
+            return Err(FluxError::Parse {
+                what: "getblock (brief)",
+                message: format!(
+                    "asked for height {height}, got height {} time {}",
+                    block.height, block.time
+                ),
+            });
+        }
+        Ok(block)
+    }
+
     /// `getblockheader/<hash>` (header fields only).
     pub async fn get_block_header(&self, hash: &str) -> Result<DaemonBlock> {
         self.get(
@@ -1020,7 +1042,8 @@ impl Default for ClientsConfig {
 /// [`Clients::new`] builds the ingest lane (the engine's). [`Clients::interactive`] derives
 /// the lane for user-driven lookups from it: the same connection pool, but its own per-host
 /// gates (a small budget, see [`HttpConfig::interactive_host_policies`]) and its own circuit
-/// breakers, and no direct-node failover.
+/// breakers, and no direct-node failover. [`Clients::bulk`] derives the background history lane
+/// the same way.
 #[derive(Clone, Debug)]
 pub struct Clients {
     pub http: HttpClient,
@@ -1055,7 +1078,18 @@ impl Clients {
     /// never touch the lane it was derived from.
     #[must_use]
     pub fn interactive(&self) -> Self {
-        let http = self.http.lane(Lane::Interactive);
+        self.on_lane(Lane::Interactive)
+    }
+
+    /// Clients for slow background history work (the chain sampler), derived like
+    /// [`Self::interactive`] with the bulk lane's budget ([`HttpConfig::bulk_policy`]).
+    #[must_use]
+    pub fn bulk(&self) -> Self {
+        self.on_lane(Lane::Bulk)
+    }
+
+    fn on_lane(&self, lane: Lane) -> Self {
+        let http = self.http.lane(lane);
         Self {
             fluxos: self.fluxos.on_lane(http.clone()),
             insight: self.insight.on_lane(http.clone()),

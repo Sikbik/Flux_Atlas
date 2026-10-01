@@ -171,6 +171,7 @@ fn retention_tiers_cut_each_table_at_its_age() {
         keyframes_ms: Some(20 * DAY_MS),
         app_messages_ms: None,
         app_events_ms: None,
+        chain_blocks_ms: None,
     };
     let removed = store.prune_history(now, &tiers).unwrap();
     let got = |t: &str| removed.iter().find(|r| r.0 == t).map_or(0, |r| r.1);
@@ -288,6 +289,7 @@ fn guard_measures_before_pruning_a_slack_file() {
                 keyframes_ms: Some(DAY_MS),
                 app_messages_ms: None,
                 app_events_ms: None,
+                chain_blocks_ms: None,
             },
         )
         .unwrap();

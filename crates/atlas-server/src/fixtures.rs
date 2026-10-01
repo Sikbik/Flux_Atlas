@@ -26,7 +26,10 @@ use atlas_engine::timemachine::{NetworkSnapshot, SnapNode};
 use atlas_engine::{Engine, EngineConfig, EngineHandle, IngestConfig, PrebuiltBody};
 use atlas_flux::ClientsConfig;
 use atlas_flux::http::HostPolicy;
-use atlas_store::{HOUR_MS, MINUTE_MS, MetricsRow, Store, WriteBatch, meta_keys};
+use atlas_store::{
+    CHAIN_SAMPLE_GRID, ChainPoint, DAY_MS, HOUR_MS, MINUTE_MS, MetricsRow, Store, WriteBatch,
+    meta_keys,
+};
 
 use crate::body::to_json_vec;
 use crate::search::{base58check_encode, t1_address};
@@ -707,6 +710,93 @@ impl Fixture {
     }
 }
 
+/// Per-block chain-history rows of the fixture: the last 7 days.
+pub const CHAIN_PER_BLOCK: u32 = 7 * 2_880;
+/// Per-block rows missing 3 days back (two hours: a restart gap in the 7-day window).
+pub const CHAIN_GAP: std::ops::Range<u32> = TIP - 3 * 2_880 - 240..TIP - 3 * 2_880;
+/// Lowest sampled height: the whole-chain window is only partly indexed.
+pub const CHAIN_SAMPLED_FROM: u32 = 1_500_480;
+
+fn unit(tag: u64, h: u32) -> f64 {
+    let mut r = Rng(tag ^ (u64::from(h) << 20));
+    (r.next() >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// Difficulty-like values: tens of thousands under proof of work, swinging between 0.002 and
+/// 0.4 block to block under Proof of Node (as on mainnet).
+fn fixture_difficulty(h: u32) -> f64 {
+    if emission::is_pon(h) {
+        0.002 + unit(7, h).powi(3) * 0.4
+    } else {
+        let wave = (f64::from(h) / 180_000.0).sin();
+        (24_000.0 + 14_000.0 * wave + 2_000.0 * unit(11, h)).round()
+    }
+}
+
+/// Chain-history rows of the fixture, ascending: per-block rows for the last
+/// [`CHAIN_PER_BLOCK`] heights (block gaps drawn around 30 s, the newest blocks at the fixture
+/// block times) with [`CHAIN_GAP`] missing, and sample-grid rows from [`CHAIN_SAMPLED_FROM`] up,
+/// at 120 s per block before the Proof of Node fork and 30 s after (a target change in the data).
+pub fn chain_points(f: &Fixture) -> Vec<(u32, ChainPoint)> {
+    let first_block = f.tip - CHAIN_PER_BLOCK + 1;
+    // Exponential-like gaps scaled so the per-block span is exactly 30 s per block.
+    let gaps: Vec<f64> = (first_block..=f.tip)
+        .map(|h| (-unit(3, h).max(1e-6).ln() * 30.0).clamp(1.0, 900.0))
+        .collect();
+    let scale = f64::from(CHAIN_PER_BLOCK - 1) * 30.0 / gaps[1..].iter().sum::<f64>();
+    let tip_s = f.tip_time_ms / 1000;
+    let mut times = vec![tip_s; gaps.len()];
+    for i in (0..gaps.len() - 1).rev() {
+        times[i] = times[i + 1].saturating_sub((gaps[i + 1] * scale).round() as u64);
+    }
+    let base_s = times[0];
+    let grid_time = |h: u32| {
+        let back = if emission::is_pon(h) {
+            u64::from(first_block - h) * 30
+        } else {
+            u64::from(first_block - emission::PON_ACTIVATION_HEIGHT) * 30
+                + u64::from(emission::PON_ACTIVATION_HEIGHT - h) * 120
+        };
+        base_s - back
+    };
+    let mut out: Vec<(u32, ChainPoint)> = (CHAIN_SAMPLED_FROM / CHAIN_SAMPLE_GRID
+        ..=(first_block - 1) / CHAIN_SAMPLE_GRID)
+        .map(|i| i * CHAIN_SAMPLE_GRID)
+        .map(|h| {
+            let point = ChainPoint {
+                time_s: grid_time(h) as u32,
+                difficulty: Some(fixture_difficulty(h)),
+            };
+            (h, point)
+        })
+        .collect();
+    for (i, h) in (first_block..=f.tip).enumerate() {
+        if CHAIN_GAP.contains(&h) {
+            continue;
+        }
+        let point = ChainPoint {
+            time_s: times[i] as u32,
+            difficulty: Some(fixture_difficulty(h)),
+        };
+        out.push((h, point));
+    }
+    out
+}
+
+/// Two years of Insight-style daily difficulty, ascending.
+pub fn chain_daily(f: &Fixture) -> Vec<(u64, f64)> {
+    let today = f.tip_time_ms - f.tip_time_ms % DAY_MS;
+    (0..730u64)
+        .rev()
+        .map(|d| {
+            let day = today - d * DAY_MS;
+            let back_blocks = (f.tip_time_ms - day) / 30_000;
+            let h = u32::try_from(u64::from(f.tip).saturating_sub(back_blocks)).unwrap_or(0);
+            (day, fixture_difficulty(h))
+        })
+        .collect()
+}
+
 /// Writes the fixture into `store` the way the engine would.
 pub fn seed_store(store: &Store, f: &Fixture) -> anyhow::Result<()> {
     let mut b = WriteBatch::with_capacity(f.nodes.len() * 2 + 1000);
@@ -722,6 +812,12 @@ pub fn seed_store(store: &Store, f: &Fixture) -> anyhow::Result<()> {
     }
     for blk in &f.blocks {
         b.put_block(blk.clone());
+    }
+    for (h, p) in chain_points(f) {
+        b.put_chain_point(h, p);
+    }
+    for (day, d) in chain_daily(f) {
+        b.put_chain_daily(day, d);
     }
     for (h, i, t) in &f.node_txs {
         b.put_node_tx(*h, *i, t.clone());

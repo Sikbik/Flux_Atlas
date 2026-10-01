@@ -423,6 +423,7 @@ pub fn apply_block(
         collateral_spent: spent_nodes,
     };
     tick.batch.put_block(summary.clone());
+    tick.batch.put_chain_point(h, chain_point(d));
     tick.event(Event::BlockAdded(Box::new(summary.clone())), Some(time_ms));
     st.push_recent(summary);
     tick.primary.push((LiveBody::Block(msg), Some(time_ms)));
@@ -443,6 +444,14 @@ pub fn apply_block(
     ));
     tick.publish_now = true;
     report
+}
+
+/// The chain-history row of a decoded block (time and difficulty).
+pub fn chain_point(d: &DecodedBlock) -> atlas_store::ChainPoint {
+    atlas_store::ChainPoint {
+        time_s: u32::try_from(d.summary.time_ms / 1000).unwrap_or(u32::MAX),
+        difficulty: d.difficulty,
+    }
 }
 
 /// Undoes the payouts of the blocks above `fork_height` (a reorg orphaned them, L11): every

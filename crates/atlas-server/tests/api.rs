@@ -637,6 +637,89 @@ async fn app_economy() {
 }
 
 #[tokio::test]
+async fn chain_history_windows() {
+    let e = env();
+    let r = get(&e.app, "/api/v1/network/chain-history").await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.header("cache-control"), Some("public, max-age=60"));
+    let month = r.json();
+    assert_eq!(month["window"], "30d");
+    assert_eq!(month["latest_height"], TIP);
+    assert_eq!(month["target_block_time_s"], 30);
+    assert_eq!(month["targets"].as_array().unwrap().len(), 2);
+    assert_eq!(month["targets"][0]["seconds"], 120);
+    assert_eq!(month["targets"][1]["from_height"], 2_020_000);
+    assert_eq!(month["targets"][1]["seconds"], 30);
+    // Per-block rows cover 7 of the 30 days: partial.
+    assert_eq!(month["coverage"]["complete"], false);
+    let pct = month["coverage"]["percent"].as_f64().unwrap();
+    assert!(pct > 20.0 && pct < 40.0, "{pct}");
+    let points = month["points"].as_array().unwrap();
+    assert!(points.len() <= 720 && points.len() > 160);
+    assert!(
+        points
+            .windows(2)
+            .all(|w| w[1]["t_ms"].as_u64() > w[0]["t_ms"].as_u64())
+    );
+
+    let day = get(&e.app, "/api/v1/network/chain-history?window=24h").await;
+    assert_eq!(day.header("cache-control"), Some("public, max-age=30"));
+    let day = day.json();
+    assert_eq!(day["coverage"]["complete"], true);
+    assert_eq!(day["bucket_ms"], 300_000);
+    let avg = day["avg_block_time_s"].as_f64().unwrap();
+    assert!((avg - 30.0).abs() < 1.0, "{avg}");
+    let p = &day["points"][100];
+    assert!(p["block_time_s"].is_number() && p["block_time_max_s"].is_number());
+    assert!(p["difficulty"].is_number() && p["difficulty_mean"].is_number());
+
+    // The 7-day window has a two-hour hole.
+    let week = get(&e.app, "/api/v1/network/chain-history?window=7d")
+        .await
+        .json();
+    assert_eq!(week["coverage"]["complete"], false);
+    assert!(week["coverage"]["percent"].as_f64().unwrap() > 97.0);
+
+    // The whole chain: sampled from 1,500,480 only, 120 s before the fork and 30 s after.
+    let all = get(&e.app, "/api/v1/network/chain-history?window=all").await;
+    assert_eq!(all.header("cache-control"), Some("public, max-age=600"));
+    let all = all.json();
+    assert_eq!(
+        all["coverage"]["indexed_from_height"],
+        fixtures::CHAIN_SAMPLED_FROM
+    );
+    assert_eq!(all["coverage"]["complete"], false);
+    let times: Vec<f64> = all["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|p| p["block_time_s"].as_f64())
+        .collect();
+    assert!(times.iter().any(|t| (*t - 120.0).abs() < 1.0));
+    assert!(times.iter().any(|t| (*t - 30.0).abs() < 1.0));
+    let year = get(&e.app, "/api/v1/network/chain-history?window=1y")
+        .await
+        .json();
+    assert_eq!(year["points"].as_array().unwrap().len(), 365);
+
+    // Conditional GET.
+    let etag = r.header("etag").unwrap().to_owned();
+    let nm = get_with(
+        &e.app,
+        "/api/v1/network/chain-history?window=30d",
+        &[("if-none-match", &etag)],
+    )
+    .await;
+    assert_eq!(nm.status, StatusCode::NOT_MODIFIED);
+
+    for bad in ["window=", "window=1d", "window=ALL", "window=90d"] {
+        let r = get(&e.app, &format!("/api/v1/network/chain-history?{bad}")).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{bad}");
+        assert_eq!(r.error_code(), "bad_request");
+    }
+}
+
+#[tokio::test]
 async fn metrics_series() {
     let e = env();
     let r = get(

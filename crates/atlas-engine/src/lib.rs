@@ -73,6 +73,17 @@ pub mod meta {
     /// Random id of this data directory (u64; `ServerInfo.instance` is its hex form). Node ids
     /// are assigned per data directory, so this names the id space.
     pub const INSTANCE_ID: &str = "engine.instance_id";
+    /// Unix ms when the stored blocks were copied into `chain_points` (once, after an upgrade).
+    pub const CHAIN_SEEDED_MS: &str = "engine.chain.seeded_ms";
+    /// Unix ms of the last daily-difficulty fetch.
+    pub const CHAIN_DAILY_MS: &str = "engine.chain.daily_ms";
+    /// Unix ms when the chain sampler first found every grid height sampled.
+    pub const CHAIN_SAMPLED_MS: &str = "engine.chain.sampled_ms";
+    /// Samples the chain sampler stored, over the life of the data directory.
+    pub const CHAIN_SAMPLES: &str = "engine.chain.samples";
+    /// Upstream requests the chain sampler made (answers and failures), over the life of the
+    /// data directory.
+    pub const CHAIN_REQUESTS: &str = "engine.chain.requests";
 }
 
 /// The data directory's instance id: read from the store, or created (random) and stored on
@@ -120,6 +131,35 @@ impl Default for BackfillConfig {
     }
 }
 
+/// The chain sampler: fetches the time and difficulty of every
+/// [`atlas_store::CHAIN_SAMPLE_GRID`] height of the chain on the bulk upstream lane, coarse
+/// heights first, so the year and all-time chain history fill within minutes and refine over
+/// about an hour. Resumable (the stored rows are the progress) and on by default.
+#[derive(Debug, Clone)]
+pub struct ChainSamplerConfig {
+    pub enabled: bool,
+    /// Pause between two sample requests.
+    pub pause: Duration,
+    /// Samples stay this many blocks below the tip (reorgs stay above).
+    pub depth: u32,
+    /// Fetch Insight's daily difficulty series this often.
+    pub daily_interval: Duration,
+    /// Look for new grid heights this often once every height is sampled.
+    pub idle_interval: Duration,
+}
+
+impl Default for ChainSamplerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            pause: Duration::from_secs(1),
+            depth: 100,
+            daily_interval: Duration::from_secs(86_400),
+            idle_interval: Duration::from_secs(1800),
+        }
+    }
+}
+
 /// Ingest job settings (section 3.2 cadences).
 #[derive(Debug, Clone)]
 pub struct IngestConfig {
@@ -158,6 +198,7 @@ pub struct IngestConfig {
     /// Transfers at or above this value become `LargeTransfer` events.
     pub large_transfer: Amount,
     pub backfill: BackfillConfig,
+    pub chain_sampler: ChainSamplerConfig,
     pub retention: RetentionPolicy,
     /// Keep global events this long.
     pub events_retention: Duration,
@@ -218,6 +259,7 @@ impl Default for IngestConfig {
             max_catchup_gap: 1_440,
             large_transfer: Amount::from_flux(10_000),
             backfill: BackfillConfig::default(),
+            chain_sampler: ChainSamplerConfig::default(),
             retention: RetentionPolicy::default(),
             events_retention: Duration::from_secs(30 * 86_400),
             node_events_retention: Duration::from_secs(90 * 86_400),
@@ -357,6 +399,8 @@ struct Inner {
     server: ServerInfo,
     store: Store,
     clients: Clients,
+    /// The bulk lane of `clients` (background history work).
+    bulk: Clients,
     published: ArcSwap<Published>,
     seq: AtomicU64,
     tx: broadcast::Sender<Arc<LiveMsg>>,
@@ -455,6 +499,7 @@ impl Engine {
             outlier_hosts: std::sync::Mutex::new(HashMap::new()),
             server,
             store: store.clone(),
+            bulk: clients.bulk(),
             clients: clients.clone(),
             config,
             tx,
@@ -798,6 +843,11 @@ impl EngineHandle {
     /// Upstream clients (for on-demand lookups such as tx or address detail).
     pub fn clients(&self) -> &Clients {
         &self.inner.clients
+    }
+
+    /// Bulk-lane clients (the chain sampler's): own gates and breakers, the smallest budget.
+    pub fn bulk_clients(&self) -> &Clients {
+        &self.inner.bulk
     }
 
     /// Assigns the next seq to a live message, records it for replay and broadcasts it.

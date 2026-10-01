@@ -4,9 +4,10 @@
 //!
 //! **Lanes.** Each [`HttpClient`] belongs to one [`Lane`] with its own per-host gates. The
 //! ingest lane is the engine's; the interactive lane ([`HttpClient::lane`]) serves user-driven
-//! lookups (the explorer) with a smaller budget per host. The two share the connection pool
-//! only, so a queue of user requests never delays an ingest request: an ingest request waits
-//! for its own gate alone.
+//! lookups (the explorer) with a smaller budget per host, and the bulk lane serves slow
+//! background history work (the chain sampler) with the smallest one. The lanes share the
+//! connection pool only, so a queue of user or bulk requests never delays an ingest request: an
+//! ingest request waits for its own gate alone.
 
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
@@ -64,6 +65,9 @@ pub enum Lane {
     /// User-driven lookups (explorer): a small budget of its own per host and its own circuit
     /// breakers, so users can neither use the ingest's tokens nor trip its breakers.
     Interactive,
+    /// Background history work (the chain sampler): one request at a time at most once a second
+    /// per host, its own breakers, and never looser than the ingest policy.
+    Bulk,
 }
 
 impl Lane {
@@ -72,6 +76,7 @@ impl Lane {
         match self {
             Self::Ingest => "ingest",
             Self::Interactive => "interactive",
+            Self::Bulk => "bulk",
         }
     }
 }
@@ -106,6 +111,10 @@ pub struct HttpConfig {
     pub interactive_host_policies: HashMap<String, HostPolicy>,
     /// Interactive lane: total attempts per request (capped by [`Self::attempts`]).
     pub interactive_attempts: u32,
+    /// Bulk lane: the policy of every host (never looser than the host's ingest policy).
+    pub bulk_policy: HostPolicy,
+    /// Bulk lane: total attempts per request (capped by [`Self::attempts`]).
+    pub bulk_attempts: u32,
 }
 
 impl HttpConfig {
@@ -127,8 +136,8 @@ impl HttpConfig {
             .min(self.policy_for(host))
     }
 
-    /// This configuration as seen by `lane`: the interactive lane gets its own host policies
-    /// (resolved per host against the ingest ones) and fewer attempts.
+    /// This configuration as seen by `lane`: the interactive and bulk lanes get their own host
+    /// policies (resolved per host against the ingest ones) and fewer attempts.
     fn for_lane(&self, lane: Lane) -> Self {
         match lane {
             Lane::Ingest => self.clone(),
@@ -144,6 +153,20 @@ impl HttpConfig {
                     node_policy: self.interactive_default_policy.min(self.node_policy),
                     host_policies,
                     attempts: self.interactive_attempts.clamp(1, self.attempts.max(1)),
+                    ..self.clone()
+                }
+            }
+            Lane::Bulk => {
+                let host_policies = self
+                    .host_policies
+                    .iter()
+                    .map(|(h, p)| (h.clone(), self.bulk_policy.min(*p)))
+                    .collect();
+                Self {
+                    default_policy: self.bulk_policy.min(self.default_policy),
+                    node_policy: self.bulk_policy.min(self.node_policy),
+                    host_policies,
+                    attempts: self.bulk_attempts.clamp(1, self.attempts.max(1)),
                     ..self.clone()
                 }
             }
@@ -195,6 +218,8 @@ impl Default for HttpConfig {
             interactive_default_policy: HostPolicy::new(1, 2, 2),
             interactive_host_policies,
             interactive_attempts: 2,
+            bulk_policy: HostPolicy::new(1, 1, 1),
+            bulk_attempts: 2,
         }
     }
 }

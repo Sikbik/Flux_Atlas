@@ -9,7 +9,8 @@
 //!    pruning keeps pace with ingest; compaction only gives the slack back to the filesystem.
 //! 2. **The budget guard** ([`Store::enforce_budget`]): when the file reaches the high-water
 //!    mark, it measures the live data (a full page walk) and either compacts (the file is mostly
-//!    slack) or deletes the oldest day of every history table, repeatedly, until the estimated
+//!    slack) or deletes the oldest day of every history table (thinning `chain_points` to its
+//!    sample grid), repeatedly, until the estimated
 //!    live data is under the low-water mark, then compacts. It never prunes the newest
 //!    [`DiskBudget::min_history_ms`] of history, and never touches current state (nodes, apps,
 //!    mesh, meta).
@@ -56,6 +57,9 @@ pub struct HistoryRetention {
     pub app_messages_ms: Option<u64>,
     /// `app_events`: app timelines.
     pub app_events_ms: Option<u64>,
+    /// `chain_points` off the sample grid: per-block time and difficulty (the 24 h to 30 d
+    /// chain-history windows). Older history keeps the grid rows only.
+    pub chain_blocks_ms: Option<u64>,
 }
 
 impl Default for HistoryRetention {
@@ -67,6 +71,7 @@ impl Default for HistoryRetention {
             keyframes_ms: Some(365 * DAY_MS),
             app_messages_ms: None,
             app_events_ms: None,
+            chain_blocks_ms: Some(31 * DAY_MS),
         }
     }
 }
@@ -285,6 +290,9 @@ impl Store {
         if let Some(c) = cut(retention.app_events_ms) {
             out.push(("app_events", self.prune_app_events_before(c)?));
         }
+        if let Some(c) = cut(retention.chain_blocks_ms) {
+            out.push(("chain_points", self.thin_chain_points_before(c)?));
+        }
         out.retain(|(_, n)| *n > 0);
         Ok(out)
     }
@@ -496,6 +504,8 @@ impl Store {
         out.push(("mesh_events", me as u64));
         out.push(("snapshots", self.prune_snapshots_before(before_ms)?));
         out.push(("app_events", self.prune_app_events_before(before_ms)?));
+        // The sample grid stays: it is the whole chain's history in a few hundred kilobytes.
+        out.push(("chain_points", self.thin_chain_points_before(before_ms)?));
         if let Some(a) = self.block_anchor()? {
             let h = height_at(a, before_ms);
             out.extend(self.prune_blocks_before(h)?);
