@@ -1,6 +1,10 @@
-// Root attributes the stylesheets key off: `data-motion` and `data-perf` on <html> (tokens.css, section
-// 15). The user's motion preference and performance tier live in store/ui.ts; the engine's governor
-// (under `auto`) reports the tier it settled on. Everything here is a one-way sync to the document.
+// Root attributes the chrome's stylesheets key off: `data-perf` and the `data-motion-off` marker on <html>. The
+// user's motion preference and performance tier live in store/ui.ts; the engine's governor (under `auto`) reports
+// the tier it settled on. Everything here is a one-way sync to the document.
+//
+// `<html data-motion>` itself is not written here. The motion root (motion/react/MotionRoot) is its one writer
+// (`full`, `reduced` or `off`) and takes any other writer's value for a mode the page forced: this module used to
+// write `reduced` for Off, and the Off setting then read as Reduced to the kit and to every effect.
 
 import { useEffect, useState } from 'react';
 import { useGlobeEngine } from '../../globe';
@@ -20,9 +24,9 @@ export function effectivePerf(pref: PerfPref, governor: string | null): Tier {
 }
 
 /**
- * Keeps `<html data-motion>` and `<html data-perf>` in line with the preferences. `system` leaves the
- * OS media query in charge of the tokens; `off` is the reduced token set plus `data-motion-off`, which
- * the frame styles use to drop the remaining cross-fades.
+ * Keeps `<html data-perf>` and the `<html data-motion-off>` marker in line with the preferences. The marker is
+ * present exactly while the preference is Off (the motion root writes `data-motion="off"` beside it); the frame's
+ * stylesheets use it to drop the cross-fades that remain.
  */
 export function useRootPrefs(): void {
   const motion = useUi((s) => s.motion);
@@ -37,7 +41,6 @@ export function useRootPrefs(): void {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.motion = motion === 'system' ? 'system' : motion === 'full' ? 'full' : 'reduced';
     if (motion === 'off') root.dataset.motionOff = '';
     else delete root.dataset.motionOff;
   }, [motion]);
