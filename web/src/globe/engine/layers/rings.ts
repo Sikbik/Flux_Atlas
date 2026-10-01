@@ -19,8 +19,7 @@ export const RingKind = {
   /** Spinning 240 degree arc on an installing app instance. */
   Install: 7,
   Tick: 8,
-  /** Selection beacon: two ring pulses offset by half a period, repeating while the node is selected. */
-  Select: 9,
+  // 9 was the selection beacon's two ring pulses, retired when the selected marker got its lock ring (G4).
   /** Co-host marker: a steady 1 px ring (radius set by the start pixel size) held while a node is selected. */
   Host: 10,
   /** A six-point star burst that faces the camera (the landing spark). */
@@ -85,9 +84,9 @@ void main() {
     // Reticle: fades in over 400 ms, holds, fades out at the end (when the beams land it collapses).
     e = 1.0;
     env = smoothstep(0.0, 0.4, age) * (1.0 - smoothstep(dur - 0.45, dur, age)) * (1.0 + 0.15 * fastAim);
-  } else if (kind > 8.5) {
-    // Selection beacon and co-host rings: held for as long as the node stays selected, then a
-    // short fade once the engine ends them (their duration is cut to now + fade).
+  } else if (kind > 9.5) {
+    // Co-host rings: held for as long as the node stays selected, then a short fade once the engine
+    // ends them (their duration is cut to now + fade).
     e = 0.0;
     env = smoothstep(0.0, 0.4, remaining);
   } else if (kind > 6.5 && kind < 7.5) {
@@ -108,15 +107,14 @@ void main() {
   float Rpx;
   float maxRad = aRing.w;
   if (maxRad < 0.0) {
-    // Pixel rings. Select pulses and the aim reticle run their own clocks.
+    // Pixel rings. The aim reticle runs its own clock.
     float pxr = -maxRad;
-    if (kind > 8.5 && kind < 9.5) pxr = 26.0;
     float breath = 1.0;
     if (kind > 5.5 && kind < 6.5) {
       float period = mix(2.4, 0.8, fastAim);
       breath = 1.0 + 0.12 * (0.5 + 0.5 * sin(age * TAU / period)) * (1.0 - uReduced);
     }
-    Rpx = ((kind > 8.5 && kind < 9.5) ? pxr : mix(aKind.y, pxr, e)) * uPxScale * breath;
+    Rpx = mix(aKind.y, pxr, e) * uPxScale * breath;
     // The co-host ring clears a marker that has grown up close.
     if (kind > 9.5 && kind < 10.5) Rpx *= mix(1.0, 2.2, lz);
     Rpx = max(Rpx, 1.5 * uPxScale);
@@ -128,7 +126,7 @@ void main() {
     float minPx = 6.0 * uPxScale;
     if (Rpx < minPx) { R *= minPx / max(Rpx, 1e-3); Rpx = minPx; }
   }
-  float ext = ((kind > 8.5 && kind < 9.5) || kind > 10.5) ? 1.0 : 1.32;
+  float ext = kind > 10.5 ? 1.0 : 1.32;
   vec3 Q = normalize(B + (E * position.x + N * position.y) * R * ext) * (pr + 0.0006);
   // A spark is a star in the picture plane, not a mark on the surface.
   if (kind > 10.5) Q = P + (uCamRight * position.x + uCamUp * position.y) * R;
@@ -160,7 +158,7 @@ float ringAt(float q, float radius, float width) {
 void main() {
   float q = length(vUv);
   float k = vKind;
-  float lim = ((k > 8.5 && k < 9.5) || k > 10.5) ? 1.0 : 1.32;
+  float lim = k > 10.5 ? 1.0 : 1.32;
   if (q > lim) discard;
   vec3 c = vColor.rgb;
   float th = vP.y;
@@ -200,20 +198,8 @@ void main() {
     s = ringAt(q, 1.0, th * 0.9) * arc * 1.5 + ringAt(q, 1.0, th * 1.4) * 0.12;
   } else if (k < 8.5) {               // tick: a tiny blip
     s = exp(-q * q * 10.0) * 1.3 * (1.0 - u) + ringAt(q, 1.0, th * 1.4) * 0.6;
-  } else if (k > 9.5) {               // co-host: one steady 1 px ring
+  } else {                            // co-host: one steady 1 px ring
     s = ringAt(q, 1.0, 0.85 * vQ.w) * 1.0 + exp(-q * q * 10.0) * 0.06;
-  } else {                            // select: two pulses per 2.4 s, half a period apart, 10 to 26 px
-    float per = 2.4;
-    float t1 = fract(vQ.y / per);
-    float t2 = fract(vQ.y / per + 0.5);
-    // vUv spans the maximum pulse radius (26 px); map the radii of each pulse into that frame.
-    float r1 = (10.0 + 16.0 * (1.0 - pow(1.0 - t1, 2.5))) / 26.0;
-    float r2 = (10.0 + 16.0 * (1.0 - pow(1.0 - t2, 2.5))) / 26.0;
-    float w1 = 0.045;
-    float a1 = (1.0 - t1) * (1.0 - t1);
-    float a2 = (1.0 - t2) * (1.0 - t2);
-    float fadeIn = smoothstep(0.0, 0.3, vQ.y);
-    s = (ringAt(q, r1, w1) * a1 + ringAt(q, r2, w1) * a2) * 1.3 * fadeIn;
   }
   gl_FragColor = vec4(c * s, 1.0);
 }`;
