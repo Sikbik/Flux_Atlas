@@ -5,7 +5,10 @@
 //
 // The orbit itself is never drawn. Motion is implied: the moon trails a short tapering wake (a thin
 // additive ribbon, about 28 degrees of the path, fading to nothing) and the beads fall back along the
-// path behind it, shrinking and fading until they are gone.
+// path behind it, shrinking and fading until they are gone. Both live in world space on the real
+// orbit: they are where the moon was, so they hold their place while the camera moves, pass in front
+// of and behind the planet (the planet fades them at its limb like the moon, occlusion.ts), and tip
+// over into perspective like the moon itself.
 //
 // Beads are flat hexagons (the symbol's own shape) drawn as billboards in Flux blue with a white flash
 // at birth. Both draw calls are CPU-filled every frame (a dozen beads, a wake of a few dozen vertices)
@@ -14,6 +17,7 @@
 import * as THREE from 'three';
 import { clamp, smoothstep } from '../math';
 import type { SharedUniforms } from '../uniforms';
+import { PLANET_VIS_GLSL } from './occlusion';
 
 const MAX_BEADS = 24;
 const BLUE = '#2B61D1';
@@ -32,18 +36,22 @@ in vec3 aPos;
 in vec3 aFx;   // alpha, flash, age 0..1
 out vec2 vP;
 out vec3 vFx;
+out vec3 vWorld;
 void main() {
   vP = position.xy;
   vFx = aFx;
+  vWorld = aPos;
   float s = uSize * (1.0 + 0.9 * aFx.y) * mix(1.0, 0.5, aFx.z);
   vec3 w = aPos + (uCamRight * position.x + uCamUp * position.y) * s;
   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 
 const BEAD_FRAG = /* glsl */ `
+${PLANET_VIS_GLSL}
 uniform vec3 uColor;
 in vec2 vP;
 in vec3 vFx;
+in vec3 vWorld;
 // Distance in a pointy-top hexagon of circumradius 1.
 float hexSdf(vec2 p) {
   p = abs(p);
@@ -55,9 +63,9 @@ void main() {
   float ring = smoothstep(-0.2 - aa, -0.2, d) * (1.0 - smoothstep(-0.02, -0.02 + aa, d));
   float fill = (1.0 - smoothstep(-0.02, -0.02 + aa, d)) * 0.16;
   float core = exp(-dot(vP, vP) * 9.0) * 0.5;
-  float a = vFx.x;
+  float a = vFx.x * planetVis(vWorld);
   vec3 col = uColor * (ring * 1.5 + fill + core * 0.6) * a;
-  col += vec3(1.0) * (ring * 0.9 + core) * vFx.y * 1.4;
+  col += vec3(1.0) * (ring * 0.9 + core) * vFx.y * 1.4 * planetVis(vWorld);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -65,10 +73,12 @@ void main() {
 const WAKE_VERT = /* glsl */ `
 uniform vec2 uViewport;
 uniform float uPxScale;
+uniform float uWidthK;
 in vec3 aPrev;
 in vec3 aNext;
 in vec2 aSU;   // side (-1, 1), position along the wake (0 at the moon, 1 at the tail)
 out vec2 vSU;
+out vec3 vWorld;
 void main() {
   vec4 c = projectionMatrix * viewMatrix * vec4(position, 1.0);
   vec4 ca = projectionMatrix * viewMatrix * vec4(aNext, 1.0);
@@ -77,16 +87,19 @@ void main() {
   float len = length(d);
   vec2 dirS = len > 1e-4 ? d / len : vec2(0.0, 1.0);
   vec2 perp = vec2(-dirS.y, dirS.x);
-  float widthPx = mix(6.0, 0.8, aSU.y) * uPxScale;
+  float widthPx = mix(6.0, 0.8, aSU.y) * uPxScale * uWidthK;
   gl_Position = c;
   gl_Position.xy += perp * aSU.x * widthPx * 2.0 / uViewport * c.w;
   vSU = aSU;
+  vWorld = position;
 }`;
 
 const WAKE_FRAG = /* glsl */ `
+${PLANET_VIS_GLSL}
 uniform vec3 uColor;
 uniform float uAlpha;
 in vec2 vSU;
+in vec3 vWorld;
 void main() {
   float side = abs(vSU.x);
   float u = vSU.y;
@@ -96,7 +109,7 @@ void main() {
   float soft = 1.0 - smoothstep(0.1, 1.0, side);
   vec3 col = uColor * (0.55 * core + 0.2 * soft * soft) * fade;
   col += vec3(1.0) * core * 0.4 * pow(1.0 - u, 3.2) * smoothstep(0.0, 0.1, u);
-  gl_FragColor = vec4(col * uAlpha, 1.0);
+  gl_FragColor = vec4(col * uAlpha * planetVis(vWorld), 1.0);
 }`;
 
 /** Length of the wake along the orbit, radians (about 28 degrees). */
@@ -104,10 +117,8 @@ const WAKE_RAD = 0.49;
 const WAKE_SEGMENTS = 40;
 
 interface Bead {
-  /** Angle on the sky orbit (world mode). */
+  /** Angle on the orbit when the block was sealed. */
   theta: number;
-  /** Angle on the companion's ellipse (screen mode). */
-  phase: number;
   birth: number;
   height: number;
 }
@@ -115,8 +126,6 @@ interface Bead {
 export class MoonChain {
   readonly group = new THREE.Group();
   enabled = true;
-  /** False while the moon follows the camera: the chain keeps recording but is not drawn. */
-  shown = true;
   /** Seconds a bead lives: it shrinks and fades over this long (the moon sets it from the orbit's period). */
   life = 210;
   private readonly beads: Bead[] = [];
@@ -146,15 +155,7 @@ export class MoonChain {
     this.beadGeom.setAttribute('aPos', this.posAttr);
     this.beadGeom.setAttribute('aFx', this.fxAttr);
     this.beadGeom.instanceCount = 0;
-    this.beadMat = new THREE.ShaderMaterial({
-      vertexShader: BEAD_VERT,
-      fragmentShader: BEAD_FRAG,
-      uniforms: {
-        uCamRight: u.uCamRight,
-        uCamUp: u.uCamUp,
-        uSize: { value: 0.045 },
-        uColor: { value: new THREE.Color(BLUE) },
-      },
+    const additive = {
       transparent: true,
       blending: THREE.CustomBlending,
       blendEquation: THREE.AddEquation,
@@ -164,13 +165,29 @@ export class MoonChain {
       blendEquationAlpha: THREE.AddEquation,
       blendSrcAlpha: THREE.ZeroFactor,
       blendDstAlpha: THREE.OneFactor,
-      depthTest: true,
+      // Drawn before the moon's body, which covers whatever is under it: the wake and the new beads come
+      // out from behind the moon.
+      depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
+    } as const;
+    this.beadMat = new THREE.ShaderMaterial({
+      ...additive,
+      vertexShader: BEAD_VERT,
+      fragmentShader: BEAD_FRAG,
+      uniforms: {
+        uCamRight: u.uCamRight,
+        uCamUp: u.uCamUp,
+        uCamPos: u.uCamPos,
+        uProjScale: u.uProjScale,
+        uPxScale: u.uPxScale,
+        uSize: { value: 0.028 },
+        uColor: { value: new THREE.Color(BLUE) },
+      },
     });
     const beads = new THREE.Mesh(this.beadGeom, this.beadMat);
     beads.frustumCulled = false;
-    beads.renderOrder = 11;
+    beads.renderOrder = 3;
 
     // The wake: two vertices per sample (one per side), a strip of indexed triangles.
     const su = new Float32Array((WAKE_SEGMENTS + 1) * 2 * 2);
@@ -197,30 +214,22 @@ export class MoonChain {
     mk('aSU', su, 2, false);
     this.wakeGeom.setIndex(idx);
     this.wakeMat = new THREE.ShaderMaterial({
+      ...additive,
       vertexShader: WAKE_VERT,
       fragmentShader: WAKE_FRAG,
       uniforms: {
         uViewport: u.uViewport,
         uPxScale: u.uPxScale,
+        uCamPos: u.uCamPos,
+        uProjScale: u.uProjScale,
+        uWidthK: { value: 1 },
         uColor: { value: new THREE.Color('#86a1da') },
         uAlpha: { value: 1 },
       },
-      transparent: true,
-      blending: THREE.CustomBlending,
-      blendEquation: THREE.AddEquation,
-      blendSrc: THREE.OneFactor,
-      blendDst: THREE.OneFactor,
-      // Additive light never touches alpha: the moon's exempt mask (see post.ts) lives there.
-      blendEquationAlpha: THREE.AddEquation,
-      blendSrcAlpha: THREE.ZeroFactor,
-      blendDstAlpha: THREE.OneFactor,
-      depthTest: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
     });
     this.wakeMesh = new THREE.Mesh(this.wakeGeom, this.wakeMat);
     this.wakeMesh.frustumCulled = false;
-    this.wakeMesh.renderOrder = 11;
+    this.wakeMesh.renderOrder = 3;
     this.wakeMesh.visible = false;
     this.group.add(beads, this.wakeMesh);
   }
@@ -234,9 +243,9 @@ export class MoonChain {
     return this.beads;
   }
 
-  /** A block was sealed: drop a bead at the moon's current angles (sky orbit and companion ellipse). `now` is the engine clock in seconds. */
-  add(theta: number, phase: number, height: number, now: number): void {
-    this.beads.push({ theta, phase, birth: now, height });
+  /** A block was sealed: drop a bead at the moon's current angle. `now` is the engine clock in seconds. */
+  add(theta: number, height: number, now: number): void {
+    this.beads.push({ theta, birth: now, height });
     if (this.beads.length > MAX_BEADS) this.beads.shift();
   }
 
@@ -247,48 +256,17 @@ export class MoonChain {
 
   /**
    * Seeds the chain from recent history: each block lands at the moon's angle at its own time.
-   * `angleAt` maps UTC milliseconds to a sky-orbit angle and `phaseAt` to a companion-ellipse angle;
-   * `nowMs`/`now` tie wall time to the engine clock.
+   * `angleAt` maps UTC milliseconds to an orbit angle; `nowMs`/`now` tie wall time to the engine clock.
    */
-  seed(
-    blocks: readonly ChainBlock[],
-    angleAt: (ms: number) => number,
-    phaseAt: (ms: number) => number,
-    nowMs: number,
-    now: number,
-  ): void {
+  seed(blocks: readonly ChainBlock[], angleAt: (ms: number) => number, nowMs: number, now: number): void {
     this.beads.length = 0;
     const sorted = [...blocks].sort((a, b) => a.time - b.time).slice(-MAX_BEADS);
     for (const b of sorted)
       this.beads.push({
         theta: angleAt(b.time),
-        phase: phaseAt(b.time),
         birth: now - (nowMs - b.time) / 1000,
         height: b.height,
       });
-  }
-
-  /**
-   * The beads as the companion draws them (design 7.10.3): per bead the angle on the ellipse, its age
-   * as a fraction of `lifeS` (0 fresh, 1 gone), the birth flash (1 to 0 over 1.1 s) and the radius in
-   * CSS pixels (8.4 settling to 5.4 while fresh, shrinking to 2.8 as it ages). Returns how many were
-   * written (at most `max`). Beads older than their life are skipped.
-   */
-  companionBeads(now: number, lifeS: number, out: Float32Array, max: number): number {
-    const B = this.beads;
-    let n = 0;
-    for (let i = 0; i < B.length && n < max; i++) {
-      const age = now - B[i]!.birth;
-      if (age > lifeS) continue;
-      const f = age / lifeS;
-      const fl = age < 1.1 ? 1 - age / 1.1 : 0;
-      out[n * 4] = B[i]!.phase;
-      out[n * 4 + 1] = f;
-      out[n * 4 + 2] = fl;
-      out[n * 4 + 3] = (5.4 + 3.0 * fl * fl) * (1 - 0.48 * smoothstep(0, 1, f));
-      n++;
-    }
-    return n;
   }
 
   clear(): void {
@@ -298,9 +276,10 @@ export class MoonChain {
   }
 
   /**
-   * Fills the buffers for this frame. `e1`/`e2` are the orbit's basis, `orbit` its radius, `moonTheta` the
-   * moon's angle. `wakeA` scales the wake (it brightens when a block is sealed); `alpha` fades the whole
-   * trail (the moon lifting into the sky, or returning to the camera).
+   * Fills the buffers for this frame. `e1`/`e2` are the orbit's basis and `orbit` its radius; `moonTheta`
+   * is the moon's angle and `moonSize` its height in world units. `wakeA` scales the wake (it brightens
+   * when a block is sealed); `alpha` fades the whole trail; `widthK` scales the wake's pixel width with
+   * the moon's size on screen.
    */
   update(
     now: number,
@@ -311,8 +290,9 @@ export class MoonChain {
     moonSize: number,
     wakeA = 1,
     alpha = 1,
+    widthK = 1,
   ): void {
-    const show = this.enabled && this.shown;
+    const show = this.enabled && alpha > 0.002;
     this.group.visible = show;
     if (!show) {
       this.beadGeom.instanceCount = 0;
@@ -346,8 +326,9 @@ export class MoonChain {
 
     // The wake: a short tapering ribbon behind the moon along the orbit. It starts just behind the moon's
     // body and runs `WAKE_RAD` back.
-    this.wakeMesh.visible = alpha > 0.002;
+    this.wakeMesh.visible = true;
     this.wakeMat.uniforms.uAlpha!.value = wakeA * alpha;
+    this.wakeMat.uniforms.uWidthK!.value = widthK;
     const start = (0.5 * moonSize) / orbit;
     const P = this.wakePos;
     for (let k = 0; k <= WAKE_SEGMENTS; k++) {

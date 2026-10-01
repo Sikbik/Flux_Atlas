@@ -2,15 +2,20 @@
 //
 // A ray joins two endpoints. Each is either a node (a slot in the position texture, so it follows
 // the node as stacks fan out) or one of the moon's anchors (a uniform the moon rewrites every
-// frame, so the beam stays glued to a piece as the moon drifts along its orbit). The path is a
-// cubic curve that leaves the planet radially, like a space elevator, and meets the moon along its
-// own radial line; if the straight route would dip into the planet it bows outward. Drawn as a
-// constant-pixel-width ribbon, evaluated on the GPU, one instance per ray.
+// frame, so the beam stays glued to a piece as the moon travels its orbit). The route is
+// `relayPath` (moon/relay.ts): it leaves the planet straight up like a space elevator, arcs round it
+// on a fan of shells to the moon's direction and meets the moon along its own radial line, so it can
+// never cut through the planet whatever the pose. The planet hides the part of a beam that is behind
+// it analytically and softly (moon/occlusion.ts), the same way it hides the moon: a beam to a moon on the
+// far side goes over the limb and disappears behind the disc. Drawn as a constant-pixel-width ribbon,
+// evaluated on the GPU, one instance per ray.
 //
 // Two kinds: a beam (a travelling head that lights the conduit behind it) and a guide (faint
 // dashes that march along the path; the pre-aim line for a payee that is known one block ahead).
 
 import * as THREE from 'three';
+import { PLANET_VIS_GLSL } from '../moon/occlusion';
+import { RELAY_PATH_GLSL } from '../moon/relay';
 import { GLSL_CONSTANTS, GLSL_POS_TEX } from '../shaders/chunks';
 import type { SharedUniforms } from '../uniforms';
 
@@ -19,16 +24,18 @@ export const RayKind = { Beam: 0, Guide: 1 } as const;
 /** Slot numbers at or above this refer to the moon's anchors (base + anchor index). */
 export const ANCHOR_BASE = 1000000;
 
-const SEGMENTS = 64;
+const SEGMENTS = 96;
 
 const VERT = /* glsl */ `
 ${GLSL_CONSTANTS}
 ${GLSL_POS_TEX}
+${RELAY_PATH_GLSL}
 uniform vec2 uViewport;
 uniform float uPxScale;
 uniform float uProjScale;
 uniform float uTime;
 uniform vec3 uCamPos;
+uniform vec3 uCamUp;
 uniform vec4 uAnchor[8];
 in vec2 aSeg;     // t along the strip, side (-1 / +1)
 in vec4 aEnds;    // slot A, slot B, unused, width px
@@ -38,15 +45,12 @@ in vec4 aColB;    // rgb at the end, lit-trail fraction
 out vec4 vCol;
 out vec4 vInfo;   // x = along the drawn part (1 at the head), y = side, z = path param, w = kind
 out float vHead;
-out float vLen;   // path length in pixels
+out float vLen;   // path length in device pixels
+out vec3 vWorld;  // the route's point on the centre line, for the planet's occlusion
 
 vec3 endpoint(float slot) {
   if (slot > 999999.5) return uAnchor[int(slot - 1000000.0 + 0.5)].xyz;
   return fetchPos(slot).xyz;
-}
-vec3 bez(vec3 P0, vec3 P1, vec3 P2, vec3 P3, float t) {
-  float u = 1.0 - t;
-  return u * u * u * P0 + 3.0 * u * u * t * P1 + 3.0 * u * t * t * P2 + t * t * t * P3;
 }
 float easeInOut(float x) { return x < 0.5 ? 4.0 * x * x * x : 1.0 - pow(-2.0 * x + 2.0, 3.0) * 0.5; }
 
@@ -59,32 +63,15 @@ void main() {
   if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec4(0.0); return; }
   vec3 A = endpoint(aEnds.x);
   vec3 B = endpoint(aEnds.y);
-  float L = max(length(B - A), 1e-3);
-  vec3 aHat = A / max(length(A), 1e-3);
-  vec3 bHat = B / max(length(B), 1e-3);
-  // Leave the planet radially; meet the moon along its radial line, from the planet side.
-  float sa = length(A) > 1.35 ? -1.0 : 1.0;
-  float sb = length(B) > 1.35 ? -1.0 : 1.0;
-  float h = 0.33 * L;
-  vec3 P1 = A + aHat * h * sa;
-  vec3 P2 = B + bHat * h * sb;
-  // Keep the route clear of the planet: bow the middle outward when it would graze the surface.
-  vec3 M = (A + 3.0 * P1 + 3.0 * P2 + B) * 0.125;
-  float ml = length(M);
-  if (ml < 1.09) {
-    vec3 out_ = (M / max(ml, 1e-3)) * (1.09 - ml) * (8.0 / 6.0);
-    P1 += out_;
-    P2 += out_;
-  }
   float head = clamp(age / dur, 0.0, 1.0);
   float hd = kind < 0.5 ? easeInOut(head) : head;
   float fadeOut = 1.0 - smoothstep(max(life - 0.8, 0.0), life, age);
   float fadeIn = smoothstep(0.0, 0.25, age);
   float tt = aSeg.x;
   float t = tt * hd;
-  vec3 P = bez(A, P1, P2, B, t);
-  vec3 Pa = bez(A, P1, P2, B, clamp(t + 0.02, 0.0, 1.0));
-  vec3 Pb = bez(A, P1, P2, B, clamp(t - 0.02, 0.0, 1.0));
+  vec3 P = relayPath(A, B, t, uCamUp);
+  vec3 Pa = relayPath(A, B, clamp(t + 0.01, 0.0, 1.0), uCamUp);
+  vec3 Pb = relayPath(A, B, clamp(t - 0.01, 0.0, 1.0), uCamUp);
   vec4 c = projectionMatrix * viewMatrix * vec4(P, 1.0);
   vec4 ca = projectionMatrix * viewMatrix * vec4(Pa, 1.0);
   vec4 cb = projectionMatrix * viewMatrix * vec4(Pb, 1.0);
@@ -98,22 +85,32 @@ void main() {
   if (kind < 0.5) widthPx *= mix(0.55, 1.0, tt);
   gl_Position = c;
   gl_Position.xy += perp * aSeg.y * widthPx * 2.0 / uViewport * c.w;
-  float pathPx = L * uProjScale / max(length(0.5 * (A + B) - uCamPos), 0.3);
+  // The route's length: its arc round the planet and its climb.
+  float rA = max(length(A), 1e-3);
+  float rB = max(length(B), 1e-3);
+  float ang = acos(clamp(dot(A, B) / (rA * rB), -1.0, 1.0));
+  float arc = length(vec2(ang * 0.5 * (rA + rB), rB - rA));
+  float pathPx = arc * uProjScale / max(length(0.5 * (A + B) - uCamPos), 0.3);
   vec3 col = mix(aColA.rgb, aColB.rgb, smoothstep(0.0, 0.55, t));
   vCol = vec4(col * aColA.a * fadeOut * fadeIn, 1.0);
   vInfo = vec4(tt, aSeg.y, t, kind);
   vHead = head;
   vLen = pathPx;
+  vWorld = P;
 }`;
 
 const FRAG = /* glsl */ `
 ${GLSL_CONSTANTS}
+${PLANET_VIS_GLSL}
 uniform float uTime;
 in vec4 vCol;
 in vec4 vInfo;
 in float vHead;
 in float vLen;
+in vec3 vWorld;
 void main() {
+  float vis = planetVis(vWorld);
+  if (vis < 0.002) discard;
   float side = abs(vInfo.y);
   float across = 1.0 - smoothstep(0.25, 1.0, side);
   float core = 1.0 - smoothstep(0.0, 0.5, side);
@@ -121,20 +118,21 @@ void main() {
   float lum = max(tint.r, max(tint.g, tint.b));
   vec3 hot = mix(tint, vec3(lum), 0.72);
   vec3 col;
+  // Lengths along the beam are device pixels; the patterns are designed in CSS pixels.
+  float px = vInfo.z * vLen / uPxScale;
   if (vInfo.w < 0.5) {
     float drawing = 1.0 - smoothstep(0.9, 1.0, vHead);
     float headGlow = exp(-pow((1.0 - vInfo.x) * 8.0, 2.0)) * drawing;
     float body = 0.22 + 0.78 * pow(vInfo.x, 2.2);
     // A few packets ride the conduit after the head has passed.
-    float pk = pow(0.5 + 0.5 * sin(vInfo.z * vLen * 0.11 - uTime * 6.0), 6.0) * 0.5;
+    float pk = pow(0.5 + 0.5 * sin(px * 0.11 - uTime * 6.0), 6.0) * 0.5;
     col = tint * (across * 0.55 * body + core * 0.5 * body + core * pk * 0.35) + hot * core * headGlow * 2.6 + hot * across * headGlow * 0.5;
   } else {
     float reveal = smoothstep(0.0, 1.0, vInfo.x);
-    float px = vInfo.z * vLen;
     float dash = 1.0 - smoothstep(0.38, 0.46, abs(fract(px / 10.0 - uTime * 0.55) - 0.5) * 1.0);
     col = tint * (0.4 * across + 0.6 * core) * dash * (0.5 + 0.5 * reveal);
   }
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col * vis, 1.0);
 }`;
 
 export class RayLayer {
@@ -195,6 +193,7 @@ export class RayLayer {
         uProjScale: u.uProjScale,
         uTime: u.uTime,
         uCamPos: u.uCamPos,
+        uCamUp: u.uCamUp,
         uAnchor: u.uAnchor,
       },
       transparent: true,
@@ -206,7 +205,8 @@ export class RayLayer {
       blendEquationAlpha: THREE.AddEquation,
       blendSrcAlpha: THREE.ZeroFactor,
       blendDstAlpha: THREE.OneFactor,
-      depthTest: true,
+      // The planet hides a beam analytically (planetVis), so no depth test: no fight with the atmosphere.
+      depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
     });

@@ -15,7 +15,6 @@ import { type EffectSink, Effects } from './effects';
 import { computeFraming, DEFAULT_FRAMING, type Framing, type FramingSpec, type Rect } from './framing';
 import { Fx } from './fx';
 import { Atmosphere } from './layers/atmosphere';
-import { BeamLayer } from './layers/beams';
 import type { GlobeBody } from './layers/body';
 import { DotMatrixBody } from './layers/dotmatrix';
 import { MarbleBody } from './layers/marble';
@@ -33,7 +32,7 @@ import {
   type MoonStatus,
   type MoonView,
 } from './moon/moon';
-import type { Inset } from './moon/placement';
+import type { Inset } from './moon/orbit';
 import { ClusterLayer } from './nodes/clusterLayer';
 import { computeLayout, fanPosition } from './nodes/layout';
 import { MeshStore } from './nodes/mesh';
@@ -137,7 +136,7 @@ export class GlobeEngine {
   readonly canvas: HTMLCanvasElement;
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  /** Drawn after everything else with its own depth: the moon when it follows the camera, and the relay's screen-space beams. */
+  /** Drawn after everything else with its own depth: the moon (the planet hides it analytically, see moon/occlusion.ts). */
   readonly overlayScene = new THREE.Scene();
   readonly rig = new CameraRig();
   readonly u: SharedUniforms = createSharedUniforms();
@@ -186,7 +185,6 @@ export class GlobeEngine {
   /** The Flux moon: the brand symbol in orbit. Every block passes through it. */
   readonly moon: Moon;
   private rays: RayLayer;
-  private beams: BeamLayer;
   private readonly moonPx = { x: 0, y: 0, r: 0, visible: false };
   private insetNow: Inset = { left: 0, right: 0, top: 0, bottom: 0 };
   private insetFrom: Inset = { left: 0, right: 0, top: 0, bottom: 0 };
@@ -408,7 +406,6 @@ export class GlobeEngine {
     this.links = new RibbonLayer(this.u, this.profile.maxLinks, 10, 38);
     this.rings = new RingLayer(this.u, this.profile.maxRings);
     this.rays = new RayLayer(this.u, 48, 43);
-    this.beams = new BeamLayer(this.u, 48);
     this.moon = new Moon(this.u, { lite: this.profile.moonLite, ...(opts.moon ?? {}) });
     this.moon.setTokens(this.tokens);
     this.scene.add(
@@ -422,7 +419,7 @@ export class GlobeEngine {
       this.rays.mesh,
       this.moon.group,
     );
-    this.overlayScene.add(this.moon.overlay, this.beams.mesh);
+    this.overlayScene.add(this.moon.overlay);
 
     this.fx = new Fx({
       store: this.nodes,
@@ -431,7 +428,6 @@ export class GlobeEngine {
       packets: this.packets,
       links: this.links,
       rays: this.rays,
-      beams: this.beams,
       u: this.u,
       rig: this.rig,
       activity: this.activity,
@@ -647,9 +643,10 @@ export class GlobeEngine {
 
   /**
    * Configures the Flux moon. The design's switches work as given (`on`, `scale`, `padTop`, `mode`):
-   * `mode` is `'companion'` (follows the camera), `'orbit'` (an inclined orbit in the sky) or `'auto'`
-   * (the default: companion in explore, orbit in ambient). The rest (`lite`, and the orbit mode's size,
-   * orbit, inclination, phase, breathing, glow, guides) are the renderer's own.
+   * the moon is always on a world orbit; `mode` picks its shape: `'companion'` (the compact ring of the
+   * shell, sized to the screen), `'orbit'` (the wide inclined orbit of the sky) or `'auto'` (the default:
+   * the ring in explore, the sky orbit in ambient). The rest (`lite`, and the sky orbit's size, orbit,
+   * inclination, node, period, phase, breathing, glow, guides) are the renderer's own.
    * `{ enabled: false }` or `{ on: false }` removes it.
    */
   setMoon(opts: Partial<MoonOptions> & { on?: boolean; mode?: 'auto' | 'companion' | 'orbit' }): void {
@@ -1055,7 +1052,6 @@ export class GlobeEngine {
     this.held.clear();
     this.links.clear();
     this.rays.clear();
-    this.beams.clear();
     this.selHandles.length = 0;
     this.selStarts.length = 0;
     this.beaconHandles.length = 0;
@@ -1245,7 +1241,6 @@ export class GlobeEngine {
 
   private readonly tmpColor = new THREE.Color();
   private readonly tmpMoonV = new THREE.Vector3();
-  private readonly tmpPiece = { x: 0, y: 0 };
   private readonly tmpScreen: ScreenPoint = { x: 0, y: 0, visible: false, depth: 0 };
 
   // label anchors (labelAnchors): inputs and their per-frame projections, index aligned
@@ -1852,24 +1847,17 @@ export class GlobeEngine {
         out.y = pt.y;
       },
       moonPiecePoint: (piece, out) => {
-        const m = self.moon;
-        if (m.companionWeight > 0.5) {
-          m.piecePixels(piece, self.tmpPiece);
-          out.x = m.layout.x + self.tmpPiece.x;
-          out.y = m.layout.y + self.tmpPiece.y;
-        } else {
-          m.anchor(piece, self.tmpMoonV);
-          self.rig.project(
-            self.tmpMoonV.x,
-            self.tmpMoonV.y,
-            self.tmpMoonV.z,
-            self.cssW,
-            self.cssH,
-            self.tmpScreen,
-          );
-          out.x = self.tmpScreen.x;
-          out.y = self.tmpScreen.y;
-        }
+        self.moon.anchor(piece, self.tmpMoonV);
+        self.rig.project(
+          self.tmpMoonV.x,
+          self.tmpMoonV.y,
+          self.tmpMoonV.z,
+          self.cssW,
+          self.cssH,
+          self.tmpScreen,
+        );
+        out.x = self.tmpScreen.x;
+        out.y = self.tmpScreen.y;
       },
     } as ChoreoHost;
   }
@@ -2240,28 +2228,13 @@ export class GlobeEngine {
   }
 
   private updateMoonScreen(): void {
-    const m = this.moon;
+    // Where the moon is on screen (it follows its place on the world orbit); the pointer takes it only when the planet is not hiding it.
+    const sc = this.moon.screen;
     const mp = this.moonPx;
-    if (m.companionWeight > 0.5) {
-      // The companion is wherever the layout put it; its hit circle is max(24 px, 0.6 of its height).
-      const L = m.layout;
-      mp.x = L.x;
-      mp.y = L.y;
-      mp.r = Math.max(24, 0.6 * L.s);
-      mp.visible = !m.boot;
-      return;
-    }
-    const pt = this.tmpScreen;
-    const cam = this.rig.camera;
-    const vis = this.rig.project(m.pos.x, m.pos.y, m.pos.z, this.cssW, this.cssH, pt);
-    const depth =
-      (m.pos.x - cam.position.x) * this.rig.viewDir.x +
-      (m.pos.y - cam.position.y) * this.rig.viewDir.y +
-      (m.pos.z - cam.position.z) * this.rig.viewDir.z;
-    mp.x = pt.x;
-    mp.y = pt.y;
-    mp.r = depth > 0.02 ? (m.radius * this.rig.projScale) / depth : 0;
-    mp.visible = vis && depth > 0.02;
+    mp.x = sc.x;
+    mp.y = sc.y;
+    mp.r = sc.r;
+    mp.visible = sc.hit;
   }
 
   private moonHit(x: number, y: number): boolean {
@@ -2419,7 +2392,6 @@ export class GlobeEngine {
       this.packets.clear();
       this.rings.clear();
       this.rays.clear();
-      this.beams.clear();
       this.lastMs = performance.now();
       this.start();
     }
@@ -2477,7 +2449,6 @@ export class GlobeEngine {
     this.links.dispose();
     this.rings.dispose();
     this.rays.dispose();
-    this.beams.dispose();
     this.moon.dispose();
     this.sky.dispose();
     this.atmosphere.dispose();
@@ -2570,7 +2541,7 @@ export class GlobeEngine {
     const moon = this.moon;
     if (moon.enabled) {
       moon.reduced = this.reducedMotion;
-      // A free moon shot (portrait, earthrise, eclipse, follow) lifts the moon into the sky; otherwise it follows the camera.
+      // A free moon shot (portrait, earthrise, eclipse, follow) lifts the moon onto the sky orbit; otherwise it rides the shell ring.
       moon.lift(this.moonView !== null);
       const mv = this.moonViewBuf;
       mv.camera = cam;
@@ -2587,32 +2558,17 @@ export class GlobeEngine {
         rate: this.sunRate,
         free: this.rig.isFree,
         ambient: this.mode === 'ambient',
+        utcMs: this.sunTimeMs,
       });
-      const skyW = 1 - moon.companionWeight;
-      this.rig.farExtra = skyW > 0.001 ? moon.opts.orbit + 0.4 : 0;
+      // The moon is a world object: the far plane keeps its orbit and the near plane never cuts it.
+      this.rig.farExtra = moon.shape.radius + 0.4;
       this.rig.protectCenter.copy(moon.pos);
-      this.rig.protectRadius = skyW > 0.001 ? moon.radius * 1.2 : 0;
+      this.rig.protectRadius = moon.radius * 1.2;
       this.updateMoonScreen();
     } else {
       this.rig.farExtra = 0;
       this.rig.protectRadius = 0;
       this.moonPx.visible = false;
-    }
-    this.fx.companion = moon.enabled && moon.isCompanion;
-    {
-      // Screen-space beams need the planet's disc on screen.
-      const pt = this.tmpScreen;
-      this.rig.project(0, 0, 0, this.cssW, this.cssH, pt);
-      const dd = Math.max(1.0002, this.rig.distance);
-      this.beams.setView(
-        this.cssW,
-        this.cssH,
-        pt.x,
-        pt.y,
-        this.rig.projScale / Math.sqrt(dd * dd - 1),
-        dd,
-        cam.position,
-      );
     }
     this.emitCamera();
     this.frameNo++;
@@ -2723,7 +2679,6 @@ export class GlobeEngine {
     this.links.update(this.time);
     this.rings.update(this.time);
     this.rays.update(this.time);
-    this.beams.update(this.time);
     this.links.mesh.visible = this.links.high > 0;
     this.packets.mesh.visible = this.effects.mesh && this.packets.high > 0;
 
@@ -2731,9 +2686,17 @@ export class GlobeEngine {
     this.clusterLayer.sync(this.selectedCluster, this.conActive ? this.conHubs : null);
     this.clusterLayer.mesh.visible = this.effects.spires && this.clusterLayer.mesh.visible;
 
+    // The moon travels under a pointer that is not moving: look again while the pointer is near it.
+    const mp = this.moonPx;
+    const nearMoon =
+      this.hoverInside &&
+      this.mode === 'explore' &&
+      this.moon.enabled &&
+      (this.hoverX - mp.x) ** 2 + (this.hoverY - mp.y) ** 2 < (mp.r * 1.8 + 30) ** 2;
     if (
       this.hoverDirty ||
       this.moonHovered ||
+      nearMoon ||
       (this.rig.isFlying === false && this.hoverSlot >= 0 && this.mode === 'explore')
     )
       this.handleHover();
