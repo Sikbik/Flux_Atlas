@@ -3,7 +3,7 @@
 // change applies at once and is remembered in this browser; nothing is sent anywhere.
 
 import { useRouter, useRouterState } from '@tanstack/react-router';
-import { Bell, BellOff, ChevronRight, Play } from 'lucide-react';
+import { Bell, BellOff, Play } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection, useRuntime } from '../../app/context';
 import { formatUtcTime } from '../../lib/format';
@@ -22,7 +22,7 @@ import { enterAmbient } from '../ambient/enter';
 import artHolo from './assets/art-holo.webp';
 import artMarble from './assets/art-marble.webp';
 import artNeon from './assets/art-neon.webp';
-import { Field, Section, Segmented, type SegOption, SelectBox, Switch } from './controls';
+import { Disclosure, Field, Section, Segmented, type SegOption, SelectBox, Switch } from './controls';
 import { ageLabel, FRESH_SOURCES, freshnessState, lastSignOf } from './freshness';
 import {
   IDLE_OPTIONS_MIN,
@@ -278,43 +278,6 @@ function Notifications() {
 // ---------------------------------------------------------------------------------------------
 // Disclosures: data freshness and achievements
 // ---------------------------------------------------------------------------------------------
-
-/** A native disclosure whose body is only built while it is open. */
-function Disclosure({
-  id,
-  title,
-  aside,
-  open: openInitially,
-  children,
-}: {
-  id: string;
-  title: string;
-  aside?: ReactNode;
-  open?: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(openInitially ?? false);
-  const ref = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if (openInitially) setOpen(true);
-  }, [openInitially]);
-  return (
-    <details
-      id={id}
-      ref={ref}
-      className="set-disc"
-      open={open}
-      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-    >
-      <summary className="set-disc-sum">
-        <ChevronRight size={15} strokeWidth={2.2} className="set-disc-chev" aria-hidden="true" />
-        <span className="set-disc-title">{title}</span>
-        {aside ? <span className="set-disc-aside">{aside}</span> : null}
-      </summary>
-      {open ? <div className="set-disc-body">{children}</div> : null}
-    </details>
-  );
-}
 
 const STATUS_WORD: Record<string, string> = {
   live: 'Live',

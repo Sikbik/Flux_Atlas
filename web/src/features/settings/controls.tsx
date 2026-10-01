@@ -3,8 +3,8 @@
 // free: a segmented control is a radio group, a switch is a checkbox with the switch role, a select is a
 // select. Each exposes `data-*` state and a className pass-through so the motion layer can attach later.
 
-import { ChevronDown } from 'lucide-react';
-import { type CSSProperties, type ReactNode, useId } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
 /** Text for assistive technology only. */
 export function Sr({ children }: { children: ReactNode }) {
@@ -173,5 +173,42 @@ export function SelectBox<T extends string | number>({
       </select>
       <ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
     </span>
+  );
+}
+
+/** A native disclosure whose body is only built while it is open. */
+export function Disclosure({
+  id,
+  title,
+  aside,
+  open: openInitially,
+  children,
+}: {
+  id: string;
+  title: string;
+  aside?: ReactNode;
+  open?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(openInitially ?? false);
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (openInitially) setOpen(true);
+  }, [openInitially]);
+  return (
+    <details
+      id={id}
+      ref={ref}
+      className="set-disc"
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary className="set-disc-sum">
+        <ChevronRight size={15} strokeWidth={2.2} className="set-disc-chev" aria-hidden="true" />
+        <span className="set-disc-title">{title}</span>
+        {aside ? <span className="set-disc-aside">{aside}</span> : null}
+      </summary>
+      {open ? <div className="set-disc-body">{children}</div> : null}
+    </details>
   );
 }

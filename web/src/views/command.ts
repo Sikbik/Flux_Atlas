@@ -7,5 +7,6 @@ import { lazy } from 'react';
 export const SearchResultsView = lazy(() => import('../features/command/results/SearchResultsView'));
 export const TerminalView = lazy(() => import('../features/command/terminal/TerminalView'));
 export const SettingsView = lazy(() => import('../features/settings/SettingsView'));
+export const AboutView = lazy(() => import('../features/settings/about/AboutView'));
 
-export { AboutView, AmbientView } from '../app/placeholders/views';
+export { AmbientView } from '../app/placeholders/views';
