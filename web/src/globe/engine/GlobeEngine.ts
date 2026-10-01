@@ -1569,12 +1569,15 @@ export class GlobeEngine {
     this.focusOnly = on;
   }
 
-  /** Camera fly-to with smooth easing. `alt` is the camera range to the surface, in globe radii. */
+  /**
+   * Camera fly-to with smooth easing. `alt` is the camera range to the surface, in globe radii; `arc` scales the
+   * zoom-out a long flight makes on its way (0 to 1, default 1).
+   */
   flyTo(
     lat: number,
     lon: number,
     alt = 1.2,
-    opts: { tilt?: number; heading?: number; duration?: number; radius?: number } = {},
+    opts: { tilt?: number; heading?: number; duration?: number; radius?: number; arc?: number } = {},
   ): Promise<boolean> {
     this.director?.interrupt();
     return this.rig.flyTo(lat, lon, alt, {
@@ -1582,6 +1585,7 @@ export class GlobeEngine {
       heading: opts.heading ?? 0,
       duration: opts.duration,
       radius: opts.radius,
+      arc: opts.arc,
     });
   }
 

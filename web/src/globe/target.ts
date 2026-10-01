@@ -88,12 +88,16 @@ export interface GlobeTarget {
   nodeInfo(id: number): PickInfo | null;
 
   // ---- camera ----
-  /** Flies so the point lands exactly at the free area's centre. `alt` is the range in globe radii. */
+  /**
+   * Flies so the point lands exactly at the free area's centre. `alt` is the range in globe radii. `arc` (0 to 1,
+   * default 1) scales the zoom-out a long flight makes on its way: 0 keeps the start and end zoom throughout, so
+   * the planet only turns.
+   */
   flyTo(
     lat: number,
     lon: number,
     alt?: number,
-    opts?: { tilt?: number; heading?: number; duration?: number; radius?: number },
+    opts?: { tilt?: number; heading?: number; duration?: number; radius?: number; arc?: number },
   ): Promise<boolean>;
   /** Flies to a node (engine id) so it lands at the free area's centre; the selection then stays locked there. */
   flyToNode(id: number, alt?: number): Promise<boolean>;
