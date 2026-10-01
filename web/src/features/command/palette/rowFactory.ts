@@ -43,7 +43,7 @@ export function nodeRow(store: NetworkStore, i: number, score: number): PaletteR
     sub: nodeSubline(f),
     chip: 'Node',
     ...(f.tier ? { tier: f.tier } : {}),
-    meta: { type: 'status', tone: f.status.tone, label: f.status.label },
+    meta: { type: 'status', status: f.status.kind },
     score,
     action: { type: 'go', target: { to: '/node/$key', params: { key } } },
     ...(fly ? { fly } : {}),

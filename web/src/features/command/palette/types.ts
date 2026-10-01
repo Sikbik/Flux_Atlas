@@ -114,10 +114,19 @@ export type IconId =
   | 'search'
   | 'watch';
 
-export type StatusTone = 'ok' | 'pending' | 'warn' | 'crit' | 'off';
+/** A node's state as the node table reports it; the kit's StatusChip draws each of these. */
+export type NodeStatusKind =
+  | 'unknown'
+  | 'confirmed'
+  | 'started'
+  | 'dos'
+  | 'offline'
+  | 'expired'
+  | 'departed'
+  | 'unreachable';
 
 export type RowMeta =
-  | { type: 'status'; tone: StatusTone; label: string }
+  | { type: 'status'; status: NodeStatusKind }
   | { type: 'keys'; keys: readonly string[] }
   | { type: 'text'; text: string }
   | { type: 'current' };

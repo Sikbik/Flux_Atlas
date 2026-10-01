@@ -11,7 +11,7 @@ import { formatInt } from '../../../lib/format';
 import type { NetworkStore } from '../../../store/network';
 import { Reach } from '../../../store/nodeTable';
 import { matchScore } from './rank';
-import type { StatusTone, TierName } from './types';
+import type { NodeStatusKind, TierName } from './types';
 
 const TIER_BY_CODE: readonly (TierName | null)[] = [null, 'cumulus', 'nimbus', 'stratus'];
 export const TIER_LABEL: Record<TierName, string> = {
@@ -372,20 +372,28 @@ export interface NodeFacts {
   org: string;
   /** 1-based queue position, null when not queued. */
   queue: number | null;
-  status: { tone: StatusTone; label: string };
+  /** The state (the palette draws it with the kit's StatusChip) and its word (the terminal prints it). */
+  status: { kind: NodeStatusKind; label: string };
   lat: number;
   lon: number;
 }
 
-const STATUS_FACT: readonly { tone: StatusTone; label: string }[] = [
-  { tone: 'off', label: 'Unknown' },
-  { tone: 'ok', label: 'Confirmed' },
-  { tone: 'pending', label: 'Started' },
-  { tone: 'crit', label: 'DoS' },
-  { tone: 'off', label: 'Offline' },
-  { tone: 'crit', label: 'Expired' },
-  { tone: 'off', label: 'Departed' },
+/** The words are the kit's (a test holds them equal to `statusMeta`), so the terminal and the chips agree. */
+export const STATUS_FACT: readonly { kind: NodeStatusKind; label: string }[] = [
+  { kind: 'unknown', label: 'Unknown' },
+  { kind: 'confirmed', label: 'Confirmed' },
+  { kind: 'started', label: 'Started' },
+  { kind: 'dos', label: 'DoS' },
+  { kind: 'offline', label: 'Offline' },
+  { kind: 'expired', label: 'Expired' },
+  { kind: 'departed', label: 'Departed' },
 ];
+
+/** A node the table has marked started but could not be reached. */
+export const UNREACHABLE_FACT: { kind: NodeStatusKind; label: string } = {
+  kind: 'unreachable',
+  label: 'Unreachable',
+};
 
 /** The facts a row about node `i` shows, straight from the node table (Unknown stays Unknown). */
 export function nodeFacts(store: NetworkStore, i: number): NodeFacts {
@@ -393,7 +401,7 @@ export function nodeFacts(store: NetworkStore, i: number): NodeFacts {
   const rank = t.rank[i] ?? 0;
   const status =
     t.reachable[i] === Reach.No && t.status[i] === 1
-      ? { tone: 'off' as const, label: 'Unreachable' }
+      ? UNREACHABLE_FACT
       : (STATUS_FACT[t.status[i] ?? 0] ?? STATUS_FACT[0]!);
   return {
     endpoint: t.endpoint(i),

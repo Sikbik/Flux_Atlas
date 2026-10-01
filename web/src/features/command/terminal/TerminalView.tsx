@@ -25,6 +25,7 @@ import { useRuntime } from '../../../app/context';
 import { useGlobeHandles } from '../../../globe';
 import { windowId } from '../../../shell/wm/machine';
 import { useWmDispatch } from '../../../shell/wm/react';
+import { Button, Kbd, KbdCombo, LiveDot } from '../../../ui';
 import { track } from '../../achievements/events';
 import { holdIdle } from '../../ambient/idle';
 import { type NavTarget, navigateTo } from '../navigation';
@@ -427,12 +428,17 @@ export default function TerminalView({ cmd }: { cmd?: string | undefined }) {
 
         {running?.streaming ? (
           <div className="term-live" role="status">
-            <span className="term-live-dot" aria-hidden="true" />
-            <span className="term-live-text">Following. Ctrl+C stops it.</span>
-            <button type="button" className="term-stop" onClick={interrupt}>
-              <Square size={11} aria-hidden="true" />
+            <LiveDot status="ok" />
+            <span className="term-live-text">
+              Following.
+              <span className="term-live-hint">
+                {' '}
+                <KbdCombo keys={['ctrl', 'C']} /> stops it.
+              </span>
+            </span>
+            <Button className="term-stop" size="sm" pill icon={Square} onClick={interrupt}>
               Stop
-            </button>
+            </Button>
           </div>
         ) : null}
 
@@ -495,7 +501,7 @@ export default function TerminalView({ cmd }: { cmd?: string | undefined }) {
             tabIndex={-1}
             aria-label="Complete (Tab)"
           >
-            Tab
+            <Kbd aria-hidden="true">Tab</Kbd>
           </button>
         </div>
 
@@ -521,10 +527,9 @@ export default function TerminalView({ cmd }: { cmd?: string | undefined }) {
       </div>
 
       {away ? (
-        <button type="button" className="term-jump" onClick={toLatest}>
-          <ChevronDown size={13} aria-hidden="true" />
+        <Button className="term-jump" size="sm" pill icon={ChevronDown} onClick={toLatest}>
           Latest
-        </button>
+        </Button>
       ) : null}
     </section>
   );

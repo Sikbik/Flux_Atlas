@@ -386,7 +386,7 @@
   transition: opacity var(--dur-fast) var(--ease-out);
 }
 
-.pal-hint .pal-kbd:last-of-type {
+.pal-hint .ui-kbd:last-of-type {
   margin-right: 2px;
 }
 

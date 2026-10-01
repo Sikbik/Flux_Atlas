@@ -1,79 +1,52 @@
-// The pieces a palette row is made of: the icon tile, the matched-prefix title, the type chip, status
-// chips and key caps. The results page and the terminal reuse them.
+// The pieces a palette row is made of: the icon tile, the matched-prefix title, the type chip, and the
+// meta on the right. Key caps, status chips and the tier glyph are the UI kit's; what stays here is the
+// row anatomy and the highlight. The results page and the terminal reuse them.
 
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  CircleCheck,
-  CircleDot,
-  CircleMinus,
-  CornerDownLeft,
-  OctagonX,
-  TriangleAlert,
-} from 'lucide-react';
-import { memo, type ReactNode } from 'react';
+import { ArrowDown, ArrowUp, Check, CornerDownLeft } from 'lucide-react';
+import { memo } from 'react';
+import { Kbd, KbdCombo, Skeleton, StatusChip } from '../../../ui';
 import { RowIcon } from '../icons';
 import { altKeyLabel, modKeyLabel } from '../keys';
 import { highlight } from './rank';
 import './rows.css';
-import type { PaletteRow, RowMeta, StatusTone } from './types';
+import type { PaletteRow, RowMeta } from './types';
 
-/** A key cap per key, never "Ctrl+K" as one string (design 8.9). */
+/** The word a key token stands for (`mod` is Ctrl or the command key, `alt` is Alt or the option key). */
+export function keyLabel(k: string): string {
+  switch (k) {
+    case 'mod':
+      return modKeyLabel();
+    case 'alt':
+      return altKeyLabel();
+    default:
+      return k;
+  }
+}
+
+/** One key cap per key, never "Ctrl+K" as one string (design 8.9): the kit's Kbd, with arrows as glyphs. */
 export function KeyCap({ k }: { k: string }) {
-  let label: ReactNode = k;
   switch (k) {
     case 'up':
-      label = <ArrowUp size={11} strokeWidth={2.2} aria-label="up" />;
-      break;
+      return (
+        <Kbd>
+          <ArrowUp size={11} strokeWidth={2.2} aria-label="up" />
+        </Kbd>
+      );
     case 'down':
-      label = <ArrowDown size={11} strokeWidth={2.2} aria-label="down" />;
-      break;
-    case 'enter':
-      label = 'enter';
-      break;
+      return (
+        <Kbd>
+          <ArrowDown size={11} strokeWidth={2.2} aria-label="down" />
+        </Kbd>
+      );
     case 'return':
-      label = <CornerDownLeft size={11} strokeWidth={2.2} aria-label="enter" />;
-      break;
-    case 'mod':
-      label = modKeyLabel();
-      break;
-    case 'alt':
-      label = altKeyLabel();
-      break;
+      return (
+        <Kbd>
+          <CornerDownLeft size={11} strokeWidth={2.2} aria-label="enter" />
+        </Kbd>
+      );
     default:
-      label = k;
+      return <Kbd>{keyLabel(k)}</Kbd>;
   }
-  return <kbd className="pal-kbd">{label}</kbd>;
-}
-
-export function KeyCaps({ keys }: { keys: readonly string[] }) {
-  return (
-    <span className="pal-keys">
-      {keys.map((k) => (
-        <KeyCap key={k} k={k} />
-      ))}
-    </span>
-  );
-}
-
-const STATUS_ICON: Record<StatusTone, typeof CircleCheck> = {
-  ok: CircleCheck,
-  pending: CircleDot,
-  warn: TriangleAlert,
-  crit: OctagonX,
-  off: CircleMinus,
-};
-
-/** An icon and a word, so status is never colour alone (design 10.6). */
-export function StatusChip({ tone, label }: { tone: StatusTone; label: string }) {
-  const Icon = STATUS_ICON[tone];
-  return (
-    <span className="pal-status" data-status={tone}>
-      <Icon size={11} strokeWidth={2} aria-hidden="true" />
-      {label}
-    </span>
-  );
 }
 
 /** The title with the part the query matched marked (the matched prefix reads as white semibold). */
@@ -97,9 +70,9 @@ export function Marked({ text, q }: { text: string; q: string }) {
 function Meta({ meta }: { meta: RowMeta }) {
   switch (meta.type) {
     case 'status':
-      return <StatusChip tone={meta.tone} label={meta.label} />;
+      return <StatusChip size="sm" status={meta.status} />;
     case 'keys':
-      return <KeyCaps keys={meta.keys} />;
+      return <KbdCombo keys={meta.keys.map(keyLabel)} />;
     case 'text':
       return <span className="pal-metatext">{meta.text}</span>;
     case 'current':
@@ -205,3 +178,22 @@ export const RowView = memo(function RowView({
     </div>
   );
 });
+
+const SKELETON_SLOTS = ['a', 'b', 'c', 'd', 'e', 'f'] as const;
+
+/** Placeholder rows with the geometry of a result row (icon tile, title, sub-line), never a spinner. */
+export function RowSkeletons({ count = 3 }: { count?: number }) {
+  return (
+    <div className="pal-skels" aria-hidden="true">
+      {SKELETON_SLOTS.slice(0, count).map((slot, i) => (
+        <div key={slot} className="pal-skel" style={{ '--i': i } as React.CSSProperties}>
+          <Skeleton className="pal-skel-ic" w={30} h={30} radius={9} />
+          <span>
+            <Skeleton w={190} h={11} radius={4} />
+            <Skeleton w={120} h={9} radius={4} />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -2,6 +2,7 @@
 
 .res-panel {
   position: relative;
+  container-type: inline-size;
   width: min(700px, calc(100vw - var(--dock-w) - var(--space-12, 48px)));
   border: 1px solid var(--line-2);
   border-radius: var(--r-xl);
@@ -19,172 +20,65 @@
   }
 }
 
-.res-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: var(--space-6) var(--space-6) var(--space-4);
-}
-
-.res-heading {
-  min-width: 0;
-}
-
-.res-eyebrow {
-  margin: 0 0 6px;
-  color: var(--accent-400);
-  font: var(--fw-semibold) 11px / 1 var(--font-display);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.res-title {
-  margin: 0;
-  color: var(--text-1);
-  font: var(--fw-semibold) var(--fs-xl) / 1.25 var(--font-display);
-  overflow-wrap: anywhere;
+/* Close sits in the panel's top corner, on the header's kind row, at every width (the kit's actions slot
+   would drop it onto a row of its own when the panel is narrow). The inset follows the header's margin. */
+.res-close {
+  position: absolute;
+  z-index: 1;
+  top: var(--space-5);
+  right: var(--space-6);
 }
 
 .res-q {
   color: var(--accent-200);
 }
 
-/* The one editorial line of the page. */
+/* The one editorial line of the page: what the search found, set in the accent face. */
 .res-sum {
-  margin: 8px 0 0;
   color: var(--text-3);
   font: italic var(--fw-regular) var(--fs-md) / 1.4 var(--font-accent);
 }
 
-.res-close {
-  flex: none;
+/* The refine field and the kind tabs sit under the kit's view header, on its side margins; the list's
+   rows carry 12 px of their own, so the body gives up that much and the icon tiles line up with the
+   field's edge. The margins fold with the panel's width, as the header's do. */
+.res-tools {
   display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-md);
-  background: var(--ink-2);
-  color: var(--text-2);
-  cursor: pointer;
-  transition:
-    background-color var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-instant) var(--ease-out);
-}
-
-.res-close:hover {
-  background: var(--ink-3);
-  border-color: var(--line-3);
-}
-
-.res-close:active {
-  transform: scale(0.96);
-}
-
-.res-close:focus-visible {
-  outline: 2px solid var(--accent-400);
-  outline-offset: 2px;
-}
-
-.res-refine {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 38px;
-  margin: 0 var(--space-6);
-  padding: 0 12px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-md);
-  background: var(--ink-1);
-  color: var(--accent-400);
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out);
-}
-
-.res-refine:hover {
-  border-color: var(--line-3);
-}
-
-.res-refine:focus-within {
-  border-color: var(--accent-400);
-  box-shadow: 0 0 0 3px rgb(79 122 212 / 0.18);
-}
-
-.res-refine input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: none;
-  color: var(--text-1);
-  caret-color: var(--accent-400);
-  font: var(--fw-regular) var(--fs-sm) / 1.2 var(--font-sans);
-}
-
-.res-refine input::placeholder {
-  color: var(--text-3);
-}
-
-.res-kinds {
-  display: flex;
-  gap: 6px;
-  padding: 12px var(--space-6) 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.res-kinds::-webkit-scrollbar {
-  display: none;
-}
-
-/* The kind chips reuse the palette's .pal-kind look, so they need its geometry here too. */
-.res-kinds .pal-kind {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 11px;
-  border: 1px solid transparent;
-  border-radius: var(--r-pill);
-  background: none;
-  color: var(--text-3);
-  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-display);
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
-}
-
-.res-kinds .pal-kind:hover {
-  color: var(--text-1);
-}
-
-.res-kinds .pal-kind[data-on] {
-  background: var(--accent-soft);
-  border-color: rgb(79 122 212 / 0.35);
-  color: var(--accent-200);
-}
-
-.res-kinds .pal-kind:focus-visible {
-  outline: 2px solid var(--accent-400);
-  outline-offset: 2px;
-}
-
-.res-kinds .pal-kind i {
-  font: var(--fw-medium) 10.5px / 1 var(--font-mono);
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.8;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6) 0;
 }
 
 .res-body {
-  padding: var(--space-3) var(--space-4) var(--space-5);
   min-height: 140px;
+  padding: var(--space-3) calc(var(--space-6) - 12px) var(--space-5);
+}
+
+@container (min-width: 600px) {
+  .res-close {
+    right: var(--space-8);
+  }
+
+  .res-tools {
+    padding-inline: var(--space-8);
+  }
+
+  .res-body {
+    padding-inline: calc(var(--space-8) - 12px);
+  }
+}
+
+@container (max-width: 399px) {
+  .res-close {
+    right: var(--space-5);
+  }
+
+  .res-tools {
+    padding-inline: var(--space-5);
+  }
+
+  .res-body {
+    padding-inline: 0;
+  }
 }
 
 .res-group {
@@ -201,21 +95,10 @@
   font-size: var(--fs-xs);
 }
 
+/* On a phone the page slot is the full width less its margins (the shell's phone layout, under 720 px). */
 @media (max-width: 719px) {
-  .res-head {
-    padding: var(--space-5) var(--space-5) var(--space-3);
-  }
-
-  .res-refine {
-    margin: 0 var(--space-5);
-  }
-
-  .res-kinds {
-    padding: 12px var(--space-5) 0;
-  }
-
-  .res-body {
-    padding-inline: var(--space-2);
+  .res-panel {
+    width: calc(100vw - 2 * var(--space-5));
   }
 }
 

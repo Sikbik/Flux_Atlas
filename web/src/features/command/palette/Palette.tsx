@@ -11,11 +11,12 @@ import { Info, Search, SearchX } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNetwork, useRuntime } from '../../../app/context';
 import { useGlobeHandles } from '../../../globe';
+import { EmptyState } from '../../../ui';
 import { track } from '../../achievements/events';
 import { hasMod } from '../keys';
 import { writePaletteText } from '../paletteUrl';
 import { loadRecents } from './recents';
-import { KeyCap, optionId, RowView } from './rows';
+import { KeyCap, optionId, RowSkeletons, RowView } from './rows';
 import { type RunCtx, type RunMode, runRow } from './run';
 import { KIND_CHIPS, type KindChip, type PaletteRow, type Prefix } from './types';
 import { type ServerState, useSearchModel } from './useSearchModel';
@@ -451,7 +452,7 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
               />
             </div>
           ) : null}
-          {showSkeleton ? <Skeleton /> : null}
+          {showSkeleton ? <RowSkeletons /> : null}
           {showEmpty ? (
             <Empty text={text} chip={chip} chipLabel={chipLabel} prefix={model.input.prefix} />
           ) : null}
@@ -495,22 +496,6 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
       <div className="pal-live" role="status" aria-live="polite">
         {announce}
       </div>
-    </div>
-  );
-}
-
-function Skeleton() {
-  return (
-    <div className="pal-skels" aria-hidden="true">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="pal-skel" style={{ '--i': i } as React.CSSProperties}>
-          <i className="pal-skel-ic" />
-          <span>
-            <i className="pal-skel-a" />
-            <i className="pal-skel-b" />
-          </span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -571,11 +556,9 @@ function Empty({
       ? 'Try a block height, a hash, a transaction id, an address, an IP with a port, or an app name.'
       : 'Press tab to look under another kind, or go back to All.';
   return (
-    <div className="pal-empty">
-      <SearchX size={22} strokeWidth={1.6} aria-hidden="true" />
-      <b>{title}</b>
-      <p>{body}</p>
-    </div>
+    <EmptyState compact className="pal-empty" icon={SearchX} role="status" title={title}>
+      {body}
+    </EmptyState>
   );
 }
 

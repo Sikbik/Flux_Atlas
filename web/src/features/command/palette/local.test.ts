@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { NetworkStore } from '../../../store/network';
 import { bootstrap, syntheticNodesBin } from '../../../testing/fixtures';
+import { statusMeta } from '../../../ui/chips/statusMeta';
 import {
   altForRadius,
   buildLocalIndex,
@@ -16,7 +17,9 @@ import {
   matchVersions,
   nodeFacts,
   nodeSubline,
+  STATUS_FACT,
   shareText,
+  UNREACHABLE_FACT,
 } from './local';
 
 let store: NetworkStore;
@@ -115,6 +118,14 @@ describe('describing a node', () => {
     expect(nodeSubline({ ...f, city: '', countryCode: '', queue: null })).toContain('Unknown location');
     expect(nodeSubline({ ...f, queue: 1 })).toContain('next in line');
     expect(nodeSubline({ ...f, queue: 12 })).toContain('queue #12');
+  });
+});
+
+describe('node states', () => {
+  it('are worded exactly as the kit words them, so the terminal and the chips agree', () => {
+    for (const f of [...STATUS_FACT, UNREACHABLE_FACT]) {
+      expect(statusMeta(f.kind).label).toBe(f.label);
+    }
   });
 });
 

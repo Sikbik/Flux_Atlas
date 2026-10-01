@@ -3,13 +3,14 @@
 // nothing routable ends up. The same model feeds both, so a row looks and behaves the same in each.
 
 import { useRouter } from '@tanstack/react-router';
-import { Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search, SearchX, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRuntime } from '../../../app/context';
 import { useGlobeHandles } from '../../../globe';
 import { formatInt } from '../../../lib/format';
+import { EmptyState, IconButton, SearchField, type TabItem, Tabs, ViewHeader } from '../../../ui';
 import { PAGE_LIMITS } from '../palette/model';
-import { RowView } from '../palette/rows';
+import { RowSkeletons, RowView } from '../palette/rows';
 import { type RunCtx, type RunMode, runRow } from '../palette/run';
 import { KIND_CHIPS, type KindChip, type PaletteModel, type PaletteRow } from '../palette/types';
 import { useSearchModel } from '../palette/useSearchModel';
@@ -31,7 +32,6 @@ export function SearchResultsView({ text }: { text: string }) {
   const handles = useGlobeHandles();
   const [chip, setChip] = useState<KindChip>('all');
   const { model, server } = useSearchModel({ raw: text, chip, limits: PAGE_LIMITS, ask: 'all' });
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const ctx = useMemo<RunCtx>(
     () => ({ router, store, engine: () => handles.engine.get(), dismiss: () => {}, page: true }),
@@ -62,9 +62,8 @@ export function SearchResultsView({ text }: { text: string }) {
     [ctx],
   );
 
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const v = inputRef.current?.value.trim() ?? '';
+  const refine = (value: string) => {
+    const v = value.trim();
     if (!v || v === text) return;
     void router.navigate({ to: '/q/$text', params: { text: v }, hash: 'all', replace: true } as never);
   };
@@ -72,59 +71,50 @@ export function SearchResultsView({ text }: { text: string }) {
   const loading = server === 'loading';
   let index = 0;
 
+  const kinds = useMemo<TabItem<KindChip>[]>(
+    () =>
+      KIND_CHIPS.map((k) => {
+        const n = model.counts[k.id];
+        return { id: k.id, label: k.label, ...(k.id !== 'all' && n > 0 ? { badge: n } : {}) };
+      }),
+    [model.counts],
+  );
+
   return (
-    <section className="res-panel" aria-labelledby="res-title">
-      <header className="res-head">
-        <div className="res-heading">
-          <p className="res-eyebrow">Search</p>
-          <h1 id="res-title" className="res-title">
+    <section className="res-panel" aria-label={`Results for ${text}`}>
+      <ViewHeader
+        kind="Search"
+        icon={Search}
+        title={
+          <>
             Results for <span className="res-q">{text}</span>
-          </h1>
-          <p className="res-sum" aria-live="polite">
+          </>
+        }
+        subtitle={
+          <span className="res-sum" aria-live="polite">
             {summary(model, loading)}
-          </p>
-        </div>
-        <button type="button" className="res-close" onClick={close} aria-label="Close the results">
-          <X size={16} strokeWidth={1.9} aria-hidden="true" />
-        </button>
-      </header>
+          </span>
+        }
+      />
+      <IconButton
+        className="res-close"
+        icon={X}
+        label="Close the results"
+        size="sm"
+        variant="secondary"
+        onClick={close}
+      />
 
-      {/* biome-ignore lint/a11y/useSemanticElements: the form is itself the search landmark; <search> would add a wrapper the layout does not need */}
-      <form className="res-refine" onSubmit={onSubmit} role="search">
-        <Search size={16} strokeWidth={1.9} aria-hidden="true" />
-        <input
-          ref={inputRef}
+      <div className="res-tools">
+        <SearchField
           key={text}
-          defaultValue={text}
-          type="text"
           aria-label="Refine the search"
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
           placeholder="Refine the search"
+          defaultValue={text}
+          loading={loading}
+          onSubmit={refine}
         />
-      </form>
-
-      <div className="res-kinds" role="radiogroup" aria-label="Kind of result">
-        {KIND_CHIPS.map((k) => {
-          const n = model.counts[k.id];
-          return (
-            // biome-ignore lint/a11y/useSemanticElements: a segmented control; native radios cannot take this look
-            <button
-              key={k.id}
-              type="button"
-              role="radio"
-              aria-checked={chip === k.id}
-              className="pal-kind"
-              data-on={chip === k.id ? '' : undefined}
-              onClick={() => setChip(k.id)}
-            >
-              {k.label}
-              {k.id !== 'all' && n > 0 ? <i>{n}</i> : null}
-            </button>
-          );
-        })}
+        <Tabs size="sm" aria-label="Kind of result" items={kinds} value={chip} onChange={setChip} />
       </div>
 
       <div className="res-body">
@@ -155,26 +145,17 @@ export function SearchResultsView({ text }: { text: string }) {
             ) : null}
           </div>
         ))}
-        {loading && model.groups.length === 0 ? (
-          <div className="pal-skels" aria-hidden="true">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="pal-skel" style={{ '--i': i } as React.CSSProperties}>
-                <i className="pal-skel-ic" />
-                <span>
-                  <i className="pal-skel-a" />
-                  <i className="pal-skel-b" />
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        {loading && model.groups.length === 0 ? <RowSkeletons count={4} /> : null}
         {!loading && model.empty ? (
-          <div className="pal-empty">
-            <b>No match for '{text}'</b>
-            <p>
-              Try a block height, a hash, a transaction id, an address, an IP with a port, or an app name.
-            </p>
-          </div>
+          <EmptyState
+            compact
+            className="pal-empty"
+            icon={SearchX}
+            role="status"
+            title={`No match for '${text}'`}
+          >
+            Try a block height, a hash, a transaction id, an address, an IP with a port, or an app name.
+          </EmptyState>
         ) : null}
       </div>
     </section>
