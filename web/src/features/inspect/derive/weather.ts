@@ -8,6 +8,7 @@
 
 import { STATUS_CODES } from '../../../api/nodesBin';
 import { type NodeTable, Reach } from '../../../store/nodeTable';
+import { countryName } from './appSpec';
 import { blocksSinceConfirm, isAtRisk } from './expiry';
 
 /** The server's per-node view, as compact columns indexed by scan order. */
@@ -187,6 +188,27 @@ export interface Hotspot {
   /** How many times the network's own rate this cell's rate is. */
   lift: number;
   level: 'unsettled' | 'storm';
+  /** The country code and provider most of the affected nodes share (empty when none is known). */
+  country: string;
+  org: string;
+}
+
+/** The most common non-empty value of `pick` over a list (the first to reach the top count wins a tie). */
+function dominant(list: readonly Problem[], pick: (p: Problem) => string): string {
+  const n = new Map<string, number>();
+  let best = '';
+  let top = 0;
+  for (const p of list) {
+    const k = pick(p);
+    if (!k) continue;
+    const c = (n.get(k) ?? 0) + 1;
+    n.set(k, c);
+    if (c > top) {
+      best = k;
+      top = c;
+    }
+  }
+  return best;
 }
 
 /**
@@ -231,10 +253,25 @@ export function hotspots(
       atRisk: list.filter((p) => p.atRisk).length,
       lift,
       level: bad >= 5 && lift >= 4 && ratio >= 1 / 7 ? 'storm' : 'unsettled',
+      country: dominant(list, (x) => x.country),
+      org: dominant(list, (x) => x.org),
     });
   }
   return out.sort((a, b) => b.bad - a.bad || b.lift - a.lift);
 }
+
+const compass = (deg: number, pos: string, neg: string) =>
+  `${Math.abs(deg).toFixed(1)}${deg >= 0 ? pos : neg}`;
+
+/** What to call a hotspot: its provider and country, or its coordinates when neither is known. */
+export function placeName(h: Pick<Hotspot, 'org' | 'country' | 'lat' | 'lon'>): string {
+  const parts = [h.org, h.country ? countryName(h.country) : ''].filter(Boolean);
+  return parts.length ? parts.join(', ') : `${compass(h.lat, 'N', 'S')} ${compass(h.lon, 'E', 'W')}`;
+}
+
+/** "6.2x" for a hotspot's rate against the network's own (whole numbers from ten up). */
+export const formatLift = (lift: number): string =>
+  Number.isFinite(lift) ? `${lift >= 10 ? Math.round(lift) : lift.toFixed(1)}x` : 'far above';
 
 // ---- breakdowns -------------------------------------------------------------------------------------
 

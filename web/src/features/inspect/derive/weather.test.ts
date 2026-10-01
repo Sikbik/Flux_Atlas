@@ -8,9 +8,11 @@ import {
   cellKey,
   cellTotals,
   emptyScan,
+  formatLift,
   groupTotals,
   hotspots,
   type Problem,
+  placeName,
   verdictOf,
 } from './weather';
 
@@ -139,6 +141,16 @@ describe('hotspots and breakdowns', () => {
     expect(spots[0]!.lift).toBeCloseTo(0.15 / 0.02, 6);
   });
 
+  it('names a hotspot by the provider and country most of its affected nodes share', () => {
+    const problems = [
+      p(1, 50.1, 8.2, { org: 'Hetzner', country: 'DE' }),
+      p(2, 50.3, 8.4, { org: 'Hetzner', country: 'DE' }),
+      p(3, 50.6, 8.9, { org: 'OVH', country: 'FR' }),
+    ];
+    const spots = hotspots(problems, new Map([[cellKey(50.1, 8.2), 12]]), 0.02);
+    expect(spots[0]).toMatchObject({ org: 'Hetzner', country: 'DE' });
+  });
+
   it('calls a dense, severe cell a storm', () => {
     const problems = Array.from({ length: 6 }, (_, i) => p(i, 40.1 + i * 0.05, 3.1));
     const spots = hotspots(problems, new Map([[cellKey(40.1, 3.1), 24]]), 0.02);
@@ -174,5 +186,19 @@ describe('hotspots and breakdowns', () => {
     ]);
     expect(groupTotals(t).byCountry.size).toBe(0);
     expect(cellTotals(t).get(cellKey(1, 1))).toBe(2);
+  });
+});
+
+describe('placeName and formatLift', () => {
+  it('names a place by provider and country, and falls back to coordinates', () => {
+    expect(placeName({ org: 'Hetzner', country: 'DE', lat: 50, lon: 8 })).toBe('Hetzner, Germany');
+    expect(placeName({ org: '', country: 'DE', lat: 50, lon: 8 })).toBe('Germany');
+    expect(placeName({ org: '', country: '', lat: -33.86, lon: 151.2 })).toBe('33.9S 151.2E');
+  });
+
+  it('writes a rate against the network as a short multiple', () => {
+    expect(formatLift(6.234)).toBe('6.2x');
+    expect(formatLift(24.6)).toBe('25x');
+    expect(formatLift(Number.POSITIVE_INFINITY)).toBe('far above');
   });
 });
