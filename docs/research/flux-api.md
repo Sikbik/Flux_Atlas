@@ -485,7 +485,7 @@ Ambiguity to flag: **the per-app "cost" (valueSat) of each update is in permanen
   - (a) Poll `fluxnodecurrentwinner` at each new height H. Its three collaterals are the payees of block H+1. Confirm this against the coinbase addresses (`vout[1..3]`).
   - (b) Backfill: in any node-list snapshot, for each tier the node with `last_paid_height == h` is the payee of block h. This covers about one cycle back (about 13 to 28 h). Coverage is 1,479 to 1,499 of the last 1,500 heights per tier; the gaps are nodes that have since been re-paid or left.
   - The coinbase alone gives only the payment address, which is ambiguous: up to 424 nodes share one.
-- **Who produced each block:** header `collateral` (first 10 hex of txid plus vout). Match it by prefix against the node list: no collisions among 6,724 current nodes. Producers that have left the list cannot be resolved without history, so **keep a collateral index from the first ingest onward**. `blocksig` can be verified against the node's `pubkey`. Eligibility is a per-slot lottery: `hash(collateral, prevBlockHash, slot) < target` (fluxd `pon.cpp`), and any confirmed node of any tier can win. Emergency blocks signed by a fixed emergency collateral are possible (fluxd `emergencyblock.cpp`; none observed).
+- **Who produced each block:** header `collateral` (first 10 hex of txid plus vout). Match it by prefix against the node list: no collisions among 6,724 current nodes. Producers that have left the list cannot be resolved without history, so **keep a collateral index from the first ingest onward**. `blocksig` can be verified against the node's `pubkey`. Eligibility is a per-slot lottery: `hash(collateral, prevBlockHash, slot) < target` (fluxd `pon.cpp`), and any confirmed node of any tier can win, with the same odds per node (full rule and its consequences for fairness in 6.8). Emergency blocks signed by a fixed emergency collateral are possible (fluxd `emergencyblock.cpp`; none observed).
 - **Upstream ambiguity:** the truncated 10-hex collateral in `getblock` / `getblockheader` comes from `COutPoint::ToString()` (`primitives/transaction.cpp`), while fluxnode RPCs use `ToFullString()`. This is an upstream inconsistency. It could change in a future fluxd, so parse both forms.
 
 ### 5.6 Q6: streaming, caching, limits, CORS, auth
@@ -618,6 +618,33 @@ The zero-fee confirm txs are also visible in the mempool (`getrawmempool/true`) 
 
 ---
 
+### 6.8 Block producer selection under PoN (since 2,020,000)
+Source: fluxd `RunOnFlux/fluxd` @ `8a60ee63` (2026-09-08), read directly:
+[`src/pon/pon.cpp`](https://github.com/RunOnFlux/fluxd/blob/8a60ee6316371a120ae8546c8d42f4cb3bc71158/src/pon/pon.cpp),
+[`src/pon/pon-minter.cpp`](https://github.com/RunOnFlux/fluxd/blob/8a60ee6316371a120ae8546c8d42f4cb3bc71158/src/pon/pon-minter.cpp),
+[`src/chainparams.cpp`](https://github.com/RunOnFlux/fluxd/blob/8a60ee6316371a120ae8546c8d42f4cb3bc71158/src/chainparams.cpp) (mainnet lines 103 to 106 and 152 to 153),
+[`src/init.cpp`](https://github.com/RunOnFlux/fluxd/blob/8a60ee6316371a120ae8546c8d42f4cb3bc71158/src/init.cpp) (`-ponminter`, about line 2117).
+docs.runonflux.io has no PoN page (its API docs are v6.6.1, pre-PoN), so the source is the only definitive reference.
+
+**Consensus rule (what makes a block valid).**
+- Time is cut into **slots** of `nPonTargetSpacing` = 30 s counted from the genesis timestamp: `slot = (nTime - genesisTime) / 30` (`GetSlotNumber`).
+- A node's lottery ticket for a slot is `GetPONHash(collateral, prevBlockHash, slot)`: a double-SHA256 (`CHashWriter`) over the collateral outpoint, the previous block hash and the slot number.
+- The block is valid only if that hash is **≤ the target** in `nBits` (`CheckProofOfNode`), the header's `nodesCollateral` is a **confirmed** fluxnode in the node cache (`g_fluxnodeCache.GetFluxnodeData`), and `blocksig` verifies against that node's `pubKey` (`ContextualCheckPONBlockHeader`). Emergency blocks (`emergencyblock.cpp`, multisig) bypass the lottery.
+- The target is **one number for every node**: no tier, collateral size, benchmark, uptime or last-paid term appears in the hash or the comparison. It adjusts every block from the last 30 blocks' timespan (`GetNextPONWorkRequired`, Digishield-style, clamped to x0.8..x1.25 per step; capped at `ponLimit` = 1/16 odds per node per slot).
+- **Eligible** therefore means: listed in `mapConfirmedFluxnodeData` (status CONFIRMED, any tier) at the previous block, and `hash(collateral, prevBlockHash, slot) ≤ target` for this slot. Started (unconfirmed) and DOS nodes are not eligible.
+
+**Coordination rule (who actually produces; not consensus).**
+- Every mainnet fluxd running as a fluxnode (`-fluxnode`) runs the PoN minter; `-ponminter` exists only for testnet (`init.cpp` refuses it on mainnet).
+- Each slot, every node computes the eligible set and sorts it by PoN hash, lowest first (`GetEligibleNodes`). Rank r waits **r x 4 s** after it notices the slot, then mints only if the tip has not moved and the slot has not ended (`pon-minter.cpp`, lines 244 to 300). So ranks 1 to 7 fit into one 30 s slot; ranks past that never get a turn. It also skips minting when the tip is under 5 s old.
+- The code comments state it plainly: "This ranking is for COORDINATION only, NOT consensus". A valid block from any eligible rank is accepted.
+- Measured at height 2,997,800: `bits` `1f379ebc` gives a per-node, per-slot odds of about 0.00085, so **about 5.7 eligible nodes per slot** across 6,720 confirmed nodes. With about 5.7 expected, a slot has no eligible node only about 0.3% of the time.
+
+**What this means for a fairness model.**
+- **Selection is uniform over confirmed nodes, per slot, before liveness.** Every confirmed node has the same probability of being eligible and the same probability of being rank 1. Tier does not enter.
+- **The realised producer is the lowest-hash eligible node that is actually online and synced and mints within its 4 s window.** When rank 1 is down, lagging, clock-skewed or slow, the slot passes to rank 2, and so on. The expected share of a group is therefore its node share weighted by how reliably its nodes mint, not its raw node share. Nodes that are listed as confirmed but are not running a synced fluxd still hold tickets they cannot use.
+- The observed Cumulus deficit (47.4% of 8,341 blocks against 50.3% of nodes) and the matching Nimbus and Stratus surplus are consistent with Cumulus nodes failing their turn more often. **That cause is a hypothesis, not verified here.** Testing it would need a per-node liveness signal, for example the stats `fluxinfo` unreachable set, joined against producers.
+- The analytics null model should be "uniform over confirmed nodes at the previous block" (count the CONFIRMED list per block, not all listed nodes). A deviation from that model measures minting reliability, not a protocol bias.
+
 ## 7. Recommended ingestion plan
 
 Sizes are brotli-compressed transfer. "Per day" assumes steady state.
@@ -722,7 +749,7 @@ Full untrimmed dumps for perf testing: `/tmp/claude-1000/-home-stache-Projects-F
 
 ## Sources
 - FluxOS `RunOnFlux/flux` @ `3ca1ab9f` (v8.20.0, 2026-09-25): `ZelBack/src/routes.js`, `ZelBack/config/default.js`, `services/fluxCommunication.js`, `services/utils/FluxPeerManager.js`, `services/enterpriseNodesService.js`, `services/appPlacement/{placementFeasibility,ipLocationStore}.js`, `services/appMessaging/messageVerifier.js`, `services/utils/appSpecHelpers.js`, `services/appDatabase/registryManager.js`, `lib/socketHandlers.js`.
-- fluxd `RunOnFlux/fluxd` @ `8a60ee63` (2026-09-08; release v9.1.0): `src/rpc/{blockchain,fluxnode,mining}.cpp`, `src/pon/pon.cpp`, `src/fluxnode/fluxnode.{h,cpp}`, `src/main.cpp` (`GetBlockSubsidy`, `GetFluxnodeSubsidy`), `src/chainparams.cpp`, `src/primitives/transaction.cpp`.
+- fluxd `RunOnFlux/fluxd` @ `8a60ee63` (2026-09-08; release v9.1.0): `src/rpc/{blockchain,fluxnode,mining}.cpp`, `src/pon/{pon,pon-minter}.cpp`, `src/init.cpp`, `src/fluxnode/fluxnode.{h,cpp}`, `src/main.cpp` (`GetBlockSubsidy`, `GetFluxnodeSubsidy`), `src/chainparams.cpp`, `src/primitives/transaction.cpp`.
 - `RunOnFlux/fluxos-network-policy` @ `286bc3d9` (2026-09-21): README, `iplocation.bin.gz`.
 - FluxOS release notes v8.19.0 (PR #1801 "Narrow the node's HTTP surface", `/flux/health`) and v8.20.0.
 - Flux announcements: "Forking Flux: Proof of Useful Work v2" (runonflux.com), and RunOnFlux on X about PoN (30 s blocks, per-tier payment every block). Blog posts on Progressive Node Rewards and ArcaneOS.
