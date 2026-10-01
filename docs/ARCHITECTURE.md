@@ -221,6 +221,11 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   a reorg restores it for every orphaned block and drops the orphaned blocks' payments rows, so the replacement
 >   block's payout is attributed against the restored queue, not by the fallback to the first node of the
 >   address.
+>   **Heartbeats before the first list (B9):** a heartbeat (update confirm) of a node the model does not know does
+>   not record a first confirm; `confirmed_height` stays unknown until the list fills it, and meanwhile the queue
+>   key falls back to the last confirm (the back of the queue). Before, the heartbeat's height was recorded as the
+>   first confirm and the newer-than-list rule kept it: seen on a fresh 3110 instance as 15 `confirmed_height`
+>   diffs and 2,586 rank diffs at the second reconcile.
 > - **Mesh expiry.** Each TopologySweep reporter's peer list replaces its previous one. A report not refreshed for
 >   **1 h** (about two sweep cycles) expires, and an edge no unexpired report lists is removed (streamed as a `mesh`
 >   delta).

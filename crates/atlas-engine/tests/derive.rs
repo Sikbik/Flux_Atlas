@@ -878,6 +878,64 @@ fn first_boot_block_before_the_list_is_attributed_by_the_reconcile() {
     assert_eq!(rep.total_diffs(), 0, "{rep:?}");
 }
 
+/// First boot, a block before the list heartbeats a node the engine does not know yet. A
+/// heartbeat (an update confirm) does not say when the node first confirmed, so the list's
+/// `confirmed_height` must stand. Before, the block's height was recorded as the first confirm,
+/// the initial reconcile kept it (the node is newer than the list), and the node queued by that
+/// height: seen live on a fresh instance as 15 `confirmed_height` diffs and 2,586 rank diffs.
+#[test]
+fn a_heartbeat_before_the_first_list_does_not_invent_a_first_confirm() {
+    let list = list_from_model(&common::seeded());
+    let l = list
+        .iter()
+        .filter_map(|n| n.last_confirmed_height.max(n.last_paid_height))
+        .max()
+        .unwrap();
+    // A node queued by its first confirm (never paid), so the height decides its rank.
+    let target = list
+        .iter()
+        .find(|n| n.last_paid_height.is_none_or(|p| p == 0) && n.confirmed_height.is_some())
+        .or_else(|| list.first())
+        .unwrap()
+        .clone();
+    let mut heartbeat =
+        common::block("flux/daemon_getblock_2996886_verbosity2_fluxnode_initial_confirm.json")
+            .node_txs
+            .into_iter()
+            .find(|t| t.kind == atlas_core::chain::NodeTxKind::UpdateConfirm)
+            .unwrap();
+    heartbeat.collateral = target.outpoint;
+    heartbeat.endpoint = target.endpoint;
+    heartbeat.benchmark_tier = Some(target.tier);
+
+    let mut st = NetworkState::default();
+    let mut d = empty_block(l + 1);
+    d.node_txs = vec![heartbeat];
+    apply_block(&mut st, &mut Tick::new(NOW), &d, false);
+    let rep = reconcile(&mut st, &mut Tick::new(NOW), &list);
+    assert_eq!(rep.skipped_newer, 1, "{rep:?}");
+
+    // The next list holds the heartbeat: nothing differs, ranks included.
+    let next: Vec<_> = list
+        .iter()
+        .cloned()
+        .map(|mut n| {
+            if n.outpoint == target.outpoint {
+                n.last_confirmed_height = Some(l + 1);
+            }
+            n
+        })
+        .collect();
+    let rep = reconcile(&mut st, &mut Tick::new(NOW), &next);
+    assert_eq!(rep.total_diffs(), 0, "{rep:?}");
+    assert_eq!(rep.rank_diffs, 0, "{rep:?}");
+    let (id, _) = st.nodes.intern(target.outpoint, NOW);
+    assert_eq!(
+        st.nodes.rec(id).unwrap().confirmed_height,
+        target.confirmed_height
+    );
+}
+
 #[test]
 fn stats_round_location_gets_the_local_geoip_city() {
     let mut st = common::seeded();

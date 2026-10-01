@@ -237,12 +237,12 @@ pub fn apply_block(
                 );
             }
             NodeTxKind::UpdateConfirm | NodeTxKind::OtherConfirm => {
+                // A heartbeat does not say when the node first confirmed: an unknown first
+                // confirm stays unknown until the list fills it (B9; recording `h` here made a
+                // fresh instance queue such nodes by the wrong height until they were paid).
                 if let Some(e) = st.nodes.get_mut(id) {
                     e.rec.last_confirmed_height = Some(h);
                     e.at_risk = false;
-                    if e.rec.confirmed_height.is_none() {
-                        e.rec.confirmed_height = Some(h);
-                    }
                 }
                 ip_change(st, tick, id, ntx.endpoint, &mut updates, time_ms);
                 let old = st.nodes.set_status(id, NodeStatus::Confirmed, now);
