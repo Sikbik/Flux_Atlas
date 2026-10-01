@@ -56,7 +56,7 @@ const paidColumn: DataTableColumn<FleetNode> = {
   header: 'Paid in',
   numeric: true,
   sortable: true,
-  width: 88,
+  width: 104,
   title: 'Estimate: about 30 s per block',
   sortValue: (n) => n.position,
   cell: (n) => <PaidIn node={n} />,
