@@ -5,6 +5,10 @@ import './styles/fonts.css';
 import './styles/global.css';
 import { App } from './app/App';
 import { createRuntime } from './app/runtime';
+import { installStaleBuildRecovery } from './app/staleBuild';
+
+// A chunk from an earlier release that is gone from the server reloads the page once (staleBuild.ts).
+installStaleBuildRecovery();
 
 // The live runtime starts before React renders: the snapshot fetch and the WebSocket connect run in
 // parallel with the first paint.

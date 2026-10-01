@@ -5,6 +5,7 @@
 import { type ErrorComponentProps, Link, useRouter } from '@tanstack/react-router';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { isApiError } from '../api/http';
+import { isChunkLoadError, isReloadingForUpdate } from './staleBuild';
 
 export class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   override state: { error: Error | null } = { error: null };
@@ -33,6 +34,9 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, { error
 
 export function RouteError({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
+  // A view whose code belongs to an earlier release (staleBuild.ts): a reload is on its way, or is the fix.
+  if (isReloadingForUpdate() || isChunkLoadError(error))
+    return <StaleBuild reloading={isReloadingForUpdate()} />;
   const api = isApiError(error) ? error : null;
   const title =
     api?.code === 'not_found'
@@ -60,6 +64,28 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
         >
           Retry
         </button>
+      </div>
+    </section>
+  );
+}
+
+function StaleBuild({ reloading }: { reloading: boolean }) {
+  return (
+    <section className="panel" role="status" data-window="error">
+      <header className="panel-head">
+        <h1 className="panel-title">{reloading ? 'Loading the new version' : 'Flux Atlas was updated'}</h1>
+      </header>
+      <div className="panel-body">
+        <p>
+          {reloading
+            ? 'A new release of Flux Atlas is out. Fetching it now.'
+            : 'This view belongs to an earlier release. Reload to get the current one.'}
+        </p>
+        {reloading ? null : (
+          <button type="button" className="button" onClick={() => location.reload()}>
+            Reload
+          </button>
+        )}
       </div>
     </section>
   );
