@@ -52,7 +52,8 @@ called out in the hand-back.
 |---|---|---|
 | I1 Integration (done, merged 9eb7f04; block latency median 1.0 s live, 0 of 6,725 ranks off over 17 real blocks) | Opus | merge B2, wire watch hooks/config/timeline, ingest-off tests, client rank rules, live E2E against the real network |
 | D1 Deploy & capacity (running, worktree) | Opus | one-port container (`deploy/Dockerfile`, EXPOSE 3000 only, data at `/app/backend/data`), `deploy/flux_app_spec.json` matching the live app, a 2-hour soak inside 1 CPU / 2,500 MB / 10 GB with 200 clients, bounded caches, an enforced disk budget, `atlas db-stats` |
-| B4 Backend fixes (running, worktree) | Opus | API defects reported by the F teams (metrics nulls, step format, tx sizes, mempool kinds), engine counters in Prometheus, time-machine columns, an explicit unranked signal, GeoIP coverage |
+| B4 Backend fixes (done, merged 43c504c; PoN selection rule in research 6.8) | Opus | API defects reported by the F teams (metrics nulls, step format, tx sizes, mempool kinds), engine counters in Prometheus, time-machine columns, an explicit unranked signal, GeoIP coverage |
+| B5 Backend follow-ups (running, worktree) | Opus | city-level geo from DB-IP Lite City (CC BY 4.0, attribution exposed to clients), ranks correct before the first bootstrap after a restart |
 | Q1 Visual QA & polish | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
 | X1 Review | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
 
@@ -86,3 +87,6 @@ called out in the hand-back.
   their worktree branch only. The lead merges into `development`. Each Rust agent uses its own `CARGO_TARGET_DIR`
   to avoid build-lock contention.
 - Contract changes (DTOs, binary formats, WS messages) go through `docs/ARCHITECTURE.md` first.
+- Branch syncs: agents cannot merge `development` into their own worktrees (the permission system blocks it). The
+  user chose lead-run syncs: the agent commits and ends its turn, the lead merges `development` into its branch,
+  resolves conflicts, runs its gates, and resumes it with a change list.
