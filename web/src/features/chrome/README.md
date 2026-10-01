@@ -16,7 +16,7 @@ manager (see its own README).
 | The globe's text | `globe/overlays.tsx` (gates), `overlays/` (labels, tips, moon card, clearance), `cardplace.ts`, `GlobeHome.tsx` (the text twin) |
 | Boot | `boot/Boot.tsx` (eager gate and the quick path), `boot/FullBoot.tsx` (the full timeline, lazy), `veil.css` (eager), `boot.css` (lazy) |
 | Toasts | `toasthost.tsx` (gate), `Toasts.tsx` (the stack), `toaststack.ts` (pure clocks and reconcile), contract in `app/toasts.ts` |
-| Shared pieces | `Beat.tsx` (the beat, the ring, the chip), `live.ts` (one connection summary for every surface), `freshness.ts`, `data.ts`, `glyphs.tsx`, `lazyCard.tsx` |
+| Shared pieces | `Beat.tsx` (the beat, the ring, the chip), `archive.ts` (the time machine's moment and "t minus"), `live.ts` (one connection summary for every surface), `freshness.ts`, `data.ts`, `glyphs.tsx`, `lazyCard.tsx` |
 
 ## Contracts other teams use
 
@@ -29,6 +29,18 @@ manager (see its own README).
   `shell/frame/routing.ts` (`insetFor`), which watches every element whose size changes the free area.
 - **The Live sheet** is UI state (`usePhone`), not a window and not a route: `WindowType` is closed and
   `shell/windowContent.tsx` switches on it exhaustively.
+- **The archive's moment** (`archive.ts`). While the time machine shows a recorded moment, its view
+  (`features/timemachine/hooks/useTimeMachine.ts`, through `publishArchive` and `lib/moment.ts`) writes
+  `data-archive-at` (the playhead, unix ms) to `<html>` beside `data-archive`, with `data-archive-tip` and
+  `data-archive-nodes` (the readings the recording holds for it; absent while unknown), at most every 33 ms,
+  and removes them when it leaves. The Beat, the status bar and the Live sheet read them (`useArchive(select)`,
+  re-rendering only when the value they asked for changes) and switch to the archived moment, with no import of
+  the feature. The Beat becomes a "t minus" readout (a still, dashed ring with a clock face, `T-4 d 11 h`, and
+  `block 2,998,071`; it is not a link, because leaving for a block would end the archive view), the light along
+  the top bar's edge rests, the status bar's tip chip carries the archived tip and `T-...` in the archive's cool
+  grey with no block timer, and the node count is the archived one (the tier split and its card step aside).
+  A reading the recording does not hold is "block unknown" or "Unknown nodes", never zero. Removing the
+  attributes ("Return to live") puts everything back and the Beat rings once.
 
 ## `data-fresh`
 
@@ -101,6 +113,15 @@ The motion language keeps idle loops out of the chrome, so there are none: the c
 last seconds before a block (`data-phase="soon"`), a focused window flares its rim once on arrival instead of
 sweeping every 9 s, and the rail's loading cards are still. The `animation-iteration-count: infinite` search
 over `features/chrome` and `shell` finds nothing but the boot's spinner.
+
+## The block timer in each motion mode
+
+The Beat's ring, the top bar's light, the status bar's fill and the rail's next-block fill are 30 s CSS
+animations started at the right offset (`--since`, set once per block; see `useBlockSince`). Full runs them
+linear. Reduced runs them in one-second steps (`steps(30)`), as the design says. Off runs no animation at all
+(`getAnimations()` finds none of them): the component writes the whole seconds into the interval (`--sec`) with
+each tick, and the stylesheet draws the same state from it, 12 degrees of ring a second and a thirtieth of the
+fill or the bar. The state moves once a second with no tween.
 
 ## What the kit lacked
 

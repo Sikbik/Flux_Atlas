@@ -449,6 +449,174 @@ test('the Pulse and the rail step back while the time machine shows the archive'
   assert.deepEqual(pageErrors, []);
 });
 
+test('the Beat reads t minus and the status bar the archived moment while the time machine shows one', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForSelector('.topbar .beat-anim', { timeout: 30_000 });
+  const beat = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('.topbar .beat');
+      const text = (sel) => document.querySelector(sel)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+      return {
+        tag: el?.tagName,
+        phase: el?.dataset.phase,
+        tip: text('.topbar .beat-tip'),
+        sub: text('.topbar .beat-sub'),
+        ring: !!document.querySelector('.topbar .beat-anim'),
+        light: !!document.querySelector('.topbar-light'),
+        face: !!document.querySelector('.topbar .beat-hist'),
+        statusTip: text('[data-testid="tip-chip"]'),
+        statusTipState: document.querySelector('[data-testid="tip-chip"]')?.dataset.state ?? null,
+        fill: !!document.querySelector('[data-testid="tip-chip"] .sb-prog'),
+        nodes: text('[data-testid="nodes-total"] .sb-nodes'),
+        tiers: !!document.querySelector('[data-testid="nodes-total"] .sb-tiers'),
+      };
+    });
+  const live = await beat();
+  assert.equal(live.tag, 'A', 'the live Beat is a link to the tip block');
+  assert.ok(live.ring && live.light && !live.face, 'the live Beat runs its ring and the bar its light');
+  assert.ok(live.fill, 'the status bar counts to the next block');
+
+  // What the time machine's view writes to the document element while its handle is in the past
+  // (features/chrome/archive.ts): the instant, and the tip and the node count it holds for it.
+  // Four hours and half a minute ago, so the reading is four hours whatever second the clock is on.
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-archive-at', String(Date.now() - 4 * 3_600_000 - 30_000));
+    root.setAttribute('data-archive-tip', '2998071');
+    root.setAttribute('data-archive-nodes', '6726');
+  });
+  await page.waitForSelector('.topbar .beat[data-phase="archive"]', { timeout: 5_000 });
+  const past = await beat();
+  assert.equal(past.tag, 'SPAN', 'a readout, not a link: leaving for a block would end the archive view');
+  assert.equal(past.tip, 'T\u22124 h 00 m');
+  assert.equal(past.sub, 'block 2,998,071');
+  assert.ok(past.face && !past.ring, 'a still ring with a clock face; nothing counts to a block');
+  assert.ok(!past.light, "the bar's light rests");
+  assert.equal(past.statusTipState, 'archive');
+  assert.match(
+    past.statusTip ?? '',
+    /^tip\s*2,998,071\s*T\u22124 h 00 m$/,
+    `the status bar's tip: ${past.statusTip}`,
+  );
+  assert.ok(!past.fill, 'no block timer in the status bar');
+  assert.match(past.nodes ?? '', /^6,726 nodes/, `the node count: ${past.nodes}`);
+  assert.ok(!past.tiers, 'the live tier split steps aside');
+  const spoken = await page.locator('.topbar .beat .sr-only').textContent();
+  assert.equal(spoken, 'Archive view, T minus 4 hours, block 2,998,071');
+
+  // A recording that does not hold a reading says so; it never shows a zero.
+  await page.evaluate(() => {
+    document.documentElement.removeAttribute('data-archive-tip');
+    document.documentElement.removeAttribute('data-archive-nodes');
+  });
+  await page.waitForFunction(
+    () => document.querySelector('.topbar .beat-sub')?.textContent === 'block unknown',
+    null,
+    { timeout: 5_000 },
+  );
+  const unknown = await beat();
+  assert.match(
+    unknown.statusTip ?? '',
+    /^tip\s*Unknown\s*T\u2212/,
+    `the status bar's tip: ${unknown.statusTip}`,
+  );
+  assert.match(unknown.nodes ?? '', /^Unknown nodes/);
+
+  // Return to live: the ring comes back, with one ping, and the status bar counts again.
+  await page.evaluate(() => {
+    for (const a of ['data-archive-at', 'data-archive-tip', 'data-archive-nodes'])
+      document.documentElement.removeAttribute(a);
+  });
+  await page.waitForSelector('.topbar a.beat .beat-anim', { timeout: 5_000 });
+  await page.waitForSelector('.topbar .beat-ping', { state: 'attached', timeout: 2_000 });
+  const back = await beat();
+  assert.equal(back.phase === 'archive', false);
+  assert.ok(back.light && back.fill, 'the light and the fill are back');
+  assert.equal(back.tiers, live.tiers, 'and the tier split with them');
+  // The ring picks up where the block timer is, not where it stood when the archive began.
+  const drift = await page.evaluate(() => {
+    const clock = globalThis.__atlas.clock ?? null;
+    const style = document.querySelector('.topbar .beat-anim')?.style.getPropertyValue('--since');
+    const last = clock?.lastBlockInfo;
+    return { style: Number(style), expect: last ? clock.now() - last.anchorMs : null };
+  });
+  if (drift.expect !== null)
+    assert.ok(
+      Math.abs(drift.style - drift.expect) < 1500,
+      `the ring's offset ${drift.style} vs ${drift.expect}`,
+    );
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
+test('Off draws the block timer as steps: no animation runs, and the state moves once a second', {
+  timeout: 120_000,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForSelector('.topbar .beat-anim', { timeout: 30_000 });
+  // The mode a page forces (the motion root takes it as the document's mode).
+  await page.evaluate(() => document.documentElement.setAttribute('data-motion', 'off'));
+  const timers = () =>
+    page.evaluate(() =>
+      document
+        .getAnimations()
+        .filter((a) => a.playState === 'running')
+        .map((a) => a.animationName ?? '')
+        .filter((n) => /^(beat-(r|l|head|core)|topbar-light|sb-prog)$/.test(n)),
+    );
+  await page.waitForFunction(
+    () =>
+      document
+        .getAnimations()
+        .every((a) => !/^(beat-(r|l|head|core)|topbar-light|sb-prog)$/.test(a.animationName ?? '')),
+    null,
+    { timeout: 5_000 },
+  );
+  assert.deepEqual(await timers(), [], 'the ring, its head, the light and both fills run no animation');
+  const drawn = () =>
+    page.evaluate(() => {
+      const turn = (sel) => {
+        const m = /matrix\(([^)]+)\)/.exec(getComputedStyle(document.querySelector(sel)).transform);
+        if (!m) return null;
+        const [a, b] = m[1].split(',').map(Number);
+        return Math.round((Math.atan2(b, a) * 180) / Math.PI);
+      };
+      const scale = (sel) => {
+        const m = /matrix\(([^)]+)\)/.exec(getComputedStyle(document.querySelector(sel)).transform);
+        return m ? Math.round(Number(m[1].split(',')[0]) * 100) / 100 : null;
+      };
+      return {
+        sec: Number(document.querySelector('.topbar .beat-anim').style.getPropertyValue('--sec')),
+        head: turn('.topbar .beat-head'),
+        fill: scale('[data-testid="tip-chip"] .sb-prog i'),
+      };
+    });
+  // Sampled every 100 ms for 2.4 s, the drawn state takes only the values of whole seconds.
+  const seen = [];
+  for (let i = 0; i < 24; i++) {
+    const s = await drawn();
+    // A block can land mid-way and restart the interval: only compare within one.
+    seen.push(s);
+    await page.waitForTimeout(100);
+  }
+  for (const s of seen) {
+    const headNow = ((s.sec * 12 + 180) % 360) - 180;
+    assert.equal(s.head, headNow === -180 ? 180 : headNow, `the head stands at ${s.sec} s: ${s.head}`);
+    assert.ok(
+      Math.abs((s.fill ?? 0) - Math.min(30, s.sec) / 30) < 0.02,
+      `the fill stands at ${s.sec} s: ${s.fill}`,
+    );
+  }
+  const secs = new Set(seen.map((s) => s.sec));
+  assert.ok(secs.size <= 4, `whole seconds only (${[...secs].join(', ')})`);
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
 test("the moon parks in the phone header's Beat ring while a tall sheet covers its orbit", {
   timeout: 120_000,
 }, async () => {
