@@ -54,6 +54,7 @@ import { Dock } from './Dock';
 import { useShellKeys } from './keys';
 import { useLauncher } from './launchers';
 import { liveSheet } from './livegate';
+import { moonParked } from './moonpark';
 import { isPagePanel } from './nav';
 import { PhoneHeader } from './PhoneHeader';
 import { PhoneTabs } from './PhoneTabs';
@@ -116,6 +117,9 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const sheetKind = sheetOpen ? 'window' : phone && liveOpen ? 'live' : 'none';
   // A full sheet is the whole screen: what it covers (the header) is out of reach for the keyboard and for a screen reader too.
   const sheetFull = useWm((st) => st.sheet === 'full', Object.is) && sheetKind !== 'none';
+  // The moon in the header's Beat ring has a door of its own there (PhoneHeader.tsx); the proxy steps aside for it,
+  // unless the sheet is full and the header is out of reach, when the proxy stays the moon's one control.
+  const moonInHeader = useWm((st) => moonParked(st, liveOpen), Object.is) && !sheetFull;
   const lastKind = useRef(sheetKind);
   useEffect(() => {
     const before = lastKind.current;
@@ -199,7 +203,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         <GlobeOverlay>
           <PlaceLabels />
           <GlobeTooltip />
-          <MoonProxy />
+          <MoonProxy hidden={moonInHeader} />
           <MoonHint home={bareGlobe} />
         </GlobeOverlay>
         <WindowTethers />
