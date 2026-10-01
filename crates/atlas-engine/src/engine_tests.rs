@@ -266,6 +266,49 @@ fn env(ts: u64, e: Event) -> EventEnvelope {
     }
 }
 
+/// L14: one reconstruction replays at most `MAX_REPLAY_EVENTS` events after its keyframe.
+#[test]
+fn time_machine_bounds_the_replay() {
+    use crate::timemachine::{MAX_REPLAY_EVENTS, TimeMachineError};
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("r.redb")).unwrap();
+    let mut b = WriteBatch::new();
+    b.put_snapshot(
+        1_000,
+        &NetworkSnapshot {
+            ts_ms: 1_000,
+            tip_height: 1,
+            nodes: vec![snap_node(1)],
+        },
+    )
+    .unwrap();
+    for i in 0..=MAX_REPLAY_EVENTS as u64 {
+        b.push_event(env(
+            2_000 + i,
+            Event::NodeHeartbeat {
+                node: NodeId(1),
+                height: 2,
+                txid: h(2),
+                endpoint: None,
+                benchmark_tier: None,
+            },
+        ));
+    }
+    store.commit(b).unwrap();
+    // Exactly the limit replays.
+    let at_limit = 2_000 + MAX_REPLAY_EVENTS as u64 - 1;
+    assert_eq!(
+        state_at(&store, at_limit).unwrap().replayed,
+        MAX_REPLAY_EVENTS
+    );
+    // One more is refused, honestly, instead of replaying without bound.
+    let e = state_at(&store, at_limit + 1).unwrap_err();
+    assert!(
+        matches!(e, TimeMachineError::TooManyEvents { keyframe_ms: 1_000, limit } if limit == MAX_REPLAY_EVENTS),
+        "{e}"
+    );
+}
+
 #[test]
 fn time_machine_reconstruction() {
     let dir = tempfile::tempdir().unwrap();
@@ -339,9 +382,18 @@ fn time_machine_reconstruction() {
     assert_eq!(s.nodes[2].lat, Some(48.1));
     let s = state_at(&store, 6_000).unwrap();
     assert_eq!((s.snapshot_ms, s.tip_height, s.nodes.len()), (5_000, 60, 1));
-    // Before any keyframe: replay from the start.
-    let s = state_at(&store, 500).unwrap();
-    assert!(s.nodes.is_empty());
+    // Before the first keyframe: no partial state, an explicit "no data before" (L14).
+    let e = state_at(&store, 500).unwrap_err();
+    assert!(
+        matches!(
+            e,
+            crate::timemachine::TimeMachineError::BeforeHistory {
+                first_ms: Some(1_000)
+            }
+        ),
+        "{e}"
+    );
+    assert_eq!(e.to_string(), "no data before 1970-01-01T00:00:01Z");
     // Binary form decodes; ranks are not recorded, so the column is absent (not zeros).
     use atlas_core::codec::nodes_bin::{decode_nodes_bin, kind};
     let bin = state_at(&store, 3_500).unwrap().to_nodes_bin(9);

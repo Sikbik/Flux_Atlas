@@ -125,6 +125,20 @@ impl From<atlas_store::StoreError> for ApiError {
     }
 }
 
+impl From<atlas_engine::timemachine::TimeMachineError> for ApiError {
+    fn from(e: atlas_engine::timemachine::TimeMachineError) -> Self {
+        use atlas_engine::timemachine::TimeMachineError as E;
+        match e {
+            E::Store(s) => s.into(),
+            E::BeforeHistory { .. } | E::TooManyEvents { .. } => Self::new(
+                StatusCode::NOT_FOUND,
+                ApiErrorCode::NoHistory,
+                e.to_string(),
+            ),
+        }
+    }
+}
+
 impl From<tokio::task::JoinError> for ApiError {
     fn from(e: tokio::task::JoinError) -> Self {
         tracing::error!(error = %e, "blocking task failed");
