@@ -689,6 +689,15 @@ export class GlobeEngine {
     this.moon.status = status;
   }
 
+  /**
+   * Parks the moon as a small flat symbol at a screen point, CSS px (design 7.10.4: the phone header's
+   * Beat mini while a tall or full sheet covers the orbit; `size` is the symbol's height, 24 by default).
+   * It glides there and back (450 ms) and its orbit's clock keeps running; `null` returns it to its orbit.
+   */
+  setMoonPark(at: { x: number; y: number; size?: number } | null): void {
+    this.moon.dock = at ? { x: at.x, y: at.y, size: at.size ?? 24 } : null;
+  }
+
   /** Boot assembly (design 7.10.9): the symbol drawn by the moon's own code. `null` hands over to the orbit. */
   setMoonBoot(boot: MoonBoot | null): void {
     this.moon.boot = boot;
@@ -2720,6 +2729,8 @@ export class GlobeEngine {
     const moon = this.moon;
     if (moon.enabled) {
       moon.reduced = this.reducedMotion;
+      // An app constellation or a focus set (the operator's fan) on screen: the chain steps back (design 7.10.3).
+      moon.chainDim = this.conActive || this.focusOnly ? 1 : 0;
       // A free moon shot (portrait, earthrise, eclipse, follow) lifts the moon onto the sky orbit; otherwise it rides the shell ring.
       moon.lift(this.moonView !== null);
       const mv = this.moonViewBuf;

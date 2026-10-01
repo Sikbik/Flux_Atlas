@@ -168,8 +168,9 @@ export function MoonProxy({ hidden }: { hidden?: boolean }) {
         const el = ref.current;
         if (!el || !engine) return;
         const m = engine.moonState();
-        // The button hugs the moon: its height plus a little air, 44 px at least.
-        const size = Math.max(44, Math.round(m.s * 1.1));
+        // Design 7.10.6: a circle of max(44 px, 1.5 x the moon's height), so its focus ring sits just outside
+        // the moon's hexagonal ring (circumradius 0.70 of the height) instead of cutting through it.
+        const size = Math.max(44, Math.round(m.s * 1.5));
         const dim = m.vis < 0.5;
         const l = last.current;
         if (size !== l.size) {
