@@ -146,6 +146,8 @@ export interface MoonBoot {
 }
 
 const SYM_H = 322.975;
+/** A bead lives this fraction of a lap: it shrinks and fades over about 145 degrees of the path behind the moon. */
+const TRAIL_LIFE = 0.4;
 
 /** sRGB components 0..1 of a #rrggbb color (the tonal look is arithmetic in display space, like the design's canvas). */
 function hexS(hex: string): THREE.Vector3 {
@@ -744,6 +746,7 @@ export class Moon {
     this.halo.renderOrder = 12.5;
     this.chain = new MoonChain(u);
     this.chain.enabled = this.opts.chain;
+    this.chain.life = TRAIL_LIFE * this.opts.period;
     this.group.add(this.seam, this.halo, this.chain.group);
     this.overlay.add(this.hud.orbit, this.hud.glow);
     this.placeBody(this.mixW < 0.999);
@@ -782,6 +785,7 @@ export class Moon {
     this.group.visible = this.opts.enabled;
     this.overlay.visible = this.opts.enabled;
     this.chain.enabled = this.opts.chain;
+    this.chain.life = TRAIL_LIFE * this.opts.period;
     this.setOrbit();
   }
 
@@ -1235,7 +1239,8 @@ export class Moon {
         piecePx: this.piecePx,
         orbit: L.orbit,
         phase: this.phase,
-        guideA: 1,
+        wakeLen: 0.49,
+        wakeA: 1 + 0.8 * this.flash,
         chainA: reduced || o.lite || !o.chain ? 0 : 1,
         beads: this.beadBuf,
         outline: this.outlineBuf,
@@ -1243,7 +1248,7 @@ export class Moon {
         beadN:
           reduced || o.lite || !o.chain
             ? 0
-            : this.chain.companionBeads(time, (tk ? tk.moonOrbitS : 240) * 1.15, this.beadBuf, 24),
+            : this.chain.companionBeads(time, TRAIL_LIFE * this.lapSeconds, this.beadBuf, 24),
         alpha: (1 - e) * alphaK,
       },
       !reduced && !boot && !o.lite,
@@ -1272,7 +1277,7 @@ export class Moon {
     }
     this.chain.shown = sky;
     // The chain of sealed blocks on the orbit (it keeps recording while the moon follows the camera).
-    this.chain.update(time, this.e1, this.e2, o.orbit, this.theta, o.size);
+    this.chain.update(time, this.e1, this.e2, o.orbit, this.theta, o.size, 1 + 0.8 * this.flash, e * alphaK);
     this.placed = true;
   }
 
