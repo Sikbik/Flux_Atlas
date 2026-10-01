@@ -18,8 +18,10 @@ import { useRuntime } from '../../../app/context';
 import { type GlobeBinding, useGlobeBinding } from '../../../globe';
 import { useNow } from '../../../lib/useClock';
 import { NodeTable } from '../../../store/nodeTable';
+import { publishArchive } from '../../chrome/archive';
 import { type Commit, TimeMachine, type TmEnv, type TmState } from '../lib/controller';
 import type { Curve } from '../lib/curve';
+import { momentAt } from '../lib/moment';
 import { DAY, MINUTE, nearestSpeed, parseInstant, speedsFor, toUrlInstant } from '../lib/time';
 import { useHistoryCurve } from './useHistoryCurve';
 
@@ -29,6 +31,8 @@ export const DEFAULT_SPEED = 60;
 const URL_DEBOUNCE_MS = 350;
 /** History this short is not worth scrubbing: the strip says it has only just started recording. */
 const MIN_HISTORY_MS = 2 * MINUTE;
+/** How often the moment on screen is told to the rest of the page while the playhead moves (30 fps, as the design's counters). */
+const MOMENT_EVERY_MS = 33;
 
 export interface TimeMachineData {
   tm: TimeMachine;
@@ -184,6 +188,43 @@ export function useTimeMachine(urlT: string | undefined, urlSpeed: number | unde
       delete root.dataset.archive;
     };
   }, [archive]);
+
+  // And which moment: `data-archive-at` (the playhead, unix ms) with the tip height and the node count the
+  // recording holds for it (features/chrome/archive.ts is the contract). The Beat and the status bar read them;
+  // "Return to live" removes them. The playhead moves every frame, so the page is told at most every 33 ms.
+  const shown = useRef({ curve, info: state.info });
+  useLayoutEffect(() => {
+    shown.current = { curve, info: state.info };
+  }, [curve, state.info]);
+  useEffect(() => {
+    if (!archive) return;
+    const root = document.documentElement;
+    let last = Number.NEGATIVE_INFINITY;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const flush = () => {
+      timer = undefined;
+      last = performance.now();
+      publishArchive(root, momentAt(tm.getT(), shown.current.curve, shown.current.info));
+    };
+    const soon = () => {
+      const wait = last + MOMENT_EVERY_MS - performance.now();
+      if (wait <= 0) flush();
+      else if (timer === undefined) timer = setTimeout(flush, wait);
+    };
+    flush();
+    const offT = tm.subscribeT(soon);
+    const offState = tm.subscribe(soon);
+    return () => {
+      offT();
+      offState();
+      clearTimeout(timer);
+      publishArchive(root, null);
+    };
+  }, [archive, tm]);
+  // A reading that arrives while the playhead rests (the history, the moment's own count) is told as it comes.
+  useEffect(() => {
+    if (archive) publishArchive(document.documentElement, momentAt(tm.getT(), curve, state.info));
+  }, [archive, tm, curve, state.info]);
 
   const leave = useCallback(() => {
     void navigate({ to: '/' } as never);
