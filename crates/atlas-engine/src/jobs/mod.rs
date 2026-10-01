@@ -3,7 +3,7 @@
 
 mod apps;
 mod backfill;
-mod chain;
+pub(crate) mod chain;
 mod maintenance;
 mod market;
 mod registry;

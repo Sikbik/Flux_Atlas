@@ -146,6 +146,16 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   are removed (streamed as a `mesh` delta).
 > - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
 >   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
+> - **Mempool classification.** The socket `tx` push carries no fluxnode type and no OP_RETURN, so a socket node tx
+>   starts as `node_tx`. The chain job then fetches it (`getrawtransaction/<txid>/1`, at most one call every 2.5 s,
+>   newest first, each txid once) and classifies it with the block classifier (`atlas_flux::decode::classify_tx`):
+>   `node_start` / `node_confirm` / `app_message` / `transfer`, with its serialized size. Socket app payments are
+>   fetched too (the OP_RETURN decides), plain socket transfers are complete as pushed, and txids in the 60 s
+>   `getrawmempool` reconcile that the socket never pushed are fetched and streamed as new `mempool` entries.
+>   What stays unknown before mining: whether an app payment registers or updates, and which app (known when the
+>   pending `temporarymessages` entry or the mined `permanentmessages` entry is matched); whether a tx is mined at
+>   all; and the kind of a tx the gateway no longer knows (evicted or mined meanwhile), which keeps its socket
+>   kind (`node_tx`) or stays `unknown`.
 > - **Ingest switch.** `ATLAS_INGEST=0` (or `IngestConfig::disabled()`) runs the engine without ingest jobs: it
 >   restores, publishes and serves the stored state. Tests, fixtures and `demo_server` always run this way.
 
@@ -299,10 +309,10 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /apps/{name}/history` | spec versions with diffs |
 | `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates |
 | `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
-| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs |
+| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations) |
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
-| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras [TBD research] |
+| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. `/mempool` lists the gateway `getrawmempool` set (exact sizes); each tx is classified by the engine with the block classifier (see MempoolStream in 3.2), falling back to what this process saw on the live stream; `kind` is `unknown` only when the tx could not be fetched yet |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
 | `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; columns keyframes do not record, such as rank and hardware, are 0; cached 60 s per t) |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |
@@ -375,7 +385,8 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
     heartbeats: [NodeId], starts: [NodeRef], updates: [NodeId], transfers_over_threshold: [TxLite], reward }`.
     One message per block with its child events, so the client can stage the choreography.
   - `reorg { from_height, to_height, orphaned: [hash] }`
-  - `mempool { txs: [TxLite{txid, value, kind, size}] }` (coalesced per ≤ 500 ms)
+  - `mempool { txs: [TxLite{txid, value, kind, size}] }` (coalesced per ≤ 500 ms; `size` is `null` when unknown,
+    which is the case for socket pushes; a tx the socket never pushed arrives once classified)
   - `nodes { prev_seq, added: [NodeLite], removed: [id], changed: [{id, …changed fields}], cause }`
     (`cause`: reconcile | block | sweep | geo)
   - `apps { prev_seq, upserted: [AppLite], removed: [name], instances: [{app, started: [id], removed: [id]}], cause }`

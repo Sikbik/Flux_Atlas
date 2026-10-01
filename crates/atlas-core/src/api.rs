@@ -633,7 +633,8 @@ pub struct TxLite {
     /// Sum of outputs.
     pub value: Amount,
     pub kind: TxKind,
-    pub size: u32,
+    /// Serialized size in bytes; `null` when unknown (never 0).
+    pub size: Option<u32>,
 }
 
 /// `GET /blocks/{height|hash}`.

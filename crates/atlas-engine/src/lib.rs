@@ -34,7 +34,7 @@ use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use atlas_core::api::{
-    AppIndexEntry, BlockLite, JobFreshness, NetworkSummary, ServerInfo, TierStats,
+    AppIndexEntry, BlockLite, JobFreshness, NetworkSummary, ServerInfo, TierStats, TxLite,
 };
 use atlas_core::live::{LiveBody, LiveMsg, NextPayeeDto};
 use atlas_core::{Amount, NodeId, NodeRecord, now_ms};
@@ -243,6 +243,8 @@ pub struct Published {
     /// Predicted payees of the next block.
     pub next_payees: Arc<[NextPayeeDto]>,
     pub mesh_edge_count: u32,
+    /// The engine mempool, classified, as `(tx, first_seen_ms)`, newest first.
+    pub mempool: Arc<[(TxLite, u64)]>,
 }
 
 impl Published {
@@ -270,6 +272,7 @@ impl Published {
             freshness: Arc::from(Vec::new()),
             next_payees: Arc::from(Vec::new()),
             mesh_edge_count: st.mesh.edge_count() as u32,
+            mempool: st.mempool_list().into(),
         }
     }
 }

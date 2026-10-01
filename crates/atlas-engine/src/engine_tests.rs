@@ -386,3 +386,118 @@ fn time_machine_is_fast_at_network_scale() {
     let limit = if cfg!(debug_assertions) { 1_000 } else { 50 };
     assert!(ms < limit, "reconstruction took {ms} ms");
 }
+
+fn fixture_daemon_block(rel: &str) -> atlas_flux::models::daemon::DaemonBlock {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/research/fixtures")
+        .join(rel);
+    atlas_flux::envelope::parse_envelope("fixture", &std::fs::read(p).unwrap()).unwrap()
+}
+
+#[test]
+fn mempool_txs_use_the_block_classifier() {
+    use crate::jobs::chain::classify_mempool_tx;
+    use atlas_core::chain::TxKind;
+    let b = fixture_daemon_block("explorer/fluxos_daemon_getblock_2996879_with_start_v6.json");
+    let kinds: Vec<(TxKind, Option<u32>)> = b
+        .full_txs()
+        .iter()
+        .filter_map(|tx| match classify_mempool_tx(tx)? {
+            Obs::MempoolClassified { kind, size, .. } => Some((kind, size)),
+            _ => None,
+        })
+        .collect();
+    // Block txs carry no height of their own in verbosity 2: they classify like mempool txs.
+    assert!(kinds.contains(&(TxKind::NodeStart, Some(221))), "{kinds:?}");
+    assert!(kinds.iter().any(|(k, _)| *k == TxKind::NodeConfirm));
+    assert!(kinds.iter().all(|(_, s)| s.is_some()));
+    // A mined transaction (getrawtransaction with a height) is not a mempool tx.
+    let mut mined = b.full_txs()[1].clone();
+    mined.height = Some(2_996_879);
+    assert!(classify_mempool_tx(&mined).is_none());
+}
+
+#[test]
+fn enricher_queue() {
+    use crate::jobs::chain::Enricher;
+    let mut q = Enricher::default();
+    q.push(h(1));
+    q.push(h(2));
+    q.push(h(1));
+    q.done(h(3));
+    let set: std::collections::HashSet<Hash32> = [h(2), h(3), h(4)].into_iter().collect();
+    q.snapshot(&set);
+    // Newest first; h(3) was complete from the socket; each txid at most once.
+    assert_eq!(q.next(), Some(h(4)));
+    assert_eq!(q.next(), Some(h(2)));
+    assert_eq!(q.next(), Some(h(1)));
+    assert_eq!(q.next(), None);
+    q.snapshot(&set);
+    assert!(q.is_empty(), "handled txids are not fetched again");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mempool_classification_refines_and_discovers() {
+    use atlas_core::chain::TxKind;
+    use atlas_flux::insight_socket::SocketTx;
+    let dir = tempfile::tempdir().unwrap();
+    let eng = start(Store::open(dir.path().join("m.redb")).unwrap());
+    let mut rx = eng.subscribe();
+    // The socket pushes a node tx: start or confirm is unknown.
+    inject(
+        &eng,
+        Obs::MempoolTx {
+            tx: SocketTx {
+                txid: h(10),
+                value_out: Amount::ZERO,
+                outputs: Vec::new(),
+                is_rbf: false,
+            },
+            received_ms: now_ms(),
+        },
+    )
+    .await;
+    let set: std::collections::HashSet<Hash32> = [h(10), h(11)].into_iter().collect();
+    inject(&eng, Obs::MempoolSnapshot(set)).await;
+    let classified = |txid, kind| Obs::MempoolClassified {
+        txid,
+        kind,
+        value: Amount::ZERO,
+        size: Some(199),
+        output_count: 0,
+    };
+    // Refines the socket tx; adds h(11), which the socket never pushed; ignores h(12), which is
+    // not in the reconciled set (mined meanwhile).
+    inject(&eng, classified(h(10), TxKind::NodeConfirm)).await;
+    inject(&eng, classified(h(11), TxKind::NodeStart)).await;
+    inject(&eng, classified(h(12), TxKind::NodeStart)).await;
+    until("classified mempool published", || {
+        let p = eng.published();
+        p.mempool.len() == 2
+            && p.mempool
+                .iter()
+                .any(|(t, _)| t.txid == h(10) && t.kind == TxKind::NodeConfirm)
+    })
+    .await;
+    let p = eng.published();
+    let by: std::collections::HashMap<Hash32, &atlas_core::api::TxLite> =
+        p.mempool.iter().map(|(t, _)| (t.txid, t)).collect();
+    assert_eq!(by[&h(10)].size, Some(199));
+    assert_eq!(by[&h(11)].kind, TxKind::NodeStart);
+    assert!(!by.contains_key(&h(12)));
+    // Live: the socket tx as node_tx, then the discovered one; refinements are not re-sent.
+    let mut seen: Vec<(Hash32, TxKind)> = Vec::new();
+    until("mempool messages", || {
+        while let Ok(m) = rx.try_recv() {
+            if let LiveBody::Mempool { txs } = &m.body {
+                seen.extend(txs.iter().map(|t| (t.txid, t.kind)));
+            }
+        }
+        seen.len() >= 2
+    })
+    .await;
+    assert_eq!(
+        seen,
+        vec![(h(10), TxKind::NodeTx), (h(11), TxKind::NodeStart)]
+    );
+}

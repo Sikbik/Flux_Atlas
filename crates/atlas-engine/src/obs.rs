@@ -51,6 +51,15 @@ pub enum Obs {
     },
     /// Current mempool txids (periodic reconciliation).
     MempoolSnapshot(HashSet<Txid>),
+    /// A mempool transaction fetched (`getrawtransaction`) and classified with the block
+    /// classifier: refines a socket `node_tx`, or adds a transaction the socket never pushed.
+    MempoolClassified {
+        txid: Txid,
+        kind: atlas_core::chain::TxKind,
+        value: Amount,
+        size: Option<u32>,
+        output_count: u16,
+    },
     SocketInfo(SocketInfo),
     Price(PriceInfo),
     /// `fluxnodecurrentwinner` for `height`: `(tier, collateral, address)`.

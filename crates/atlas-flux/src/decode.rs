@@ -6,7 +6,7 @@
 //! Node attribution (producer, paid nodes) needs the node table and is left to the engine:
 //! `producer` and `Payout::node` are `None` here.
 
-use atlas_core::chain::{BlockKind, BlockSummary, NodeTx, NodeTxKind, Payout};
+use atlas_core::chain::{BlockKind, BlockSummary, NodeTx, NodeTxKind, Payout, TxKind};
 use atlas_core::emission::{self, split_coinbase};
 use atlas_core::{Amount, BlockHash, Collateral, Hash32, NodeEndpoint, Outpoint, Tier, Txid};
 
@@ -22,6 +22,8 @@ pub struct TransferTx {
     /// `(first address, amount)` per output.
     pub outputs: Vec<(Option<String>, Amount)>,
     pub input_count: u32,
+    /// Serialized size in bytes (see [`DaemonTx::serialized_size`]).
+    pub size: Option<u32>,
 }
 
 /// A payment for an app register/update message.
@@ -113,6 +115,29 @@ pub fn detect_app_payment(tx: &DaemonTx, app_address: &str) -> Option<AppPayment
         message_hash: hash,
         value,
     })
+}
+
+/// Classifies a decoded transaction: the one classifier for block and mempool transactions.
+///
+/// Coinbase, fluxnode start / confirm (from the fluxnode `type`), app-message payment (an
+/// OP_RETURN carrying a message hash plus a payment to `app_address`, as in
+/// [`detect_app_payment`]), otherwise a transfer.
+pub fn classify_tx(tx: &DaemonTx, app_address: &str) -> TxKind {
+    if tx.is_coinbase() {
+        TxKind::Coinbase
+    } else if tx.is_fluxnode() {
+        if tx.is_start() {
+            TxKind::NodeStart
+        } else if tx.is_confirm() {
+            TxKind::NodeConfirm
+        } else {
+            TxKind::NodeTx
+        }
+    } else if detect_app_payment(tx, app_address).is_some() {
+        TxKind::AppMessage
+    } else {
+        TxKind::Transfer
+    }
 }
 
 /// Decodes a verbosity-2 block.
@@ -212,6 +237,7 @@ pub fn decode_block_with(block: &DaemonBlock, app_address: &str) -> Result<Decod
             value_out: tx_value,
             outputs,
             input_count: u32::try_from(tx.vin.len()).unwrap_or(u32::MAX),
+            size: tx.serialized_size(),
         });
     }
 

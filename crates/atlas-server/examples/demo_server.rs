@@ -397,7 +397,7 @@ impl Demo {
                 txid: hash("transfer", self.tx_counter),
                 value: Amount::from_flux(self.rng.range(10_000, 250_000) as i64),
                 kind: TxKind::Transfer,
-                size: 400,
+                size: Some(400),
             };
             self.feed(
                 FeedKind::LargeTransfer,
@@ -663,7 +663,7 @@ impl Demo {
             txid: hash("mempool", self.tx_counter),
             value,
             kind,
-            size,
+            size: Some(size),
         };
         self.mempool_since_block.push(tx.clone());
         self.emit(Some(now_ms()), LiveBody::Mempool { txs: vec![tx] });

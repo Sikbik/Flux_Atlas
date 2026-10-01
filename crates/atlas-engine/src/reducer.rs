@@ -17,7 +17,7 @@ use atlas_core::live::{
     AppInstancesDelta, AppsDelta, DeltaCause, FeedKind, FeedRef, LiveBody, MeshDelta,
     NextPayeesMsg, ReorgMsg,
 };
-use atlas_core::{Amount, Hash32, NodeId, NodeRecord, NodeStatus, Tier, now_ms};
+use atlas_core::{Amount, Hash32, NodeId, NodeRecord, NodeStatus, Tier, Txid, now_ms};
 use atlas_flux::models::apps::APP_PAYMENT_ADDRESS;
 use atlas_store::{MeshChangeRecord, MeshEdgeRecord, MeshReporter, MetricsRow, WriteBatch};
 use tokio::sync::{Notify, mpsc, oneshot, watch};
@@ -344,12 +344,12 @@ impl Reducer {
                     MempoolEntry {
                         kind,
                         value: tx.value_out,
-                        size: 0,
+                        size: None,
                         first_seen_ms: received_ms,
                     },
                 );
                 self.mempool_buf
-                    .push(tx_lite(tx.txid, tx.value_out, kind, 0));
+                    .push(tx_lite(tx.txid, tx.value_out, kind, None));
                 self.stats().event("mempool_tx");
                 if kind != TxKind::NodeTx {
                     tick.event(
@@ -375,7 +375,15 @@ impl Reducer {
                     self.st.summary_dirty = true;
                     tick.publish = true;
                 }
+                self.st.mempool_set = set;
             }
+            Obs::MempoolClassified {
+                txid,
+                kind,
+                value,
+                size,
+                output_count,
+            } => self.mempool_classified(tick, txid, kind, value, size, output_count),
             Obs::SocketInfo(info) => {
                 if let Some(total) = info.supply {
                     let prev = self.st.supply.clone();
@@ -1213,6 +1221,69 @@ impl Reducer {
         crate::state::rank_corrections(&mut self.st, deltas)
     }
 
+    /// A fetched mempool transaction: refines what the socket said (`node_tx` becomes
+    /// `node_start` / `node_confirm`, the size becomes known), or adds a transaction the
+    /// socket never pushed (only while it is still in the last reconciled set, so a late answer
+    /// for a transaction mined meanwhile does not resurrect it).
+    fn mempool_classified(
+        &mut self,
+        tick: &mut Tick,
+        txid: Txid,
+        kind: TxKind,
+        value: Amount,
+        size: Option<u32>,
+        output_count: u16,
+    ) {
+        if kind == TxKind::Coinbase {
+            return;
+        }
+        if let Some(e) = self.st.mempool.get_mut(&txid) {
+            let refined = matches!(e.kind, TxKind::NodeTx | TxKind::Unknown) && kind != e.kind;
+            if refined {
+                e.kind = kind;
+            }
+            if e.size.is_none() && size.is_some() {
+                e.size = size;
+            }
+            if e.value.is_zero() && !value.is_zero() {
+                e.value = value;
+            }
+            tick.publish = true;
+            return;
+        }
+        if !self.st.mempool_set.contains(&txid) {
+            return;
+        }
+        let now = tick.now_ms;
+        self.st.mempool.insert(
+            txid,
+            MempoolEntry {
+                kind,
+                value,
+                size,
+                first_seen_ms: now,
+            },
+        );
+        self.mempool_buf.push(tx_lite(txid, value, kind, size));
+        self.stats().event("mempool_tx");
+        if !matches!(
+            kind,
+            TxKind::NodeTx | TxKind::NodeStart | TxKind::NodeConfirm
+        ) {
+            tick.event(
+                Event::MempoolTx {
+                    txid,
+                    value,
+                    kind,
+                    output_count,
+                },
+                Some(now),
+            );
+        }
+        self.st.summary_dirty = true;
+        tick.publish = true;
+    }
+
     fn flush_mempool(&mut self) {
         if self.mempool_buf.is_empty() {
             return;
@@ -1496,6 +1567,7 @@ impl Reducer {
             mesh_edge_count: self.st.mesh.edge_count() as u32,
             freshness: self.handle.inner.freshness.snapshot(),
             next_payees: self.st.next_payees.iter().map(payee_dto).collect(),
+            mempool: self.st.mempool_list(),
             prev: self.handle.published(),
         };
         let job = match &self.publisher {

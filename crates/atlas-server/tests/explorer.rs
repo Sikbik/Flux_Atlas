@@ -119,7 +119,7 @@ async fn ttl_expiry_refetches() {
                 txid: first,
                 value: Amount::from_flux(3),
                 kind: TxKind::NodeConfirm,
-                size: 0,
+                size: None,
             }],
         },
     );
