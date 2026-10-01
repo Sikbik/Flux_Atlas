@@ -685,7 +685,11 @@ test('Skip to content is the first tab stop, hidden until focused, and lands in 
   await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
     timeout: 30_000,
   });
-  await page.waitForSelector('.wm-window[data-window-type="mempool"] .wm-body', { timeout: 30_000 });
+  // The view is a chunk of its own: wait for a control in the body, or the next Tab has nothing to land on.
+  await page.waitForSelector(
+    '.wm-window[data-window-type="mempool"] .wm-body :is(a[href], button, input, select, textarea)',
+    { timeout: 60_000 },
+  );
   const above = () =>
     page.evaluate(() => document.querySelector('.skip-link').getBoundingClientRect().bottom <= 0);
   assert.equal(await above(), true, 'hidden above the screen until it has focus');
