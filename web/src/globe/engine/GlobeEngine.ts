@@ -1195,12 +1195,9 @@ export class GlobeEngine {
     this.effects = { ...this.effects, mesh: mode !== 'off' };
     this.applyMeshFlags();
     if (mode !== 'flow') {
-      // Fade the veil out gently.
-      const m = this.mesh;
-      for (let e = 0; e < m.high; e++) {
-        if (m.alive[e] && m.link[e]! >= 0 && this.links.isActive(m.link[e]!, m.linkStart[e]!))
-          this.links.fadeOut(m.link[e]!, this.time, 0.8);
-      }
+      // Fade the veil out gently: every live link ribbon, including any whose edge bookkeeping was
+      // lost (a re-shown or removed edge), or they would outlive the mode for up to a minute.
+      this.links.fadeAll(this.time, 0.8);
     }
   }
   meshMode: 'off' | 'selection' | 'flow' = 'flow';
