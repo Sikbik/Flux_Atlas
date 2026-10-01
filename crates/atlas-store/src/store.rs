@@ -486,8 +486,10 @@ impl<'t> Writer<'t> {
             }
             Op::PushMeshChange(change) => {
                 let seq = self.next_seq()?;
-                self.mesh_events
-                    .insert((change.ts_ms, seq), codec::encode(&*change)?.as_slice())?;
+                self.mesh_events.insert(
+                    (change.ts_ms, seq),
+                    codec::encode_mesh_change(&change)?.as_slice(),
+                )?;
             }
             Op::PutMetrics(res, row) => {
                 let key = res.floor(row.ts_ms);

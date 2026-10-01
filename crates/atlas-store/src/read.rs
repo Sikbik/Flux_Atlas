@@ -475,7 +475,8 @@ impl Store {
         self.read(|txn| {
             let t = txn.open_table(tables::MESH_EVENTS)?;
             scan(t.range(bounds)?, order, limit, |k, v| {
-                Ok((EventKey::from_tuple(k.value()), codec::decode(v.value())?))
+                let key = EventKey::from_tuple(k.value());
+                Ok((key, codec::decode_mesh_change(key.ts_ms, v.value())?))
             })
         })
     }

@@ -17,7 +17,9 @@ use atlas_core::event::EventEnvelope;
 use atlas_core::node::{Geo, NodeRecord};
 
 use crate::error::{Result, StoreError};
-use crate::records::{MeshChangeRecord, MeshEdgeRecord, MetricsRow, MetricsRowV1};
+use atlas_core::NodeId;
+
+use crate::records::{MeshChangeRecord, MeshEdgeRecord, MeshReporter, MetricsRow, MetricsRowV1};
 
 /// zstd level used for snapshot blobs.
 const BLOB_ZSTD_LEVEL: i32 = 3;
@@ -54,7 +56,6 @@ stored! {
     AppMessageRecord => 1, "AppMessageRecord";
     PendingAppMessage => 1, "PendingAppMessage";
     MeshEdgeRecord => 1, "MeshEdgeRecord";
-    MeshChangeRecord => 1, "MeshChangeRecord";
     MetricsRow => 2, "MetricsRow";
     (Geo, u64) => 1, "GeoCacheEntry";
 }
@@ -90,6 +91,137 @@ pub(crate) fn decode_metrics(bytes: &[u8]) -> Result<MetricsRow> {
         return Ok(v1.upgrade());
     }
     decode(bytes)
+}
+
+// ---- mesh change rows -------------------------------------------------------------------------
+
+const MESH_CHANGE: &str = "MeshChangeRecord";
+/// Version 1: `postcard(MeshChangeRecord)` (about 4 bytes per edge). Still read.
+const MESH_CHANGE_V1: u8 = 1;
+/// Version 2: `postcard((reporter, zstd, body))` where `body` holds the added then the removed
+/// edges as packed delta lists ([`pack_pairs`]), zstd-compressed when that is smaller. The time
+/// is the row key's and is not repeated. About 2 bytes per edge.
+pub(crate) const MESH_CHANGE_V2: u8 = 2;
+const MESH_ZSTD_LEVEL: i32 = 3;
+
+fn put_varint(out: &mut Vec<u8>, mut v: u32) {
+    while v >= 0x80 {
+        out.push((v as u8) | 0x80);
+        v >>= 7;
+    }
+    out.push(v as u8);
+}
+
+fn get_varint(buf: &mut &[u8]) -> Result<u32> {
+    let mut v: u64 = 0;
+    for shift in (0..35).step_by(7) {
+        let (&b, rest) = buf
+            .split_first()
+            .ok_or(StoreError::Truncated { what: MESH_CHANGE })?;
+        *buf = rest;
+        v |= u64::from(b & 0x7f) << shift;
+        if b & 0x80 == 0 {
+            return u32::try_from(v).map_err(|_| StoreError::Truncated { what: MESH_CHANGE });
+        }
+    }
+    Err(StoreError::Truncated { what: MESH_CHANGE })
+}
+
+/// Packs edge pairs, sorted ascending: a count, then per pair the delta of `a` from the previous
+/// pair's `a` and, when that delta is 0, the delta of `b` from the previous `b`, else `b - a`
+/// (wrapping, so any pair round-trips). Varints throughout.
+fn pack_pairs(out: &mut Vec<u8>, pairs: &[(NodeId, NodeId)]) {
+    let mut v: Vec<(u32, u32)> = pairs.iter().map(|(a, b)| (a.0, b.0)).collect();
+    v.sort_unstable();
+    put_varint(out, v.len() as u32);
+    let (mut pa, mut pb) = (0u32, 0u32);
+    for (a, b) in v {
+        let da = a.wrapping_sub(pa);
+        put_varint(out, da);
+        put_varint(
+            out,
+            if da == 0 {
+                b.wrapping_sub(pb)
+            } else {
+                b.wrapping_sub(a)
+            },
+        );
+        (pa, pb) = (a, b);
+    }
+}
+
+fn unpack_pairs(buf: &mut &[u8]) -> Result<Vec<(NodeId, NodeId)>> {
+    let n = get_varint(buf)? as usize;
+    // Every pair takes at least two bytes: never trust a count beyond the input.
+    let mut out = Vec::with_capacity(n.min(buf.len() / 2));
+    let (mut pa, mut pb) = (0u32, 0u32);
+    for _ in 0..n {
+        let da = get_varint(buf)?;
+        let a = pa.wrapping_add(da);
+        let d = get_varint(buf)?;
+        let b = if da == 0 {
+            pb.wrapping_add(d)
+        } else {
+            a.wrapping_add(d)
+        };
+        out.push((NodeId(a), NodeId(b)));
+        (pa, pb) = (a, b);
+    }
+    Ok(out)
+}
+
+/// Encodes a mesh change row (version 2). Edges are stored in ascending order.
+pub(crate) fn encode_mesh_change(change: &MeshChangeRecord) -> Result<Vec<u8>> {
+    let mut body = Vec::with_capacity(2 * (change.added.len() + change.removed.len()) + 8);
+    pack_pairs(&mut body, &change.added);
+    pack_pairs(&mut body, &change.removed);
+    let packed = zstd::bulk::compress(&body, MESH_ZSTD_LEVEL).map_err(StoreError::Compression)?;
+    let (zstd, body) = if packed.len() < body.len() {
+        (true, packed)
+    } else {
+        (false, body)
+    };
+    let out = vec![MESH_CHANGE_V2];
+    postcard::to_extend(&(change.reporter, zstd, body), out).map_err(|source| StoreError::Encode {
+        what: MESH_CHANGE,
+        source,
+    })
+}
+
+/// Decodes a mesh change row of either version; `ts_ms` is the row key's time.
+pub(crate) fn decode_mesh_change(ts_ms: u64, bytes: &[u8]) -> Result<MeshChangeRecord> {
+    let decode_err = |source| StoreError::Decode {
+        what: MESH_CHANGE,
+        source,
+    };
+    match bytes.first() {
+        Some(&MESH_CHANGE_V1) => postcard::from_bytes(&bytes[1..]).map_err(decode_err),
+        Some(&MESH_CHANGE_V2) => {
+            let (reporter, zstd, body): (MeshReporter, bool, Vec<u8>) =
+                postcard::from_bytes(&bytes[1..]).map_err(decode_err)?;
+            let raw = if zstd {
+                // Bounded: a row never holds more than a few hundred thousand edges.
+                zstd::bulk::decompress(&body, 64 << 20).map_err(StoreError::Compression)?
+            } else {
+                body
+            };
+            let mut buf = raw.as_slice();
+            let added = unpack_pairs(&mut buf)?;
+            let removed = unpack_pairs(&mut buf)?;
+            Ok(MeshChangeRecord {
+                ts_ms,
+                reporter,
+                added,
+                removed,
+            })
+        }
+        Some(&found) => Err(StoreError::VersionMismatch {
+            what: MESH_CHANGE,
+            expected: MESH_CHANGE_V2,
+            found,
+        }),
+        None => Err(StoreError::Truncated { what: MESH_CHANGE }),
+    }
 }
 
 /// Encodes a large value as `[version] ++ zstd(postcard(value))`.
@@ -192,6 +324,59 @@ mod tests {
         let v2 = encode(&row).unwrap();
         assert_eq!(v2[0], 2);
         assert_eq!(decode_metrics(&v2).unwrap(), row);
+    }
+
+    #[test]
+    fn mesh_change_rows_pack_and_old_rows_still_read() {
+        use atlas_core::NodeEndpoint;
+        let n = NodeId;
+        let mut added: Vec<(NodeId, NodeId)> = (0..2_000u32)
+            .map(|i| (n(i % 60 * 97), n(10_000 + (i * 7_919) % 9_000)))
+            .collect();
+        added.sort_unstable();
+        added.dedup();
+        let change = MeshChangeRecord {
+            ts_ms: 1_790_000_000_000,
+            reporter: MeshReporter::Endpoint(
+                "5.230.173.205:16127".parse::<NodeEndpoint>().unwrap(),
+            ),
+            added: added.clone(),
+            removed: vec![(n(1), n(2)), (n(1), n(9)), (n(u32::MAX - 1), n(3))],
+        };
+        let v2 = encode_mesh_change(&change).unwrap();
+        assert_eq!(v2[0], MESH_CHANGE_V2);
+        let back = decode_mesh_change(change.ts_ms, &v2).unwrap();
+        assert_eq!(back.added, change.added);
+        // Stored ascending (any pair, even one out of the usual a < b order, round-trips).
+        assert_eq!(
+            back.removed,
+            vec![(n(1), n(2)), (n(1), n(9)), (n(u32::MAX - 1), n(3))]
+        );
+        assert_eq!(back.reporter, change.reporter);
+        // Version 1 (verbose postcard) rows still decode.
+        let mut v1 = vec![MESH_CHANGE_V1];
+        v1.extend(postcard::to_allocvec(&change).unwrap());
+        assert_eq!(decode_mesh_change(change.ts_ms, &v1).unwrap(), change);
+        assert!(
+            v2.len() * 3 < v1.len() * 2,
+            "v2 {} vs v1 {}",
+            v2.len(),
+            v1.len()
+        );
+        // Empty, truncated and unknown rows fail cleanly.
+        let empty = MeshChangeRecord {
+            added: Vec::new(),
+            removed: Vec::new(),
+            ..change.clone()
+        };
+        let e = encode_mesh_change(&empty).unwrap();
+        assert_eq!(decode_mesh_change(change.ts_ms, &e).unwrap(), empty);
+        assert!(decode_mesh_change(0, &[]).is_err());
+        assert!(decode_mesh_change(0, &[9, 1, 2]).is_err());
+        assert!(decode_mesh_change(0, &v2[..v2.len() / 2]).is_err());
+        let mut huge = Vec::new();
+        put_varint(&mut huge, u32::MAX);
+        assert!(unpack_pairs(&mut huge.as_slice()).is_err());
     }
 
     #[test]
