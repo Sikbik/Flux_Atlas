@@ -4,6 +4,7 @@
 
 import type { HitRoute } from '../../app/searchRoutes';
 import { pathForWindow } from '../../shell/wm/route';
+import { canonicalNodeKey } from '../../store/nodeKeys';
 
 export type EntityKind =
   | 'node'
@@ -20,7 +21,7 @@ export type EntityKind =
 /** A reference to an entity: its kind and the key its route takes. */
 export interface EntityRef {
   kind: EntityKind;
-  /** `ip:port` for a node, an IP for a host, an app name, a height or hash for a block, a txid, an address, an ISO country code, an organisation name, a version string. */
+  /** A node's outpoint `txid:vout` (an id or `ip:port` becomes one when the snapshot knows the node), an IP for a host, an app name, a height or hash for a block, a txid, an address, an ISO country code, an organisation name, a version string. */
   value: string;
 }
 
@@ -41,7 +42,8 @@ export const ENTITY_KINDS: readonly EntityKind[] = [
 export function entityRoute(kind: EntityKind, value: string): HitRoute {
   switch (kind) {
     case 'node':
-      return { to: '/node/$key', params: { key: value } };
+      // Links name nodes by outpoint, the key that means the same node on every instance.
+      return { to: '/node/$key', params: { key: canonicalNodeKey(value) } };
     case 'host':
       return { to: '/host/$ip', params: { ip: value } };
     case 'app':

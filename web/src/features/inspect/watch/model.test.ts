@@ -50,7 +50,7 @@ describe('describeGroup', () => {
     const t = describeGroup({ kind: 'offline', alerts: [alert('offline', 1)] });
     expect(t.title).toBe('Node unreachable');
     expect(t.body).toBe('10.0.0.1:16127 can no longer be reached.');
-    expect(t.to).toBe('/node/10.0.0.1:16127');
+    expect(t.to).toBe('/node/10.0.0.1%3A16127');
   });
 
   it('puts the numbers in the sentence', () => {

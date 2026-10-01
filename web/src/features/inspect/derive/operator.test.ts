@@ -55,6 +55,7 @@ const row = (id: number, over: Partial<NodeRow> = {}): NodeRow => ({
 
 const node = (id: number, over: Partial<FleetNode> = {}): FleetNode => ({
   id,
+  outpoint: '',
   endpoint: `10.0.0.${id}:16127`,
   ip: `10.0.0.${id}`,
   port: 16127,

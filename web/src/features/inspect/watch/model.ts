@@ -2,6 +2,7 @@
 // each alert says. No store, no DOM, no timers, so all of it is tested directly.
 
 import { formatInt } from '../../../lib/format';
+import { pathForWindow } from '../../../shell/wm/route';
 import { CHECKIN } from '../derive/expiry';
 import { ALERT_KINDS, type AlertEvent, type AlertKind } from '../derive/watch';
 
@@ -74,7 +75,8 @@ export interface AlertText {
 
 const WATCHLIST = '/operator/watchlist';
 
-const nodePath = (endpoint: string) => `/node/${endpoint}`;
+/** The node's URL, by outpoint when the snapshot knows it (the colon percent-encoded). */
+const nodePath = (key: string) => pathForWindow('node', key) ?? WATCHLIST;
 
 function listOf(endpoints: readonly string[], max = 3): string {
   const shown = endpoints.slice(0, max).join(', ');

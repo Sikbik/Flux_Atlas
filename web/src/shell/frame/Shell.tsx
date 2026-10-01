@@ -278,7 +278,7 @@ function WindowTethers() {
 function WindowTether({ win }: { win: WindowState }) {
   const binding = useGlobeBinding();
   // Keys resolve once the snapshot is in (and again after a resync).
-  const nodesLoaded = useNetwork((s) => (s.loaded ? s.nodes.snapshotSeq : -1));
+  const nodesLoaded = useNetwork((s) => (s.loaded ? s.snapshotGen : -1));
   const [header, setHeader] = useState<Element | null>(null);
   useEffect(() => {
     const sel = `[data-window-id="${CSS.escape(win.id)}"] .wm-titlebar`;

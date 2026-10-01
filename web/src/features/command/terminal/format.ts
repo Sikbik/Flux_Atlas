@@ -37,7 +37,8 @@ export function nodeSpans(
   opts: { padEndpoint?: number; columns?: boolean } = {},
 ): Span[] {
   const f = nodeFacts(store, row);
-  const key = f.endpoint || String(store.nodes.ids[row] ?? row);
+  // Links name the node by outpoint (ARCHITECTURE 8.1); the text stays the endpoint.
+  const key = store.nodes.outpoint(row) || f.endpoint || String(store.nodes.ids[row] ?? row);
   const ep = f.endpoint || `node #${store.nodes.ids[row] ?? row}`;
   const out: Span[] = [];
   out.push(f.tier ? tierSpan(f.tier) : dim('Unknown'));
@@ -152,7 +153,7 @@ export function blockSentence(store: NetworkStore, b: BlockBrief): Span[] {
       spans.push(
         link(f.endpoint || `node #${b.producer}`, {
           to: '/node/$key',
-          params: { key: f.endpoint || String(b.producer) },
+          params: { key: store.nodes.outpoint(row) || f.endpoint || String(b.producer) },
         }),
       );
       if (place) spans.push(dim(` (${place})`));

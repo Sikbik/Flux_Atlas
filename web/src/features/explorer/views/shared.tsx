@@ -18,6 +18,7 @@ import type { ReactNode } from 'react';
 import type { TxKind } from '../../../api/generated/TxKind';
 import { splitCountry } from '../../../api/nodesBin';
 import { useNetwork } from '../../../app/context';
+import { localNodeId } from '../../../store/nodeKeys';
 import { shallowEqual } from '../../../store/react';
 import { Chip, cx, EntityLink, TierGlyph, type TierName, Unknown } from '../../../ui';
 import { knownEntity } from '../lib/entities';
@@ -35,12 +36,19 @@ export interface NodeInfo {
   city: string;
 }
 
-/** A node's endpoint, tier, country and city from the live node table (null when the id is not listed). */
-export function useNodeInfo(id: number | null | undefined): NodeInfo | null {
+/**
+ * A node's endpoint, tier, country and city from the live node table (null when it is not listed).
+ * A server record's id is the answering instance's, so its outpoint, when given, names the node.
+ */
+export function useNodeInfo(id: number | null | undefined, outpoint?: string | null): NodeInfo | null {
   const t = useNetwork(
     (s) => {
-      if (id === null || id === undefined) return null;
-      const i = s.nodes.indexOf(id);
+      if (id === null || id === undefined) {
+        if (!outpoint) return null;
+      }
+      const local = localNodeId(s.nodes, { id: id ?? -1, outpoint: outpoint ?? null });
+      if (local === null) return null;
+      const i = s.nodes.indexOf(local);
       if (i < 0) return null;
       const city = s.nodes.locations.info(s.nodes.loc[i] ?? 0)?.city ?? '';
       const country = splitCountry(s.nodes.countries.get(s.nodes.country[i] ?? 0)).name;
@@ -80,22 +88,25 @@ export function NodeLink({
   fallbackEndpoint,
   fallbackTier,
   glyph = true,
+  outpoint,
 }: {
   id: number | null | undefined;
   fallbackEndpoint?: string | null;
   fallbackTier?: string | null;
   glyph?: boolean;
+  /** The node's collateral outpoint, when the record carries it: the link key, and how the table finds it. */
+  outpoint?: string | null;
 }) {
-  const info = useNodeInfo(id);
+  const info = useNodeInfo(id, outpoint);
   const endpoint = info?.endpoint || fallbackEndpoint || null;
   const tier = (info?.tier ?? (fallbackTier as TierName | null) ?? 'unknown') as TierName | 'unknown';
-  const key = endpoint || (id !== null && id !== undefined ? String(id) : null);
+  const key = outpoint || endpoint || (id !== null && id !== undefined ? String(id) : null);
   if (!key) return <Unknown>Unknown node</Unknown>;
   return (
     <span className="ex-nodelink">
       {glyph ? <TierGlyph tier={tier} size={14} /> : null}
       <EntityLink kind="node" value={key} mono>
-        {endpoint ?? `Node ${id}`}
+        {endpoint ?? (id !== null && id !== undefined ? `Node ${id}` : 'Node')}
       </EntityLink>
     </span>
   );

@@ -2,6 +2,8 @@
 // remembered, never what they typed; the list is short and every read is guarded (private windows,
 // blocked storage and corrupt values all fall back to an empty list).
 
+import { isLegacyId, isOutpoint, stableNodeKey } from '../../../store/nodeKeys';
+import type { NodeTable } from '../../../store/nodeTable';
 import type { PaletteRow, RecentEntry, RowAction } from './types';
 
 const KEY = 'atlas.recents.v1';
@@ -144,4 +146,47 @@ export function rememberRow(row: PaletteRow, now = Date.now()): RecentEntry[] {
 
 export function clearRecents(): void {
   store([]);
+}
+
+/**
+ * Node entries name their node by outpoint (ARCHITECTURE 8.1). Entries from older clients carry a
+ * numeric node id or an `ip:port`: they are resolved once against the first snapshot that has
+ * outpoints and rewritten; an id that resolves to nothing is dropped (it may mean another node on
+ * the other instance). Returns the rewritten list, or null when nothing had to change.
+ */
+export function migrateRecentEntries(list: readonly RecentEntry[], table: NodeTable): RecentEntry[] | null {
+  let changed = false;
+  const out: RecentEntry[] = [];
+  for (const e of list) {
+    const target = e.action.type === 'go' ? e.action.target : null;
+    const key = target?.to === '/node/$key' ? target.params?.key : undefined;
+    if (!target || key === undefined || isOutpoint(key)) {
+      out.push(e);
+      continue;
+    }
+    const stable = stableNodeKey(table, key);
+    if (!isOutpoint(stable)) {
+      changed ||= isLegacyId(key);
+      if (!isLegacyId(key)) out.push(e);
+      continue;
+    }
+    changed = true;
+    const id = isLegacyId(e.id.replace(/^node:/, '')) ? `node:${stable}` : e.id;
+    out.push({
+      ...e,
+      id,
+      action: { type: 'go', target: { ...target, params: { ...target.params, key: stable } } },
+    });
+  }
+  return changed ? out : null;
+}
+
+let migrated = false;
+
+/** Runs the recents migration once per session, at the first snapshot that carries outpoints. */
+export function migrateRecents(table: NodeTable): void {
+  if (migrated || table.count === 0 || !table.outpoint(0)) return;
+  migrated = true;
+  const next = migrateRecentEntries(loadRecents(), table);
+  if (next) store(next);
 }

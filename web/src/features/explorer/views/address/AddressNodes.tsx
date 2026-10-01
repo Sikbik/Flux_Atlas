@@ -78,7 +78,7 @@ export function NodesMap({ nodes }: { nodes: readonly NodeRow[] }) {
 
 /** A node's place: its city (when the server names one) and its country as a link. */
 function Where({ node: n }: { node: NodeRow }) {
-  const city = useNodeInfo(n.id)?.city ?? '';
+  const city = useNodeInfo(n.id, n.outpoint)?.city ?? '';
   if (!n.country_code) return city ? <span>{city}</span> : null;
   return (
     <span>
@@ -95,7 +95,15 @@ const COLUMNS: readonly DataTableColumn<NodeRow>[] = [
     id: 'node',
     header: 'Node',
     minWidth: 190,
-    cell: (n) => <NodeLink id={n.id} fallbackEndpoint={n.endpoint} fallbackTier={n.tier} glyph={false} />,
+    cell: (n) => (
+      <NodeLink
+        id={n.id}
+        outpoint={n.outpoint}
+        fallbackEndpoint={n.endpoint}
+        fallbackTier={n.tier}
+        glyph={false}
+      />
+    ),
   },
   {
     id: 'tier',
@@ -181,7 +189,9 @@ export function AddressNodesList({
           rows={shown}
           columns={COLUMNS}
           rowKey={(n) => n.id}
-          rowLink={(n) => (n.endpoint ? { kind: 'node', value: n.endpoint } : null)}
+          rowLink={(n) =>
+            n.outpoint || n.endpoint ? { kind: 'node', value: n.outpoint || n.endpoint || '' } : null
+          }
           loading={loading}
           maxHeight={520}
         />

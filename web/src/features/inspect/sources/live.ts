@@ -9,6 +9,7 @@ import { useNetwork, useRuntime, useTip } from '../../../app/context';
 import { fluxToNumber } from '../../../lib/format';
 import { useNow } from '../../../lib/useClock';
 import type { NetworkStore } from '../../../store/network';
+import { resolveNodeKey } from '../../../store/nodeKeys';
 import { Reach } from '../../../store/nodeTable';
 import { shallowEqual } from '../../../store/react';
 import { tierColumn } from '../derive/percentile';
@@ -125,19 +126,9 @@ export function readNodeLive(store: NetworkStore, id: number | null): NodeLive |
 export const useNodeLive = (id: number | null): NodeLive | null =>
   useNetwork((s) => readNodeLive(s, id), shallowEqual);
 
-/** The node id for a route key (`ip:port`, a numeric id), once the snapshot is loaded; null otherwise. */
+/** The node id for a route key (an outpoint, `ip:port`, a numeric id) once the snapshot is loaded; null otherwise. */
 export function useResolvedId(key: string): number | null {
-  return useNetwork((s) => {
-    if (!s.loaded) return null;
-    const k = key.trim();
-    if (/^\d+$/.test(k)) {
-      const id = Number(k);
-      return s.nodes.has(id) ? id : null;
-    }
-    const t = s.nodes;
-    for (let i = 0; i < t.count; i++) if (t.endpoint(i) === k) return t.ids[i] ?? null;
-    return null;
-  });
+  return useNetwork((s) => (s.loaded ? resolveNodeKey(s.nodes, key) : null));
 }
 
 // ---- tier economics ---------------------------------------------------------------------------------

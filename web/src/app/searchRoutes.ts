@@ -1,6 +1,20 @@
 // Maps a typed search hit to its route (the omnibox and `/q/:text` use this).
 
 import type { SearchHit } from '../api/generated/SearchHit';
+import { canonicalNodeKey, isOutpoint } from '../store/nodeKeys';
+
+/**
+ * The stable key of a node hit. The server's hit key is its node id, which is local to the instance
+ * that answered (ARCHITECTURE 8.1), so an outpoint key is taken as is, else the endpoint the label
+ * names (`Cumulus node 1.2.3.4:16127`, the same node on every instance), else the id; the result is
+ * the outpoint when the loaded snapshot knows the node.
+ */
+export function nodeHitKey(hit: Pick<SearchHit, 'key' | 'label'>): string {
+  if (isOutpoint(hit.key)) return hit.key.toLowerCase();
+  const m = / node (\S+)$/.exec(hit.label);
+  const endpoint = m?.[1] && !m[1].startsWith('#') ? m[1] : null;
+  return canonicalNodeKey(endpoint ?? hit.key);
+}
 
 export type HitRoute =
   | { to: '/node/$key'; params: { key: string } }
@@ -16,7 +30,7 @@ export type HitRoute =
 export function routeForHit(hit: SearchHit): HitRoute | null {
   switch (hit.kind) {
     case 'node':
-      return { to: '/node/$key', params: { key: hit.key } };
+      return { to: '/node/$key', params: { key: nodeHitKey(hit) } };
     case 'host':
       return { to: '/host/$ip', params: { ip: hit.key } };
     case 'app':

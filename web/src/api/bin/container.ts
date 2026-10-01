@@ -223,3 +223,29 @@ export function stringSection(c: Container, kind: number): StringTable | undefin
 export function noteUnknown(c: Container, known: ReadonlySet<number>): void {
   for (const kind of c.sections.keys()) if (!known.has(kind)) c.unknownKinds.push(kind);
 }
+
+/** Section kind of ORIGIN, shared by nodes.bin, mesh.bin and `/timeline/state`. */
+export const ORIGIN_KIND = 48;
+const ORIGIN_BYTES = 16;
+
+/**
+ * Which server built a file: the process start epoch and the data directory's instance id (16
+ * lowercase hex digits, the form of `ServerInfo.instance`). Node ids and seqs are local to one
+ * origin (ARCHITECTURE 8.1), so files and live messages of two origins are never combined.
+ */
+export interface SnapshotOrigin {
+  startedMs: number;
+  instance: string;
+}
+
+/** Reads the ORIGIN section, or null when the file has none (older servers, test fixtures). */
+export function readOrigin(c: Container): SnapshotOrigin | null {
+  const s = c.sections.get(ORIGIN_KIND);
+  if (!s || s.dtype !== DType.Struct) return null;
+  if (s.byteLen < ORIGIN_BYTES) throw new BinFormatError(`ORIGIN: ${s.byteLen} bytes, expected 16`);
+  const dv = new DataView(c.buffer, s.offset, ORIGIN_BYTES);
+  return {
+    startedMs: Number(dv.getBigUint64(0, true)),
+    instance: dv.getBigUint64(8, true).toString(16).padStart(16, '0'),
+  };
+}

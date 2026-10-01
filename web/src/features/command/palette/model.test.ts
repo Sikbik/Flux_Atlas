@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { syntheticOutpoint } from '../../../api/bin/writer';
 import type { SearchHit } from '../../../api/generated/SearchHit';
 import { NetworkStore } from '../../../store/network';
 import { bootstrap, hex64, syntheticNodesBin } from '../../../testing/fixtures';
@@ -132,9 +133,10 @@ describe('local matches', () => {
     const m = run('5.0.0.7:16127');
     expect(m.groups[0]?.id).toBe('nodes');
     expect(m.best).toMatchObject({ id: 'node:5.0.0.7:16127', mono: true, chip: 'Node' });
+    // Links name the node by outpoint, the key every instance agrees on.
     expect(m.best?.action).toEqual({
       type: 'go',
-      target: { to: '/node/$key', params: { key: '5.0.0.7:16127' } },
+      target: { to: '/node/$key', params: { key: syntheticOutpoint(7) } },
     });
     expect(m.best?.alongside).toBe(true);
     expect(group(m, 'hosts')?.rows[0]?.id).toBe('host:5.0.0.7');
@@ -282,7 +284,7 @@ describe('merging server hits', () => {
     },
   ];
 
-  it('adds typed rows to the right groups, with the node key canonicalised to its endpoint', () => {
+  it('adds typed rows to the right groups, a node hit matched by its endpoint and linked by outpoint', () => {
     const m = run(hex64(5), { hits });
     expect(group(m, 'blocks')?.rows[0]?.id).toBe('block:2996914');
     const tx = group(m, 'txs')?.rows[0];
@@ -291,7 +293,18 @@ describe('merging server hits', () => {
     const node = rowsOf(m).find((r) => r.kind === 'node');
     expect(node?.action).toEqual({
       type: 'go',
-      target: { to: '/node/$key', params: { key: '5.0.0.7:16127' } },
+      target: { to: '/node/$key', params: { key: syntheticOutpoint(7) } },
+    });
+  });
+
+  it('matches a node hit by endpoint, not by the id of the instance that answered', () => {
+    // The other instance numbers this node 9: its hit key must not select local node 9.
+    const other: SearchHit = { kind: 'node', key: '9', label: 'Stratus node 5.0.0.7:16127', sublabel: null };
+    const m = run('5.0.0.7', { hits: [other] });
+    const node = rowsOf(m).find((r) => r.kind === 'node' && r.id === 'node:5.0.0.7:16127');
+    expect(node?.action).toEqual({
+      type: 'go',
+      target: { to: '/node/$key', params: { key: syntheticOutpoint(7) } },
     });
   });
 

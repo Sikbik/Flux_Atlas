@@ -316,6 +316,19 @@ export class Choreographer {
     }
   }
 
+  /**
+   * The session switched to another origin (ARCHITECTURE 8.1): node ids mean other nodes there, so
+   * every effect, aim and focus keyed by an old id is dropped. The caller sets the new focus.
+   */
+  resetOrigin(): void {
+    this.cancelAll();
+    for (const b of this.bursts.values()) this.sched.clearTimeout(b.finalTimer);
+    this.bursts.clear();
+    this.focus = new Set();
+    this.nextPayees = null;
+    this.clearAim();
+  }
+
   dispose(): void {
     this.cancelAll();
     this.sched.clearTimeout(this.catchUpTimer);

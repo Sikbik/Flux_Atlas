@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { syntheticOutpoint } from '../../../api/bin/writer';
 import type { LiveMsg } from '../../../api/generated/LiveMsg';
 import type { SearchHit } from '../../../api/generated/SearchHit';
 import { beatState } from '../../../lib/clock';
@@ -268,7 +269,7 @@ describe('unknown input', () => {
   it('reads a bare IP as a node question and runs it', async () => {
     const r = await run('5.0.0.7:16127');
     expect(r.s.text()).toContain('Reading that as node.');
-    expect(r.spy.opened[0]).toMatchObject({ to: '/node/$key', params: { key: '5.0.0.7:16127' } });
+    expect(r.spy.opened[0]).toMatchObject({ to: '/node/$key', params: { key: syntheticOutpoint(7) } });
   });
 
   it('clears the screen', async () => {
@@ -283,7 +284,7 @@ describe('node, app, block', () => {
     const r = await run('node 5.0.0.7:16127');
     expect(r.ok).toBe(true);
     expect(r.s.text()).toContain('5.0.0.7:16127');
-    expect(r.spy.opened).toEqual([{ to: '/node/$key', params: { key: '5.0.0.7:16127' } }]);
+    expect(r.spy.opened).toEqual([{ to: '/node/$key', params: { key: syntheticOutpoint(7) } }]);
   });
 
   it('lists the first matches of an IP prefix and opens nothing', async () => {

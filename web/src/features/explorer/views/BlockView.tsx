@@ -135,7 +135,7 @@ function Producer({
   /** The city the block's producer record names; the live node table is the fallback. */
   city: string;
 }) {
-  const info = useNodeInfo(id);
+  const info = useNodeInfo(id, outpoint);
   const t = (info?.tier ?? tier ?? 'unknown') as TierName | 'unknown';
   const known = t === 'cumulus' || t === 'nimbus' || t === 'stratus';
   const ep = info?.endpoint || endpoint;
@@ -148,7 +148,7 @@ function Producer({
           </span>
           <Stack gap={2}>
             {ep || id !== null ? (
-              <NodeLink id={id} fallbackEndpoint={endpoint} glyph={false} />
+              <NodeLink id={id} outpoint={outpoint} fallbackEndpoint={endpoint} glyph={false} />
             ) : (
               <Unknown>Unknown producer</Unknown>
             )}

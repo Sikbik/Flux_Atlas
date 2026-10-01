@@ -37,13 +37,13 @@ class FakeSocket implements WebSocketLike {
   push(msg: Record<string, unknown>): void {
     this.onmessage?.({ data: JSON.stringify(msg) });
   }
-  hello(seq: number, now = Date.now(), startedMs = 1): void {
+  hello(seq: number, now = Date.now(), startedMs = 1, instance = 'aaaaaaaaaaaaaaaa'): void {
     this.push({
       seq,
       observed_ms: now,
       event_ms: null,
       t: 'hello',
-      server: { name: 'flux-atlas', version: '0', api_version: 1, started_ms: startedMs },
+      server: { name: 'flux-atlas', version: '0', api_version: 1, started_ms: startedMs, instance },
       tip: null,
       now_ms: now,
     });
@@ -277,13 +277,31 @@ describe('LiveClient', () => {
   });
 
   it('resyncs when hello shows the server restarted since the snapshot', async () => {
-    const t = setup({ getSnapshotServerStart: () => 1 });
+    const t = setup({ getSnapshotOrigin: () => ({ instance: 'aaaaaaaaaaaaaaaa', started_ms: 1 }) });
     t.client.start();
     t.sock().open();
     t.sock().hello(3, Date.now(), 2);
     expect(t.sock().subs()).toEqual([]);
     expect(t.resync).toHaveBeenCalledWith('server_restarted', expect.any(AbortSignal));
     await vi.waitFor(() => expect(FakeSocket.all.length).toBe(2));
+  });
+
+  it('resyncs when hello comes from another instance with the same start time', async () => {
+    const t = setup({ getSnapshotOrigin: () => ({ instance: 'aaaaaaaaaaaaaaaa', started_ms: 1 }) });
+    t.client.start();
+    t.sock().open();
+    t.sock().hello(3, Date.now(), 1, 'bbbbbbbbbbbbbbbb');
+    expect(t.sock().subs()).toEqual([]);
+    expect(t.resync).toHaveBeenCalledWith('other_instance', expect.any(AbortSignal));
+    await vi.waitFor(() => expect(FakeSocket.all.length).toBe(2));
+  });
+
+  it('subscribes when hello comes from the snapshot origin', () => {
+    const t = setup({ getSnapshotOrigin: () => ({ instance: 'aaaaaaaaaaaaaaaa', started_ms: 1 }) });
+    t.client.start();
+    t.sock().open();
+    t.sock().hello(3, Date.now(), 1, 'aaaaaaaaaaaaaaaa');
+    expect(t.sock().subs().length).toBe(1);
   });
 
   it('backs off instead of looping when resyncs repeat', async () => {

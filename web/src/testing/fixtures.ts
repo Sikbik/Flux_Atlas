@@ -47,6 +47,7 @@ export function syntheticNodesBin(count = 6_724, seq = 100): NodesBin {
       orgs: ['', 'Hetzner Online GmbH', 'OVH SAS'],
       versions: ['', '8.20.0'],
       locations,
+      withOutpoints: true,
     }),
   );
 }
@@ -78,7 +79,7 @@ export function summary(height: number, extra: Partial<NetworkSummary> = {}): Ne
 
 export function bootstrap(seq = 100, height = 2_996_914): BootstrapDto {
   return {
-    server: { name: 'flux-atlas', version: '0.1.0', api_version: 1, started_ms: 1 },
+    server: { name: 'flux-atlas', version: '0.1.0', api_version: 1, started_ms: 1, instance: '' },
     seq,
     generated_ms: 1_000,
     stale: false,

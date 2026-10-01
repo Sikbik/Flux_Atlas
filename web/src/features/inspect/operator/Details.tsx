@@ -102,7 +102,7 @@ export function AppsFold({ nodes, open }: { nodes: readonly FleetNode[]; open: O
     id: String(n.id),
     label: n.endpoint || `Node ${n.id}`,
     value: n.appCount,
-    to: n.present ? { kind: 'node', value: n.endpoint || String(n.id) } : undefined,
+    to: n.present ? { kind: 'node', value: n.outpoint || n.endpoint || String(n.id) } : undefined,
     color: n.tier === 'unknown' ? undefined : `var(--tier-${n.tier})`,
   }));
   return (

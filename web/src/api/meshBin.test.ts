@@ -32,6 +32,14 @@ describe('mesh.bin', () => {
     expect(m.unknownSections.sort()).toEqual([10, 9]);
   });
 
+  it('reads ORIGIN and tolerates its absence', () => {
+    const origin = { startedMs: 1_790_796_400_000, instance: '00c0ffee1234abcd' };
+    const m = decodeMeshBin(encodeMeshBin(edges, { origin }));
+    expect(m.origin).toEqual(origin);
+    expect(m.unknownSections).toEqual([]);
+    expect(decodeMeshBin(encodeMeshBin(edges)).origin).toBeNull();
+  });
+
   it('handles an empty mesh', () => {
     const m = decodeMeshBin(encodeMeshBin([]));
     expect(m.count).toBe(0);

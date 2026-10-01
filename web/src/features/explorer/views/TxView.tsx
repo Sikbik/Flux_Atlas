@@ -163,7 +163,14 @@ function NodeTxCard({ n }: { n: NodeTxDto }) {
         items={[
           {
             label: 'Node',
-            value: <NodeLink id={n.node} fallbackEndpoint={n.endpoint} fallbackTier={n.benchmark_tier} />,
+            value: (
+              <NodeLink
+                id={n.node}
+                outpoint={n.collateral}
+                fallbackEndpoint={n.endpoint}
+                fallbackTier={n.benchmark_tier}
+              />
+            ),
           },
           { label: 'Collateral', value: <Hash value={n.collateral} full copy="hover" what="collateral" /> },
           { label: 'Benchmark tier', value: n.benchmark_tier ? <TierChip tier={tier} /> : null },

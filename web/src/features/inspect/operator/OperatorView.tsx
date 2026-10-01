@@ -5,6 +5,7 @@ import { isApiError } from '../../../api/http';
 import { useNetwork } from '../../../app/context';
 import { useGlobeEngine } from '../../../globe';
 import { formatInt } from '../../../lib/format';
+import { canonicalNodeKey } from '../../../store/nodeKeys';
 import { useUi } from '../../../store/ui';
 import { Card, EmptyState, EntityLink, ErrorState, Section, Skeleton, Stat, StatGrid } from '../../../ui';
 import {
@@ -84,7 +85,7 @@ function useOpenNode() {
     (n: FleetNode) => {
       void navigate({
         to: '/node/$key',
-        params: { key: n.endpoint || String(n.id) },
+        params: { key: canonicalNodeKey(n.outpoint || n.endpoint || String(n.id)) },
         search: ((prev: Record<string, unknown>) => ({ ...prev, sel: undefined })) as never,
       });
     },
@@ -121,12 +122,13 @@ export function OperatorView({ addr }: { addr: string }) {
   const earn = useFleetEarnings(data);
   const watching = useWatchMany(ids);
 
+  // `?sel=` holds outpoints (ARCHITECTURE 8.1); the endpoint stands in for a server without them.
   const endpoints = useMemo(
     () =>
       sorted
-        .filter((n) => n.present && n.endpoint)
+        .filter((n) => n.present && (n.outpoint || n.endpoint))
         .slice(0, 50)
-        .map((n) => n.endpoint)
+        .map((n) => n.outpoint || n.endpoint)
         .join(','),
     [sorted],
   );
