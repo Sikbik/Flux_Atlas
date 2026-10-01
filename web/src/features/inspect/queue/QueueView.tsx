@@ -7,6 +7,7 @@ import { positionOf, QUEUE_TIERS, type QueueTier } from '../derive/queue';
 import { readNodeLive, useNodeLive, useQueues, useResolvedId, useTipAnchor } from '../sources/live';
 import { type NodeHit, usePhaseLoop } from '../sources/queueFeed';
 import { Callout } from '../ui/callout';
+import { Fold } from '../ui/fold';
 import { NodeFinder } from '../ui/NodeFinder';
 import { useOpenSet } from '../ui/openset';
 import { LaneRow } from './Belts';
@@ -206,15 +207,7 @@ export function QueueView({ tier }: { tier?: QueueTier }) {
         </>
       )}
 
-      <Section
-        collapsible
-        level={3}
-        icon={CircleHelp}
-        title="How the queue works"
-        aside="a strict rotation"
-        open={open.isOpen('how')}
-        onOpenChange={(v) => open.setOpen('how', v)}
-      >
+      <Fold id="how" open={open} icon={CircleHelp} title="How the queue works" summary="a strict rotation">
         <p className="ix-cap">
           Each block pays the node at the head of every tier&apos;s queue, and that node moves to the back, so
           a tier is a strict rotation: a node is paid once per cycle. Atlas follows the network&apos;s own
@@ -222,7 +215,7 @@ export function QueueView({ tier }: { tier?: QueueTier }) {
           announcement. Times are estimates at about 30 s per block; blocks can be a little early or late.
           Select a ring or a belt tile to follow a node.
         </p>
-      </Section>
+      </Fold>
     </article>
   );
 }
