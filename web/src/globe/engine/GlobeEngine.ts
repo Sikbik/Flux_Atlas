@@ -2622,30 +2622,27 @@ export class GlobeEngine {
     const hit = this.doPick(this.hoverX, this.hoverY);
     const slot = hit ? this.pickScratch.slot : -1;
     const cluster = hit ? this.pickScratch.cluster : -1;
+    // A stack reads as its site until it fans out: the same node can change what it stands for.
+    const site =
+      slot >= 0 &&
+      (this.pickScratch.column ||
+        (this.layoutFan < 0.55 && cluster !== NO_CLUSTER && this.nodes.cLive[cluster]! > 1));
+    // `hover` is emitted when what the pointer is on changes (a node, a site, nothing), never per frame.
+    if (slot === this.hoverSlot && (slot < 0 || site === this.hoverSite)) return;
     if (slot !== this.hoverSlot) {
       if (this.hoverSlot >= 0) this.nodes.setState(this.hoverSlot, NodeState.Hovered, false);
       this.hoverSlot = slot;
       if (slot >= 0) this.nodes.setState(slot, NodeState.Hovered, true);
-      this.hoverCluster = cluster;
       this.canvas.style.cursor = slot >= 0 ? 'pointer' : '';
-      if (slot >= 0) {
-        const stacked = this.layoutFan < 0.55 && this.nodes.cLive[cluster]! > 1 && cluster !== NO_CLUSTER;
-        this.emit(
-          'hover',
-          this.makePickInfo(slot, this.pickScratch.column || stacked, this.pickScratch.x, this.pickScratch.y),
-        );
-      } else {
-        this.emit('hover', null);
-      }
-    } else if (slot >= 0) {
-      // Keep the tooltip anchored while the pointer moves inside the same node.
-      const stacked = this.layoutFan < 0.55 && this.nodes.cLive[cluster]! > 1 && cluster !== NO_CLUSTER;
-      this.emit(
-        'hover',
-        this.makePickInfo(slot, this.pickScratch.column || stacked, this.pickScratch.x, this.pickScratch.y),
-      );
     }
+    this.hoverCluster = cluster;
+    this.hoverSite = site;
+    this.emit(
+      'hover',
+      slot >= 0 ? this.makePickInfo(slot, site, this.pickScratch.x, this.pickScratch.y) : null,
+    );
   }
+  private hoverSite = false;
 
   private clearHover(): void {
     if (this.hoverSlot >= 0) this.nodes.setState(this.hoverSlot, NodeState.Hovered, false);

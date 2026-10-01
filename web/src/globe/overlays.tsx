@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNetwork } from '../app/context';
 import { useBootPhase } from '../features/chrome/boot/state';
-import { hoverKey, TIP_DELAY_MS } from '../features/chrome/cardplace';
+import { TIP_DELAY_MS } from '../features/chrome/cardplace';
 import {
   MOON_HINT_DELAY_MS,
   MOON_HINT_LEAVE_MS,
@@ -19,7 +19,8 @@ import {
 } from '../features/chrome/home';
 import { lazyCard } from '../features/chrome/lazyCard';
 import type { Anchor } from './anchors';
-import { useGlobeAnchor, useGlobeEngine, useGlobeHandles } from './context';
+import type { GlobeHover } from './bindings';
+import { useGlobeAnchor, useGlobeEngine, useGlobeHandles, useGlobeHover } from './context';
 import './overlays.css';
 
 /** The full-viewport, pointer-transparent layer every globe overlay lives in. */
@@ -54,28 +55,21 @@ export function PlaceLabels() {
 
 /** The node or site under the pointer (after a short rest) or the moon's card (design 7.7, 6.4 P, 8.17). */
 export function GlobeTooltip() {
-  const { hover } = useGlobeHandles();
-  // The engine re-emits `hover` on every frame while the pointer rests on something, so the card follows
-  // what is under the pointer (its key), not the event: otherwise the delay would restart every frame and
-  // the card would never show.
-  const key = useSyncExternalStore(
-    hover.subscribe,
-    () => hoverKey(hover.get()),
-    () => '',
-  );
-  const [settled, setSettled] = useState('');
+  // The engine emits `hover` only when what the pointer is on changes (a node, a site, the moon, nothing),
+  // so each value is one target: the card waits for the rest delay on it, then shows.
+  const now = useGlobeHover();
+  const [settled, setSettled] = useState<GlobeHover | null>(null);
   useEffect(() => {
     // The pointer is over something: its card's code starts to load well before the rest delay is over.
-    if (key !== '') tip.preload();
-    if (key === '' || key === 'moon') {
-      setSettled(key);
+    if (now) tip.preload();
+    if (!now || now.kind === 'moon') {
+      setSettled(now);
       return;
     }
-    const h = setTimeout(() => setSettled(key), TIP_DELAY_MS);
+    const h = setTimeout(() => setSettled(now), TIP_DELAY_MS);
     return () => clearTimeout(h);
-  }, [key]);
-  const now = hover.get();
-  if (!now || key === '' || key !== settled) return null;
+  }, [now]);
+  if (!now || settled !== now) return null;
   return <tip.Card hover={now} />;
 }
 
