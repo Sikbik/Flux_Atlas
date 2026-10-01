@@ -296,6 +296,69 @@ fn shared_payment_address_pays_the_queue_head_not_a_lagging_winner() {
     assert_eq!(st.queue.head(Tier::Cumulus), Some(second));
 }
 
+/// L11: after a reorg the replacement block's payout goes to the node the real queue pays. An
+/// operator's two nodes share one address; the orphaned block paid the head. Without undoing
+/// that payout the head sat at the back and the replacement block (paying the same address)
+/// was attributed to the second node.
+#[test]
+fn a_reorg_undoes_orphaned_payouts_before_the_replacement_block() {
+    let mut st = common::seeded();
+    st.client_ranks.reset(&st.queue);
+    let q: Vec<NodeId> = st
+        .queue
+        .tier(Tier::Cumulus)
+        .unwrap()
+        .iter()
+        .take(2)
+        .collect();
+    let (head, second) = (q[0], q[1]);
+    let addr = st.nodes.rec(head).unwrap().payment_address.clone();
+    st.nodes.get_mut(second).unwrap().rec.payment_address = addr;
+    let before = st.nodes.rec(head).unwrap().last_paid_height;
+    let d = common::block("flux/daemon_getblock_2996916_verbosity2.json");
+    let mut tick = Tick::new(NOW);
+    apply_block(&mut st, &mut tick, &d, false);
+    assert_eq!(
+        st.nodes.rec(head).unwrap().last_paid_height,
+        Some(2_996_916)
+    );
+    assert_eq!(st.queue.head(Tier::Cumulus), Some(second));
+
+    // The block is orphaned; the replacement at the same height pays the same address.
+    let mut tick = Tick::new(NOW);
+    let undone = atlas_engine::derive::block::undo_payouts_above(&mut st, &mut tick, 2_996_915);
+    let head_back = st.queue.head(Tier::Cumulus);
+    let restored = st.nodes.rec(head).unwrap().last_paid_height;
+    let mut replacement = d.clone();
+    replacement.summary.hash = Hash32([0xee; 32]);
+    let mut tick = Tick::new(NOW);
+    let rep = apply_block(&mut st, &mut tick, &replacement, false);
+    assert_eq!(rep.attributions[0], Attribution::QueueHead);
+    assert_eq!(block_msg(&tick).payouts[0].node, Some(head));
+    assert_eq!(
+        st.nodes.rec(head).unwrap().last_paid_height,
+        Some(2_996_916)
+    );
+    assert_ne!(
+        st.nodes.rec(second).unwrap().last_paid_height,
+        Some(2_996_916),
+        "the operator's other node was not paid"
+    );
+    assert_eq!(undone, 3, "the three payouts of the orphaned block");
+    assert_eq!(restored, before);
+    assert_eq!(
+        head_back,
+        Some(head),
+        "the head was back before the replacement"
+    );
+    // A reorg below the undo window, or a second undo of the same heights, changes nothing.
+    let mut tick = Tick::new(NOW);
+    assert_eq!(
+        atlas_engine::derive::block::undo_payouts_above(&mut st, &mut tick, 2_996_916),
+        0
+    );
+}
+
 #[test]
 fn producer_prefix_resolution() {
     let mut st = common::seeded();

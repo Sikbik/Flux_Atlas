@@ -857,7 +857,12 @@ impl Reducer {
 
     fn reorg(&mut self, tick: &mut Tick, fork_height: u32, old_tip: u32, orphaned: Vec<Hash32>) {
         let now = tick.now_ms;
-        tick.batch.delete_blocks_from(fork_height + 1);
+        tick.batch.delete_blocks_from(fork_height.saturating_add(1));
+        // The orphaned payouts go back (L11), before the replacement blocks attribute theirs.
+        let undone = crate::derive::block::undo_payouts_above(&mut self.st, tick, fork_height);
+        if undone > 0 {
+            tracing::info!(fork_height, undone, "reorg: orphaned payouts undone");
+        }
         self.st.recent.retain(|b| b.height <= fork_height);
         self.st.tip = self.st.recent.back().map(|b| TipInfo {
             height: b.height,

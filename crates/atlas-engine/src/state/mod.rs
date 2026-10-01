@@ -345,7 +345,21 @@ pub struct NetworkState {
     pub summary_dirty: bool,
     /// Local GeoIP database (city names, approximate locations), when loaded.
     pub geoip: Option<crate::geoip::LoadedGeoIp>,
+    /// Per applied block, the payees' previous `last_paid_height`, so a reorg can undo the
+    /// orphaned payouts (newest last, bounded by [`PAYOUT_UNDO_BLOCKS`]).
+    pub payout_undo: VecDeque<PayoutUndo>,
 }
+
+/// The payouts one block applied, with what they replaced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PayoutUndo {
+    pub height: u32,
+    /// `(node, last_paid_height before this block)`.
+    pub paid: Vec<(NodeId, Option<u32>)>,
+}
+
+/// Blocks whose payouts can be undone (two finality windows and some slack).
+pub const PAYOUT_UNDO_BLOCKS: usize = 24;
 
 /// Max blocks kept in memory.
 pub const RECENT_BLOCKS: usize = 64;

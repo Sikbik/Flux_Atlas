@@ -77,6 +77,7 @@ pub fn apply_block(
 
     // Payouts.
     let expected = st.expected_payees.remove(&h);
+    let mut undo = Vec::new();
     for p in &mut summary.payouts {
         let (node, how) = attribute(st, expected.as_deref(), p.tier, &p.address);
         report.attributions.push(how);
@@ -84,6 +85,7 @@ pub fn apply_block(
         st.interval.payouts += p.amount;
         if let Some(id) = node {
             if let Some(e) = st.nodes.get_mut(id) {
+                undo.push((id, e.rec.last_paid_height));
                 e.rec.last_paid_height = Some(h);
                 e.rec.last_seen_ms = now;
                 e.touched = h;
@@ -113,6 +115,18 @@ pub fn apply_block(
             address: p.address.to_string(),
             amount: p.amount,
         });
+    }
+
+    // A block replayed at a height we hold replaces its undo record.
+    while st.payout_undo.back().is_some_and(|u| u.height >= h) {
+        st.payout_undo.pop_back();
+    }
+    st.payout_undo.push_back(crate::state::PayoutUndo {
+        height: h,
+        paid: undo,
+    });
+    while st.payout_undo.len() > crate::state::PAYOUT_UNDO_BLOCKS {
+        st.payout_undo.pop_front();
     }
 
     // Fluxnode transactions in block order.
@@ -429,6 +443,51 @@ pub fn apply_block(
     ));
     tick.publish_now = true;
     report
+}
+
+/// Undoes the payouts of the blocks above `fork_height` (a reorg orphaned them, L11): every
+/// payee gets back the `last_paid_height` it had before, and its queue position with it, so the
+/// replacement block's payout is attributed against the queue as it really stands (by the
+/// queue head) instead of falling back to the first queued node of the same address, which is
+/// another node for an operator with many. A payee whose last payment changed since (a
+/// reconcile adopted the list) is left alone. Clients get authoritative ranks for every node
+/// this moves (the tick's rank corrections). Returns the payouts undone.
+pub fn undo_payouts_above(st: &mut NetworkState, tick: &mut Tick, fork_height: u32) -> usize {
+    let mut undone = 0;
+    while st
+        .payout_undo
+        .back()
+        .is_some_and(|u| u.height > fork_height)
+    {
+        let Some(u) = st.payout_undo.pop_back() else {
+            break;
+        };
+        for (id, prev) in u.paid.iter().rev() {
+            let Some(e) = st.nodes.get_mut(*id) else {
+                continue;
+            };
+            if e.rec.last_paid_height != Some(u.height) {
+                continue;
+            }
+            e.rec.last_paid_height = *prev;
+            let tier = e.rec.tier;
+            if st.queue.contains(*id)
+                && let Some(r) = st.nodes.rec(*id)
+            {
+                let key = key_of(r);
+                st.queue.upsert(*id, tier, key);
+            }
+            st.nodes.touch_persist(*id);
+            tick.node_changed(DEV, *id, mask::PAID);
+            undone += 1;
+        }
+    }
+    if undone > 0 {
+        st.apply_ranks();
+        let payees = next_payees(st);
+        st.next_payees = payees;
+    }
+    undone
 }
 
 pub fn payee_dto(p: &NextPayee) -> NextPayeeDto {

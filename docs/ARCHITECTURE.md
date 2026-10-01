@@ -91,6 +91,16 @@ Environment: the Rust toolchain lives in `~/.cargo/bin` (`export PATH="$HOME/.ca
 - **Failover pool:** the primary is `https://api.runonflux.io`. The secondaries are healthy FluxOS nodes picked
   from the current node list (`http://<ip>:<apiport>`), health-scored and rotated. A response is only accepted
   if its chain height is within ±2 of the best known tip (this guards against stale nodes).
+  **Implemented (B9, X1 M3):** a node enters the pool only when its `daemon/getblockcount` is within 2 of the
+  best known tip (our applied tip while its block is under 5 min old, else Insight's `getInfo` height; with
+  neither the pool is emptied and chain reads stay on the gateway); the pool is re-checked every 5 min (up to 15
+  height probes for 5 nodes). Every `getblock` answer, from the gateway or a node, must be the requested block
+  (same hash) at a plausible height (at most the applied tip plus one block per 20 s since its time plus 60, or
+  a fixed chain anchor without a tip; a height near `u32::MAX` can no longer move the tip). A block a node
+  served is also checked against Insight (same hash at the same height; accepted unchecked only while Insight is
+  down). A rejected answer counts as a fault, drops a node from the pool, fails over to the next candidate, and
+  is counted (`atlas_upstream_answers_rejected_total`, events `failover_block_rejected`,
+  `failover_node_height_rejected`; `atlas_failover_pool_nodes` shows the pool).
 - Parsers are tolerant: unknown fields are ignored, and missing optional fields become `None`. Every parser has
   a unit test against `docs/research/fixtures/**`.
 - Large JSON (multi-MB node lists): parse from bytes with serde_json, or `sonic-rs` if a benchmark shows ≥ 2×
@@ -196,6 +206,16 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   the expected payees, emits `reorg` (+ a feed item), and **triggers an immediate NodeRegistry reconcile**. The
 >   replacement blocks then arrive as ordinary `block` messages. A reorg deeper than the window is logged as an
 >   error and treated as a discontinuity.
+>   **Bounded (B9, X1 L13):** the walk compares only heights the sync cursor holds (after a gap jump that is the
+>   jump block alone, so backfilled blocks below it are never judged); deleting needs Insight to confirm that our
+>   block above the fork is no longer canonical (when Insight still holds it, the gateway backend is the odd one
+>   out and nothing is deleted); one walk-back per sync, and a fork deeper than the comparable window drops that
+>   window once and jumps to the new tip instead of walking back window after window. Orphaned rows deeper than
+>   the window stay stored (never valid history deleted on one backend's word).
+>   **Payout undo (B9, X1 L11):** each applied block records, per paid node, the previous `last_paid_height`;
+>   a reorg restores it for every orphaned block and drops the orphaned blocks' payments rows, so the replacement
+>   block's payout is attributed against the restored queue, not by the fallback to the first node of the
+>   address.
 > - **Mesh expiry.** Each TopologySweep reporter's peer list replaces its previous one. A report not refreshed for
 >   **1 h** (about two sweep cycles) expires, and an edge no unexpired report lists is removed (streamed as a `mesh`
 >   delta).
