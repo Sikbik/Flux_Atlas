@@ -21,8 +21,11 @@
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNetwork } from '../../app/context';
+import { AimStrip } from '../../features/chrome/AimStrip';
 import { useApplyLayers } from '../../features/chrome/layers';
+import { Pulse } from '../../features/chrome/Pulse';
 import { useRootPrefs } from '../../features/chrome/prefs';
+import { BlockRail } from '../../features/chrome/Rail';
 import { StatusBar } from '../../features/chrome/StatusBar';
 import { CommandLayer } from '../../features/command';
 import {
@@ -45,7 +48,7 @@ import { ShellActionsContext } from './actions';
 import { Dock } from './Dock';
 import { useShellKeys } from './keys';
 import { useLauncher } from './launchers';
-import { BlockRail, BootVeil, PhoneTabs } from './regions';
+import { BootVeil, PhoneTabs } from './regions';
 import { useGlobeInsetSync, useWindowRouting } from './routing';
 import { TopBar } from './TopBar';
 import './frame.css';
@@ -71,7 +74,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const [phone, setPhone] = useState(() => viewportNow().w < PHONE_MAX_W);
   const topRef = useRef<HTMLElement>(null);
   const dockRef = useRef<HTMLElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLElement>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const { requestClose, focusWindow } = useWindowRouting(wm);
   const launch = useLauncher();
@@ -138,6 +141,8 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         <WindowTethers />
         <TopBar ref={topRef} phone={phone} />
         {phone ? null : <Dock ref={dockRef} />}
+        {phone ? null : <AimStrip />}
+        {phone ? null : <Pulse />}
         <main className="shell-stage" id="shell-stage" tabIndex={-1} data-region="stage" aria-label="Globe">
           {pageRoute ? (
             <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
