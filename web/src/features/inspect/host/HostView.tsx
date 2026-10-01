@@ -226,6 +226,7 @@ export function HostView({ ip }: { ip: string }) {
     provider,
     asn,
     place,
+    city,
     country,
     countryCode,
     hosting,
@@ -242,7 +243,8 @@ export function HostView({ ip }: { ip: string }) {
         title={ip}
         mono
         subtitle={
-          [provider === 'Unknown provider' ? null : provider, asn].filter(Boolean).join(' · ') || undefined
+          [place || null, provider === 'Unknown provider' ? null : provider].filter(Boolean).join(' · ') ||
+          undefined
         }
         tier={dominant === 'unknown' ? undefined : dominant}
         freshness={

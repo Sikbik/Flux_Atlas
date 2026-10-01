@@ -13,11 +13,26 @@
   }
 }
 
-/* The header's top right: the two small tools stay there on every width. */
+/* A fold's aside is one line that gives way before the title does: the kit's aside never shrinks, so a long
+   one would squeeze the title into a column of single letters. It keeps to half the window. */
+.ix-host-aside {
+  display: inline-block;
+  max-width: 50cqw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+/* The header's top right: the two small tools stay there on every width. The kit top-aligns the kind label,
+   which is right beside a chip but leaves it above the middle of a 44 px touch button; centre it. */
 .ix-host-tools {
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+.ix-host .ui-vh__kind {
+  align-self: center;
 }
 
 .ix-host-skel {

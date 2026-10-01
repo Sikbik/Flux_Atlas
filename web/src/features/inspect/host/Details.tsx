@@ -45,7 +45,7 @@ export function OperatorsFold({
       level={3}
       icon={Fingerprint}
       title="Operators"
-      aside={summary}
+      aside={<span className="ix-host-aside">{summary}</span>}
       open={open.isOpen('operators')}
       onOpenChange={(v) => open.setOpen('operators', v)}
     >
@@ -76,7 +76,10 @@ export function OperatorsFold({
 export interface HostPlace {
   provider: string;
   asn: string | null;
+  /** The whole address as far as it is known: city, region, country. */
   place: string;
+  /** The city, when the geo source has one (never guessed). */
+  city: string;
   country: string;
   countryCode: string;
   hosting: boolean | null;
@@ -94,8 +97,7 @@ export function LocationFold({ p, open }: { p: HostPlace; open: OpenSet }) {
       icon={MapPin}
       title="Location"
       aside={
-        [p.provider === 'Unknown provider' ? null : p.provider, p.country].filter(Boolean).join(' · ') ||
-        'Unknown'
+        <span className="ix-host-aside">{[p.city, p.country].filter(Boolean).join(', ') || 'Unknown'}</span>
       }
       open={open.isOpen('location')}
       onOpenChange={(v) => open.setOpen('location', v)}
