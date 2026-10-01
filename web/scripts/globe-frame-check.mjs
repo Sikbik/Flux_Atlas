@@ -267,9 +267,9 @@ if (!flag('quick')) {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(900);
   await check(page, 'settings closed');
-  await click('[aria-label="Explorer (E)"]', 'Explorer launcher');
+  await click('[data-region=dock] [aria-label^="Explorer"]', 'Explorer launcher');
   await check(page, 'explorer open (left)');
-  await click('[aria-label="About Flux (M)"]', 'About launcher');
+  await click('[data-region=dock] [aria-label^="About Flux"]', 'About launcher');
   await check(page, 'about docked (right) + explorer');
   await click('[data-window-type=about] [aria-label="Minimize"]', 'About minimize');
   await check(page, 'about minimized');
@@ -307,7 +307,7 @@ if (!flag('quick')) {
   await middleDrag(page, m1, 300);
   await page.mouse.up({ button: 'middle' });
   await page.waitForTimeout(800);
-  await page.click('[aria-label="Globe (G)"]').catch(() => failures.push('no Globe launcher'));
+  await page.click('[data-region=dock] [aria-label^="Globe"]').catch(() => failures.push('no Globe launcher'));
   await settle(page);
   await check(page, 'home control', {
     extra: (m) => [
