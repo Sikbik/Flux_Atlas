@@ -149,4 +149,41 @@ describe('AnchorSystem', () => {
     a.dispose();
     expect(e.attached).toBe(false);
   });
+
+  it('keeps a clipped label inside the free area, and fades it rather than popping', () => {
+    const e = fakeEngine() as ReturnType<typeof fakeEngine> & { framing(): { free: object } };
+    e.framing = () => ({ free: { x: 100, y: 100, w: 400, h: 300 } });
+    const a = new AnchorSystem();
+    a.attach(e as unknown as AnchorEngine);
+    const inside = el(60, 14);
+    const under = el(60, 14);
+    a.place(inside, { kind: 'world', lat: 20, lon: 20 }, { group: 'g', priority: 0, clip: 'free' });
+    a.place(under, { kind: 'world', lat: 20, lon: 60 }, { group: 'g', priority: 1, clip: 'free' });
+    e.tick();
+    expect(inside.style.visibility).toBe('');
+    expect(Number(inside.style.opacity)).toBeLessThan(1);
+    for (let k = 0; k < 10; k++) e.tick();
+    expect(inside.style.opacity).toBe('1');
+    expect(under.style.visibility).toBe('hidden');
+  });
+
+  it('lifts a label off a dense cluster of nodes, and hides it when every seat is covered', () => {
+    const e = fakeEngine() as ReturnType<typeof fakeEngine> & {
+      nodeDensity(): { count(x0: number, y0: number, x1: number, y1: number): number };
+    };
+    // A dense block of nodes from y 197 to 215, x 0 to 1000; and a wall of them at x 600 to 700, all heights.
+    e.nodeDensity = () => ({
+      count: (x0, y0, x1, y1) => (y1 > 197 && y0 < 215 ? 20 : 0) + (x1 > 600 && x0 < 700 ? 20 : 0),
+    });
+    const a = new AnchorSystem();
+    a.attach(e as unknown as AnchorEngine);
+    const lifted = el(60, 14);
+    const covered = el(60, 14);
+    a.place(lifted, { kind: 'world', lat: 20, lon: 20 }, { group: 'g', priority: 0, avoidNodes: true });
+    a.place(covered, { kind: 'world', lat: 20, lon: 62 }, { group: 'g', priority: 1, avoidNodes: true });
+    for (let k = 0; k < 30; k++) e.tick();
+    // The label's own seat (y 200) covers the block: it sits one seat higher (14 + 6 px).
+    expect(lifted.style.transform).toBe('translate3d(200px, 180px, 0)');
+    expect(covered.style.visibility).toBe('hidden');
+  });
 });

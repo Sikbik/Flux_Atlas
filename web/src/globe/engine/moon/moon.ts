@@ -840,6 +840,17 @@ export class Moon {
   emission = false;
   /** Boot assembly state (design 7.10.9), null when the moon is just the moon. */
   boot: MoonBoot | null = null;
+  /**
+   * Parked as a small flat symbol at a screen point (design 7.10.4: the phone header's Beat mini while a
+   * tall sheet covers the orbit), CSS px; null flies it back to its orbit. The moving there and back is
+   * eased (450 ms; 200 ms under reduced motion) and the orbit's clock keeps running underneath.
+   */
+  dock: { x: number; y: number; size: number } | null = null;
+  private dockK = 0;
+  private readonly dockAt = { x: 0, y: 0, size: 24 };
+  /** 0..1: the chain and the wake step back (to 20%) while an app constellation or an operator fan is on screen. */
+  chainDim = 0;
+  private chainDimK = 0;
   /** Where the moon is on screen this frame (the engine's pointer tests read it). */
   readonly screen: MoonScreen = { x: 0, y: 0, s: 60, r: 36, depth: 4, vis: 1, onScreen: false, hit: false };
   /** The orbit as drawn this frame: the shell and the sky blended. */
@@ -1503,6 +1514,30 @@ export class Moon {
       alphaK = boot.alpha ?? 1;
       white = boot.white ?? 0;
     }
+    // ---- parked in the chrome: the moon becomes a small flat symbol at a screen point ----
+    if (this.dock) {
+      this.dockAt.x = this.dock.x;
+      this.dockAt.y = this.dock.y;
+      this.dockAt.size = this.dock.size;
+    }
+    const dockRate = dt / (reduced ? 0.2 : 0.45);
+    this.dockK = this.placed
+      ? clamp(this.dockK + (this.dock ? dockRate : -dockRate), 0, 1)
+      : this.dock
+        ? 1
+        : 0;
+    const dk = smoother(this.dockK);
+    if (dk > 0) {
+      bx = lerp(bx, this.dockAt.x, dk);
+      by =
+        lerp(by, this.dockAt.y, dk) - (reduced ? 0 : Math.sin(Math.PI * dk) * Math.min(view.cssH * 0.04, 28));
+      bs = lerp(bs, this.dockAt.size, dk);
+      depthB = lerp(depthB, Math.max(0.006, 0.5 * Math.max(view.surf, 0.012)), dk);
+      flat = lerp(flat, 1, dk);
+      depthK *= 1 - dk;
+      glowK *= 1 - dk;
+      ringK *= 1 - dk;
+    }
     if (o.lite) {
       depthK = 0;
       glowK = 0;
@@ -1510,7 +1545,7 @@ export class Moon {
     if (park) alphaK *= this.parkFade;
     // World position: the orbit point itself, or (while the boot's symbol is still a screen object) the
     // point under its pixel at its own depth. The two meet exactly at the end of the lift.
-    if (boot && be < 1) {
+    if ((boot && be < 1) || dk > 0) {
       _v.set((bx / view.cssW) * 2 - 1, 1 - (by / view.cssH) * 2, 0.5).unproject(cam);
       _d.copy(_v).sub(cam.position).normalize();
       const along = Math.max(_d.dot(_f), 1e-3);
@@ -1520,12 +1555,12 @@ export class Moon {
     this.radius = this.model.radius * this.unit * 0.92;
     this.markPx = bs / SYM_H;
     // The planet may hide it, except while the boot's symbol is a flat screen object.
-    const occ = boot ? smoothstep(0.55, 1, be) : 1;
+    const occ = (boot ? smoothstep(0.55, 1, be) : 1) * (1 - dk);
     const visC = planetVisibility(cam.position, this.pos);
     this.zCue = clamp((cam.position.length() - dist) / Math.max(shape.radius, 0.1), -1, 1);
 
     // ---- orientation: parallel to the image plane, upright against screen-up, with a slow sway ----
-    const swayK = reduced ? 0 : boot ? be : 1;
+    const swayK = (reduced ? 0 : boot ? be : 1) * (1 - dk);
     const yaw = reduced ? 0.2 : (this.sway * Math.sin(time * 0.09 + 0.6) + 0.08) * swayK;
     const pitch = reduced ? 0.08 : this.sway * 0.42 * Math.sin(time * 0.061 + 2.1) * swayK;
     _q.copy(cam.quaternion);
@@ -1748,7 +1783,9 @@ export class Moon {
     // The lite tier draws no chain and no wake (design 7.10.10): the moon is flat there.
     const trailGoal = reduced || boot || o.lite ? 0 : nearFade;
     this.trailK = this.placed ? damp(this.trailK, trailGoal, 3.2, dt) : trailGoal;
-    const trailA = this.trailK;
+    // An app constellation or an operator fan takes the room: the chain steps back to 20% (design 7.10.3).
+    this.chainDimK = damp(this.chainDimK, clamp(this.chainDim, 0, 1), 4, dt);
+    const trailA = this.trailK * (1 - 0.8 * this.chainDimK) * (1 - dk);
     this.chain.update(
       time,
       this.e1,
@@ -1777,7 +1814,7 @@ export class Moon {
       by > -sc.r &&
       by < view.cssH + sc.r &&
       nearFade > 0.2;
-    sc.hit = sc.onScreen && !boot && visC > 0.6 && this.parkFade > 0.5;
+    sc.hit = sc.onScreen && !boot && dk < 0.5 && visC > 0.6 && this.parkFade > 0.5;
     this.placed = true;
 
     // ---- reduced motion: a seat out of sight is given up (fade, new seat, fade in), after half a second ----

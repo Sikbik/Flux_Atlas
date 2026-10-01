@@ -23,6 +23,7 @@ import { bindGlobe, type GlobeIntent, globeViewFromLocation } from './bindings';
 import { useGlobeHandles } from './context';
 import type { GlobeEngine } from './engine/GlobeEngine';
 import type { ArtDirection, QualityLevel } from './engine/types';
+import { cameraKeyFor, globeTakesKeys } from './keys';
 import { exposeGlobeStats } from './stats';
 
 /** Loads the engine chunk (three.js and the renderer). */
@@ -311,7 +312,7 @@ export function GlobeCanvas() {
     return () => mq.removeEventListener('change', apply);
   }, [engine, motion]);
 
-  // ---- the home control: any in-app link to the bare globe (the lockup, the dock's Globe) --------
+  // ---- the home control: any in-app link to the bare globe (the lockup) and the dock's Globe -------
   // Activating one is an explicit "home": the camera eases back to the home view, whether the link
   // navigates (closing a window) or not (already at `/`, which the router treats as a no-op).
   useEffect(() => {
@@ -319,10 +320,14 @@ export function GlobeCanvas() {
     const onClick = (ev: MouseEvent) => {
       if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey)
         return;
-      const a = (ev.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
-      if (!a || (a.target && a.target !== '_self')) return;
-      const url = new URL(a.href, window.location.href);
-      if (url.origin !== window.location.origin || url.pathname !== '/') return;
+      const el = (ev.target as Element | null)?.closest?.('a[href], [data-launcher="globe"]') ?? null;
+      if (!el) return;
+      // The dock's Globe is a button (it navigates through the shell's actions), not a link.
+      if (el instanceof HTMLAnchorElement) {
+        if (el.target && el.target !== '_self') return;
+        const url = new URL(el.href, window.location.href);
+        if (url.origin !== window.location.origin || url.pathname !== '/') return;
+      }
       // After the router has applied the navigation (the binding sees the bare view first).
       setTimeout(() => handles.binding.get()?.home(), 0);
     };
@@ -330,15 +335,40 @@ export function GlobeCanvas() {
     return () => document.removeEventListener('click', onClick, true);
   }, [engine, handles]);
 
-  // ---- keyboard: M is the moon's click (About Flux); every key wakes the screensaver --------
+  // ---- keyboard: M is the moon's click (About Flux), the camera keys (keys.ts); every key wakes the screensaver
   useEffect(() => {
     if (!engine) return;
     const onKey = (ev: KeyboardEvent) => {
       if (isTyping(ev.target)) return;
       engine.notifyKey();
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-      if ((ev.key === 'm' || ev.key === 'M') && nav.current.location.pathname !== '/ambient')
-        engine.moonClick();
+      const loc = nav.current.location;
+      if ((ev.key === 'm' || ev.key === 'M') && loc.pathname !== '/ambient') engine.moonClick();
+      // The camera keys (design 10.4): only when no field, menu, palette or window has the focus, and
+      // not in ambient or while the boot plays (any key skips it).
+      const act = cameraKeyFor(ev.key, ev.shiftKey);
+      if (!act || loc.pathname === '/ambient') return;
+      if (document.querySelector('.shell[data-boot="running"]')) return;
+      const palette = Object.hasOwn((loc.search as object) ?? {}, 'q');
+      if (!globeTakesKeys(ev, document.activeElement, palette)) return;
+      ev.preventDefault();
+      switch (act.kind) {
+        case 'orbit':
+          engine.orbitStep(act.x, act.y);
+          break;
+        case 'turn':
+          engine.turnStep(act.heading, act.tilt);
+          break;
+        case 'zoom':
+          engine.zoomStep(act.steps);
+          break;
+        case 'home':
+          void engine.home();
+          break;
+        case 'focus':
+          engine.flyToSelection();
+          break;
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

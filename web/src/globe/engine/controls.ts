@@ -13,6 +13,8 @@ export interface ControlsHost {
   onInteract(): void;
   /** A double-click with the middle button: back to the home view. */
   onHome?(): void;
+  /** A wheel turn or a pinch is about to zoom at (x, y), CSS px: the host picks what the zoom holds still. */
+  onZoomAt?(x: number, y: number): void;
 }
 
 /** Pitch per CSS pixel of vertical orbit drag, heading per pixel of horizontal drag (radians). */
@@ -161,7 +163,10 @@ export class Controls {
       const b = this.pts[1]!;
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       const ang = Math.atan2(b.y - a.y, b.x - a.x);
-      if (this.lastDist > 0) this.rig.zoomBy(this.lastDist / Math.max(1, dist));
+      if (this.lastDist > 0) {
+        this.host.onZoomAt?.((a.x + b.x) / 2, (a.y + b.y) / 2);
+        this.rig.zoomBy(this.lastDist / Math.max(1, dist));
+      }
       let dAng = ang - this.lastAng;
       if (dAng > Math.PI) dAng -= Math.PI * 2;
       if (dAng < -Math.PI) dAng += Math.PI * 2;
@@ -240,6 +245,8 @@ export class Controls {
     if (e.deltaMode === 1) d *= 32;
     else if (e.deltaMode === 2) d *= 320;
     d = Math.max(-240, Math.min(240, d));
+    const p = this.local(e);
+    this.host.onZoomAt?.(p.x, p.y);
     this.rig.zoomBy(Math.exp(d * 0.0016));
     this.host.onInteract();
   };

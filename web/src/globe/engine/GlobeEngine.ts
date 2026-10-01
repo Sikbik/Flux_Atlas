@@ -35,7 +35,7 @@ import {
 } from './moon/moon';
 import type { Inset } from './moon/orbit';
 import { ClusterLayer } from './nodes/clusterLayer';
-import { computeLayout, fanPosition } from './nodes/layout';
+import { computeLayout, slotPosition } from './nodes/layout';
 import { MeshStore } from './nodes/mesh';
 import { NodeLayer } from './nodes/nodeLayer';
 import { Picker, type PickResult } from './nodes/picking';
@@ -458,6 +458,7 @@ export class GlobeEngine {
       onHome: () => {
         if (this.mode === 'explore') void this.home();
       },
+      onZoomAt: (x, y) => this.zoomAnchorAt(x, y),
       onWake: (kind, x, y) => this.handleWake(kind, x, y),
       onInteract: () => {
         this.lastInputT = this.time;
@@ -598,6 +599,7 @@ export class GlobeEngine {
 
   setMode(mode: EngineMode, opts: AmbientOptions = {}): void {
     this.mode = mode;
+    this.rig.clearAnchor();
     // Explore frames the planet in the free area and pitches about its centre; the director composes with the plain rig.
     this.rig.framedTarget = mode === 'explore' ? 1 : 0;
     if (this.frameNo === 0) this.rig.framed = this.rig.framedTarget;
@@ -687,28 +689,104 @@ export class GlobeEngine {
     this.moon.status = status;
   }
 
+  /**
+   * Parks the moon as a small flat symbol at a screen point, CSS px (design 7.10.4: the phone header's
+   * Beat mini while a tall or full sheet covers the orbit; `size` is the symbol's height, 24 by default).
+   * It glides there and back (450 ms) and its orbit's clock keeps running; `null` returns it to its orbit.
+   */
+  setMoonPark(at: { x: number; y: number; size?: number } | null): void {
+    this.moon.dock = at ? { x: at.x, y: at.y, size: at.size ?? 24 } : null;
+  }
+
   /** Boot assembly (design 7.10.9): the symbol drawn by the moon's own code. `null` hands over to the orbit. */
   setMoonBoot(boot: MoonBoot | null): void {
     this.moon.boot = boot;
   }
 
   /**
-   * The boot reveal wave (design 7.12): only land and nodes within `thetaRad` of the origin node are
-   * drawn, and a thin ring marks the front. `null` ends it. Drive `thetaRad` from the boot's progress.
+   * The boot reveal wave (design 7.10.9, 7.12): only land and nodes within `thetaRad` of the origin are
+   * drawn, and a soft front of light marks the edge. The origin is a node (engine id) or a point
+   * (`{lat, lon}`), so the boot can start before the nodes are in. With `aperture` the whole picture
+   * (the planet's body, its atmosphere, the sky) is drawn only inside a circle that widens on screen from
+   * the origin with the wave: at `thetaRad` 0 the planet is hidden and the screen is the void; the moon
+   * and the boot's symbol are always drawn whole. `null` ends it.
    */
-  setReveal(originNodeId: number | null, thetaRad = 0): void {
+  setReveal(
+    origin: number | { lat: number; lon: number } | null,
+    thetaRad = 0,
+    opts: { aperture?: boolean } = {},
+  ): void {
     const v = this.u.uReveal.value;
-    if (originNodeId === null) {
+    this.revealAperture = false;
+    if (origin === null) {
       v.set(0, 0, 1, -1);
       return;
     }
-    const slot = this.nodes.slotOf(originNodeId);
-    if (slot < 0) {
-      v.set(0, 0, 1, -1);
-      return;
+    if (typeof origin === 'number') {
+      const slot = this.nodes.slotOf(origin);
+      if (slot < 0) {
+        v.set(0, 0, 1, -1);
+        return;
+      }
+      const d = this.nodes.dir;
+      v.set(d[slot * 3]!, d[slot * 3 + 1]!, d[slot * 3 + 2]!, Math.max(0, thetaRad));
+    } else {
+      const la = origin.lat * DEG;
+      const lo = origin.lon * DEG;
+      v.set(Math.cos(la) * Math.sin(lo), Math.sin(la), Math.cos(la) * Math.cos(lo), Math.max(0, thetaRad));
     }
-    const d = this.nodes.dir;
-    v.set(d[slot * 3]!, d[slot * 3 + 1]!, d[slot * 3 + 2]!, Math.max(0, thetaRad));
+    this.revealAperture = opts.aperture === true;
+  }
+  private revealAperture = false;
+  private readonly apertureBuf = { x: 0.5, y: 0.5, r: 0, feather: 0.02 };
+
+  /** The aperture for this frame (post.ts): a circle on screen around the reveal's origin that holds the wave's front. */
+  private aperture(): { x: number; y: number; r: number; feather: number } | null {
+    const v = this.u.uReveal.value;
+    if (!this.revealAperture || v.w < 0) return null;
+    const theta = v.w;
+    if (theta >= 3.1) return null;
+    const pt = this.tmpScreen;
+    this.rig.project(v.x, v.y, v.z, this.cssW, this.cssH, pt);
+    const h = Math.max(1, this.cssH);
+    const d = Math.max(1.0002, this.rig.distance);
+    const planet = this.rig.projScale / Math.sqrt(d * d - 1);
+    // The front's chord on screen, a little ahead of the wave so the planet's body is there when the land
+    // arrives; past a quarter turn the circle opens to the whole viewport.
+    const chord = planet * 2 * Math.sin(Math.min(theta, Math.PI) / 2) * 1.12;
+    const open = smoothstep(1.4, 2.9, theta);
+    const diag = Math.hypot(this.cssW, this.cssH) * 1.2;
+    const a = this.apertureBuf;
+    a.x = pt.x / Math.max(1, this.cssW);
+    a.y = 1 - pt.y / h;
+    a.r = (chord + (diag - chord) * open) / h;
+    a.feather = Math.max(0.03, 0.35 * a.r);
+    return a;
+  }
+
+  /**
+   * Scales the framed planet (1 is the framing's size): eases there over `ms` (ease-out). The boot
+   * drifts the camera in while the planet reveals and lets the globe settle from 0.94 when the chrome
+   * assembles (design 6.4 J). Picking, labels and the moon follow, since it is the lens.
+   */
+  setViewScale(scale: number, ms = 0): void {
+    this.viewScaleFrom = this.viewScaleNow;
+    this.viewScaleTo = clamp(scale, 0.3, 1);
+    this.viewScaleT = ms > 0 ? 0 : 1;
+    this.viewScaleDur = Math.max(0.001, ms / 1000);
+    if (ms <= 0) this.viewScaleNow = this.viewScaleTo;
+  }
+  private viewScaleNow = 1;
+  private viewScaleFrom = 1;
+  private viewScaleTo = 1;
+  private viewScaleT = 1;
+  private viewScaleDur = 0.001;
+
+  private stepViewScale(dt: number): void {
+    if (this.viewScaleT >= 1) return;
+    this.viewScaleT = Math.min(1, this.viewScaleT + dt / this.viewScaleDur);
+    const e = 1 - (1 - this.viewScaleT) ** 3;
+    this.viewScaleNow = this.viewScaleFrom + (this.viewScaleTo - this.viewScaleFrom) * e;
   }
 
   /** True while reduced motion is on (the OS setting, or `setReduced`). */
@@ -1177,16 +1255,43 @@ export class GlobeEngine {
         this.removeLinkInternal(delta.removeA[i]!, delta.removeB[i]!, !this.hidden);
     if (delta.addA && delta.addB) {
       let selectionGained = false;
+      const shown = this.handshakes;
+      shown.length = 0;
+      let firstHand = 0;
       for (let i = 0; i < Math.min(delta.addA.length, delta.addB.length); i++) {
         const e = this.addLinkInternal(delta.addA[i]!, delta.addB[i]!, !this.hidden, false);
         if (e < 0) continue;
-        if (!this.hidden) this.showLink(e);
+        if (!this.hidden && this.canShowLink(e)) {
+          // A link on the selection or a watched node goes first.
+          if (this.linkPriority(e)) {
+            shown.push(shown[firstHand] ?? e);
+            shown[firstHand++] = e;
+          } else shown.push(e);
+        }
         if (this.touchesSelection(e)) selectionGained = true;
       }
+      // Every link is in the store; only a few handshakes light per sweep, so an outlier report (a
+      // queried host that adds thousands of links at once) never reads as a flood of light or costs a
+      // frame: the priority ones, then an even sample of the rest.
+      const cap = GlobeEngine.HANDSHAKE_CAP;
+      if (shown.length <= cap) for (const e of shown) this.drawLink(e);
+      else {
+        const first = Math.min(firstHand, cap);
+        for (let k = 0; k < first; k++) this.drawLink(shown[k]!);
+        const rest = shown.length - firstHand;
+        const want = cap - first;
+        for (let k = 0; k < want && rest > 0; k++)
+          this.drawLink(shown[firstHand + Math.floor(((k + 0.5) * rest) / want)]!);
+      }
+      shown.length = 0;
       // One reveal per sweep: each rebuilds the adjacency and redraws the selection's arcs.
       if (selectionGained) this.revealPeers(this.selectedSlot);
     }
   }
+
+  /** At most this many link handshakes (a ribbon fading in and a packet) light per `updateMesh` call. */
+  static readonly HANDSHAKE_CAP = 48;
+  private readonly handshakes: number[] = [];
 
   private rebuildLinks(): void {
     const m = this.mesh;
@@ -1224,18 +1329,37 @@ export class GlobeEngine {
     return sel >= 0 && (this.mesh.sa[e] === sel || this.mesh.sb[e] === sel);
   }
 
-  /** Draws a freshly added link: fade-in, plus a bright packet so the eye sees the handshake. */
-  private showLink(e: number): void {
+  /** Whether a freshly added link would show its handshake (alive ends, the mesh mode, in view). */
+  private canShowLink(e: number): boolean {
     const m = this.mesh;
-    if (!m.alive[e]) return;
+    if (!m.alive[e]) return false;
     const sa = m.sa[e]!;
     const sb = m.sb[e]!;
-    if (sa === 0xffffffff || sb === 0xffffffff) return;
-    if (this.nodes.alive[sa] !== 1 || this.nodes.alive[sb] !== 1) return;
-    const watchedEnd =
-      (this.nodes.state[sa]! | this.nodes.state[sb]!) & (NodeState.Selected | NodeState.Watched);
-    if (this.meshMode !== 'flow' && !watchedEnd) return;
-    if (!this.fx.visible(sa) && !this.fx.visible(sb)) return;
+    if (sa === 0xffffffff || sb === 0xffffffff) return false;
+    if (this.nodes.alive[sa] !== 1 || this.nodes.alive[sb] !== 1) return false;
+    if (this.meshMode !== 'flow' && !this.linkPriority(e)) return false;
+    return this.fx.visible(sa) || this.fx.visible(sb);
+  }
+
+  /** A link with a selected or watched end. */
+  private linkPriority(e: number): boolean {
+    const m = this.mesh;
+    const sa = m.sa[e]!;
+    const sb = m.sb[e]!;
+    if (sa === 0xffffffff || sb === 0xffffffff) return false;
+    return ((this.nodes.state[sa]! | this.nodes.state[sb]!) & (NodeState.Selected | NodeState.Watched)) !== 0;
+  }
+
+  /** One link's handshake, when it would show (the choreographer's single links). */
+  private showLink(e: number): void {
+    if (this.canShowLink(e)) this.drawLink(e);
+  }
+
+  /** Draws a freshly added link: fade-in, plus a bright packet so the eye sees the handshake. */
+  private drawLink(e: number): void {
+    const m = this.mesh;
+    const sa = m.sa[e]!;
+    const sb = m.sb[e]!;
     const c = this.fx.color('mesh', this.tmpColor);
     this.veil.showEdge(e, this.time, 1.6, c, 1.8);
     this.fx.packetRaw(sa, sb, c.r * 1.6, c.g * 1.6, c.b * 1.6, 0.9, 2.0, 1.4);
@@ -1275,6 +1399,7 @@ export class GlobeEngine {
     }
     this.clearSelectionArcs();
     this.endBeacon();
+    this.rig.clearAnchor('lock');
     if (id === null || id === 0) {
       this.selectedSlot = -1;
       this.selectedId = 0;
@@ -1449,16 +1574,23 @@ export class GlobeEngine {
     lat: number,
     lon: number,
     alt = 1.2,
-    opts: { tilt?: number; heading?: number; duration?: number } = {},
+    opts: { tilt?: number; heading?: number; duration?: number; radius?: number } = {},
   ): Promise<boolean> {
     this.director?.interrupt();
     return this.rig.flyTo(lat, lon, alt, {
       tilt: opts.tilt ?? 0,
       heading: opts.heading ?? 0,
       duration: opts.duration,
+      radius: opts.radius,
     });
   }
 
+  /**
+   * Flies to a node so it lands exactly at the view centre (the free area's centre), where it is drawn at
+   * the flight's end (its place in its site's fan at that zoom), and then holds it there: if it is the
+   * selection, the camera stays locked on it through zoom, pitch and layout changes until the globe is
+   * dragged or another flight starts.
+   */
   flyToNode(id: number, alt?: number): Promise<boolean> {
     const s = this.nodes;
     const slot = s.slotOf(id);
@@ -1466,12 +1598,138 @@ export class GlobeEngine {
     const c = s.cluster[slot]!;
     const n = c === NO_CLUSTER ? 1 : s.cLive[c]!;
     const range = alt ?? (n > 60 ? 0.3 : n > 8 ? 0.36 : 0.5);
-    const tmp = this.tmp3;
-    const spacing = this.fanSpacingFor(range);
-    fanPosition(s, slot, spacing, tmp);
-    const lat = Math.asin(clamp(tmp[1]!, -1, 1)) * RAD;
-    const lon = Math.atan2(tmp[0]!, tmp[2]!) * RAD;
-    return this.flyTo(lat, lon, range, { tilt: 0.32 });
+    const p = this.tmpV;
+    this.nodeAt(slot, range, p);
+    const r = p.length();
+    const lat = Math.asin(clamp(p.y / r, -1, 1)) * RAD;
+    const lon = Math.atan2(p.x, p.z) * RAD;
+    return this.flyTo(lat, lon, range, { tilt: 0.32, radius: r }).then((done) => {
+      if (done && this.selectedId === id && this.mode === 'explore' && s.alive[slot] === 1) {
+        this.nodePos(slot, this.tmpV);
+        this.rig.setAnchor(this.tmpV, 'lock', 0, 0);
+      }
+      return done;
+    });
+  }
+
+  /** Where `slot` is drawn at camera range `range` (the layout's own formula; see `slotPosition`). */
+  private nodeAt(slot: number, range: number, out: THREE.Vector3): void {
+    const t = this.tmp3;
+    slotPosition(this.nodes, slot, 1 - smoothstep(0.35, 1.45, range), this.fanSpacingFor(range), t);
+    out.set(t[0]!, t[1]!, t[2]!);
+  }
+
+  /** Where `slot` is drawn right now. */
+  private nodePos(slot: number, out: THREE.Vector3): void {
+    const p = this.nodes.pos;
+    out.set(p[slot * 4]!, p[slot * 4 + 1]!, p[slot * 4 + 2]!);
+  }
+
+  private readonly tmpV = new THREE.Vector3();
+
+  /**
+   * After the layout: the anchor follows the selected node (it moves as its fan opens or closes with the
+   * zoom) and the rig turns so the node, or the point a zoom is anchored on, stays where it is on screen.
+   */
+  private holdAnchor(): void {
+    const rig = this.rig;
+    const kind = rig.anchorKind;
+    if (kind === null) return;
+    if (this.mode !== 'explore') {
+      rig.clearAnchor();
+      return;
+    }
+    if (kind === 'lock') {
+      const slot = this.selectedSlot;
+      if (slot < 0 || this.nodes.alive[slot] !== 1) {
+        rig.clearAnchor('lock');
+        return;
+      }
+      this.nodePos(slot, this.tmpV);
+      rig.moveAnchor(this.tmpV);
+    } else if (!rig.isZooming) {
+      // The zoom has settled: the point is where the user put it, and nothing holds it any more.
+      rig.clearAnchor('zoom');
+      return;
+    }
+    rig.holdAnchor(this.time);
+  }
+
+  /**
+   * A wheel turn or a pinch at (x, y), CSS px, before the zoom is applied: what the zoom holds still.
+   * The selection, while it is on screen, stays exactly where it is (design 7.7: the selection camera);
+   * otherwise the point of the planet under the pointer stays under it (zoom to the cursor); off the
+   * planet the zoom is about the view centre.
+   */
+  private zoomAnchorAt(x: number, y: number): void {
+    if (this.mode !== 'explore' || this.rig.isFree) return;
+    if (this.anchorSelection()) return;
+    const p = this.tmpV;
+    if (x >= 0 && this.rig.pickSurface((x / this.cssW) * 2 - 1, -((y / this.cssH) * 2 - 1), p)) {
+      this.rig.setAnchor(p, 'zoom');
+    } else {
+      this.rig.clearAnchor('zoom');
+    }
+  }
+
+  /** Locks the camera on the selection where it is on screen, if it is on screen. True when it did. */
+  private anchorSelection(): boolean {
+    const rig = this.rig;
+    if (rig.anchorKind === 'lock') return true;
+    const slot = this.selectedSlot;
+    if (slot < 0 || this.nodes.alive[slot] !== 1) return false;
+    this.nodePos(slot, this.tmpV);
+    const pt = this.tmpScreen;
+    const v = this.tmpV;
+    rig.project(v.x, v.y, v.z, this.cssW, this.cssH, pt);
+    const m = 8;
+    if (!pt.visible || pt.x < m || pt.y < m || pt.x > this.cssW - m || pt.y > this.cssH - m) return false;
+    return rig.setAnchor(v, 'lock');
+  }
+
+  /** The F key (design 10.4): back to the selection, centred and locked. False when nothing is selected. */
+  flyToSelection(): boolean {
+    if (this.mode !== 'explore' || this.selectedSlot < 0 || this.nodes.alive[this.selectedSlot] !== 1)
+      return false;
+    void this.flyToNode(this.selectedId, Math.min(this.rig.rangeD, 0.5));
+    return true;
+  }
+
+  // ---- keyboard camera (design 7.2, 10.4) ---------------------------------------------------
+  // Steps scale with the view, so a press moves the picture by about the same share of the screen at
+  // any zoom. Reduced motion takes them at once; otherwise the rig's springs glide (a short ease).
+
+  /** Arrow keys: turns the globe by `x`, `y` steps (+x shows more of what is right, +y of what is above). */
+  orbitStep(x: number, y: number): void {
+    if (this.mode !== 'explore') return;
+    this.keyInput();
+    const a = 0.22 * this.rig.viewSpan;
+    this.rig.panBy(x * a, y * a);
+    if (this.reducedMotion) this.rig.settleNow();
+  }
+
+  /** Shift and arrows: turns the heading and the pitch by steps (about the selection while it is locked). */
+  turnStep(heading: number, tilt: number): void {
+    if (this.mode !== 'explore') return;
+    this.keyInput();
+    this.rig.orbitBy(heading * 0.14, tilt * 0.09);
+    if (this.reducedMotion) this.rig.settleNow();
+  }
+
+  /** `+` and `-`: zooms by `steps` (positive is in), holding the selection still while it is on screen. */
+  zoomStep(steps: number): void {
+    if (this.mode !== 'explore' || steps === 0) return;
+    this.keyInput();
+    if (!this.anchorSelection()) this.rig.clearAnchor('zoom');
+    this.rig.zoomBy(0.72 ** steps);
+    if (this.reducedMotion) this.rig.settleNow();
+  }
+
+  private keyInput(): void {
+    this.lastInputT = this.time;
+    this.director?.interrupt();
+    this.moonView = null;
+    this.rig.releaseFree(7);
   }
 
   /** Fly to a co-location cluster so its stack unfurls. */
@@ -2063,6 +2321,83 @@ export class GlobeEngine {
 
   // ---- projection & info ------------------------------------------------------------------
 
+  private readonly densityBuf = { frame: -1, cols: 0, rows: 0, sat: new Uint32Array(0) };
+  private readonly densityApi = {
+    count: (x0: number, y0: number, x1: number, y1: number): number => this.densityCount(x0, y0, x1, y1),
+  };
+  private static readonly DENSITY_CELL = 12;
+
+  /**
+   * Nodes on screen this frame as a summed-area table of 12 px cells: `count(x0, y0, x1, y1)` is the
+   * number of visible nodes in a box (CSS px), in constant time. Built at most once a frame, on demand
+   * (the place labels keep off dense clusters with it).
+   */
+  nodeDensity(): { count(x0: number, y0: number, x1: number, y1: number): number } {
+    const d = this.densityBuf;
+    if (d.frame !== this.frameNo) this.buildDensity();
+    return this.densityApi;
+  }
+
+  private buildDensity(): void {
+    const d = this.densityBuf;
+    d.frame = this.frameNo;
+    const C = GlobeEngine.DENSITY_CELL;
+    const cols = Math.max(1, Math.ceil(this.cssW / C));
+    const rows = Math.max(1, Math.ceil(this.cssH / C));
+    const n = (cols + 1) * (rows + 1);
+    if (d.sat.length < n) d.sat = new Uint32Array(n);
+    const sat = d.sat;
+    sat.fill(0, 0, n);
+    d.cols = cols;
+    d.rows = rows;
+    const cam = this.rig.camera;
+    const m = this.tmpMat.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).elements;
+    const cp = this.rig.position;
+    const s = this.nodes;
+    const pos = s.pos;
+    const W = cols + 1;
+    for (let i = 0; i < s.high; i++) {
+      if (s.alive[i] !== 1) continue;
+      const o = i * 4;
+      if (pos[o + 3]! <= 0) continue;
+      const x = pos[o]!;
+      const y = pos[o + 1]!;
+      const z = pos[o + 2]!;
+      // Over the horizon: hidden by the planet.
+      if (x * cp.x + y * cp.y + z * cp.z < x * x + y * y + z * z) continue;
+      const w = m[3]! * x + m[7]! * y + m[11]! * z + m[15]!;
+      if (w <= 1e-3) continue;
+      const sx = ((m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) / w) * 0.5 + 0.5;
+      const sy = 0.5 - ((m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) / w) * 0.5;
+      const cx = Math.floor((sx * this.cssW) / C);
+      const cy = Math.floor((sy * this.cssH) / C);
+      if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+      sat[(cy + 1) * W + cx + 1]!++;
+    }
+    for (let r = 1; r <= rows; r++) {
+      let run = 0;
+      for (let c = 1; c <= cols; c++) {
+        run += sat[r * W + c]!;
+        sat[r * W + c] = sat[(r - 1) * W + c]! + run;
+      }
+    }
+  }
+
+  private densityCount(x0: number, y0: number, x1: number, y1: number): number {
+    const d = this.densityBuf;
+    if (d.frame < 0) return 0;
+    const C = GlobeEngine.DENSITY_CELL;
+    const W = d.cols + 1;
+    const c0 = clamp(Math.floor(x0 / C), 0, d.cols);
+    const c1 = clamp(Math.ceil(x1 / C), 0, d.cols);
+    const r0 = clamp(Math.floor(y0 / C), 0, d.rows);
+    const r1 = clamp(Math.ceil(y1 / C), 0, d.rows);
+    if (c1 <= c0 || r1 <= r0) return 0;
+    const t = d.sat;
+    return t[r1 * W + c1]! - t[r0 * W + c1]! - t[r1 * W + c0]! + t[r0 * W + c0]!;
+  }
+  private readonly tmpMat = new THREE.Matrix4();
+
   /** Projects a lat/lon (and radius, default 1) to CSS pixels on the canvas. */
   project(lat: number, lon: number, radius: number, out: ScreenPoint): boolean {
     const la = lat * DEG;
@@ -2207,7 +2542,7 @@ export class GlobeEngine {
       this.framingSpec,
     );
     rig.setViewShift(f.shiftX, f.shiftY);
-    rig.setFit(f.fit);
+    rig.setFit(f.fit * this.viewScaleNow);
     this.frameNow = f;
   }
 
@@ -2287,30 +2622,27 @@ export class GlobeEngine {
     const hit = this.doPick(this.hoverX, this.hoverY);
     const slot = hit ? this.pickScratch.slot : -1;
     const cluster = hit ? this.pickScratch.cluster : -1;
+    // A stack reads as its site until it fans out: the same node can change what it stands for.
+    const site =
+      slot >= 0 &&
+      (this.pickScratch.column ||
+        (this.layoutFan < 0.55 && cluster !== NO_CLUSTER && this.nodes.cLive[cluster]! > 1));
+    // `hover` is emitted when what the pointer is on changes (a node, a site, nothing), never per frame.
+    if (slot === this.hoverSlot && (slot < 0 || site === this.hoverSite)) return;
     if (slot !== this.hoverSlot) {
       if (this.hoverSlot >= 0) this.nodes.setState(this.hoverSlot, NodeState.Hovered, false);
       this.hoverSlot = slot;
       if (slot >= 0) this.nodes.setState(slot, NodeState.Hovered, true);
-      this.hoverCluster = cluster;
       this.canvas.style.cursor = slot >= 0 ? 'pointer' : '';
-      if (slot >= 0) {
-        const stacked = this.layoutFan < 0.55 && this.nodes.cLive[cluster]! > 1 && cluster !== NO_CLUSTER;
-        this.emit(
-          'hover',
-          this.makePickInfo(slot, this.pickScratch.column || stacked, this.pickScratch.x, this.pickScratch.y),
-        );
-      } else {
-        this.emit('hover', null);
-      }
-    } else if (slot >= 0) {
-      // Keep the tooltip anchored while the pointer moves inside the same node.
-      const stacked = this.layoutFan < 0.55 && this.nodes.cLive[cluster]! > 1 && cluster !== NO_CLUSTER;
-      this.emit(
-        'hover',
-        this.makePickInfo(slot, this.pickScratch.column || stacked, this.pickScratch.x, this.pickScratch.y),
-      );
     }
+    this.hoverCluster = cluster;
+    this.hoverSite = site;
+    this.emit(
+      'hover',
+      slot >= 0 ? this.makePickInfo(slot, site, this.pickScratch.x, this.pickScratch.y) : null,
+    );
   }
+  private hoverSite = false;
 
   private clearHover(): void {
     if (this.hoverSlot >= 0) this.nodes.setState(this.hoverSlot, NodeState.Hovered, false);
@@ -2539,9 +2871,35 @@ export class GlobeEngine {
     // The globe is framed in the free area of the viewport (the part the chrome and docked windows
     // leave open): optically centred, and fitted with clearance at the home zoom (framing.ts).
     this.stepInset(dt);
+    this.stepViewScale(dt);
     this.applyFraming();
     u.uViewShift.value.set(this.rig.shiftNdcX, this.rig.shiftNdcY);
     this.rig.update(dt, this.time);
+    // Layout: stack <-> fan by camera range.
+    const range = this.rig.lodRange;
+    // Stacks always unfurl into fans with zoom (spires only change how tall the towers draw).
+    const fan = 1 - smoothstep(0.35, 1.45, range);
+    const spacing = this.fanSpacingFor(range);
+    if (
+      s.posDirty ||
+      Math.abs(fan - this.layoutFan) > 0.0012 ||
+      Math.abs(spacing / Math.max(1e-6, this.layoutSpacing) - 1) > 0.008 ||
+      this.layoutAnimating
+    ) {
+      this.layoutAnimating = computeLayout(s, {
+        belt: this.showBelt,
+        fan,
+        spacing,
+        spireScale: this.tokens.spireScale * (this.effects.spires ? 1 : 0.0001),
+        minTower: this.towerThreshold(range),
+        pxPerRad: this.rig.projScale / Math.max(1.02, this.rig.distance),
+        dt,
+      });
+      this.layoutFan = fan;
+      this.layoutSpacing = spacing;
+      s.posDirty = true;
+    }
+    this.holdAnchor();
     const cam = this.rig.camera;
     u.uCamPos.value.copy(cam.position);
     u.uCamRight.value.copy(this.rig.right);
@@ -2558,6 +2916,8 @@ export class GlobeEngine {
     const moon = this.moon;
     if (moon.enabled) {
       moon.reduced = this.reducedMotion;
+      // An app constellation or a focus set (the operator's fan) on screen: the chain steps back (design 7.10.3).
+      moon.chainDim = this.conActive || this.focusOnly ? 1 : 0;
       // A free moon shot (portrait, earthrise, eclipse, follow) lifts the moon onto the sky orbit; otherwise it rides the shell ring.
       moon.lift(this.moonView !== null);
       const mv = this.moonViewBuf;
@@ -2618,30 +2978,6 @@ export class GlobeEngine {
     }
     if (this.effects.atmosphere) this.u.uAtmo.value = this.ambientBoost.atmo;
 
-    // Layout: stack <-> fan by camera range.
-    const range = this.rig.lodRange;
-    // Stacks always unfurl into fans with zoom (spires only change how tall the towers draw).
-    const fan = 1 - smoothstep(0.35, 1.45, range);
-    const spacing = this.fanSpacingFor(range);
-    if (
-      s.posDirty ||
-      Math.abs(fan - this.layoutFan) > 0.0012 ||
-      Math.abs(spacing / Math.max(1e-6, this.layoutSpacing) - 1) > 0.008 ||
-      this.layoutAnimating
-    ) {
-      this.layoutAnimating = computeLayout(s, {
-        belt: this.showBelt,
-        fan,
-        spacing,
-        spireScale: this.tokens.spireScale * (this.effects.spires ? 1 : 0.0001),
-        minTower: this.towerThreshold(range),
-        pxPerRad: this.rig.projScale / Math.max(1.02, this.rig.distance),
-        dt,
-      });
-      this.layoutFan = fan;
-      this.layoutSpacing = spacing;
-      s.posDirty = true;
-    }
     u.uFan.value = fan;
     this.lensNow = lensAtDistance(this.rig.projScale, Math.max(0.004, this.rig.distance - 1));
     // The markers' dark halo has nothing to do until the lens opens: no draw at the global view.
@@ -2737,6 +3073,7 @@ export class GlobeEngine {
       bloomEnabled: this.effects.bloom,
       time: this.time,
       fade: this.fade * this.sceneFade,
+      aperture: this.aperture(),
     };
     this.post.render(
       this.scene,

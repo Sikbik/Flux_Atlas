@@ -202,6 +202,9 @@ float revealRing(vec3 n) {
   if (uReveal.w < 0.0 || uReveal.w > 3.05) return 0.0;
   float ang = acos(clamp(dot(n, uReveal.xyz), -1.0, 1.0));
   float px = (ang - uReveal.w) / max(uRevealPx, 1e-6);
-  return exp(-px * px / 2.4) * 0.95 + exp(-px * px / 140.0) * 0.14;
+  // Light, not a line: a soft crest at the front and a glow that trails back over the lit side.
+  float crest = exp(-px * px / 18.0);
+  float wake = px < 0.0 ? exp(px / 30.0) : 0.0;
+  return crest * 0.42 + wake * 0.2;
 }
 `;

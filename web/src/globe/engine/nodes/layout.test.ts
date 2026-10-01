@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEG } from '../math';
 import type { NodeColumns } from '../types';
-import { computeLayout, fanPosition, type LayoutParams } from './layout';
+import { computeLayout, type LayoutParams, slotPosition } from './layout';
 import { FAN_GROUP_ARC, NodeStore } from './store';
 
 const KM = 1 / 6371;
@@ -177,20 +177,22 @@ describe('fan groups', () => {
     expect(s.pos[3]).toBe(1);
   });
 
-  it('fanPosition lands where the layout draws a fully fanned node', () => {
+  it('slotPosition is exactly where the layout draws a node, at any fan blend (the camera lands on it)', () => {
     const s = load([
       { loc: 1, lat: 49.45, lon: 11.07, n: 60 },
       { loc: 2, lat: 49.4525, lon: 11.0725, n: 40 },
       { loc: 3, lat: 48.86, lon: 2.35, n: 25 },
+      { loc: 4, lat: 34.05, lon: -118.25, n: 1 },
     ]);
-    computeLayout(s, params());
     const out = new Float32Array(3);
-    for (let slot = 0; slot < s.high; slot++) {
-      fanPosition(s, slot, 1.4 * KM, out);
-      const r = Math.hypot(s.pos[slot * 4]!, s.pos[slot * 4 + 1]!, s.pos[slot * 4 + 2]!);
-      expect(s.pos[slot * 4]! / r).toBeCloseTo(out[0]!, 4);
-      expect(s.pos[slot * 4 + 1]! / r).toBeCloseTo(out[1]!, 4);
-      expect(s.pos[slot * 4 + 2]! / r).toBeCloseTo(out[2]!, 4);
+    for (const fan of [0, 0.4, 0.95, 1]) {
+      computeLayout(s, params({ fan }));
+      for (let slot = 0; slot < s.high; slot++) {
+        slotPosition(s, slot, fan, 1.4 * KM, out);
+        expect(out[0]).toBe(s.pos[slot * 4]);
+        expect(out[1]).toBe(s.pos[slot * 4 + 1]);
+        expect(out[2]).toBe(s.pos[slot * 4 + 2]);
+      }
     }
   });
 

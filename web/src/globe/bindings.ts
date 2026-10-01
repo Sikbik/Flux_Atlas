@@ -1,6 +1,6 @@
 // Bindings: the live runtime and the URL drive the globe engine; the globe's own input (clicks,
 // hover, the moon) comes back out as intents for the router. Pure TypeScript, no React and no
-// three.js: the engine is reached through `GlobeTarget` (a structural subset of `GlobeEngine`), so the
+// three.js: the engine is reached through `GlobeTarget` (target.ts, a structural subset of `GlobeEngine`), so the
 // whole module is unit-tested with a fake engine (bindings.test.ts).
 //
 //   NetworkStore snapshot            -> engine.setNodes (keyed by node id: store rows are unordered)
@@ -26,77 +26,14 @@ import { NodeFlag } from '../api/nodesBin';
 import type { EffectSink } from '../choreo/effects';
 import { type NetworkStore, Slice, type StoreChange } from '../store/network';
 import { NodeField, type NodeTable, Reach } from '../store/nodeTable';
-import type { LabelAnchor, LabelAnchorInput, ScreenPoint } from './engine/GlobeEngine';
-import type { MoonState } from './engine/moon/moon';
-import type {
-  ArtDirection,
-  EngineEvents,
-  EngineMode,
-  EngineStats,
-  NodeColumns,
-  NodeDelta,
-  NodeFilter,
-  PickInfo,
-  QualityLevel,
-} from './engine/types';
+import type { NodeColumns, NodeDelta, NodeFilter, PickInfo } from './engine/types';
+import type { GlobeTarget } from './target';
 
 // -------------------------------------------------------------------------------------------------
-// The engine surface the app uses
+// The engine surface the app uses: `GlobeTarget` (./target.ts)
 // -------------------------------------------------------------------------------------------------
 
-/** The part of `GlobeEngine` the app talks to (bindings, canvas, anchors). */
-export interface GlobeTarget {
-  readonly sink: EffectSink;
-  readonly stats: EngineStats;
-  readonly reduced: boolean;
-  setNodes(cols: NodeColumns, opts?: { animate?: boolean; intro?: boolean }): void;
-  updateNodes(delta: NodeDelta): void;
-  setMesh(a: ArrayLike<number>, b: ArrayLike<number>): void;
-  updateMesh(delta: {
-    addA?: ArrayLike<number>;
-    addB?: ArrayLike<number>;
-    removeA?: ArrayLike<number>;
-    removeB?: ArrayLike<number>;
-  }): void;
-  setMeshMode(mode: 'off' | 'selection' | 'flow'): void;
-  setFilter(filter: NodeFilter | null, allowIds?: ArrayLike<number> | null): void;
-  setWatched(ids: ArrayLike<number>): void;
-  select(id: number | null, opts?: { fly?: boolean; alt?: number; silent?: boolean }): void;
-  setHover(id: number | null): void;
-  flyTo(
-    lat: number,
-    lon: number,
-    alt?: number,
-    opts?: { tilt?: number; heading?: number; duration?: number },
-  ): Promise<boolean>;
-  showAppConstellation(ids: ArrayLike<number> | null, opts?: { name?: string; fly?: boolean }): void;
-  clearAppConstellation(): void;
-  setMode(mode: EngineMode): void;
-  /** Eases back to the home view (no pitch, north up, the home zoom, framed in the free area). */
-  home(): Promise<boolean>;
-  setMoon(opts: {
-    on?: boolean;
-    mode?: 'auto' | 'companion' | 'orbit';
-    scale?: number;
-    padTop?: number;
-  }): void;
-  moonState(): MoonState;
-  moonClick(): void;
-  setBeat(v: number): void;
-  setMoonStatus(status: 'live' | 'late' | 'offline' | 'archive'): void;
-  seedMoonChain(blocks: readonly { height: number; time: number }[]): void;
-  setInset(inset: { left: number; right: number; top: number; bottom: number }, ms?: number): void;
-  setArtDirection(art: ArtDirection): void;
-  setQuality(level: QualityLevel): void;
-  setReduced(reduced: boolean): void;
-  nodeInfo(id: number): PickInfo | null;
-  projectNode(id: number, out: ScreenPoint): boolean;
-  project(lat: number, lon: number, radius: number, out: ScreenPoint): boolean;
-  setLabelAnchors(list: readonly LabelAnchorInput[]): void;
-  labelAnchors(): readonly LabelAnchor[];
-  notifyKey(): void;
-  on<K extends keyof EngineEvents>(type: K, cb: (payload: EngineEvents[K]) => void): () => void;
-}
+export type { GlobeTarget } from './target';
 
 // -------------------------------------------------------------------------------------------------
 // Ids across the boundary

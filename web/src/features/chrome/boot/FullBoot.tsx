@@ -34,12 +34,15 @@ import { BootSignalCollector, type Marks, readMarks } from './signals';
 import { bootPhase, finishBoot } from './state';
 import './boot.css';
 
-/** The engine's boot surface, feature-detected: a build without it still boots, without the symbol. */
-interface BootEngine {
-  setMoonBoot?(boot: unknown): void;
-  setReveal?(origin: number | null, theta?: number): void;
-  setInset?(inset: { left: number; right: number; top: number; bottom: number }, ms?: number): void;
-}
+/**
+ * The globe while the symbol assembles (design 6.4 J): the planet is hidden behind the reveal's aperture
+ * until the wave rolls over it, and drifts in from this scale; it settles from 0.94 to 1 as the chrome
+ * assembles. The wave's front never jumps: it grows at most this fast (radians per second).
+ */
+const DRIFT_FROM = 0.84;
+const DRIFT_TO = 0.94;
+const SETTLE_MS = 1500;
+const WAVE_MAX_RATE = 1.6;
 
 const TIERS = ['cumulus', 'nimbus', 'stratus'] as const;
 
@@ -68,7 +71,7 @@ export function FullBoot({ choice }: { choice: BootMode }) {
     const t0 = performance.now();
     const timeline = new BootTimeline(choice, t0);
     const collector = new BootSignalCollector(t0);
-    const engine = (): BootEngine | null => handles.engine.get() as unknown as BootEngine | null;
+    const engine = () => handles.engine.get();
     const q = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel);
     const v = {
       pct: q('.boot-pct b'),
@@ -114,8 +117,10 @@ export function FullBoot({ choice }: { choice: BootMode }) {
       if (ended) return;
       ended = true;
       const e = engine();
-      e?.setMoonBoot?.(null);
-      e?.setReveal?.(null, 0);
+      e?.setMoonBoot(null);
+      e?.setReveal(null);
+      // The globe settles from its boot scale while the chrome assembles; a skip lands at once.
+      e?.setViewScale(1, why === 'skip' || reduced ? 0 : SETTLE_MS);
       markBootedNow();
       root.dataset.done = '';
       cancelAnimationFrame(raf);
@@ -126,7 +131,7 @@ export function FullBoot({ choice }: { choice: BootMode }) {
       if (ended || skipped) return;
       skipped = true;
       // Jump to the assembled shell: the globe takes the shell's inset at once.
-      engine()?.setInset?.(globeInset(wm.getState()), 1);
+      engine()?.setInset(globeInset(wm.getState()), 1);
       end('skip');
     };
     actions.current = {
@@ -163,6 +168,9 @@ export function FullBoot({ choice }: { choice: BootMode }) {
       return s.nodes.count > 0 ? toEngineId(s.nodes.ids[0] ?? 0) : null;
     };
     let origin: number | null = null;
+    /** The wave's front as drawn (it follows the model's, never faster than WAVE_MAX_RATE). */
+    let wave = 0;
+    let waveAt = performance.now();
 
     const paint = (f: BootFrame, fx: BootFacts) => {
       setText(v.pct, String(f.percent));
@@ -213,14 +221,26 @@ export function FullBoot({ choice }: { choice: BootMode }) {
 
     const drive = (f: BootFrame) => {
       const e = engine();
-      if (!e?.setMoonBoot) return;
+      if (!e) return;
       if (!engineOn) {
-        if (collector.done.nodes === undefined) return;
-        origin = originOf();
-        e.setInset?.(start, 1);
+        // From the first frame the engine has: the globe sits right of the log, hidden (the void), a little
+        // smaller, and the symbol assembles in its canvas.
+        e.setInset(start, 1);
+        e.setViewScale(reduced ? 1 : DRIFT_FROM, 0);
         engineOn = true;
         root.dataset.engine = 'on';
       }
+      if (origin === null && collector.done.nodes !== undefined) {
+        origin = originOf();
+        // The wave starts at the newest producer: turn the dark planet to face it before it lights.
+        const at = origin === null ? null : e.nodeInfo(origin);
+        if (at && Number.isFinite(at.lat) && !reduced)
+          void e.flyTo(at.lat, at.lon, e.homeRange, { duration: 0.6 });
+      }
+      const now = performance.now();
+      const step = (now - waveAt) / 1000;
+      waveAt = now;
+      wave = origin === null ? 0 : Math.min(f.theta, wave + WAVE_MAX_RATE * step);
       const be = easeInOut(f.lift);
       e.setMoonBoot({
         pieces: f.pieces,
@@ -233,11 +253,20 @@ export function FullBoot({ choice }: { choice: BootMode }) {
         glow: 0.3 + 0.7 * be,
         alpha: 1,
       });
-      e.setReveal?.(origin, f.theta);
+      // Reduced motion: no aperture and no drift; the land and the nodes still come in with the wave.
+      if (reduced) e.setReveal(origin, f.theta);
+      else {
+        e.setReveal(origin ?? { lat: 0, lon: 0 }, wave, { aperture: true });
+        // The camera drifts in while the planet lights (design 6.4 J, 60 to 100%).
+        e.setViewScale(
+          DRIFT_FROM +
+            (DRIFT_TO - DRIFT_FROM) * easeInOut(Math.min(1, Math.max(0, (f.progress - 0.45) / 0.55))),
+        );
+      }
       if (f.lift > 0 && !lifted) {
         lifted = true;
         // The globe leaves the centre for the shell's free area over the same time as the lift.
-        e.setInset?.(globeInset(wm.getState()), LIFT_MS[reduced ? 'reduced' : 'first']);
+        e.setInset(globeInset(wm.getState()), LIFT_MS[reduced ? 'reduced' : 'first']);
       }
     };
 
@@ -281,8 +310,9 @@ export function FullBoot({ choice }: { choice: BootMode }) {
       cancelAnimationFrame(raf);
       if (!ended) {
         const e = engine();
-        e?.setMoonBoot?.(null);
-        e?.setReveal?.(null, 0);
+        e?.setMoonBoot(null);
+        e?.setReveal(null);
+        e?.setViewScale(1, 0);
       }
     };
   }, []);

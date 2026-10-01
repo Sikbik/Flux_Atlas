@@ -1,5 +1,7 @@
 // Post-processing: multisampled HDR scene target, a progressive downsample/upsample bloom
 // pyramid, and a single composite pass (tone map, chromatic aberration, vignette, grain, dither).
+// Between the scene and the overlay (the moon), an optional aperture: only a soft-edged circle of the
+// scene is kept (the boot reveals the planet through it); the moon is drawn after it, always whole.
 //
 // Everything is preallocated; `render` allocates nothing.
 
@@ -74,6 +76,20 @@ void main() {
   gl_FragColor = vec4(col * (uWeight / 16.0), 1.0);
 }`;
 
+// Keeps the scene inside a circle (centre `uC` in uv, radius and feather in viewport heights) and darkens
+// the rest to the void. Colour only: the alpha channel carries the moon's exempt mask.
+const APERTURE_FRAG = /* glsl */ `
+uniform vec2 uC;
+uniform float uR;
+uniform float uF;
+uniform float uAspect;
+in vec2 vUv;
+void main() {
+  vec2 d = (vUv - uC) * vec2(uAspect, 1.0);
+  float k = 1.0 - smoothstep(uR - uF, uR, length(d));
+  gl_FragColor = vec4(0.0, 0.0, 0.0, k);
+}`;
+
 const COMPOSITE_FRAG = /* glsl */ `
 ${GLSL_CONSTANTS}
 ${GLSL_TONEMAP}
@@ -137,6 +153,8 @@ export interface PostParams {
   bloomEnabled: boolean;
   time: number;
   fade: number;
+  /** The aperture: only this circle of the scene is drawn (CSS-independent: uv centre, radius and feather in viewport heights). Null: the whole scene. */
+  aperture?: { x: number; y: number; r: number; feather: number } | null;
 }
 
 export class Post {
@@ -149,6 +167,7 @@ export class Post {
   private readonly downMat: THREE.ShaderMaterial;
   private readonly upMat: THREE.ShaderMaterial;
   private readonly compMat: THREE.ShaderMaterial;
+  private readonly apertureMat: THREE.ShaderMaterial;
   private width = 2;
   private height = 2;
   samples = 4;
@@ -201,6 +220,25 @@ export class Post {
         uGrain: { value: 0.02 },
         uVignette: { value: 0.5 },
         uFade: { value: 1 },
+      },
+    });
+    this.apertureMat = new THREE.ShaderMaterial({
+      ...common,
+      vertexShader: FS_VERT,
+      fragmentShader: APERTURE_FRAG,
+      transparent: true,
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.ZeroFactor,
+      blendDst: THREE.SrcAlphaFactor,
+      blendEquationAlpha: THREE.AddEquation,
+      blendSrcAlpha: THREE.ZeroFactor,
+      blendDstAlpha: THREE.OneFactor,
+      uniforms: {
+        uC: { value: new THREE.Vector2(0.5, 0.5) },
+        uR: { value: 0 },
+        uF: { value: 0.02 },
+        uAspect: { value: 1 },
       },
     });
     this.tri = new THREE.Mesh(geo, this.downMat);
@@ -280,6 +318,16 @@ export class Post {
     r.setRenderTarget(rt);
     r.clear(true, true, false);
     r.render(scene, camera);
+    const ap = p.aperture;
+    if (ap) {
+      const au = this.apertureMat.uniforms;
+      (au.uC!.value as THREE.Vector2).set(ap.x, ap.y);
+      au.uR!.value = ap.r;
+      au.uF!.value = Math.max(1e-4, ap.feather);
+      au.uAspect!.value = outW / Math.max(1, outH);
+      this.tri.material = this.apertureMat;
+      r.render(this.fsScene, this.fsCam);
+    }
     if (overlay) {
       // Drawn last, with a fresh depth buffer: nothing in the scene can cover it (design 7.3: "the moon is last").
       r.clearDepth();
@@ -339,6 +387,7 @@ export class Post {
     this.downMat.dispose();
     this.upMat.dispose();
     this.compMat.dispose();
+    this.apertureMat.dispose();
     this.tri.geometry.dispose();
   }
 }
