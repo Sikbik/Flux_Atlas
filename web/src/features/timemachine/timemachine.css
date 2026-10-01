@@ -628,9 +628,17 @@
   font-weight: var(--fw-medium);
 }
 
+/* On a short screen the dock (it needs about 600 px) reaches down into the strip: keep the controls
+   clear of it. */
+@media (max-height: 880px) {
+  .tm-strip__body {
+    padding-left: calc(var(--dock-w) + var(--space-6));
+  }
+}
+
 /* ---- narrower strips ---------------------------------------------------------------------------- */
 
-@container tm-strip (max-width: 980px) {
+@container tm-strip (max-width: 1100px) {
   .tm-speed--segments {
     display: none;
   }

@@ -49,7 +49,7 @@ export function TimeMachineView({ t, speed }: { t?: string | undefined; speed?: 
     <>
       {createPortal(
         <>
-          <Grade on={archive} />
+          <Grade on={archive && state.info !== null} />
           <Strip data={data} />
           <ArchiveChip
             tm={tm}

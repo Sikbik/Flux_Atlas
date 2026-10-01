@@ -4,7 +4,7 @@
 // server's did, so nobody mistakes it for a blockchain archive.
 
 import { Radio, X } from 'lucide-react';
-import type { KeyboardEvent } from 'react';
+import { type KeyboardEvent, useId } from 'react';
 import { Button, IconButton, StatusChip } from '../../../ui';
 import type { TimeMachineData } from '../hooks/useTimeMachine';
 import { formatInstantMinutes } from '../lib/time';
@@ -14,6 +14,7 @@ import { Transport } from './Transport';
 export function Strip({ data }: { data: TimeMachineData }) {
   const { tm, state, now, start, ready, curve, curveLoading, speeds, indexError, retryIndex, leave } = data;
   const archive = state.mode === 'archive';
+  const titleId = useId();
 
   // Escape inside the strip leaves the time machine. It stops here so the shell's own Escape (which
   // closes the topmost window) does not also fire.
@@ -26,11 +27,14 @@ export function Strip({ data }: { data: TimeMachineData }) {
   return (
     <section
       className="tm-strip"
-      aria-label="Time machine"
+      aria-labelledby={titleId}
       data-mode={state.mode}
       data-ready={ready || undefined}
       onKeyDown={onKeyDown}
     >
+      <h2 id={titleId} className="ui-sr-only">
+        Time machine
+      </h2>
       <div className="tm-strip__body">
         <div className="tm-strip__left">
           <Transport tm={tm} state={state} speeds={speeds} ready={ready} />
