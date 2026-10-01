@@ -121,7 +121,9 @@ export const TierCard = memo(function TierCard({
   const anchor = loop.anchorMs;
   const etaFor = useCallback(
     (position: number) =>
-      anchor === null ? '' : `in ${etaShort(Math.max(0, anchor + (position + 1) * BLOCK_MS - clock.now()))}`,
+      anchor === null
+        ? ''
+        : `paid in about ${etaShort(Math.max(0, anchor + (position + 1) * BLOCK_MS - clock.now()))}`,
     [anchor, clock],
   );
   return (
