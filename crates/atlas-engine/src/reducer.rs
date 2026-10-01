@@ -326,13 +326,13 @@ impl Reducer {
     fn send_writer(&self, cmd: WriterCmd) {
         use std::sync::atomic::Ordering;
         let live = self.handle.live();
+        // Counted before the send: the writer may take it (and count it down) at once.
+        live.writer_queue.fetch_add(1, Ordering::Relaxed);
         let cmd = match self.writer.try_send(cmd) {
-            Ok(()) => {
-                live.writer_queue.fetch_add(1, Ordering::Relaxed);
-                return;
-            }
+            Ok(()) => return,
             Err(std::sync::mpsc::TrySendError::Full(cmd)) => cmd,
             Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                live.writer_queue.fetch_sub(1, Ordering::Relaxed);
                 live.fatal("store writer channel closed");
                 return;
             }
@@ -344,11 +344,9 @@ impl Reducer {
         live.reducer_waiting(false);
         live.writer_backpressure_ms
             .fetch_add(started.elapsed().as_millis() as u64, Ordering::Relaxed);
-        match sent {
-            Ok(()) => {
-                live.writer_queue.fetch_add(1, Ordering::Relaxed);
-            }
-            Err(_) => live.fatal("store writer channel closed"),
+        if sent.is_err() {
+            live.writer_queue.fetch_sub(1, Ordering::Relaxed);
+            live.fatal("store writer channel closed");
         }
     }
 
