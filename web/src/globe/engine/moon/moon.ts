@@ -31,7 +31,7 @@
 // keeps the tonal colors exact through the tone mapping (post.ts, "exempt mask").
 
 import * as THREE from 'three';
-import { clamp, DEG, damp, easeInOutCubic, easeOutCubic, lerp, smoothstep, TAU } from '../math';
+import { clamp, DEG, damp, easeInOutCubic, easeOutCubic, lerp, smoothstep, TAU, wrapPi } from '../math';
 import type { GlobeTokens } from '../tokens';
 import type { SharedUniforms } from '../uniforms';
 import { type ChainBlock, MoonChain } from './chain';
@@ -610,6 +610,18 @@ const NO_INSET = { left: 0, right: 0, top: 0, bottom: 0 };
 /** A soft ceiling: `x` unchanged well below `cap`, approaching it from below. */
 const softCap = (x: number, cap: number): number => x / (1 + (x / cap) ** 4) ** 0.25;
 
+/**
+ * One step of a critically damped spring toward `goal` (exact for any `dt`, so it is safe on a long frame).
+ * `vel[i]` carries the velocity between steps. It leaves rest gently and arrives without overshoot.
+ */
+function spring(x: number, goal: number, vel: Float64Array, i: number, w: number, dt: number): number {
+  const d = x - goal;
+  const a = vel[i]! + w * d;
+  const k = Math.exp(-w * dt);
+  vel[i] = (a - w * (d + a * dt)) * k;
+  return goal + (d + a * dt) * k;
+}
+
 export class Moon {
   /** World-space part (main scene). Empty: everything the moon draws is in the overlay pass. */
   readonly group = new THREE.Group();
@@ -705,8 +717,15 @@ export class Moon {
   private rateNow = 1;
   // The shapes.
   private readonly shell: OrbitShape = { radius: 1.5, inclination: 0.2, node: 0, size: 0.2 };
+  /** The ring `compactOrbit` wants for the current viewport; `shell` eases to it. */
+  private readonly shellGoal: OrbitShape = { radius: 1.5, inclination: 0.2, node: 0, size: 0.2 };
   private readonly skyShape: OrbitShape = { ...SKY_ORBIT };
+  private readonly shellV = new Float64Array(4);
   private shellKey = '';
+  private shellAt = -1;
+  // Eased gates (everything that appears or changes mode fades or glides; nothing pops).
+  private trailK = 0;
+  private capK = 1;
   // Reduced motion: the moon sits still at a seat on its orbit. If the planet is turned so that the seat is
   // hidden or off screen, it takes a new seat with a cross-fade (never a flight).
   private parkOn = false;
@@ -735,7 +754,8 @@ export class Moon {
     this.hud = new MoonHud(u);
     const m = this.model;
     this.mixW = this.skyWanted(false) ? 1 : 0;
-    compactOrbit(1600, 900, this.shell);
+    compactOrbit(1600, 900, this.shellGoal);
+    copyShape(this.shellGoal, this.shell);
     copyShape(this.shell, this.shape);
 
     for (const p of m.pieces) {
@@ -1059,13 +1079,32 @@ export class Moon {
     return s;
   }
 
-  /** The orbit the shell uses for a viewport, cached (compactOrbit searches a little). */
-  private fitShell(w: number, h: number): void {
+  /**
+   * The orbit the shell uses for a viewport. `compactOrbit` searches a little (about 1.7 ms), so its answer
+   * is cached by size and asked for at most every 100 ms during a live resize; the ring glides to it
+   * (about 0.2 s), so a resized window or a turned phone never makes the moon jump.
+   */
+  private fitShell(w: number, h: number, dt: number, time: number): void {
     const key = `${Math.round(w)}x${Math.round(h)}`;
-    if (key === this.shellKey) return;
-    this.shellKey = key;
-    if (w < 64 || h < 64) return;
-    compactOrbit(w, h, this.shell);
+    if (key !== this.shellKey && w >= 64 && h >= 64 && (!this.placed || time - this.shellAt > 0.1)) {
+      this.shellKey = key;
+      this.shellAt = time;
+      compactOrbit(w, h, this.shellGoal);
+    }
+    const s = this.shell;
+    const g = this.shellGoal;
+    const v = this.shellV;
+    if (!this.placed) {
+      copyShape(g, s);
+      v.fill(0);
+      return;
+    }
+    // A critically damped spring (exact for any dt): it starts from rest, so the ring never lurches.
+    const rate = 9;
+    s.radius = spring(s.radius, g.radius, v, 0, rate, dt);
+    s.inclination = spring(s.inclination, g.inclination, v, 1, rate, dt);
+    s.node = spring(s.node, s.node + wrapPi(g.node - s.node), v, 2, rate, dt);
+    s.size = spring(s.size, g.size, v, 3, rate, dt);
   }
 
   /** Advances the world clock by this frame and pulls it to the source, so a coarse timer does not show as steps. */
@@ -1152,7 +1191,7 @@ export class Moon {
     if (Math.abs(this.mixW - target) < 0.0005) this.mixW = target;
     const e = smoother(clamp(this.mixW, 0, 1));
 
-    this.fitShell(view.cssW, view.cssH);
+    this.fitShell(view.cssW, view.cssH, dt, time);
     this.skyShape.radius = o.orbit;
     this.skyShape.inclination = o.inclination * DEG;
     this.skyShape.node = o.node * DEG;
@@ -1217,7 +1256,10 @@ export class Moon {
     const minPx = MIN_MOON_PX;
     const maxPx = clamp(0.26 * Math.min(view.cssW, view.cssH), 110, 240) * o.scale;
     let px = Math.max(shape.size * o.scale * this.farK * pxPer, minPx);
-    if (!opt.free) px = softCap(px, maxPx);
+    // A free shot (the moon portrait, the earthrise) lifts the cap, and the cap returns with it: eased, never a jump.
+    const capGoal = opt.free ? 0 : 1;
+    this.capK = this.placed ? damp(this.capK, capGoal, 5, dt) : capGoal;
+    if (this.capK > 0.001) px = lerp(px, softCap(px, maxPx), this.capK);
     // Hover grows it a touch and a press dips it (design 7.10.11).
     px *= (1 + 0.08 * this.hover) * (this.pressT > 0 ? 0.96 : 1);
     // It fades out as the camera comes right up to it, so it never clips the near plane.
@@ -1464,7 +1506,10 @@ export class Moon {
     }
 
     // ---- the chain: the wake and a bead for every block, on the real orbit ----
-    const trailA = reduced || boot ? 0 : nearFade;
+    // The trail fades in once the boot has landed and after reduced motion ends, and out when either begins.
+    const trailGoal = reduced || boot ? 0 : nearFade;
+    this.trailK = this.placed ? damp(this.trailK, trailGoal, 3.2, dt) : trailGoal;
+    const trailA = this.trailK;
     this.chain.update(
       time,
       this.e1,

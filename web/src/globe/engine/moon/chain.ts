@@ -238,6 +238,11 @@ export class MoonChain {
     return this.beads.length;
   }
 
+  /** How strongly the wake is drawn this frame (0 when the trail is hidden), for tests and diagnostics. */
+  get wakeAlpha(): number {
+    return this.group.visible && this.wakeMesh.visible ? (this.wakeMat.uniforms.uAlpha!.value as number) : 0;
+  }
+
   /** The beads, oldest first, for hosts that want to label them. */
   blocks(): readonly { height: number; theta: number; birth: number }[] {
     return this.beads;

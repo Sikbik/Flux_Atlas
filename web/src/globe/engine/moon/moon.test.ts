@@ -3,7 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { DEG, TAU } from '../math';
 import { createSharedUniforms } from '../uniforms';
 import { Moon, type MoonFrame, type MoonView } from './moon';
-import { angleAtUtc, ORBIT_PERIOD_S, orbitBasis, orbitPoint, type V3 } from './orbit';
+import {
+  angleAtUtc,
+  compactOrbit,
+  ORBIT_PERIOD_S,
+  type OrbitShape,
+  orbitBasis,
+  orbitPoint,
+  type V3,
+} from './orbit';
 
 const W = 1600;
 const H = 900;
@@ -302,6 +310,111 @@ describe('the moon in the sky and in reduced motion', () => {
     expect(m.screen.vis).toBe(1);
     expect(m.screen.onScreen).toBe(true);
     expect(m.screen.hit).toBe(true);
+  });
+});
+
+describe('nothing about the moon pops', () => {
+  it('glides to a new ring when the window changes shape, and lands on the ring that size wants', () => {
+    const m = fresh();
+    const cam = camera(HOME_DIR);
+    step(m, cam, T0, 0, 0);
+    const wide = { ...m.shape };
+    // The window becomes a phone: a different ring, reached over a fraction of a second.
+    const view = viewOf(cam);
+    view.cssW = 390;
+    view.cssH = 844;
+    view.inset = { left: 0, right: 0, top: 52, bottom: 150 };
+    let prev = { x: m.pos.x, y: m.pos.y, z: m.pos.z };
+    let biggest = 0;
+    let first = -1;
+    let t = 0;
+    for (let k = 0; k < 150; k++) {
+      t += 1 / 60;
+      m.update(1 / 60, t, view, frame(T0 + t * 1000, { rate: 1 }));
+      const d = Math.hypot(m.pos.x - prev.x, m.pos.y - prev.y, m.pos.z - prev.z);
+      if (first < 0) first = d;
+      biggest = Math.max(biggest, d);
+      prev = { x: m.pos.x, y: m.pos.y, z: m.pos.z };
+    }
+    // The orbit changed, with no step: it leaves rest gently (the first frame barely moves) and the
+    // biggest frame-to-frame move is a swing of a few percent of the way, never a jump.
+    const goal: OrbitShape = { radius: 0, inclination: 0, node: 0, size: 0 };
+    compactOrbit(390, 844, goal);
+    expect(
+      Math.abs(goal.inclination - wide.inclination) + Math.abs(goal.radius - wide.radius),
+    ).toBeGreaterThan(0.05);
+    expect(first).toBeLessThan(0.01);
+    expect(biggest).toBeLessThan(0.07);
+    expect(m.shape.radius).toBeCloseTo(goal.radius, 2);
+    expect(m.shape.inclination).toBeCloseTo(goal.inclination, 2);
+  });
+
+  it('eases the size cap away and back with the free camera instead of jumping', () => {
+    // Frozen on its orbit, so only the cap moves the size.
+    const m = fresh({ phase: 40 });
+    const p = step(m, camera(HOME_DIR), T0);
+    // A camera a third of a radius from the moon: far bigger than the cap, so the cap is what shows.
+    const len = Math.hypot(p.x, p.y, p.z);
+    const near = camera(p, len + 0.35);
+    step(m, near, T0, 0, 0);
+    const capped = m.screen.s;
+    expect(capped).toBeLessThan(0.26 * H + 1);
+    const sizes: number[] = [];
+    let t = 0;
+    for (let k = 0; k < 140; k++) {
+      t += 1 / 60;
+      step(m, near, T0, 1 / 60, t, { free: true });
+      sizes.push(m.screen.s);
+    }
+    // Grows steadily: no frame adds more than a tenth of what the camera is about to reveal.
+    for (let i = 1; i < sizes.length; i++) {
+      expect(sizes[i]!).toBeGreaterThanOrEqual(sizes[i - 1]! - 1e-6);
+      expect(sizes[i]! - sizes[i - 1]!).toBeLessThan(0.1 * (sizes[sizes.length - 1]! - capped));
+    }
+    expect(sizes[sizes.length - 1]!).toBeGreaterThan(capped * 2.5);
+    // And back again, just as gently.
+    let shrink = sizes[sizes.length - 1]!;
+    for (let k = 0; k < 140; k++) {
+      t += 1 / 60;
+      step(m, near, T0, 1 / 60, t, { free: false });
+      expect(shrink - m.screen.s).toBeLessThan(0.1 * (sizes[sizes.length - 1]! - capped));
+      shrink = m.screen.s;
+    }
+    expect(m.screen.s).toBeCloseTo(capped, 0);
+  });
+
+  it('fades the wake in when reduced motion ends, and out when it begins', () => {
+    const m = fresh();
+    m.reduced = true;
+    const cam = camera(HOME_DIR);
+    step(m, cam, T0, 0, 0);
+    const wake = (): number => m.chain.wakeAlpha;
+    expect(wake()).toBe(0);
+    m.reduced = false;
+    const seen: number[] = [];
+    let t = 0;
+    for (let k = 0; k < 120; k++) {
+      t += 1 / 60;
+      step(m, cam, T0 + t * 1000, 1 / 60, t);
+      seen.push(wake());
+    }
+    expect(seen[0]!).toBeLessThan(0.1 * seen[seen.length - 1]!);
+    for (let i = 1; i < seen.length; i++) {
+      expect(seen[i]!).toBeGreaterThanOrEqual(seen[i - 1]! - 1e-9);
+      expect(seen[i]! - seen[i - 1]!).toBeLessThan(0.08 * seen[seen.length - 1]!);
+    }
+    expect(seen[seen.length - 1]!).toBeGreaterThan(0.05);
+    m.reduced = true;
+    let last = seen[seen.length - 1]!;
+    for (let k = 0; k < 120; k++) {
+      t += 1 / 60;
+      step(m, cam, T0 + t * 1000, 1 / 60, t);
+      const w = wake();
+      expect(w).toBeLessThanOrEqual(last + 1e-9);
+      expect(last - w).toBeLessThan(0.1 * seen[seen.length - 1]!);
+      last = w;
+    }
+    expect(last).toBe(0);
   });
 });
 
