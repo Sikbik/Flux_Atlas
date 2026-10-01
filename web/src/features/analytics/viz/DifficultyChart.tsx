@@ -1,9 +1,21 @@
 // Difficulty over the window: one line in Flux blue over a faint wash, with the newest value marked. The
-// scale is the range of the values (not pinned to zero), because what a reader wants is the trend.
+// line is each bucket's mean difficulty (the steadier trend; the server's end-of-bucket value without
+// one). The scale is the range of the values, not pinned to zero, because what a reader wants is the
+// trend; difficulty that spans orders of magnitude (the proof of work years against Proof of Node) goes on
+// a log scale, said so beside the chart. A hole in the history is a hole in the line.
 
 import { useCallback, useId, useMemo } from 'react';
-import { type ChainModel, lastKnown, pointFacts, pointReading, WINDOW_TEXT } from '../lib/chain';
-import { ChainPlot, type PlotGeo, type Tip } from './ChainPlot';
+import {
+  type ChainModel,
+  formatLogTick,
+  lastKnown,
+  pointFacts,
+  pointReading,
+  WINDOW_TEXT,
+} from '../lib/chain';
+import type { Avoid } from './avoid';
+import { ChainPlot, type PlotGeo, type Tip, type TipRow } from './ChainPlot';
+import { EraMarks } from './EraMarks';
 import { areaPath, isolated, linePath } from './paths';
 import { compactTickAt } from './scale';
 
@@ -15,21 +27,21 @@ export interface ChainChartProps {
   height?: number;
 }
 
-const TABLE_HEAD = ['Time', 'Block', 'Difficulty', 'Block time'] as const;
-
 export function DifficultyChart({ model, cursor, onCursor, height }: ChainChartProps) {
-  const { frame, window, domain, difficulty: axis } = model;
+  const { frame, window, domain, difficulty: axis, cut, hasMean } = model;
   const gid = useId();
+  const log = axis.scale === 'log';
   const ctx = useMemo(
-    () => ({ window, segments: model.segments, cap: model.blockTime.hi }),
-    [window, model.segments, model.blockTime.hi],
+    () => ({ window, bucketMs: model.bucketMs, segments: model.segments, cap: model.blockTime.hi }),
+    [window, model.bucketMs, model.segments, model.blockTime.hi],
   );
+  const level = hasMean ? 'Difficulty (mean)' : 'Difficulty';
 
   const marks = useCallback(
     (g: PlotGeo) => {
       const xs = frame.t.map((ms) => g.x(ms));
-      const ys = frame.difficulty.map((v) => (v === null ? null : g.y(v)));
-      const last = lastKnown(frame.difficulty);
+      const ys = frame.trend.map((v) => (v === null ? null : g.y(v)));
+      const last = lastKnown(frame.trend);
       const base = g.plot.y + g.plot.h;
       return (
         <>
@@ -39,34 +51,45 @@ export function DifficultyChart({ model, cursor, onCursor, height }: ChainChartP
               <stop offset="1" style={{ stopColor: 'var(--viz-1)', stopOpacity: 0 }} />
             </linearGradient>
           </defs>
-          <path className="cp-area" d={areaPath(xs, ys, base)} fill={`url(#${gid})`} />
-          <path className="cp-line" d={linePath(xs, ys)} />
-          {isolated(ys).map((i) => (
+          <EraMarks changes={model.changes} geo={g} avoid={{ x: xs, y: ys }} />
+          <path className="cp-area" d={areaPath(xs, ys, base, cut)} fill={`url(#${gid})`} />
+          <path className="cp-line" d={linePath(xs, ys, cut)} />
+          {isolated(ys, cut).map((i) => (
             <circle key={i} className="cp-lone" cx={xs[i]} cy={ys[i] ?? 0} r={2.5} />
           ))}
           {last >= 0 ? <circle className="cp-end" cx={xs[last]} cy={ys[last] ?? 0} r={4} /> : null}
         </>
       );
     },
-    [frame, gid],
+    [frame, gid, cut, model.changes],
   );
 
-  const anchor = useCallback((i: number) => frame.difficulty[i] ?? null, [frame]);
+  const track = useCallback(
+    (g: PlotGeo): Avoid => ({
+      x: frame.t.map((ms) => g.x(ms)),
+      y: frame.trend.map((v) => (v === null ? null : g.y(v))),
+    }),
+    [frame],
+  );
+
+  const anchor = useCallback((i: number) => frame.trend[i] ?? null, [frame]);
 
   const tip = useCallback(
     (i: number): Tip | null => {
       const f = pointFacts(frame, i, ctx);
       if (!f) return null;
-      return {
-        time: f.time,
-        block: f.height,
-        rows: [
-          { label: 'Difficulty', value: f.difficulty, color: 'var(--viz-1)' },
-          { label: 'Block time', value: f.blockTime },
-        ],
-      };
+      const rows: TipRow[] = [
+        {
+          label: frame.difficultyMean[i] === null ? 'Difficulty' : level,
+          value: f.difficulty,
+          color: 'var(--viz-1)',
+        },
+      ];
+      if (f.endDiffers) rows.push({ label: 'At bucket end', value: f.difficultyEnd });
+      rows.push({ label: 'Block time', value: f.blockTime });
+      return { time: f.time, block: f.height, rows };
     },
-    [frame, ctx],
+    [frame, ctx, level],
   );
 
   const reading = useCallback(
@@ -77,14 +100,24 @@ export function DifficultyChart({ model, cursor, onCursor, height }: ChainChartP
     [frame, ctx],
   );
 
+  const head = useMemo(
+    () =>
+      hasMean
+        ? ['Time', 'Block', level, 'At bucket end', 'Block time']
+        : ['Time', 'Block', level, 'Block time'],
+    [hasMean, level],
+  );
   const row = useCallback(
     (i: number) => {
       const f = pointFacts(frame, i, ctx);
-      return f ? [f.time, f.height, f.difficulty, f.blockTime] : [];
+      if (!f) return [];
+      return hasMean
+        ? [f.time, f.height, f.difficulty, f.difficultyEnd, f.blockTime]
+        : [f.time, f.height, f.difficulty, f.blockTime];
     },
-    [frame, ctx],
+    [frame, ctx, hasMean],
   );
-  const table = useMemo(() => ({ head: TABLE_HEAD, row }), [row]);
+  const table = useMemo(() => ({ head, row }), [head, row]);
 
   return (
     <ChainPlot
@@ -94,9 +127,10 @@ export function DifficultyChart({ model, cursor, onCursor, height }: ChainChartP
       t={frame.t}
       domain={domain}
       axis={axis}
-      formatTick={compactTickAt}
+      formatTick={log ? formatLogTick : compactTickAt}
       height={height}
       marks={marks}
+      track={track}
       anchor={anchor}
       tip={tip}
       reading={reading}
@@ -104,6 +138,13 @@ export function DifficultyChart({ model, cursor, onCursor, height }: ChainChartP
       cursor={cursor}
       onCursor={onCursor}
       revealKey={window}
+      legend={
+        log ? (
+          <span className="cp-note" title="Each gridline is a multiple of the one below it">
+            Log scale
+          </span>
+        ) : undefined
+      }
     />
   );
 }

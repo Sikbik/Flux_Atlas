@@ -4,7 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUi } from '../../../store/ui';
 import { click, mount, press } from '../../../ui/internal/testing';
 import { type ChainModel, chainModel } from '../lib/chain';
-import { DAY, chainDto as dto, FORK_MS, MIN, chainPoints as points, T0 } from '../lib/chainFixture';
+import {
+  DAY,
+  chainDto as dto,
+  FORK_MS,
+  MIN,
+  chainPoints as points,
+  T0,
+  withoutMeans,
+} from '../lib/chainFixture';
 import { BlockTimeChart } from './BlockTimeChart';
 import { PLOT_MARGIN } from './ChainPlot';
 import { DifficultyChart } from './DifficultyChart';
@@ -74,7 +82,7 @@ describe('the two charts', () => {
     press(a as HTMLElement, 'ArrowLeft');
     expect(a?.getAttribute('aria-valuenow')).toBe('9');
     expect(a?.getAttribute('aria-valuetext')).toBe(
-      '2026-09-30 12:18 UTC, block 2,999,036: difficulty 0.359, block time 30.0 s, longest gap 34.0 s',
+      '2026-09-30 12:18 UTC, block 2,999,036: difficulty 0.355 on average, 0.359 at the end, block time 30.0 s, longest gap 34.0 s',
     );
     press(a as HTMLElement, 'ArrowLeft');
     expect(a?.getAttribute('aria-valuenow')).toBe('8');
@@ -113,8 +121,12 @@ describe('the two charts', () => {
     expect(crosses(m.container)).toBe(2);
     expect(tip?.textContent).toContain('2026-09-30 12:00 UTC');
     expect(tip?.textContent).toContain('Block 2,999,000');
-    expect(tip?.textContent).toContain('Difficulty');
-    expect(tip?.textContent).toContain('0.350');
+    // The line is the bucket's mean; the end value is one more row because it reads differently.
+    expect([...(tip?.querySelectorAll('li') ?? [])].map((li) => li.textContent)).toEqual([
+      'Difficulty (mean)0.346',
+      'At bucket end0.350',
+      'Block time30.0 s',
+    ]);
     expect(tip?.textContent).toContain('Block time');
     expect(tip?.textContent).toContain('30.0 s');
     m.unmount();
@@ -231,6 +243,7 @@ describe('time per block', () => {
       t_ms: T0 + i * 2 * MIN,
       height: 1 + i,
       difficulty: 0.35,
+      difficulty_mean: 0.35,
       block_time_s: 30,
       block_time_max_s: 900 + i,
     }));
@@ -253,6 +266,7 @@ describe('time per block', () => {
           t_ms: FORK_MS - 10 * DAY,
           height: 1_990_000,
           difficulty: 0.3,
+          difficulty_mean: 0.3,
           block_time_s: 120,
           block_time_max_s: null,
         },
@@ -260,6 +274,7 @@ describe('time per block', () => {
           t_ms: FORK_MS + 10 * DAY,
           height: 2_050_000,
           difficulty: 0.3,
+          difficulty_mean: 0.3,
           block_time_s: 30,
           block_time_max_s: null,
         },
@@ -354,19 +369,164 @@ describe('the data table', () => {
         (b) => b.textContent === 'Show data',
       ) as HTMLElement,
     );
-    expect(
-      [...f.querySelectorAll('tbody tr')].map((r) => r.querySelectorAll('td')[1]?.textContent),
-    ).toContain('Unknown');
+    const rows = [...f.querySelectorAll('tbody tr')];
+    // Bucket 4 has no difficulty, mean or end.
+    expect([...rows[5]!.querySelectorAll('td')].map((c) => c.textContent)).toEqual([
+      '2,999,016',
+      'Unknown',
+      'Unknown',
+      '30.0 s',
+    ]);
     m.unmount();
   });
 });
 
 describe('difficulty', () => {
+  const fig = (c: HTMLElement) => c.querySelector('[data-chart="difficulty"]') as HTMLElement;
+  const showData = (f: HTMLElement) =>
+    click(
+      [...f.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => b.textContent === 'Show data',
+      ) as HTMLElement,
+    );
+  const yLabels = (f: HTMLElement) => [...f.querySelectorAll('.vz-grid text')].map((t) => t.textContent);
+
   it('breaks the line at a bucket with no value instead of drawing through it', () => {
     const m = mount(<DifficultyChart model={chainModel(dto())} cursor={null} onCursor={() => {}} />);
     const d = m.container.querySelector('.cp-line')?.getAttribute('d') ?? '';
     // One bucket has no difficulty: two runs, so two subpaths.
     expect(d.match(/M/g)).toHaveLength(2);
     m.unmount();
+  });
+
+  it('breaks the line where the server left out a bucket, and a value cut off on both sides gets a dot', () => {
+    // Bucket 7 is missing, so the step from 6 to 8 is two buckets wide; bucket 4 has no difficulty.
+    const pts = points().filter((_, i) => i !== 7);
+    const cut = mount(
+      <DifficultyChart model={chainModel(dto({ points: pts }))} cursor={null} onCursor={() => {}} />,
+    );
+    // Runs: 0 to 3, 5 to 6, 8 to 9.
+    expect((cut.container.querySelector('.cp-line')?.getAttribute('d') ?? '').match(/M/g)).toHaveLength(3);
+    cut.unmount();
+    // The same history from a server that gives no bucket width: nothing to cut by, so 5 to 9 is one line.
+    const loose = mount(
+      <DifficultyChart
+        model={chainModel(dto({ points: pts, bucket_ms: undefined as unknown as number }))}
+        cursor={null}
+        onCursor={() => {}}
+      />,
+    );
+    expect((loose.container.querySelector('.cp-line')?.getAttribute('d') ?? '').match(/M/g)).toHaveLength(2);
+    loose.unmount();
+    // Every other bucket missing: each value stands alone, and a dot stands for it.
+    const sparse = points().filter((_, i) => i % 2 === 0);
+    const lone = mount(
+      <DifficultyChart model={chainModel(dto({ points: sparse }))} cursor={null} onCursor={() => {}} />,
+    );
+    expect(lone.container.querySelector('.cp-line')?.getAttribute('d') ?? '').toBe('');
+    expect(lone.container.querySelectorAll('.cp-lone')).toHaveLength(4);
+    lone.unmount();
+  });
+
+  it('draws the mean, names it, and has a column for the end value', () => {
+    const m = mount(<DifficultyChart model={chainModel(dto())} cursor={null} onCursor={() => {}} />);
+    const f = fig(m.container);
+    showData(f);
+    expect([...f.querySelectorAll('thead th')].map((h) => h.textContent)).toEqual([
+      'Time',
+      'Block',
+      'Difficulty (mean)',
+      'At bucket end',
+      'Block time',
+    ]);
+    const newest = [...f.querySelectorAll('tbody tr')][0];
+    expect([...(newest?.querySelectorAll('td') ?? [])].map((c) => c.textContent)).toEqual([
+      '2,999,036',
+      '0.355',
+      '0.359',
+      '30.0 s',
+    ]);
+    m.unmount();
+  });
+
+  it('is plain Difficulty, with no end column, from a server that sends no mean', () => {
+    const model = chainModel(dto({ points: withoutMeans(points()) }));
+    const m = mount(<DifficultyChart model={model} cursor={null} onCursor={() => {}} />);
+    const f = fig(m.container);
+    showData(f);
+    expect([...f.querySelectorAll('thead th')].map((h) => h.textContent)).toEqual([
+      'Time',
+      'Block',
+      'Difficulty',
+      'Block time',
+    ]);
+    m.unmount();
+    const pair = mount(<Pair model={model} />);
+    press(sliders(pair.container)[0] as HTMLElement, 'End');
+    const rows = [...(tips(pair.container)[0]?.querySelectorAll('li') ?? [])].map((li) => li.textContent);
+    expect(rows).toEqual(['Difficulty0.359', 'Block time30.0 s']);
+    pair.unmount();
+  });
+
+  it('stays on a plain axis, with no note, while the values are within twenty times of each other', () => {
+    const m = mount(<DifficultyChart model={chainModel(dto())} cursor={null} onCursor={() => {}} />);
+    expect(m.container.querySelector('.cp-note')).toBeNull();
+    expect(yLabels(fig(m.container))).toEqual(['0.345', '0.350', '0.355', '0.360']);
+    m.unmount();
+  });
+
+  it('goes on a log scale, and says so, when the difficulty spans orders of magnitude', () => {
+    // 0.003 times three, nine times over: 0.003 to about 59, a ratio of near twenty thousand.
+    const wide = points().map((p, i) => ({
+      ...p,
+      difficulty: 0.003 * 3 ** i,
+      difficulty_mean: i === 4 ? null : 0.003 * 3 ** i,
+    }));
+    const m = mount(
+      <DifficultyChart model={chainModel(dto({ points: wide }))} cursor={null} onCursor={() => {}} />,
+    );
+    const f = fig(m.container);
+    expect(f.querySelector('.cp-note')?.textContent).toBe('Log scale');
+    expect(yLabels(f)).toEqual(['0.01', '0.1', '1', '10']);
+    // Equal ratios are equal distances: 0.003 to 0.03 is as tall as 0.03 to 0.3.
+    const lines = [...f.querySelectorAll('.vz-grid line')].map((l) => Number(l.getAttribute('y1')));
+    const gaps = lines.slice(1).map((y, i) => (lines[i] ?? 0) - y);
+    for (const g of gaps) expect(g).toBeCloseTo(gaps[0] ?? 0, 1);
+    m.unmount();
+  });
+
+  it('marks the change of rules on this chart too, so a cliff in difficulty reads as the change', () => {
+    const across = dto({
+      window: '1y',
+      from_ms: FORK_MS - 25 * DAY,
+      to_ms: FORK_MS + 340 * DAY,
+      bucket_ms: DAY,
+      points: [
+        {
+          t_ms: FORK_MS - 2 * DAY,
+          height: 2_014_000,
+          difficulty: 12_000,
+          difficulty_mean: 12_000,
+          block_time_s: 120,
+          block_time_max_s: null,
+        },
+        {
+          t_ms: FORK_MS + 2 * DAY,
+          height: 2_025_000,
+          difficulty: 0.3,
+          difficulty_mean: 0.3,
+          block_time_s: 30,
+          block_time_max_s: null,
+        },
+      ],
+    });
+    const m = mount(<DifficultyChart model={chainModel(across)} cursor={null} onCursor={() => {}} />);
+    expect(m.container.querySelector('.cp-era text')?.textContent).toBe('Proof of Node');
+    expect(m.container.querySelector('.cp-note')?.textContent).toBe('Log scale');
+    m.unmount();
+    // A window that does not cross it has nothing to mark.
+    const inside = mount(<DifficultyChart model={chainModel(dto())} cursor={null} onCursor={() => {}} />);
+    expect(inside.container.querySelector('.cp-era')).toBeNull();
+    inside.unmount();
   });
 });

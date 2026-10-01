@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUi } from '../../../store/ui';
 import { click, type Mounted, mount } from '../../../ui/internal/testing';
 import { chainHistoryKey } from '../hooks/useChainHistory';
-import { chainDto, chainPoints, T0 } from '../lib/chainFixture';
-import type { ChainHistoryDto } from '../lib/chainTypes';
+import { chainDto, chainPoints, DAY, FORK_MS, T0 } from '../lib/chainFixture';
+import type { ChainHistoryDto, ChainWindow } from '../lib/chainTypes';
 import { ChainTab } from './Chain';
 
 // ---- a stand-in for the server --------------------------------------------------------------------
@@ -142,6 +142,9 @@ describe('the Chain tab', () => {
     expect(tile(c, 'Average block time').delta).toContain('vs target');
     expect(tile(c, 'Latest difficulty').value).toBe('0.359');
     expect(tile(c, 'Latest difficulty').caption).toBe('At the newest block');
+    // From the first end value (0.350) to the last (0.359).
+    expect(tile(c, 'Latest difficulty').delta).toContain('+2.6%');
+    expect(tile(c, 'Latest difficulty').delta).toContain('7 days');
     expect(c.querySelector('[data-stale]')).toBeNull();
     expect(c.textContent).not.toContain('Indexing chain history');
   });
@@ -288,11 +291,60 @@ describe('the Chain tab', () => {
   });
 
   it('does not break on a window name from a newer server: it reads it as the one asked for', async () => {
-    serve(() => ({ body: week({ window: '90d' }) }));
+    serve(() => ({ body: week({ window: '90d' as string as ChainWindow }) }));
     const c = open();
     await until(() => figures(c).length === 2, 'the charts');
     expect(tile(c, 'Blocks in 7 days').value).toBe('40');
     expect(c.querySelector('figure')?.getAttribute('aria-label')).toBe('Difficulty over the last 7 days');
+  });
+
+  it('puts a difficulty that moved ten times over on a log scale, and gives no percentage for it', async () => {
+    const wide = chainPoints().map((p, i) => ({
+      ...p,
+      difficulty: i === 0 ? 22_211 : 0.13,
+      difficulty_mean: i === 0 ? 22_211 : 0.12,
+    }));
+    serve(() => ({ body: week({ points: wide, latest_difficulty: 0.1306 }) }));
+    const c = open();
+    await until(() => figures(c).length === 2, 'the charts');
+    expect(c.querySelector('[data-chart="difficulty"] .cp-note')?.textContent).toBe('Log scale');
+    const t = tile(c, 'Latest difficulty');
+    expect(t.value).toBe('0.131');
+    // From 22,211 to 0.13 is not a percent.
+    expect(t.delta).toBe('');
+    expect(t.caption).toBe('At the newest block');
+  });
+
+  it('quotes no change in difficulty across the change of rules, and marks it on both charts', async () => {
+    const day = (d: number, end: number, h: number) => ({
+      t_ms: FORK_MS + d * DAY,
+      height: h,
+      difficulty: end,
+      difficulty_mean: end,
+      block_time_s: d < 0 ? 120 : 30,
+      block_time_max_s: null,
+    });
+    const crossing = week({
+      window: '1y',
+      from_ms: FORK_MS - 20 * DAY,
+      to_ms: FORK_MS + 340 * DAY,
+      bucket_ms: DAY,
+      block_count: 996_000,
+      points: [day(-10, 0.3, 1_990_000), day(10, 0.4, 2_050_000)],
+    });
+    serve((url) => ({ body: url.endsWith('window=1y') ? crossing : week() }));
+    const c = open();
+    await until(() => figures(c).length === 2, 'the week');
+    expect(c.querySelector('.cp-era')).toBeNull();
+    click(radio(c, '1Y'));
+    await until(() => c.querySelector('.cp-era') !== null && !c.querySelector('[data-stale]'), 'the year');
+    // A third more, but between two different things.
+    expect(tile(c, 'Latest difficulty').delta).toBe('');
+    expect(c.querySelectorAll('.cp-era text')).toHaveLength(2);
+    expect([...c.querySelectorAll('.cp-era text')].map((t) => t.textContent)).toEqual([
+      'Proof of Node',
+      'Proof of Node',
+    ]);
   });
 
   it('keeps the data and says how old it is when a refresh fails', async () => {

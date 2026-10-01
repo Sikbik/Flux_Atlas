@@ -19,6 +19,23 @@ describe('runs', () => {
     expect(runs([])).toEqual([]);
     expect(runs([null, null])).toEqual([]);
   });
+  it('also ends a stretch where the history has a hole: every value known, the pen still lifts', () => {
+    expect(runs([1, 2, 3, 4, 5], [false, false, false, true, false])).toEqual([
+      [0, 2],
+      [3, 4],
+    ]);
+  });
+  it('lets a hole and an unknown value meet, and a hole before the first value, without a stray run', () => {
+    expect(runs([1, null, 3, 4], [false, false, true, false])).toEqual([
+      [0, 0],
+      [2, 3],
+    ]);
+    expect(runs([null, 2, 3], [false, true, false])).toEqual([[1, 2]]);
+    expect(runs([1, 2], [true, true])).toEqual([
+      [0, 0],
+      [1, 1],
+    ]);
+  });
 });
 
 describe('isolated', () => {
@@ -27,6 +44,9 @@ describe('isolated', () => {
   });
   it('is not a lone point when it is the only value there is', () => {
     expect(isolated([5])).toEqual([]);
+  });
+  it('finds a value a hole cuts off on both sides', () => {
+    expect(isolated([1, 2, 3, 4, 5], [false, false, true, true, false])).toEqual([2]);
   });
 });
 
@@ -44,6 +64,14 @@ describe('linePath', () => {
   it('rounds to two decimals', () => {
     expect(linePath([0.123456, 10.987654], [1.234, 2.5])).toBe('M0.12 1.23L10.99 2.5');
   });
+  it('lifts the pen across a hole in the history', () => {
+    expect(linePath([0, 10, 20, 30, 40], [1, 2, 3, 4, 5], [false, false, false, true, false])).toBe(
+      'M0 1L10 2L20 3M30 4L40 5',
+    );
+  });
+  it('draws no line for a value alone between two holes', () => {
+    expect(linePath([0, 10, 20], [1, 2, 3], [false, true, true])).toBe('');
+  });
 });
 
 describe('areaPath', () => {
@@ -52,6 +80,11 @@ describe('areaPath', () => {
   });
   it('closes the runs of a gappy series separately', () => {
     expect(areaPath([0, 10, 20, 30], [1, 2, null, 4], 9)).toBe('M0 1L10 2L10 9L0 9Z');
+  });
+  it('closes the two sides of a hole in the history separately', () => {
+    expect(areaPath([0, 10, 20, 30], [1, 2, 3, 4], 9, [false, false, true, false])).toBe(
+      'M0 1L10 2L10 9L0 9ZM20 3L30 4L30 9L20 9Z',
+    );
   });
 });
 
@@ -65,6 +98,10 @@ describe('bandPath', () => {
   });
   it('is empty with nothing between', () => {
     expect(bandPath([0, 10], [null, null], [1, 2])).toBe('');
+  });
+  it('breaks at a hole in the history', () => {
+    const d = bandPath([0, 10, 20, 30], [5, 5, 5, 5], [1, 1, 1, 1], [false, false, true, false]);
+    expect(d).toBe('M0 1L10 1L10 5L0 5ZM20 1L30 1L30 5L20 5Z');
   });
 });
 

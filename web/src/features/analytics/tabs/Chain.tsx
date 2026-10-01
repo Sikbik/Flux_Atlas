@@ -101,7 +101,8 @@ function ChainBody({ dto, asked, stale }: { dto: ChainHistoryDto; asked: ChainWi
   const text = WINDOW_TEXT[model.window];
   const indexing = indexingText(dto.coverage) !== null;
   const pace = paceVsTarget(dto.avg_block_time_s, model.story.expected);
-  const change = difficultyChange(model.frame.difficulty);
+  // Across a change of rules (Proof of Node) difficulty is a different quantity, so there is no change to quote.
+  const change = model.changes.length > 0 ? null : difficultyChange(model.frame.difficulty);
   const empty = model.frame.t.length === 0;
 
   return (

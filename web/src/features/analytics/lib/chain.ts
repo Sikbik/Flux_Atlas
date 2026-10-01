@@ -51,10 +51,15 @@ export function isChainWindow(v: unknown): v is ChainWindow {
 
 /** The history in columns, one entry per bucket. Null is unknown, never zero. */
 export interface ChainFrame {
-  /** Unix ms of each bucket, ascending. */
+  /** Unix ms of the end of each bucket, ascending. */
   t: number[];
   height: (number | null)[];
+  /** Difficulty at the end of each bucket. */
   difficulty: (number | null)[];
+  /** The mean difficulty of each bucket, where the server gave one. */
+  difficultyMean: (number | null)[];
+  /** What the difficulty chart draws: a bucket's mean (the steadier line), else its end value. */
+  trend: (number | null)[];
   /** Mean seconds per block across the bucket. */
   blockTime: (number | null)[];
   /** The longest single gap in the bucket. */
@@ -79,13 +84,30 @@ export function chainFrame(points: readonly ChainPointDto[]): ChainFrame {
       break;
     }
   }
+  const difficulty = ordered.map((p) => orNull(p.difficulty));
+  const difficultyMean = ordered.map((p) => orNull(p.difficulty_mean));
   return {
     t: ordered.map((p) => p.t_ms),
     height: ordered.map((p) => orNull(p.height)),
-    difficulty: ordered.map((p) => orNull(p.difficulty)),
+    difficulty,
+    difficultyMean,
+    trend: difficultyMean.map((m, i) => m ?? difficulty[i] ?? null),
     blockTime: ordered.map((p) => duration(p.block_time_s)),
     blockMax: ordered.map((p) => duration(p.block_time_max_s)),
   };
+}
+
+/** How many bucket widths a step may be before it counts as a gap in the history. */
+const GAP_BUCKETS = 1.5;
+
+/**
+ * Where the history has a hole: `cut[i]` is true when the step from bucket `i - 1` to bucket `i` is wider
+ * than a bucket (the server leaves out a bucket that has no data), so a line must not be drawn across it.
+ * Without a bucket width, nothing is cut.
+ */
+export function gapBreaks(t: readonly number[], bucketMs: number | null | undefined): boolean[] {
+  const limit = finite(bucketMs) && bucketMs > 0 ? bucketMs * GAP_BUCKETS : Number.POSITIVE_INFINITY;
+  return t.map((ms, i) => i > 0 && ms - t[i - 1]! > limit);
 }
 
 /** True when at least one bucket has this metric. */
@@ -285,13 +307,24 @@ export function targetStory(
   return { expected, text: `Target changed ${seen.length - 1} times` };
 }
 
-/** How much the difficulty moved from the first reading of the window to the last, in percent, or null. */
+/** A move of this many times, up or down, is not a percentage: it is a different regime. */
+const BIG_MOVE = 10;
+
+/**
+ * How much the difficulty moved from the first reading of the window to the last, in percent, or null:
+ * with fewer than two readings, or a move of ten times or more either way (a percentage of that says
+ * nothing, and the chart's own scale shows it).
+ */
 export function difficultyChange(values: readonly (number | null)[]): number | null {
   const a = firstKnown(values);
   const b = lastKnown(values);
   if (a < 0 || a === b) return null;
   const first = values[a]!;
-  return first === 0 ? null : (values[b]! / first - 1) * 100;
+  const last = values[b]!;
+  if (first <= 0) return null;
+  const ratio = last / first;
+  if (ratio >= BIG_MOVE || ratio <= 1 / BIG_MOVE) return null;
+  return (ratio - 1) * 100;
 }
 
 /** How far the average is from what it should be, in percent (positive: slower than the target). */
@@ -312,7 +345,10 @@ export interface AxisDomain {
   lo: number;
   hi: number;
   ticks: number[];
+  /** The distance between ticks on a linear axis; 0 on a log one, where a tick is a multiple of the last. */
   step: number;
+  /** `log` when the values spread over orders of magnitude and each gridline is a multiple of the one below. */
+  scale: 'linear' | 'log';
 }
 
 /** The value `p` (0 to 1) of the way up the sorted values, or null with none. */
@@ -325,20 +361,78 @@ export function percentile(values: readonly (number | null | undefined)[], p: nu
   return v[lo]! + (v[hi]! - v[lo]!) * (at - lo);
 }
 
+/** A spread of at least this many times between the lowest and the highest value puts the axis on a log scale. */
+const LOG_RATIO = 20;
+/** The gridlines a log axis may carry. */
+const LOG_TICKS_MAX = 6;
+/** Room, as a multiple, between the data and the edge of a log axis. */
+const LOG_ROOM = 1.15;
+
+/** The ticks at the given mantissas of every `stride`-th power of ten (shifted by `offset`) inside `lo` to `hi`. */
+function powerTicks(
+  lo: number,
+  hi: number,
+  mantissas: readonly number[],
+  stride: number,
+  offset: number,
+): number[] {
+  const out: number[] = [];
+  const first = Math.floor((Math.floor(Math.log10(lo)) - offset) / stride) * stride + offset;
+  const last = Math.ceil(Math.log10(hi));
+  for (let e = first; e <= last; e += stride)
+    for (const m of mantissas) {
+      const v = Number((m * 10 ** e).toPrecision(12));
+      if (v >= lo && v <= hi) out.push(v);
+    }
+  return out;
+}
+
 /**
- * The difficulty axis: the range of the values with a little room, round ticks, never below zero. A flat
- * series gets room either side so it draws mid-chart rather than on an edge.
+ * A log axis over `min` to `max` (both above zero): the data with a little room, and the gridlines that
+ * fall inside it: at 1, 2 and 5 of each power of ten for a narrow range, at 1 and 3 for a wider one, at
+ * the powers of ten alone beyond that, and at every second or third power when there are still too many.
+ */
+function logAxis(min: number, max: number): AxisDomain {
+  const lo = min / LOG_ROOM;
+  const hi = max * LOG_ROOM;
+  const axis = (ticks: number[]): AxisDomain => ({ lo, hi, ticks, step: 0, scale: 'log' });
+  for (const [mantissas, most] of [
+    [[1, 2, 5], 5],
+    [[1, 3], LOG_TICKS_MAX],
+  ] as const) {
+    const t = powerTicks(lo, hi, mantissas, 1, 0);
+    if (t.length >= 3 && t.length <= most) return axis(t);
+  }
+  for (const stride of [1, 2, 3, 4, 6]) {
+    // The same stride can start on any power of ten: take the placement that gives the most gridlines.
+    let best: number[] = [];
+    for (let offset = 0; offset < stride; offset++) {
+      const t = powerTicks(lo, hi, [1], stride, offset);
+      if (t.length <= LOG_TICKS_MAX && t.length > best.length) best = t;
+    }
+    if (best.length >= 2) return axis(best);
+  }
+  return axis(powerTicks(lo, hi, [1], 1, 0).slice(0, 2));
+}
+
+/**
+ * The difficulty axis. Values within a factor of twenty of each other sit on a linear axis: the range of
+ * the values with a little room, round ticks, never below zero (what a reader wants is the trend, not the
+ * distance to zero). A flat series gets room either side so it draws mid-chart rather than on an edge.
+ * Difficulty that moves over orders of magnitude (the proof of work years against Proof of Node, or a
+ * day that is a hundredth of the day before) goes on a log scale, or the low values are a flat line.
  */
 export function difficultyDomain(values: readonly (number | null)[], tickCount = 4): AxisDomain {
   const v = values.filter(finite);
-  if (v.length === 0) return { lo: 0, hi: 1, ticks: [0, 0.5, 1], step: 0.5 };
+  if (v.length === 0) return { lo: 0, hi: 1, ticks: [0, 0.5, 1], step: 0.5, scale: 'linear' };
   const min = Math.min(...v);
   const max = Math.max(...v);
+  if (min > 0 && max / min >= LOG_RATIO) return logAxis(min, max);
   const span = max - min;
   const pad = span > 0 ? span * 0.08 : Math.abs(max) * 0.05 || 1;
   const lo = min >= 0 ? Math.max(0, min - pad) : min - pad;
   const t = niceTicks(lo, max + pad, tickCount);
-  return { lo: t.min, hi: t.max, ticks: t.ticks, step: t.step };
+  return { lo: t.min, hi: t.max, ticks: t.ticks, step: t.step, scale: 'linear' };
 }
 
 /**
@@ -370,7 +464,7 @@ export function blockTimeDomain(
   const typical = percentile(means, TYPICAL_PERCENTILE) ?? 0;
   const top = Math.max(CURRENT_ROOM * current, EARLIER_ROOM * slowest, TYPICAL_ROOM * typical);
   const t = niceTicks(0, top > 0 ? top : 60, tickCount);
-  return { lo: 0, hi: t.max, ticks: t.ticks, step: t.step };
+  return { lo: 0, hi: t.max, ticks: t.ticks, step: t.step, scale: 'linear' };
 }
 
 /**
@@ -445,12 +539,39 @@ export function formatDifficulty(d: number | null | undefined): string {
   return d.toPrecision(3);
 }
 
-/** The time of a bucket: to the minute in a short window, the day in a long one (a bucket there is days wide). */
-export function formatBucketTime(ms: number, window: ChainWindow): string {
+const LOG_SUFFIX: readonly { v: number; s: string }[] = [
+  { v: 1e12, s: 'T' },
+  { v: 1e9, s: 'B' },
+  { v: 1e6, s: 'M' },
+  { v: 1e3, s: 'K' },
+];
+
+/** A gridline label on the log axis, in as few characters as it takes: `0.003`, `0.1`, `30`, `10K`, `1M`. */
+export function formatLogTick(v: number): string {
+  if (!finite(v) || v <= 0) return UNKNOWN;
+  for (const { v: base, s } of LOG_SUFFIX) if (v >= base) return `${Number((v / base).toPrecision(3))}${s}`;
+  if (v >= 1) return String(Number(v.toPrecision(3)));
+  const decimals = Math.min(9, -Math.floor(Math.log10(v) + 1e-9));
+  return v.toFixed(decimals);
+}
+
+const DAY_MS = 86_400_000;
+const isoDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * The time of a bucket. A bucket is labelled by its end, to the minute, in a short window. In a long one
+ * (a year, all time) a bucket is days wide and the server's buckets are right-closed on UTC multiples of
+ * their width, so the end is midnight of the day after: label the days it covers instead (`2025-10-25`, or
+ * `2018-01-29 to 02-02` for five of them). Without a bucket width, the date of the end.
+ */
+export function formatBucketTime(ms: number, window: ChainWindow, bucketMs?: number | null): string {
   if (!finite(ms)) return UNKNOWN;
-  return window === '1y' || window === 'all'
-    ? `${new Date(ms).toISOString().slice(0, 10)} UTC`
-    : formatUtcDateTime(ms);
+  if (window !== '1y' && window !== 'all') return formatUtcDateTime(ms);
+  if (!finite(bucketMs) || bucketMs < DAY_MS) return `${isoDate(ms)} UTC`;
+  const first = isoDate(Math.floor((ms - 1) / bucketMs) * bucketMs);
+  const last = isoDate(ms - 1);
+  if (first === last) return `${first} UTC`;
+  return `${first} to ${first.slice(0, 4) === last.slice(0, 4) ? last.slice(5) : last} UTC`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -460,7 +581,12 @@ export function formatBucketTime(ms: number, window: ChainWindow): string {
 export interface PointFacts {
   time: string;
   height: string;
+  /** The difficulty the chart draws for the bucket (its mean, or its end value without a mean). */
   difficulty: string;
+  /** The difficulty at the end of the bucket. */
+  difficultyEnd: string;
+  /** True when the chart draws the bucket's mean and the end value reads differently. */
+  endDiffers: boolean;
   /** The mean block time of the bucket. */
   blockTime: string;
   /** The longest gap, or null where the server did not say. */
@@ -473,6 +599,8 @@ export interface PointFacts {
 
 export interface FactsContext {
   window: ChainWindow;
+  /** The width of a bucket, when the server said. */
+  bucketMs?: number | null;
   segments: readonly TargetSegment[];
   /** The top of the time per block axis. */
   cap: number;
@@ -486,10 +614,14 @@ export function pointFacts(frame: ChainFrame, i: number, ctx: FactsContext): Poi
   const max = frame.blockMax[i] ?? null;
   const top = max === null ? mean : mean === null ? max : Math.max(max, mean);
   const target = targetAt(ctx.segments, t);
+  const shown = formatDifficulty(frame.trend[i]);
+  const end = formatDifficulty(frame.difficulty[i]);
   return {
-    time: formatBucketTime(t, ctx.window),
+    time: formatBucketTime(t, ctx.window, ctx.bucketMs),
     height: formatInt(frame.height[i] ?? null),
-    difficulty: formatDifficulty(frame.difficulty[i]),
+    difficulty: shown,
+    difficultyEnd: end,
+    endDiffers: frame.difficultyMean[i] !== null && frame.difficulty[i] !== null && shown !== end,
     blockTime: formatBlockTime(mean),
     longest: max === null ? null : formatBlockTime(top),
     offChart: top !== null && top > ctx.cap,
@@ -499,7 +631,8 @@ export function pointFacts(frame: ChainFrame, i: number, ctx: FactsContext): Poi
 
 /** The reading a screen reader gets for one bucket of either chart: all four facts. */
 export function pointReading(f: PointFacts): string {
-  return `${f.time}, block ${f.height}: difficulty ${f.difficulty}, block time ${f.blockTime}${
+  const end = f.endDiffers ? ` on average, ${f.difficultyEnd} at the end` : '';
+  return `${f.time}, block ${f.height}: difficulty ${f.difficulty}${end}, block time ${f.blockTime}${
     f.longest === null ? '' : `, longest gap ${f.longest}${f.offChart ? ' (above the chart)' : ''}`
   }`;
 }
@@ -510,7 +643,7 @@ export function pointReading(f: PointFacts): string {
 
 const direction = (change: number): string => (change > 0 ? 'up' : 'down');
 
-/** `From 0.351 to 0.356, up 1.4%. Low 0.341, high 0.371.` */
+/** `From 0.351 to 0.356, up 1.4%. Low 0.341, high 0.371.` A move of ten times or more reads as times, not percent. */
 export function difficultySummary(values: readonly (number | null)[]): string {
   const a = firstKnown(values);
   const b = lastKnown(values);
@@ -522,11 +655,15 @@ export function difficultySummary(values: readonly (number | null)[]): string {
   const high = Math.max(...known);
   if (a === b) return `Only one reading, ${formatDifficulty(last)}.`;
   const change = last - first;
+  const times = first > 0 && last > 0 ? Math.max(last / first, first / last) : null;
   const rel = first !== 0 ? Math.abs(change / first) * 100 : null;
+  const from = `From ${formatDifficulty(first)} to ${formatDifficulty(last)}`;
   const trend =
-    change === 0 || (rel !== null && Number(rel.toFixed(1)) === 0)
-      ? `Flat at ${formatDifficulty(last)}.`
-      : `From ${formatDifficulty(first)} to ${formatDifficulty(last)}, ${direction(change)}${rel === null ? '' : ` ${rel.toFixed(1)}%`}.`;
+    times !== null && times >= BIG_MOVE
+      ? `${from}, ${direction(change)} ${formatInt(Math.round(times))} times.`
+      : change === 0 || (rel !== null && Number(rel.toFixed(1)) === 0)
+        ? `Flat at ${formatDifficulty(last)}.`
+        : `${from}, ${direction(change)}${rel === null ? '' : ` ${rel.toFixed(1)}%`}.`;
   return `${trend} Low ${formatDifficulty(low)}, high ${formatDifficulty(high)}.`;
 }
 
@@ -595,6 +732,12 @@ export interface ChainModel {
   changes: TargetChange[];
   difficulty: AxisDomain;
   blockTime: AxisDomain;
+  /** The width of a bucket, when the server said. */
+  bucketMs: number | null;
+  /** `cut[i]`: the step into bucket `i` is a hole in the history, so no line is drawn across it. */
+  cut: boolean[];
+  /** Whether the server gave a mean difficulty (the chart draws it, and the end value is one more column). */
+  hasMean: boolean;
   /** What each bucket reaches up the time axis (see `gapReach`). */
   reach: (number | null)[];
   /** How many blocks one bucket holds, on average: 4 in a day, thousands over the chain's life. */
@@ -644,14 +787,17 @@ export function chainModel(dto: ChainHistoryDto, asked: ChainWindow = '7d'): Cha
     domain,
     segments,
     changes: targetChanges(segments),
-    difficulty: difficultyDomain(frame.difficulty),
+    difficulty: difficultyDomain(frame.trend),
     blockTime,
+    bucketMs: finite(dto.bucket_ms) && dto.bucket_ms > 0 ? dto.bucket_ms : null,
+    cut: gapBreaks(frame.t, dto.bucket_ms),
+    hasMean: hasValues(frame.difficultyMean),
     reach,
     perBucket,
     above,
     story,
     summary: {
-      difficulty: difficultySummary(frame.difficulty),
+      difficulty: difficultySummary(frame.trend),
       blockTime: blockTimeSummary({
         avg: orNull(dto.avg_block_time_s),
         target: story.text,

@@ -150,8 +150,9 @@
 
 .cp-tip-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: var(--space-5);
+  gap: var(--space-1) var(--space-5);
   margin-bottom: var(--space-3);
   color: var(--text-3);
   font: var(--fw-regular) var(--fs-2xs) / 1.2 var(--font-mono);
@@ -286,6 +287,16 @@
 
 .cp-legend-item[aria-pressed="false"] .cp-key[data-dashed] {
   background: transparent;
+}
+
+/* what the axis is, where there is no series to toggle: set like a legend entry, but quiet and not a control */
+.cp-note {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--space-4);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-sans);
 }
 
 /* the first column is the time: its head sits over it, on the left */

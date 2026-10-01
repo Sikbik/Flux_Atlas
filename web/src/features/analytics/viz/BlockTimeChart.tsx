@@ -7,7 +7,6 @@
 // would only be noise.
 
 import { type CSSProperties, useCallback, useMemo, useState } from 'react';
-import { PON_ACTIVATION_HEIGHT } from '../../explorer/lib/emission';
 import {
   formatTickSeconds,
   gapBandWorthDrawing,
@@ -21,8 +20,10 @@ import {
   targetStepPoints,
   WINDOW_TEXT,
 } from '../lib/chain';
+import type { Avoid } from './avoid';
 import { ChainPlot, type PlotGeo, type Tip, type TipRow } from './ChainPlot';
 import type { ChainChartProps } from './DifficultyChart';
+import { EraMarks } from './EraMarks';
 import { bandPath, cornersPath, isolated, linePath } from './paths';
 
 const TABLE_HEAD = ['Time', 'Block', 'Block time', 'Longest gap', 'Target'] as const;
@@ -44,7 +45,7 @@ const LEGEND: { id: Series; label: string; color: string; dashed?: boolean }[] =
 ];
 
 export function BlockTimeChart({ model, cursor, onCursor, height }: ChainChartProps) {
-  const { frame, window, domain, blockTime: axis, segments } = model;
+  const { frame, window, domain, blockTime: axis, segments, cut } = model;
   const cap = axis.hi;
   const hasGap = useMemo(() => hasValues(frame.blockMax), [frame]);
   const band = gapBandWorthDrawing(model.perBucket);
@@ -52,7 +53,10 @@ export function BlockTimeChart({ model, cursor, onCursor, height }: ChainChartPr
   const [visible, setVisible] = useState<Visible>({ avg: true, target: true, gap: true });
   const show: Visible = { avg: visible.avg, target: visible.target && hasTarget, gap: visible.gap && hasGap };
 
-  const ctx = useMemo(() => ({ window, segments, cap }), [window, segments, cap]);
+  const ctx = useMemo(
+    () => ({ window, bucketMs: model.bucketMs, segments, cap }),
+    [window, model.bucketMs, segments, cap],
+  );
 
   // The carets: the worst buckets above the top of the chart, whatever the legend leaves showing.
   const markers = useMemo(() => {
@@ -67,7 +71,6 @@ export function BlockTimeChart({ model, cursor, onCursor, height }: ChainChartPr
       const meanY = frame.blockTime.map(clipY);
       const topY = gapCeiling(frame).map(clipY);
       const last = lastKnown(frame.blockTime);
-      const right = g.plot.x + g.plot.w;
       const steps = targetStepPoints(segments).map((p) => ({
         x: g.x(p.ms),
         y: g.y(Math.min(p.seconds, cap)),
@@ -76,27 +79,15 @@ export function BlockTimeChart({ model, cursor, onCursor, height }: ChainChartPr
         <>
           {show.gap && band ? (
             <>
-              <path className="cp-band" d={bandPath(xs, meanY, topY)} />
-              <path className="cp-band-edge" d={linePath(xs, topY)} />
+              <path className="cp-band" d={bandPath(xs, meanY, topY, cut)} />
+              <path className="cp-band-edge" d={linePath(xs, topY, cut)} />
             </>
           ) : null}
-          {model.changes.map((c) => {
-            const x = g.x(c.ms);
-            const label = c.height === PON_ACTIVATION_HEIGHT ? 'Proof of Node' : 'Target change';
-            const after = right - x > 112;
-            return (
-              <g key={c.ms} className="cp-era">
-                <line x1={x} x2={x} y1={g.plot.y} y2={g.plot.y + g.plot.h} />
-                <text x={after ? x + 7 : x - 7} y={g.plot.y + 24} textAnchor={after ? 'start' : 'end'}>
-                  {label}
-                </text>
-              </g>
-            );
-          })}
+          <EraMarks changes={model.changes} geo={g} avoid={{ x: xs, y: meanY }} />
           {show.avg ? (
             <>
-              <path className="cp-line" d={linePath(xs, meanY)} />
-              {isolated(meanY).map((i) => (
+              <path className="cp-line" d={linePath(xs, meanY, cut)} />
+              {isolated(meanY, cut).map((i) => (
                 <circle key={i} className="cp-lone" cx={xs[i]} cy={meanY[i] ?? 0} r={2.5} />
               ))}
             </>
@@ -116,7 +107,15 @@ export function BlockTimeChart({ model, cursor, onCursor, height }: ChainChartPr
         </>
       );
     },
-    [frame, cap, segments, model.changes, markers, band, show.avg, show.target, show.gap],
+    [frame, cap, segments, cut, model.changes, markers, band, show.avg, show.target, show.gap],
+  );
+
+  const track = useCallback(
+    (g: PlotGeo): Avoid => ({
+      x: frame.t.map((ms) => g.x(ms)),
+      y: show.avg ? frame.blockTime.map((v) => (v === null ? null : g.y(Math.min(v, cap)))) : [],
+    }),
+    [frame, cap, show.avg],
   );
 
   const anchor = useCallback(
@@ -208,6 +207,7 @@ export function BlockTimeChart({ model, cursor, onCursor, height }: ChainChartPr
       formatTick={(v) => formatTickSeconds(v)}
       height={height}
       marks={marks}
+      track={track}
       anchor={anchor}
       tip={tip}
       reading={reading}

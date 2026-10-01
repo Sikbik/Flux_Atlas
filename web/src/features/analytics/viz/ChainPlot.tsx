@@ -5,9 +5,20 @@
 // one. Plain SVG over the design tokens; at rest nothing moves, and the marks draw in once per window.
 
 import { Table2 } from 'lucide-react';
-import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Button } from '../../../ui';
 import { type AxisDomain, nearestIndex } from '../lib/chain';
+import { type Avoid, placeTip } from './avoid';
+import { logScale } from './logScale';
 import { type Linear, linear, timeTicks } from './scale';
 import { useSize } from './useSize';
 import './viz.css';
@@ -23,7 +34,7 @@ export interface PlotGeo {
   plot: { x: number; y: number; w: number; h: number };
   /** Unix ms to px. */
   x: Linear;
-  /** A value to px. */
+  /** A value to px (on a log axis, by its logarithm). */
   y: Linear;
 }
 
@@ -64,6 +75,8 @@ export interface ChainPlotProps {
   height?: number;
   /** The marks, in the plot's own pixels, drawn under the crosshair. Keep the function stable (`useCallback`): it is only called again when it or the geometry changes. */
   marks: (geo: PlotGeo) => ReactNode;
+  /** The line the tooltip keeps clear of, in the plot's own pixels (it goes where the line is not). Keep it stable (`useCallback`). */
+  track?: (geo: PlotGeo) => Avoid;
   /** The value the crosshair's dot sits at for bucket `i`, or null for no dot. */
   anchor: (i: number) => number | null;
   /** The dot's colour. */
@@ -84,6 +97,8 @@ export interface ChainPlotProps {
 }
 
 const M = PLOT_MARGIN;
+/** Until the tooltip has been measured: about what one is, by its rows. */
+const TIP_GUESS = { w: 190, base: 40, row: 22 } as const;
 /** Room each label on the time axis gets: a date and the gap to the next one. */
 const TICK_SPACE = 74;
 
@@ -97,6 +112,7 @@ export function ChainPlot({
   formatTick,
   height = 224,
   marks,
+  track,
   anchor,
   dotColor = 'var(--viz-1)',
   tip,
@@ -112,6 +128,9 @@ export function ChainPlot({
   const { width } = useSize(wrapRef);
   const [own, setOwn] = useState<number | null>(null);
   const [showTable, setShowTable] = useState(false);
+  const tipRef = useRef<HTMLDivElement>(null);
+  // How big the tooltip is, as measured: it decides where the tooltip can go.
+  const [tipSize, setTipSize] = useState<{ w: number; h: number } | null>(null);
   const tableId = useId();
   const n = t.length;
 
@@ -125,9 +144,9 @@ export function ChainPlot({
       height,
       plot: { x: M.left, y: M.top, w: plotW, h: plotH },
       x: linear([domain[0], domain[1]], [M.left, M.left + plotW]),
-      y: linear([axis.lo, axis.hi], [M.top + plotH, M.top]),
+      y: (axis.scale === 'log' ? logScale : linear)([axis.lo, axis.hi], [M.top + plotH, M.top]),
     };
-  }, [width, height, plotW, plotH, domain, axis.lo, axis.hi]);
+  }, [width, height, plotW, plotH, domain, axis.lo, axis.hi, axis.scale]);
 
   const xTicks = useMemo(
     () => timeTicks(domain[0], domain[1], Math.max(3, Math.floor(plotW / TICK_SPACE))),
@@ -185,10 +204,30 @@ export function ChainPlot({
   const crossX = geo && shown !== null && t[shown] !== undefined ? geo.x(t[shown]) : null;
   const dotValue = shown === null ? null : anchor(shown);
   const dotY = geo && dotValue !== null ? geo.y(Math.min(axis.hi, Math.max(axis.lo, dotValue))) : null;
-  const tipUp = dotY === null ? true : dotY > M.top + plotH * 0.5;
   // The marks and the table are drawn from the data and the geometry alone, so a pointer moving over the
   // plot (which re-renders it often) does not redraw them.
   const markEls = useMemo(() => (geo ? marks(geo) : null), [geo, marks]);
+  const avoid = useMemo(() => (geo && track ? track(geo) : undefined), [geo, track]);
+  const place =
+    geo && tipData && crossX !== null
+      ? placeTip(
+          { width: geo.width, height, top: M.top, bottom: M.bottom, left: M.left, right: M.right },
+          crossX,
+          dotY,
+          tipSize ?? { w: TIP_GUESS.w, h: TIP_GUESS.base + TIP_GUESS.row * tipData.rows.length },
+          avoid,
+        )
+      : null;
+
+  // Measure the tooltip after every render it is in (before the browser paints, so nothing flashes where
+  // it was first guessed): a size that changed re-places it, one that did not changes nothing.
+  useLayoutEffect(() => {
+    const el = tipRef.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    if (w > 0 && h > 0) setTipSize((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+  });
   const rowEls = useMemo(
     () =>
       showTable
@@ -287,13 +326,18 @@ export function ChainPlot({
               onBlur={() => read(null)}
             />
 
-            {tipData && crossX !== null ? (
+            {tipData && crossX !== null && place ? (
               <div
+                ref={tipRef}
                 className="cp-tip"
                 role="presentation"
-                data-side={crossX > geo.width * 0.58 ? 'left' : 'right'}
-                data-v={tipUp ? 'top' : 'bottom'}
-                style={tipUp ? { left: crossX, top: M.top + 6 } : { left: crossX, bottom: M.bottom + 6 }}
+                data-side={place.side}
+                data-v={place.v}
+                style={
+                  place.v === 'top'
+                    ? { left: crossX, top: M.top + 6 }
+                    : { left: crossX, bottom: M.bottom + 6 }
+                }
               >
                 <div className="cp-tip-head">
                   <span>{tipData.time}</span>
