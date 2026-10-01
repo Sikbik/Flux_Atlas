@@ -729,6 +729,7 @@
 }
 
 .shell[data-layout="phone"] .tm-chip[data-mode="hint"],
+.shell[data-layout="phone"] .tm-chip[data-mode="nodata"],
 .shell[data-layout="phone"] .tm-chip[data-mode="error"] {
   white-space: normal;
   text-align: center;

@@ -18,16 +18,31 @@ export interface ArchiveChipProps {
   curve: Curve | null;
   /** The first instant on record, for the hint. */
   start: number | null;
+  /** The server's first whole network state (`/timeline` `first_ms`), for "No data before". */
+  first?: number | null;
   /** Enough history to scrub. */
   ready: boolean;
   /** The hint has done its job; show it only until the first move. */
   hintDone: boolean;
 }
 
-export function ArchiveChip({ tm, state, now, curve, start, ready, hintDone }: ArchiveChipProps) {
+export function ArchiveChip({ tm, state, now, curve, start, first, ready, hintDone }: ArchiveChipProps) {
   const t = useThrottledT(tm, 200);
   const archive = state.mode === 'archive';
-  const mode = state.error && archive ? 'error' : archive ? 'archive' : hintDone || !ready ? 'off' : 'hint';
+  const mode =
+    state.noHistory !== null && archive
+      ? 'nodata'
+      : state.error && archive
+        ? 'error'
+        : archive
+          ? 'archive'
+          : hintDone || !ready
+            ? 'off'
+            : 'hint';
+  // Before the first keyframe there is nothing to rebuild; past it, too little was recorded nearby.
+  const missed = state.noHistory;
+  const bound = first ?? start;
+  const before = missed !== null && bound !== null && missed < bound;
   const reading = archive && curve ? readingAt(curve, t) : null;
   const info = state.info;
   const nodes = info?.nodes ?? reading?.nodes ?? null;
@@ -48,6 +63,34 @@ export function ArchiveChip({ tm, state, now, curve, start, ready, hintDone }: A
               <span className="tm-chip__fact tabular">block {formatInt(reading.tip)}</span>
             ) : null}
             {info ? <Facts info={info} /> : null}
+          </span>
+        </>
+      ) : null}
+      {mode === 'nodata' && missed !== null ? (
+        <>
+          <span className="tm-chip__row">
+            <History className="tm-chip__icon" size={15} strokeWidth={1.5} aria-hidden="true" />
+            <strong className="tm-chip__title" role="status">
+              {before && bound !== null
+                ? `No data before ${formatInstantMinutes(bound)}`
+                : `No data for ${formatInstantMinutes(missed)}`}
+            </strong>
+          </span>
+          <span className="tm-chip__row">
+            <span className="tm-chip__fact">
+              {before
+                ? 'The recording starts there.'
+                : 'Too little was recorded around this moment to rebuild the network.'}
+            </span>
+            {start !== null ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => tm.settle(Math.max(start, bound ?? start))}
+              >
+                Go to the start
+              </Button>
+            ) : null}
           </span>
         </>
       ) : null}

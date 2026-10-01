@@ -37,6 +37,8 @@ export interface TimeMachineData {
   now: number;
   /** The first instant worth showing, or null while the history is unknown or empty. */
   start: number | null;
+  /** The first instant the server has a whole network state for (its first keyframe), or null. */
+  first: number | null;
   /** True once there is enough recorded history to scrub through. */
   ready: boolean;
   curve: Curve | null;
@@ -63,6 +65,18 @@ export function useTimeMachine(urlT: string | undefined, urlSpeed: number | unde
   useLayoutEffect(() => {
     bindingRef.current = binding;
   }, [binding]);
+  // A moment with no recorded state means the recorded range moved on: fetch it again (at most once
+  // per 10 s), and the playhead is clamped into the new range.
+  const refetchRef = useRef<() => void>(() => {});
+  const lastRefetch = useRef(0);
+  useLayoutEffect(() => {
+    refetchRef.current = () => {
+      const at = Date.now();
+      if (at - lastRefetch.current < 10_000) return;
+      lastRefetch.current = at;
+      void timeline.refetch();
+    };
+  });
   const [tm] = useState(() => {
     const env: TmEnv = {
       now: () => clock.now(),
@@ -77,6 +91,7 @@ export function useTimeMachine(urlT: string | undefined, urlSpeed: number | unde
         const id = setTimeout(cb, ms);
         return () => clearTimeout(id);
       },
+      onNoHistory: () => refetchRef.current(),
     };
     return new TimeMachine(env);
   });
@@ -194,6 +209,7 @@ export function useTimeMachine(urlT: string | undefined, urlSpeed: number | unde
     state,
     now,
     start,
+    first,
     ready,
     curve,
     curveLoading,

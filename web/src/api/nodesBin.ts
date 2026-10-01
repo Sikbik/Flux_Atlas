@@ -302,6 +302,41 @@ function nanColumn(n: number): Float32Array {
   return a;
 }
 
+/** A snapshot with no rows (a moment nothing is recorded for). */
+export function emptyNodesBin(): NodesBin {
+  return {
+    seq: 0,
+    generatedMs: 0,
+    flags: 0,
+    count: 0,
+    ids: new Uint32Array(0),
+    lat: new Float32Array(0),
+    lon: new Float32Array(0),
+    tier: new Uint8Array(0),
+    status: new Uint8Array(0),
+    flagsCol: new Uint8Array(0),
+    loc: new Uint32Array(0),
+    country: new Uint16Array(0),
+    org: new Uint16Array(0),
+    appCount: new Uint16Array(0),
+    rank: new Uint32Array(0),
+    lastPaid: new Uint32Array(0),
+    cores: new Uint16Array(0),
+    ramGb: new Uint16Array(0),
+    ssdGb: new Uint32Array(0),
+    version: new Uint16Array(0),
+    ips: StringTable.empty(0),
+    countries: StringTable.empty(1),
+    orgs: StringTable.empty(1),
+    versions: StringTable.empty(1),
+    locations: Locations.empty(),
+    outpoints: Outpoints.empty(0),
+    origin: null,
+    unknownSections: [],
+    present: new Set([NodeSection.Ids]),
+  };
+}
+
 /** Decodes a nodes.bin buffer. Throws `BinFormatError` on a malformed or incompatible file. */
 export function decodeNodesBin(input: ArrayBuffer | ArrayBufferView): NodesBin {
   const c: Container = readContainer(input, NODES_MAGIC);

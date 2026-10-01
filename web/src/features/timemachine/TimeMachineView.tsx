@@ -28,7 +28,7 @@ export function TimeMachineView({ t, speed }: { t?: string | undefined; speed?: 
   const data = useTimeMachine(t, speed);
   const [host] = useState(shellHost);
   const animate = useAnimate();
-  const { state, ready, start, curve, now, tm } = data;
+  const { state, ready, start, first, curve, now, tm } = data;
   const archive = state.mode === 'archive';
 
   // The hint ("drag the handle back") is for the first visit only; once the archive has shown it is done.
@@ -58,6 +58,7 @@ export function TimeMachineView({ t, speed }: { t?: string | undefined; speed?: 
             now={now}
             curve={curve}
             start={start}
+            first={first}
             ready={ready}
             hintDone={hintDone}
           />

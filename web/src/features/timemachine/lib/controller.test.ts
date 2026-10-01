@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ApiError } from '../../../api/http';
 import { NodeSection, type NodesBin, statusCode, tierCode } from '../../../api/nodesBin';
 import type { NodeTable } from '../../../store/nodeTable';
 import {
@@ -26,6 +27,7 @@ interface Pending {
 /** A hand-driven world: requests wait until the test answers, frames and timers run when told to. */
 class FakeEnv implements TmEnv {
   nowMs = NOW;
+  onNoHistory?: (t: number) => void;
   fetches: Pending[] = [];
   applied: (TableStub | null)[] = [];
   private frames: ((ts: number) => void)[] = [];
@@ -269,6 +271,64 @@ describe('failures', () => {
     await flush();
     env.advance(60_000);
     expect(env.fetches).toHaveLength(1);
+  });
+});
+
+describe('moments with no recorded state (no_history)', () => {
+  const noHistory = () =>
+    new ApiError('no_history', 'no data before 2026-10-01 05:00', 404, '/timeline/state');
+
+  it('shows an empty globe and says so, not a partial picture or an error', async () => {
+    const { env, tm } = make();
+    const told: number[] = [];
+    env.onNoHistory = (t) => told.push(t);
+    tm.settle(START + HOUR);
+    env.answer(5);
+    await flush();
+    env.advance(1000);
+    tm.settle(START + 2 * HOUR);
+    env.fetches[1]!.reject(noHistory());
+    await flush();
+    const s = tm.getState();
+    expect(s.noHistory).toBe(START + 2 * HOUR);
+    expect(s.error).toBeNull();
+    expect(s.info).toBeNull();
+    expect(s.loading).toBe(false);
+    // The last good picture is replaced by an empty one: nothing on record means no nodes.
+    expect((env.applied.at(-1) as unknown as TableStub).bin.count).toBe(0);
+    expect(told).toEqual([START + 2 * HOUR]);
+    // A moment that has data clears it.
+    tm.settle(START + HOUR);
+    await flush();
+    expect(tm.getState().noHistory).toBeNull();
+    expect(tm.getState().info?.nodes).toBe(5);
+  });
+
+  it('clamps the playhead to a later start and loads it once the range moves on', async () => {
+    const { env, tm } = make();
+    tm.settle(START + 10 * MINUTE);
+    env.fetches[0]!.reject(noHistory());
+    await flush();
+    expect(tm.getState().noHistory).toBe(START + 10 * MINUTE);
+    // The recorded range is fetched again: its first keyframe is later now.
+    tm.setRange(START + HOUR, NOW);
+    expect(tm.getT()).toBe(START + HOUR);
+    expect(env.fetches).toHaveLength(2);
+    expect(env.fetches[1]!.t).toBe(START + HOUR);
+    env.answer(7, 1);
+    await flush();
+    expect(tm.getState().noHistory).toBeNull();
+    expect(tm.getState().info?.nodes).toBe(7);
+  });
+
+  it('is cleared by going live', async () => {
+    const { env, tm } = make();
+    tm.settle(START + HOUR);
+    env.fetches[0]!.reject(noHistory());
+    await flush();
+    tm.goLive();
+    expect(tm.getState().noHistory).toBeNull();
+    expect(env.applied.at(-1)).toBeNull();
   });
 });
 

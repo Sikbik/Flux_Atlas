@@ -8,7 +8,8 @@
 // costs nothing. The playhead itself is never held back by the network: it moves at the chosen speed
 // and the picture catches up.
 
-import type { NodesBin } from '../../../api/nodesBin';
+import { isApiError } from '../../../api/http';
+import { emptyNodesBin, type NodesBin } from '../../../api/nodesBin';
 import type { NodeTable } from '../../../store/nodeTable';
 import { type ArchiveInfo, summarize } from './summary';
 import { clampTime, KEY_STEP, SECOND } from './time';
@@ -25,6 +26,12 @@ export interface TmState {
   loading: boolean;
   /** Why the last fetch failed; cleared by the next success. */
   error: string | null;
+  /**
+   * The instant asked for has no recorded state (`/timeline/state` answered `no_history`: before the
+   * first keyframe, or too far from one to rebuild). The globe shows no nodes for it, never a partial
+   * picture. Cleared by the next moment that loads, and by going live.
+   */
+  noHistory: number | null;
   /** What the globe shows right now (null while live, or before the first moment arrives). */
   info: ArchiveInfo | null;
   /** The handle is flying back to now. */
@@ -46,6 +53,13 @@ export interface TmEnv {
   frame(cb: (ts: number) => void): () => void;
   /** A one-shot timer; returns its cancel function. */
   timer(cb: () => void, ms: number): () => void;
+  /** Told when a moment has no recorded state, so the recorded range can be fetched again. */
+  onNoHistory?(t: number): void;
+}
+
+/** True for the server's answer to an instant it has no state for. */
+export function isNoHistory(e: unknown): boolean {
+  return isApiError(e) && e.code === 'no_history';
 }
 
 /** What the URL should say after a settled change. */
@@ -83,6 +97,7 @@ const INITIAL: TmState = {
   speed: 60,
   loading: false,
   error: null,
+  noHistory: null,
   info: null,
   flying: false,
   dragging: false,
@@ -185,11 +200,19 @@ export class TimeMachine {
     this.state = { ...INITIAL, speed: this.state.speed };
   }
 
-  /** The recorded range: `start` is the first moment worth showing, `end` is now. */
+  /**
+   * The recorded range: `start` is the first moment worth showing, `end` is now. A playhead the new
+   * range leaves out (the history start moved on) is clamped into it and that moment is loaded.
+   */
   setRange(start: number, end: number): void {
     this.start = start;
     this.end = Math.max(end, start);
-    if (this.state.mode === 'archive') this.t = clampTime(this.t, this.start, this.end);
+    if (this.state.mode !== 'archive') return;
+    const t = clampTime(this.t, this.start, this.end);
+    if (t === this.t) return;
+    this.t = t;
+    this.emitT(t);
+    if (!this.state.dragging) this.want(t, 0);
   }
 
   // ---- moving the playhead ----------------------------------------------------------------------
@@ -308,7 +331,15 @@ export class TimeMachine {
     this.cancelFlightNow();
     // `flying` goes up in the same breath as the mode, before the handle is told to move, so the strip
     // already knows to glide when it hears where it is going.
-    this.set({ mode: 'live', playing: false, loading: false, error: null, info: null, flying: fly });
+    this.set({
+      mode: 'live',
+      playing: false,
+      loading: false,
+      error: null,
+      noHistory: null,
+      info: null,
+      flying: fly,
+    });
     if (fly) {
       this.cancelFlight = this.env.timer(() => {
         this.cancelFlight = null;
@@ -394,7 +425,7 @@ export class TimeMachine {
   private pump(gapMs: number): void {
     if (!this.attached || this.wanted === null || this.state.mode !== 'archive') return;
     const key = keyOf(this.wanted);
-    if (key === this.shownKey && !this.state.error) {
+    if (key === this.shownKey && !this.state.error && this.state.noHistory === null) {
       this.wanted = null;
       return;
     }
@@ -438,7 +469,7 @@ export class TimeMachine {
         if ((this.wanted !== null || key === this.lastWishKey) && this.state.mode === 'archive') {
           this.show(loaded);
         }
-        this.set({ loading: false, error: null });
+        this.set({ loading: false, error: null, noHistory: null });
         // Chase wherever the handle is by now.
         if (this.wanted !== null) this.pump(this.state.playing ? GAP_PLAY_MS : GAP_DRAG_MS);
       },
@@ -446,6 +477,18 @@ export class TimeMachine {
         if (this.inflight?.seq !== seq) return;
         this.inflight = null;
         if (ac.signal.aborted) return;
+        if (isNoHistory(e)) {
+          // Nothing on record for this moment: an empty globe and a plain answer, not an error.
+          if ((this.wanted !== null || key === this.lastWishKey) && this.state.mode === 'archive') {
+            this.shownKey = key;
+            this.showing = true;
+            this.env.apply(this.env.buildTable(emptyNodesBin()));
+            this.set({ loading: false, error: null, noHistory: instant, info: null });
+          } else this.set({ loading: false });
+          this.env.onNoHistory?.(instant);
+          if (this.wanted !== null) this.pump(this.state.playing ? GAP_PLAY_MS : GAP_DRAG_MS);
+          return;
+        }
         this.set({ loading: false, error: messageOf(e) });
       },
     );
@@ -465,7 +508,7 @@ export class TimeMachine {
     this.shownKey = loaded.key;
     this.showing = true;
     this.env.apply(loaded.table);
-    this.set({ info: loaded.info, error: null });
+    this.set({ info: loaded.info, error: null, noHistory: null });
   }
 
   /** Puts the table now on show on the globe again (the globe was rebuilt after a lost context). */
