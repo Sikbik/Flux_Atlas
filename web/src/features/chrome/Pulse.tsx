@@ -43,6 +43,7 @@ import type { WindowType } from '../../shell/wm/types';
 import { useUi } from '../../store/ui';
 import { LiveDot } from '../../ui';
 import { useNodeFacts } from './data';
+import { useFreshKeys } from './fresh';
 import { useLiveView } from './live';
 import { cssValue, play } from './motion';
 import { amountLabel } from './payouts';
@@ -305,13 +306,17 @@ function BurstRow({
 
 /** Rows kept in the DOM; the list shows the newest few and fades the rest away at the top. */
 const DOM_ROWS = 14;
+/** Recent blocks the card starts with: enough to fill the tallest card (ten rows) before the feed has anything to add. */
+const BLOCK_ROWS = 12;
+/** A row stays fresh a little longer than its wash takes to decay (1.6 s). */
+const FRESH_MS = 1800;
 
 function usePulseRows(filter: PulseFilter) {
   const feed = useFeed();
   const blocks = useChainBlocks();
   const watched = useUi((s) => s.watched);
   const events = useMemo(
-    () => normalize(feed.slice(0, 200), blocks, { watched: new Set(watched) }),
+    () => normalize(feed.slice(0, 200), blocks, { watched: new Set(watched), maxBlocks: BLOCK_ROWS }),
     [feed, blocks, watched],
   );
   return useMemo(() => collapseBursts(applyFilter(events, filter).slice(0, 80)), [events, filter]);
@@ -374,9 +379,12 @@ export function PulseCard({ mode }: { mode: PulseMode }) {
     return out.slice(-(mode === 'compact' ? 1 : DOM_ROWS));
   }, [rows, openBursts, mode]);
 
-  // Rows present at first paint are history; later ones are fresh and wash.
+  // Rows present at first paint are history; later ones are fresh for a moment (the wash, and a Current for a
+  // payment to a watched node).
   const initial = useRef<Set<string> | null>(null);
   if (initial.current === null && flat.length > 0) initial.current = new Set(flat.map((f) => f.key));
+  const flatKeys = useMemo(() => flat.map((f) => f.key), [flat]);
+  const fresh = useFreshKeys(flatKeys, { ms: FRESH_MS });
 
   // FLIP: rows slide up by one row when a row arrives at the bottom (a fade when motion is reduced).
   const listRef = useRef<HTMLUListElement>(null);
@@ -483,11 +491,7 @@ export function PulseCard({ mode }: { mode: PulseMode }) {
                 now={now}
               />
             ) : (
-              <EventRow
-                key={key}
-                ev={row.ev}
-                fresh={!!initial.current && !initial.current.has(key) && !sub}
-              />
+              <EventRow key={key} ev={row.ev} fresh={fresh.has(key) && !sub} />
             ),
           )
         )}

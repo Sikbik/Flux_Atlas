@@ -117,16 +117,6 @@ export function nextTombs<T extends BlockLike>(
 }
 
 /**
- * The cards that appeared since the previous render, when that is one or two (a live block landing, or a
- * reorg replacing one). The first fill and a whole resync arriving at once animate nothing.
- */
-export function freshKeys(prev: ReadonlySet<string> | null, next: readonly string[]): Set<string> {
-  if (!prev || prev.size === 0) return new Set();
-  const fresh = next.filter((k) => !prev.has(k));
-  return fresh.length > 0 && fresh.length <= 2 ? new Set(fresh) : new Set();
-}
-
-/**
  * The cards to draw, newest first: live blocks, with orphaned ones kept just after the live block of
  * the same height (or in height order when that height has no live block).
  */

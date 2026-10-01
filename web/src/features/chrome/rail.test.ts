@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   type BlockLike,
-  freshKeys,
   mempoolWeight,
   mixSegments,
   nextTombs,
@@ -59,23 +58,6 @@ describe('payeesByTier', () => {
     const p = (tier: string) => ({ tier, node: 1, address: 'a', amount: '1' }) as never;
     const out = payeesByTier([p('cumulus'), p('unknown'), p('stratus'), p('nimbus')]);
     expect(out.map((x) => x.tier)).toEqual(['stratus', 'nimbus', 'cumulus']);
-  });
-});
-
-describe('freshKeys', () => {
-  it('finds the one or two cards that appeared', () => {
-    expect([...freshKeys(new Set(['a', 'b']), ['c', 'a', 'b'])]).toEqual(['c']);
-    expect([...freshKeys(new Set(['a', 'b']), ['d', 'c', 'a', 'b'])]).toEqual(['d', 'c']);
-  });
-
-  it('animates nothing on the first fill or when a whole resync arrives', () => {
-    expect(freshKeys(null, ['a', 'b']).size).toBe(0);
-    expect(freshKeys(new Set(), ['a', 'b']).size).toBe(0);
-    expect(freshKeys(new Set(['x']), ['a', 'b', 'c', 'x']).size).toBe(0);
-  });
-
-  it('reports nothing when the set is unchanged', () => {
-    expect(freshKeys(new Set(['a']), ['a']).size).toBe(0);
   });
 });
 

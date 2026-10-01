@@ -30,6 +30,14 @@ manager (see its own README).
 - **The Live sheet** is UI state (`usePhone`), not a window and not a route: `WindowType` is closed and
   `shell/windowContent.tsx` switches on it exhaustively.
 
+## `data-fresh`
+
+A block's card and a feed row that arrive after the first fill carry `data-fresh` for 1.8 s (`fresh.ts`:
+`useFreshKeys`). The element mounts without it and takes it in a second commit, before the next paint, because
+the motion language reads an attribute that *appears on an element that exists* (a created element that already
+has it fires nothing), and because a later re-render (a second store update, a reorg timer) must not end the
+moment early. The first fill, a resync and a filter change are not arrivals.
+
 ## Loaded on demand
 
 The first paint carries the gates and the chrome that is on screen; the rest is its own chunk, fetched when
@@ -57,7 +65,7 @@ folder in the tree is listed under "Left for the integration pass".
 | Shell | `.shell` | `data-boot` (`running`, `done`), `data-boot-instant`, `data-layout` (`desktop`, `phone`) | none |
 | Top bar | `header.topbar[data-region=topbar]` | controls carry `data-pressed` | dense zone (`data-fx-density="dense"`) |
 | Dock | `nav.dock[data-region=dock]` > `button.dk` | `data-launcher` (the launcher id; `launcherOf(type)` in `shell/frame/dock.ts` names the one a window opens from, so a window can take its launcher as its source), `data-state` (`idle`, `open`, `focus`, `min`), `data-pressed` | `data-fx="charge"`, no Pulse: the window opening is the answer |
-| Block rail | `section.railwrap[data-region=rail]` > `div.rail[data-frozen]` > `ol.rail-track` > `li.blk-item` > `a.blk` | `li.blk-item[data-flip][data-fresh][data-orphan]` while a card is new or orphaned, `a.blk[data-tier][data-pressed]`; the ghost is `li.blk-item-ghost[data-late]` > `.blk.ghost[data-phase]` | the rail and each card are positioned hosts for a `<Current>`; `data-frozen` is the "disabled" signal (scrolled into history) |
+| Block rail | `section.railwrap[data-region=rail]` > `div.rail[data-frozen]` > `ol.rail-track` > `li.blk-item` > `a.blk` | `li.blk-item[data-flip][data-fresh][data-orphan]` while a card is new (1.8 s) or orphaned, `a.blk[data-tier][data-pressed]`; the ghost is `li.blk-item-ghost[data-late]` > `.blk.ghost[data-phase]` | the rail and each card are positioned hosts for a `<Current>`; `data-frozen` is the "disabled" signal (scrolled into history) |
 | Status bar | `section.statusbar[data-region=statusbar]` | `.sb-fresh[data-state]`, `.sb-led[data-state]`, `.sb-conn[data-tone]` | dense zone; the tip and counters settle through the kit's `AnimatedNumber` |
 | Pulse feed | `.pulse[data-mode][data-offline][data-frozen]` > `li.evt[data-flip][data-fresh][data-kind][data-tier]` | `data-fresh` while a row is new, `data-frozen` while the pointer holds the feed | rows settle; only a payment to a watched node (`data-kind="paid_mine"`) carries `data-fx="current"` |
 | Aim strip | `.aimstrip[data-soon][data-late][data-hidden][data-inline]` > `.aimchip[data-tier][data-pending][data-mine]` | static states | none (no loops in chrome) |

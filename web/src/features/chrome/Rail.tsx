@@ -25,11 +25,11 @@ import type { ChainBlock } from '../../store/network';
 import { cx, HoverCard, TierGlyph } from '../../ui';
 import { pressHandlers } from '../../ui/internal/press';
 import { useNodeFacts, usePayoutLines } from './data';
+import { useFreshKeys } from './fresh';
 import { ProducerGlyph } from './glyphs';
 import { lazyCard } from './lazyCard';
 import { cssValue, play } from './motion';
 import {
-  freshKeys,
   mempoolWeight,
   mixSegments,
   nextTombs,
@@ -48,6 +48,8 @@ const peekCard = lazyCard(() => import('./ChromeCards').then((m) => m.CardPeek))
 const MAX_CARDS = 40;
 /** Scrolled this far from the live edge, the rail counts as being in history. */
 const HISTORY_PX = 24;
+/** A landed card stays fresh a little longer than its rim takes to fade (1.6 s). */
+const FRESH_MS = 1800;
 
 /** Placeholder cards while the first snapshot loads: the same size as the real ones, so nothing shifts. */
 const SKELETONS = ['a', 'b', 'c', 'd', 'e', 'f'] as const;
@@ -110,17 +112,12 @@ function RailTrack() {
 
   const cards = useMemo(() => withTombs(shown.slice(0, MAX_CARDS), tombs), [shown, tombs]);
 
-  // Which cards are new since the last render, for the landing animation (never the first fill).
+  // Which cards just landed, for the landing animation and the motion language (never the first fill). The FLIP
+  // below keeps its own record of the keys it has seen.
+  const cardKeys = useMemo(() => cards.map((c) => keyOf(c.block)), [cards]);
+  const fresh = useFreshKeys(cardKeys, { ms: FRESH_MS, max: 2 });
   const seen = useRef<Set<string> | null>(null);
   const flip = useRef(new Map<string, number>());
-  const newKeys = useMemo(
-    () =>
-      freshKeys(
-        seen.current,
-        cards.map((c) => keyOf(c.block)),
-      ),
-    [cards],
-  );
 
   // FLIP: after the DOM changed, cards that moved slide from where they were to where they are (a card
   // or two arriving or leaving; a whole resync just redraws).
@@ -189,7 +186,7 @@ function RailTrack() {
         {live.length === 0
           ? SKELETONS.map((id) => <SkeletonCard key={id} />)
           : cards.map(({ block, orphan }) => (
-              <BlockCard key={keyOf(block)} block={block} orphan={orphan} isNew={newKeys.has(keyOf(block))} />
+              <BlockCard key={keyOf(block)} block={block} orphan={orphan} isNew={fresh.has(keyOf(block))} />
             ))}
       </ol>
       {frozen ? (
