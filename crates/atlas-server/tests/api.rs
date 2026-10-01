@@ -650,10 +650,18 @@ async fn chain_history_windows() {
     assert_eq!(month["targets"][0]["seconds"], 120);
     assert_eq!(month["targets"][1]["from_height"], 2_020_000);
     assert_eq!(month["targets"][1]["seconds"], 30);
-    // Per-block rows cover 7 of the 30 days: partial.
+    // Per-block rows cover 7 of the 30 days, 720-block samples the rest (`sampled` points),
+    // and a 12-hour hole stays a gap: partial.
     assert_eq!(month["coverage"]["complete"], false);
     let pct = month["coverage"]["percent"].as_f64().unwrap();
-    assert!(pct > 20.0 && pct < 40.0, "{pct}");
+    assert!(pct > 97.0 && pct < 99.0, "{pct}");
+    let sampled = month["points"].as_array().unwrap();
+    assert!(
+        sampled
+            .iter()
+            .any(|p| p["sampled"] == true && p["block_time_max_s"].is_null())
+    );
+    assert!(sampled.iter().any(|p| p["sampled"] == false));
     let points = month["points"].as_array().unwrap();
     assert!(points.len() <= 720 && points.len() > 160);
     assert!(
@@ -673,12 +681,13 @@ async fn chain_history_windows() {
     assert!(p["block_time_s"].is_number() && p["block_time_max_s"].is_number());
     assert!(p["difficulty"].is_number() && p["difficulty_mean"].is_number());
 
-    // The 7-day window has a two-hour hole.
+    // The 7-day window has a 12-hour hole.
     let week = get(&e.app, "/api/v1/network/chain-history?window=7d")
         .await
         .json();
     assert_eq!(week["coverage"]["complete"], false);
-    assert!(week["coverage"]["percent"].as_f64().unwrap() > 97.0);
+    let pct = week["coverage"]["percent"].as_f64().unwrap();
+    assert!(pct > 91.0 && pct < 94.0, "{pct}");
 
     // The whole chain: sampled from 1,500,480 only, 120 s before the fork and 30 s after.
     let all = get(&e.app, "/api/v1/network/chain-history?window=all").await;

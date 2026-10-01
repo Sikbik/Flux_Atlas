@@ -150,7 +150,7 @@ expensive payload only when that indicator moves. v1 rebuilt everything every 30
 | T3 | **GeoResolve** | `stats.runonflux.io/fluxlocation/<ip>` (0.5 s, works for any node IP) **immediately** for every new or changed IP (so new nodes land on the globe within seconds), and for zero-geo nodes; cached 7 days per IP. Local fallback for org/country/region: Flux's own `iplocation.bin.gz` (the table FluxOS placement uses; weekly). **City names** (and approximate coordinates for nodes without any) from the local DB-IP City Lite database, see *Local GeoIP* below | on event | `NodeLocated` |
 | T3 | **TopologySweep** | `/flux/topology` on rotating reachable nodes (each call returns ~60 reporters' peer lists). **Rolling: one call every ~12 s**, and each result streams immediately, so the whole overlay graph refreshes about every 30 min without a batch | continuous | `PeerLinksChanged` (mesh deltas) |
 | T3 | **WatchProbe** | direct, SSRF-guarded probes of **watched** nodes only (clients' watchlists): `/flux/version` (or `/flux/uptime`) every 60 s. This gives operators near-real-time offline detection, which is otherwise impossible at network scale | 60 s per watched host | `NodeUnreachable`/`NodeRecovered` (fast path) |
-| T3 | **ChainSampler** (chain history) | Live blocks and the 7-day block backfill write each block's time and difficulty (`chain_points`) from the `getblock` they already fetched: no extra call. Older history is **sampled**: every 720th height (6 h after PoN, a day before it; about 4,170 heights for the whole chain), one `daemon/getblock/<height>/1` each (header fields and txids, 1 to 20 KB) on the bulk lane, 1 s apart, backing off 5 s to 10 min on errors. Coarse heights first (every 5,760th, then 2,880th, 1,440th, 720th; newest first within a level), so the year and all-time charts have a shape within minutes. Resumable and idempotent: each pass asks the store which grid heights below `tip - 100` lack a row with a difficulty, so a restart resumes and nothing is fetched twice. Plus Insight `statistics/difficulty?days=all` (730 daily values) once a day. Rows that predate the table are copied once from the stored blocks (time only). On by default (`IngestConfig::chain_sampler`) | 1 req/s until sampled, then every 30 min for new grid heights | none (store only) |
+| T3 | **ChainSampler** (chain history) | Live blocks and the 7-day block backfill write each block's time and difficulty (`chain_points`) from the `getblock` they already fetched: no extra call. The newest 30 days (86,400 heights) are **sampled first on a 120-block grid** (721 heights, about one an hour, newest first), so the short windows are complete within minutes. Older history is **sampled**: every 720th height (6 h after PoN, a day before it; about 4,170 heights for the whole chain), one `daemon/getblock/<height>/1` each (header fields and txids, 1 to 20 KB) on the bulk lane, 1 s apart, backing off 5 s to 10 min on errors. Coarse heights first (every 5,760th, then 2,880th, 1,440th, 720th; newest first within a level), so the year and all-time charts have a shape within minutes. Resumable and idempotent: each pass asks the store which grid heights below `tip - 100` lack a row with a difficulty, so a restart resumes and nothing is fetched twice. Plus Insight `statistics/difficulty?days=all` (730 daily values) once a day. Rows that predate the table are copied once from the stored blocks (time only). On by default (`IngestConfig::chain_sampler`) | 1 req/s until sampled, then every 30 min for new grid heights | none (store only) |
 
 **No full-network per-node crawl.** Aggregated sources (stats rounds, topology) replace it. We only touch individual
 node APIs for TopologySweep, WatchProbe and failover reads, always through the SSRF guard.
@@ -583,7 +583,7 @@ the 31 minutes after the backfill finished (2,832 blocks a day at 30 s spacing).
 | Mesh changes | `mesh_events` | 7 d | topology history | 6,450 to 8,590 | 6,900 to 13,000 | 44 to 111 | 310 to 780 MB |
 | Snapshots | `snapshots` | hourly 30 d, then daily keyframes 365 d | time machine | 525 KB | 24 | 12.6 | 380 + 190 MB |
 | Metrics | `metrics_1m` / `metrics_1h` | 30 d / forever | charts | 160 / 96 | 1,440 / 24 | 0.23 / 0.002 | 7 MB / +1 MB a year |
-| Chain history | `chain_points`, `chain_daily` | per block 31 d, then the 720-block sample grid forever; daily 2 y (upstream's span) | `/network/chain-history` | 45 / 22 | 2,880 per block; 4 grid | 0.13 | 4.0 MB per-block window + 0.07 MB a year of grid rows (0.19 MB for the whole chain so far; measured on 3130: 10,251 rows in 0.44 MiB) |
+| Chain history | `chain_points`, `chain_daily` | per block and the 120-block samples 31 d, then the 720-block sample grid forever; daily 2 y (upstream's span) | `/network/chain-history` | 45 / 22 | 2,880 per block + 24 samples; 4 grid | 0.13 | 4.0 MB per-block window + 32 KB of 120-block samples (at most 720 off the deep grid) + 0.07 MB a year of grid rows (0.19 MB for the whole chain so far; measured on 3130: 10,251 rows in 0.44 MiB) |
 | App history | `app_messages`(+`_by_app`) | forever | app spec history (from the six-year bootstrap) | 768 + 91 | ~190 | 0.16 | 58 MB, +60 MB a year |
 | App timelines | `app_events` | forever | app timelines | 175 | 2,300 | 0.4 | +150 MB a year |
 
@@ -714,26 +714,30 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > target_block_time_s, targets, points, coverage}` (`ChainHistoryDto`).
 > - **Buckets** are right-closed UTC steps ending at the newest row: 5 min (288) for 24 h, 15 min (672) for 7 d, 1 h
 >   (720) for 30 d, 1 day (365) for 1 y, and whole days for `all` (at most 720; 5 days in 2026). A point is
->   `{t_ms, height, difficulty, difficulty_mean, block_time_s, block_time_max_s}`: `t_ms` the bucket end (the newest
->   row's time for the last bucket), `height` its last height, `difficulty` the last known value in the bucket and
->   `difficulty_mean` their mean (PoN difficulty can move 100x from one day to the next: Insight's daily values run
->   from 0.002 to 0.6, so the mean is the steadier trend line). A bucket without data has no point: a `t_ms` step
+>   `{t_ms, height, difficulty, difficulty_mean, block_time_s, block_time_max_s, sampled}`: `t_ms` the bucket end (the
+>   newest row's time for the last bucket), `height` its last height, `difficulty` the last known value in the bucket
+>   and `difficulty_mean` their mean (PoN difficulty can move 100x from one day to the next: Insight's daily values
+>   run from 0.002 to 0.6, so the mean is the steadier trend line). A bucket without data has no point: a `t_ms` step
 >   wider than `bucket_ms` is a gap.
 > - **Time per block** is `(time(last) - time(anchor)) / (last - anchor)`, `anchor` being the row just below the
->   bucket. Per-block rows make it exact (24 h to 30 d). Sampled rows (one every 720 heights) make it the mean
->   between samples; the anchor is used only while it lies in the two previous buckets (a sample interval can be a
->   little wider than a bucket), else the bucket's own rows give the span, and a lone row after a gap is `null`.
->   `block_time_max_s` (the longest gap between consecutive blocks) only where per-block rows cover the bucket. Daily Insight difficulty fills `difficulty` in day-wide buckets whose
->   rows carry none. Nothing is interpolated.
+>   bucket. Per-block rows make it exact. Where per-block rows do not cover a bucket it comes from samples (one every
+>   120 heights for the newest 30 days, every 720 before): the mean between two consecutive rows, which must be
+>   linked (at most 720 heights or three buckets apart; anything wider is a gap and stays `null`). A bucket with no
+>   row inside a linked span still gets a point: the span's mean, the height interpolated along the span, and `null`
+>   difficulties. Such points, and every point whose time per block is not per-block, carry `sampled: true` and
+>   `block_time_max_s: null` (the longest gap between consecutive blocks needs per-block rows). Daily Insight
+>   difficulty fills `difficulty` in day-wide buckets whose rows carry none.
 > - **`targets`**: `[{from_height: 0, from_ms: genesis, seconds: 120}, {from_height: 2,020,000, from_ms:
 >   1761415235000, seconds: 30}]`. The 120 s pre-PoN target is the chain's (blocks 1 to 2,019,999 averaged 120.9 s).
 > - **`coverage`** `{complete, indexed_from_height, percent}`: the share of the window's heights covered by a known
 >   time per block (heights counted from the row at or before the window start, else estimated at the target
->   spacing), and the lowest height with data in the window. On a fresh instance 24 h and 7 d fill with the block
->   backfill (about 4.7 h for 7 days), 30 d is partial until 30 days of live blocks exist (or the grid's 6 h samples
->   remain, which leave the 1 h buckets' time per block `null`), and 1 y / all fill as the sampler runs (coarse
->   first: usable after about 15 minutes, every grid height in about 80 minutes; measured on 3130: 4,167 samples at
->   0.86 requests a second, no errors, `all` complete after 22 minutes).
+>   spacing), and the lowest height with data in the window; a bucket counts whether per-block rows or samples cover
+>   it. On a fresh instance the sampler fetches the newest 30 days on the 120-block grid first (721 requests, newest
+>   first), so 24 h, 7 d and 30 d are complete within minutes, long before the 7-day block backfill (about 4.7 h,
+>   newest first) and 30 days of live blocks replace the samples with per-block rows; then the deep grid fills 1 y and
+>   all (coarse first). Measured on 3130 from a fresh data dir (times include the reuse periods below): 24 h
+>   complete after 2.3 min, 7 d after 5.3, 30 d after 17.3, all after 31.3 and 1 y after 41.3 (2,082 bulk requests
+>   by then, 0.86 a second, no errors; the whole pass is 4,767 requests, about 92 minutes).
 > - **Caching**: one computation per window per reuse period (30 s for 24 h, 60 s for 7 d, 2 min for 30 d, 10 min
 >   for 1 y and all; concurrent identical requests share it), served with an ETag (304 on `If-None-Match`) and
 >   `Cache-Control: public, max-age=30` (24 h, 7 d), `60` (30 d) or `600` (1 y, all).

@@ -30,4 +30,10 @@ block_time_s: number | null,
  * Longest single gap between consecutive blocks in the bucket, when per-block data covers
  * it; else `null`.
  */
-block_time_max_s: number | null, };
+block_time_max_s: number | null, 
+/**
+ * `block_time_s` comes from sampled heights, not per-block rows. In a bucket that holds
+ * no row itself, `height` is interpolated along the sample span and the difficulties are
+ * `null`.
+ */
+sampled: boolean, };

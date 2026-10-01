@@ -20,8 +20,9 @@
 //! - `mesh` deltas per simulated topology-sweep call, occasional node expiry (`nodes` status,
 //!   then removal) and a full rank `reconcile` every 20 blocks
 //! - `/network/chain-history` from the fixture's chain rows (`fixtures::chain_points`: 7 days
-//!   per block with a two-hour hole, samples from height 1,500,480 across the 120 s to 30 s
-//!   Proof of Node target change, so 30 d and all are partly indexed), plus a row per demo block
+//!   per block with a 12-hour hole, samples from height 1,500,480 across the 120 s to 30 s
+//!   Proof of Node target change, so 7 d, 30 d and all are partly indexed), plus a row per demo
+//!   block
 //!
 //! It also serves `web/dist` (the SPA) when it exists. Env: `ATLAS_DEMO_BIND`,
 //! `ATLAS_DEMO_BLOCK_MS`, `ATLAS_DEMO_SEED`, `ATLAS_LOG`.
