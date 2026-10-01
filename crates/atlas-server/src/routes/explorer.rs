@@ -53,7 +53,7 @@ pub const BLOCKS_PAGE_MAX: u32 = 1_000;
 
 /// `GET /blocks?before&limit`: newest first; published recent blocks, then the store. A full,
 /// gapless page wholly below the finality window never changes, so its body is cached by
-/// `(before, limit)`.
+/// `(before, limit)`; any other page is cached for a few seconds per tip block.
 pub async fn blocks(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -67,6 +67,19 @@ pub async fn blocks(
         .is_some_and(|tip| u64::from(before) + u64::from(FINALITY_DEPTH) <= u64::from(tip));
     if deep && let Some(body) = s.blocks_cache.get(&(before, limit)).await {
         return Ok(body.respond(&headers, cache::EXPLORER_DEEP));
+    }
+    // Pages that reach the tip change with every block (and a reorg changes the tip hash).
+    let tip_key = v.published.blocks.first().map(|b| {
+        let mut k = [0u8; 8];
+        k.copy_from_slice(&b.hash.0[..8]);
+        u64::from_le_bytes(k)
+    });
+    let recent_key = tip_key.map(|t| (before, limit, t));
+    if !deep
+        && let Some(k) = recent_key
+        && let Some(body) = s.recent_blocks_cache.get(&k).await
+    {
+        return Ok(body.respond(&headers, cache::EXPLORER_RECENT));
     }
     let want_n = limit as usize;
     let mut items: Vec<_> = v
@@ -102,7 +115,11 @@ pub async fn blocks(
             .await;
         return Ok(body.respond(&headers, cache::EXPLORER_DEEP));
     }
-    Ok(json_response(&headers, &page, cache::EXPLORER_RECENT))
+    let body = Arc::new(crate::body::CachedBody::json(&page));
+    if !deep && let Some(k) = recent_key {
+        s.recent_blocks_cache.insert(k, Arc::clone(&body)).await;
+    }
+    Ok(body.respond(&headers, cache::EXPLORER_RECENT))
 }
 
 enum BlockId {

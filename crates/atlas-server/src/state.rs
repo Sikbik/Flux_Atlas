@@ -41,6 +41,8 @@ pub struct Inner {
     pub timeline_cache: moka::future::Cache<u64, Arc<CachedBody>>,
     /// `/blocks` pages wholly below the finality window, keyed by `(before, limit)` (10 min).
     pub blocks_cache: moka::future::Cache<(u32, u32), Arc<CachedBody>>,
+    /// Other `/blocks` pages keyed by `(before, limit, tip hash prefix)` (10 s).
+    pub recent_blocks_cache: moka::future::Cache<(u32, u32, u64), Arc<CachedBody>>,
     /// `/network/app-economy` bodies keyed by `(tip, days, top)` (60 s).
     pub economy_cache: moka::future::Cache<(u32, u32, u32), Arc<CachedBody>>,
     /// Payouts of the last 30 days by address (operator earnings).
@@ -114,6 +116,10 @@ impl AppState {
                 blocks_cache: moka::future::Cache::builder()
                     .max_capacity(128)
                     .time_to_live(Duration::from_secs(600))
+                    .build(),
+                recent_blocks_cache: moka::future::Cache::builder()
+                    .max_capacity(64)
+                    .time_to_live(Duration::from_secs(10))
                     .build(),
                 economy_cache: moka::future::Cache::builder()
                     .max_capacity(32)
