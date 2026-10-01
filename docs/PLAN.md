@@ -35,7 +35,7 @@ commits at each milestone. Status values: done, running, queued.
 | K1 UI kit (done, merged; 52 components, 710 tests, axe-core clean, +2 kB shell) | Sonnet | `web/src/ui/**`, `web/src/styles/components.css` | the shared primitives every view composes (layout, key-value, stats, chips, tabs, tables, charts, entity links, amounts, hashes, states); a kit gallery at `/dev/kit`; merged first, then pulled into the other F branches |
 | F2a Frame & live chrome (done, merged 888c0b9; follow-up merged fd5233a: page panels, moon parks in the phone header, window inset policy, frame check 73/73, vendor chunk 200.8 kB gz initial; second follow-up running: boot settles home, archive t-minus, page-panel inset) | Sonnet | `web/src/shell/**`, `web/src/styles/{global,frame}.css`, `web/src/globe/overlays.tsx`, `web/src/features/chrome/**`, `web/src/views/frame.ts` | boot sequence on real load progress; top bar, dock, status bar and window chrome with motion; live block rail, Pulse feed with +N collapsing, next-payout ticker, reward-cut countdown; toasts; globe hover tooltip and labels; phone layout |
 | F2b Command & delight (done, merged aec9fcf; palette, /q, terminal, 24 achievements, ambient, Settings, About with data credits) | Sonnet | `web/src/features/{command,achievements,ambient,settings}/**`, `web/src/views/command.ts` | ⌘K palette and omnibox search; `/q` results; terminal with every command, autocomplete, history and live tails; achievements; ambient mode UX (idle entry, kiosk, smooth exit); settings and about |
-| F3 Inspectors (running, worktree) | Sonnet | `web/src/features/inspect/**`, `web/src/views/inspect.ts` | node, host and app inspectors (app constellation, spec history), operator view, watchlist, payment-queue visualizer, network weather |
+| F3 Inspectors (done, merged 087431e; node, host, app and revisions, operator and watchlist, payment queue, network weather; e2e 10/10 after the lead's fixes) | Sonnet | `web/src/features/inspect/**`, `web/src/views/inspect.ts` | node, host and app inspectors (app constellation, spec history), operator view, watchlist, payment-queue visualizer, network weather |
 | F4 Explorer & analytics (done, merged; explorer and nine analytics tabs on the kit, the time machine at /time) | Sonnet | `web/src/features/{explorer,analytics,timemachine}/**`, `web/src/views/explorer.ts` | block/tx/address/mempool/supply/rich-list views, analytics dashboards, time-machine scrubber |
 | G2 World-space moon (done, merged bf7e118; UTC-locked 240 s orbit, lab style ported, 60 fps at 1440p) | Sonnet | `web/src/globe/engine/moon/**`, the moon's beams, MoonProxy | the moon keeps its orbit position as the camera moves; true 3D revolutions with soft limb occlusion; the block beat reads in any pose; the trail lives in world space; the globe lab's restyle (dc8a016, `labs/globe/clips/moon-style-notes.md`) is ported in, with the planet shockwave as its own commit |
 | G3 Globe framing & robustness (done, merged 23dc876; pitch keeps the planet framed, 32 px rail clearance, context-loss recovery) | Opus | `web/src/globe/**` except the moon | middle-drag pitch can no longer push the globe under the rail; a framing contract with clearance above the rail; the fractional-DPR context loss fixed; ambient exit restores layers |
@@ -58,7 +58,7 @@ called out in the hand-back.
 | B6 Rank accuracy & API consistency (done, merged; expiry, DOS and queue order exactly as fluxd, 2 h soak with 0 corrections, named counts, next payees at load, mesh hysteresis) | Opus | steady-state rank corrections (expiry vs fluxd, payment_address diffs), one node count across endpoints, city in node rows, slow-request attribution, mesh flapping, next payees in the bootstrap, duplicate feed items |
 | L1 Lead fixes (done) | lead | globe froze 0.5 to 1.2 s on every 12 s topology sweep (each streamed link re-resolved all 134k edges): fixed in f277752, max frame 33 ms live |
 | B7 API defects from the views (running, worktree) | Opus | operator earned_24h bug, top_operators cap, /tx app_ref, app-economy aggregates, blocks limit, mesh outlier hosts, monotonic app records |
-| Q1 Visual QA & polish | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
+| Q1 Visual QA & polish (next) | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
 | X1 Review | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
 
 ## Phase 5 — Ship
@@ -94,3 +94,24 @@ called out in the hand-back.
 - Branch syncs: agents cannot merge `development` into their own worktrees (the permission system blocks it). The
   user chose lead-run syncs: the agent commits and ends its turn, the lead merges `development` into its branch,
   resolves conflicts, runs its gates, and resumes it with a change list.
+
+## Backlog (from the hand-backs)
+- **K2 kit consolidation.** Several local primitives should move into `web/src/ui`.
+  - Shell (F2a): the bottom sheet and the Beat pill.
+  - Palette (F2b): the result row and the kind strip.
+  - Explorer and analytics (F4): ConfirmationGauge, DotMap, DeltaBars, Scrubber.
+  - Inspectors (F3): Callout, LocationMap, NodeFinder, Stepper, Fold.
+  - Plus the kit gaps each team listed: TimeSeries step and stack, DataTable responsive columns, combobox, slider, and others.
+- **Tokens.** Have the design source (`docs/design` tokens) add `[data-motion="off"]` to the reduced block. M1's parity copy in motion.css can then go.
+- **Engine.**
+  - Highlight by an id set.
+  - `sel` selecting more than the first resolvable node.
+  - Weather hotspots drawn as world glows instead of GlobeLabel anchors.
+- **Backend.**
+  - `reachable` and `last_confirmed` are missing from nodes.bin, so weather pages through the list.
+  - Benchmark failures are not exposed.
+  - DoS and started nodes have a null endpoint.
+  - `node_ids` and `node_ids_rev` are never pruned (about +80 MB a year), and `app_events` is kept forever (about +150 MB a year).
+- **e2e hygiene.** Close each test's page in a `finally`. A failed route check otherwise leaves a SwiftShader globe rendering, which slows every later test up to five times and can time out the context-loss test.
+- **Deploy (needs the user's go-ahead).** Re-read the live spec, build `deploy/Dockerfile`, push `littlestache/flux-atlas:latest`, and update the `atlas` app.
+
