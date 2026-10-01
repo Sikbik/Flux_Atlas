@@ -7,4 +7,15 @@ export type ServerInfo = { name: string, version: string,
 /**
  * Wire protocol version of `/api/v1` and `/ws`.
  */
-api_version: number, started_ms: number, };
+api_version: number, 
+/**
+ * Start epoch of the server process (unix ms). Live `seq`s restart with every process.
+ */
+started_ms: number, 
+/**
+ * Random id of this server's data directory, 16 lowercase hex digits. Node ids are
+ * assigned per data directory, so ids from two instances never mean the same node; a
+ * client that sees a different `instance` (or `started_ms`) does a full resync and never
+ * mixes snapshots, live messages or ids of two origins. Empty from older servers.
+ */
+instance: string, };

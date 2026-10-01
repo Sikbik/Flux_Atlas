@@ -155,6 +155,8 @@ pub struct Reducer {
     last_block_at: Instant,
     /// The last block applied was discontinuous: the next reconcile's differences are expected.
     after_gap: bool,
+    /// Seq of the latest live `mesh` message that added or removed edges (bootstrap `mesh_seq`).
+    mesh_edge_seq: u64,
 }
 
 impl Reducer {
@@ -208,6 +210,7 @@ impl Reducer {
             pending_list: None,
             last_block_at: Instant::now(),
             after_gap: false,
+            mesh_edge_seq: 0,
         }
     }
 
@@ -1330,7 +1333,12 @@ impl Reducer {
             self.st.apps.dirty = true;
         }
         for (body, ms) in std::mem::take(&mut tick.after) {
-            emit(self, body, ms);
+            let edges =
+                matches!(&body, LiveBody::Mesh(m) if !m.added.is_empty() || !m.removed.is_empty());
+            let seq = emit(self, body, ms);
+            if edges {
+                self.mesh_edge_seq = seq;
+            }
         }
         for item in std::mem::take(&mut tick.feed) {
             let ts = item.ts_ms;
@@ -1732,6 +1740,7 @@ impl Reducer {
             apps_changed,
             mesh,
             mesh_edge_count: self.st.mesh.edge_count() as u32,
+            mesh_seq: self.mesh_edge_seq,
             freshness: self.handle.inner.freshness.snapshot(),
             next_payees: self.st.next_payees.iter().map(payee_dto).collect(),
             mempool: self.st.mempool_list(),

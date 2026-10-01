@@ -19,7 +19,7 @@ use atlas_core::api::{
     PayoutDto, TierStats,
 };
 use atlas_core::chain::BlockSummary;
-use atlas_core::codec::nodes_bin::{NodeBinInput, encode_nodes_bin};
+use atlas_core::codec::nodes_bin::{NodeBinInput, encode_nodes_bin_from};
 use atlas_core::emission::{PON_TARGET_SPACING_S, tier_payout};
 use atlas_core::ids::{Collateral, Hash32, NodeId, Outpoint};
 use atlas_core::net::NodeEndpoint;
@@ -505,6 +505,7 @@ pub fn bootstrap_dto(v: &Views) -> BootstrapDto {
         freshness: Vec::new(),
         attributions: Some(p.attributions.to_vec()),
         next_payees: atlas_engine::publish::next_payees_msg(tip.unwrap_or(0), &p.next_payees),
+        mesh_seq: None,
     }
 }
 
@@ -526,7 +527,13 @@ pub fn nodes_bin(p: &Published) -> Vec<u8> {
         .iter()
         .map(|n| NodeBinInput::from_record(n, tip, now, false))
         .collect();
-    encode_nodes_bin(p.seq, p.generated_ms, &rows)
+    encode_nodes_bin_from(
+        p.seq,
+        p.generated_ms,
+        &rows,
+        &[],
+        Some(atlas_engine::origin_of(&p.server)),
+    )
 }
 
 #[cfg(test)]

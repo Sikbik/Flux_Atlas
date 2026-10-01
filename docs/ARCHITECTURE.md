@@ -320,7 +320,16 @@ them, but they can't be located.
 ### 3.3 Identity
 - **Canonical node identity = collateral outpoint** (`txid:vout`), since IPs change. Internally every node
   gets an interned `NodeId(u32)` on first sight, persisted in `node_ids`, so ids stay stable across
-  restarts and are safe for clients to cache.
+  restarts of one data directory.
+- **Node ids are instance-local (B9).** The app runs as two independent instances behind one domain, each
+  with its own data directory, so the same id names different nodes on the two instances (ids are assigned
+  in order of first sight). Clients use ids only within one origin (section 8.1) and never persist them or
+  put them in shareable URLs: anything stored or shared uses the outpoint, the stable key.
+- **Instance and start epoch (B9).** Each data directory has a random 64-bit instance id (`meta`
+  `engine.instance_id`, created on first start), sent as 16 lowercase hex digits in `ServerInfo.instance`.
+  `ServerInfo.started_ms` is the process start epoch; live `seq`s restart with every process. The pair
+  `(instance, started_ms)` is a snapshot's **origin**: bootstrap and `hello` carry it in `server`, and
+  `nodes.bin`, `mesh.bin` and `/timeline/state` in their ORIGIN section (section 7).
 - Apps: name (case-insensitive, stored lowercase + display name).
 - Blocks: height (u32) + hash.
 
@@ -473,7 +482,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 |---|---|
 | `GET /bootstrap` | one-shot boot payload: network summary, tier stats, latest 30 blocks, app index (name, instances, component count, resource totals), live `seq`, server info, data freshness per job, and `attributions` (third-party data credits the UI must show, for example `{name: "DB-IP", text: "IP Geolocation by DB-IP", url: "https://db-ip.com", license: "CC BY 4.0", license_url, scope, version}` while the GeoIP database is loaded or nodes carry its data; an empty list otherwise; typed optional for older servers), and `next_payees` (B6: `{height, payees: [{tier, node, address}]}`, the same shape as the live `next_payees` message, holding the predicted payees of block `tip + 1`; the restored queue heads right after a restart; absent before any payee is known and typed optional for older servers). Clients seed their next-payout state from it and let a live `next_payees` for a newer height, or for the same height with a later `seq`, replace it |
 | `GET /nodes.bin` | **binary columnar node snapshot** (§7), feeds the globe + tables |
-| `GET /mesh.bin` | binary P2P mesh: header + `u32 edge_count` + `u32 a[]`, `u32 b[]` (NodeIds, a<b, deduped) + `u8 flags[]` (bit0 bidirectional, bit1 cross-continent); refreshed per PeerCrawl sweep |
+| `GET /mesh.bin` | binary P2P mesh: header + `u32 edge_count` + `u32 a[]`, `u32 b[]` (NodeIds, a<b, deduped) + `u8 flags[]` (bit0 bidirectional, bit1 cross-continent) + ORIGIN; rebuilt at most every 10 s while the mesh changes, so its header `seq` can lag the live stream (bootstrap `mesh_seq`, section 8.1) |
 | `GET /nodes/{id}/peers` | the node's peers with geo, for selection-reveal |
 | `GET /nodes?…` | JSON node table with filters/sort/pagination (`tier`, `status`, `country`, `org`, `q`, `sort`, `cursor`). Rows carry `city` and `region` (`null` when unknown). `total` counts the rows matching the filters: unfiltered, every tracked node (`listed_count`, see Node counts below) |
 | `GET /nodes/{id\|ip\|outpoint}` | full node detail: record, geo, hw, versions, rank + payment ETA, hosted apps, recent events |
@@ -488,10 +497,10 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
 | `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket transfers in real time, node txs from the 20 s reconcile, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
-| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; cached 60 s per t). Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
+| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; cached 60 s per t). **Honest bounds (B9):** the index's `first_ms` is the first keyframe (the earliest `t` with a whole network state; `null` before any keyframe), and a `t` before it answers **404 `no_history`** with "no data before <time>" instead of a partial globe built from the events alone. A reconstruction replays at most **50,000 events** after its keyframe; a `t` that would need more (keyframes missing for many hours) also answers 404 `no_history`. The file carries ORIGIN (its node ids are this instance's) and OUTPOINTS. Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |
 | `GET /ws` | WebSocket live stream (§8) |
-| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine) |
+| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. **Liveness (B9):** `/healthz` is 200 while the engine is alive and **503 `{status: "dead", reason}`** once a supervised engine part died or stalled (section 3.4); `atlas healthcheck` (the image's HEALTHCHECK) fails on it. `/readyz` is 200 only when fresh state is published, the engine is alive and the store writer commits (503 `starting`, `dead` or `store_failing`). A dead engine also makes the process exit with status 1, so the container restart policy restarts it on the persisted state. Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine) |
 
 Everything else serves the embedded web app (SPA fallback to `index.html`, immutable caching for hashed assets).
 
@@ -558,6 +567,8 @@ Sections (kind → dtype[count] unless noted):
  34 ORGS           string table
  35 VERSIONS       string table
  36 LOCATIONS      u32 n, then n × {f32 lat, f32 lon, u16 country, u16 pad, u32 node_count} + string table of city names
+ 17 OUTPOINTS      struct: count × {u8 txid[32] (display order: hex of these bytes = the txid), u32 vout}  (B9; the stable key)
+ 48 ORIGIN         struct: u64 started_ms, u64 instance  (B9; shared with mesh.bin; ServerInfo.instance = hex of instance)
 ```
 
 Clients must ignore unknown section kinds; that's how the format evolves. A **golden fixture** is written by the
@@ -575,7 +586,7 @@ read the same file. Both sides must pass.
 Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rust enums in
 `atlas-core::live`, exported to TS.
 
-- Server → `hello { server, seq, tip, now_ms }`
+- Server → `hello { server, seq, tip, now_ms }` (`server` carries the origin: `instance`, `started_ms`; section 8.1)
 - Client → `sub { topics: ["chain","mempool","nodes","apps","mesh","stats","feed"], since_seq?: u64, watch?: [NodeId] }`
   (`watch` enrolls those nodes in WatchProbe (fast offline detection) and guarantees their events are never coalesced; `watch_apps?: [name]` enables hot-app instance polling)
 - Server keeps a ring buffer of the last 2,048 messages. If `since_seq` is inside the buffer it replays;
@@ -638,6 +649,41 @@ flare → payout beams → heartbeat ripple staggered over 2–4 s. Bursts colla
 "+N" feed items. Selected and watched nodes bypass the budget. While the tab is hidden, animations are skipped
 and state is applied directly; on return, only a short summary replays. The live feed, counters, "seconds ago"
 labels and the next-block progress (~30 s cadence) all run off the same event clock.
+
+### 8.1 Origins, resume and stable keys (B9)
+
+**One origin per session state.** The domain balances two independent instances, and a process restart
+starts a new seq space. A client holds snapshots, live messages and node ids of exactly one origin
+`(server.instance, server.started_ms)`:
+
+1. A resync fetches `/bootstrap`, `/nodes.bin` and `/mesh.bin`. The binary ORIGIN sections must equal the
+   bootstrap's `server.instance` / `server.started_ms`. On a mismatch (the fetches reached different
+   instances) the client discards all three and fetches again, with backoff; it never loads a mix. A file
+   without ORIGIN (an older server) is accepted only when the bootstrap's `instance` is empty.
+2. A `hello` whose `server.instance` or `server.started_ms` differs from the loaded snapshot's means the
+   socket reached another origin: full resync (new snapshots; every id-keyed client cache is dropped).
+3. Watched and selected nodes are kept by outpoint and mapped to ids of the current origin after each
+   load, before `sub.watch` is sent.
+
+**Resume point.** Each snapshot covers the live stream up to its own seq, and they lag differently
+(`nodes.bin` is rebuilt when nodes or the tip change, `mesh.bin` at most every 10 s). The client subscribes
+with `since_seq = min(bootstrap.seq, nodes.bin seq, M)`, where `M` is the `mesh.bin` seq when it is below
+the bootstrap's `mesh_seq` (the mesh body misses edge changes the stream must replay), and is omitted
+otherwise (the mesh body already holds every edge change up to `bootstrap.seq`). While replaying, each
+topic skips what its snapshot already holds: `mesh` deltas with `seq <= mesh.bin seq`; `nodes` deltas
+with `seq <= nodes.bin seq`; the node-table part of a `block` (payout rotation, heartbeats, starts) with
+`seq <= nodes.bin seq`, while its block-list and choreography part is still applied when `seq >
+bootstrap.seq`; feed items as in section 8. A failed `mesh.bin` fetch fails the resync (it is retried);
+only a 404 (a server without the mesh) loads an empty mesh.
+
+**Stable node keys.** Node URLs are `/node/<txid>:<vout>` (the colon percent-encoded in links). The
+router still accepts `/node/<ip:port>` and a legacy numeric id: it resolves the key against the loaded
+snapshot and replaces the URL with the outpoint form (one redirect; a legacy id is resolved against
+whatever instance answers, the best a pre-B9 link can do). `?sel=` holds outpoints too. API calls name
+nodes by outpoint (`/nodes/{key}` and its sub-routes accept an id, `ip:port` or an outpoint), so a
+request that reaches the other instance still means the same node. Persisted client state (watchlist,
+achievements, window layouts, palette recents, any `localStorage`) stores outpoints; stored numeric ids
+from older clients are resolved once against the first loaded snapshot and rewritten.
 
 ## 9. Frontend architecture (web/)
 

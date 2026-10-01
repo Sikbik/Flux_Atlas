@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use super::container::{CodecError, ContainerReader, ContainerWriter, Header};
+use super::container::{CodecError, ContainerReader, ContainerWriter, Header, ORIGIN_KIND, Origin};
 use crate::ids::NodeId;
 
 /// File magic.
@@ -47,6 +47,16 @@ pub fn encode_mesh_bin(
     generated_ms: u64,
     edges: impl IntoIterator<Item = (NodeId, NodeId, u8)>,
 ) -> Vec<u8> {
+    encode_mesh_bin_from(seq, generated_ms, edges, None)
+}
+
+/// [`encode_mesh_bin`] stamped with the server that built it (section ORIGIN).
+pub fn encode_mesh_bin_from(
+    seq: u64,
+    generated_ms: u64,
+    edges: impl IntoIterator<Item = (NodeId, NodeId, u8)>,
+    origin: Option<Origin>,
+) -> Vec<u8> {
     let edges = normalize_edges(edges);
     let a: Vec<u32> = edges.iter().map(|e| e.0.0).collect();
     let b: Vec<u32> = edges.iter().map(|e| e.1.0).collect();
@@ -59,7 +69,10 @@ pub fn encode_mesh_bin(
         generated_ms,
         count: edges.len() as u32,
     });
-    w.u32s(kind::A, &a).u32s(kind::B, &b).u8s(kind::FLAGS, &f);
+    w.u32s(kind::A, &a)
+        .u32s(kind::B, &b)
+        .u8s(kind::FLAGS, &f)
+        .origin(origin);
     w.finish()
 }
 
@@ -71,6 +84,8 @@ pub struct MeshBin {
     pub a: Vec<u32>,
     pub b: Vec<u32>,
     pub flags: Vec<u8>,
+    /// The server that built the snapshot (absent from older servers and fixtures).
+    pub origin: Option<Origin>,
     pub unknown_sections: Vec<u16>,
 }
 
@@ -92,11 +107,12 @@ pub fn decode_mesh_bin(buf: &[u8]) -> Result<MeshBin, CodecError> {
         b: r.u32s(kind::B, n)?
             .ok_or(CodecError::MissingSection(kind::B))?,
         flags: r.u8s(kind::FLAGS, n)?.unwrap_or_else(|| vec![0; n]),
+        origin: r.origin()?,
         unknown_sections: r
             .kinds
             .iter()
             .copied()
-            .filter(|k| ![kind::A, kind::B, kind::FLAGS].contains(k))
+            .filter(|k| ![kind::A, kind::B, kind::FLAGS, ORIGIN_KIND].contains(k))
             .collect(),
     })
 }
@@ -121,6 +137,24 @@ mod tests {
         assert_eq!(m.b, vec![9, 5]);
         assert_eq!(m.flags, vec![flags::CROSS_CONTINENT, flags::BIDIRECTIONAL]);
         assert!(m.a.iter().zip(&m.b).all(|(a, b)| a < b));
+    }
+
+    #[test]
+    fn origin_roundtrip() {
+        let o = Origin {
+            started_ms: 1_790_000_000_123,
+            instance: 0x0123_4567_89ab_cdef,
+        };
+        let buf = encode_mesh_bin_from(3, 4, [(NodeId(1), NodeId(2), 0)], Some(o));
+        let m = decode_mesh_bin(&buf).unwrap();
+        assert_eq!(m.origin, Some(o));
+        assert_eq!(o.instance_hex(), "0123456789abcdef");
+        assert_eq!(Origin::parse_instance("0123456789abcdef"), Some(o.instance));
+        assert!(m.unknown_sections.is_empty());
+        assert_eq!(
+            decode_mesh_bin(&encode_mesh_bin(0, 0, [])).unwrap().origin,
+            None
+        );
     }
 
     #[test]

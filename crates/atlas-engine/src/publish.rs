@@ -13,8 +13,9 @@ use atlas_core::api::{
     NetworkSummary, PayoutDto, ServerInfo, TierStats, TxLite,
 };
 use atlas_core::chain::BlockSummary;
-use atlas_core::codec::mesh_bin::encode_mesh_bin;
-use atlas_core::codec::nodes_bin::{NodeBinInput, encode_nodes_bin};
+use atlas_core::codec::Origin;
+use atlas_core::codec::mesh_bin::encode_mesh_bin_from;
+use atlas_core::codec::nodes_bin::{NodeBinInput, encode_nodes_bin_from};
 use atlas_core::live::{NextPayeeDto, NextPayeesMsg};
 use atlas_core::{NodeId, NodeRecord};
 
@@ -40,6 +41,8 @@ pub struct PublishJob {
     /// New mesh edges when the mesh changed.
     pub mesh: Option<Vec<(NodeId, NodeId, u8)>>,
     pub mesh_edge_count: u32,
+    /// Seq of the latest live `mesh` message that added or removed edges (0 = none yet).
+    pub mesh_seq: u64,
     pub freshness: Vec<JobFreshness>,
     pub next_payees: Vec<NextPayeeDto>,
     pub mempool: Vec<(TxLite, u64)>,
@@ -95,13 +98,14 @@ pub fn block_lite(b: &BlockSummary) -> BlockLite {
     }
 }
 
-/// `nodes.bin` body for a node slice.
+/// `nodes.bin` body for a node slice, stamped with the server that built it.
 pub fn nodes_bin_body<S: std::hash::BuildHasher>(
     nodes: &[NodeRecord],
     enterprise: &HashSet<NodeId, S>,
     seq: u64,
     tip: u32,
     now_ms: u64,
+    origin: Option<Origin>,
 ) -> std::io::Result<PrebuiltBody> {
     let rows: Vec<NodeBinInput> = nodes
         .iter()
@@ -109,16 +113,21 @@ pub fn nodes_bin_body<S: std::hash::BuildHasher>(
         .collect();
     PrebuiltBody::build(
         "application/octet-stream",
-        encode_nodes_bin(seq, now_ms, &rows),
+        encode_nodes_bin_from(seq, now_ms, &rows, &[], origin),
     )
 }
 
-type MeshReq = (u64, u64, Vec<(NodeId, NodeId, u8)>);
+type MeshReq = (u64, u64, Option<Origin>, Vec<(NodeId, NodeId, u8)>);
 type MeshResp = (std::io::Result<PrebuiltBody>, u64);
 
-fn mesh_body(seq: u64, generated_ms: u64, edges: &[(NodeId, NodeId, u8)]) -> MeshResp {
+fn mesh_body(
+    seq: u64,
+    generated_ms: u64,
+    origin: Option<Origin>,
+    edges: &[(NodeId, NodeId, u8)],
+) -> MeshResp {
     let s = Instant::now();
-    let raw = encode_mesh_bin(seq, generated_ms, edges.iter().copied());
+    let raw = encode_mesh_bin_from(seq, generated_ms, edges.iter().copied(), origin);
     let b = PrebuiltBody::build("application/octet-stream", raw);
     (b, s.elapsed().as_millis() as u64)
 }
@@ -139,8 +148,8 @@ impl MeshWorker {
         std::thread::Builder::new()
             .name("atlas-mesh-body".to_owned())
             .spawn(move || {
-                while let Ok((seq, ms, edges)) = req_rx.recv() {
-                    let out = mesh_body(seq, ms, &edges);
+                while let Ok((seq, ms, origin, edges)) = req_rx.recv() {
+                    let out = mesh_body(seq, ms, origin, &edges);
                     drop(edges);
                     if resp_tx.send(out).is_err() {
                         break;
@@ -168,13 +177,14 @@ pub fn build_with(mut job: PublishJob, mesh: Option<&MeshWorker>) -> (Published,
         apps_index: prev.apps_index.clone(),
     };
 
+    let origin = Some(crate::origin_of(&job.server));
     let mut pending = false;
     let mut local = None;
     if let Some(edges) = job.mesh.take() {
         match mesh {
-            Some(w) => match w.tx.send((job.seq, job.generated_ms, edges)) {
+            Some(w) => match w.tx.send((job.seq, job.generated_ms, origin, edges)) {
                 Ok(()) => pending = true,
-                Err(back) => local = Some(back.0.2),
+                Err(back) => local = Some(back.0.3),
             },
             None => local = Some(edges),
         }
@@ -183,7 +193,7 @@ pub fn build_with(mut job: PublishJob, mesh: Option<&MeshWorker>) -> (Published,
     let resp = if pending {
         mesh.and_then(|w| w.rx.recv().ok())
     } else {
-        local.map(|edges| mesh_body(job.seq, job.generated_ms, &edges))
+        local.map(|edges| mesh_body(job.seq, job.generated_ms, origin, &edges))
     };
     match resp {
         Some((Ok(b), ms)) => {
@@ -226,6 +236,7 @@ fn build_rest(job: &PublishJob, bodies: &mut PrebuiltBodies, t: &mut BuildTiming
             job.seq,
             job.tip,
             job.generated_ms,
+            Some(crate::origin_of(&job.server)),
         ) {
             Ok(b) => bodies.nodes_bin = Some(b),
             Err(e) => tracing::error!(error = %e, "nodes.bin build failed"),
@@ -258,6 +269,7 @@ fn build_rest(job: &PublishJob, bodies: &mut PrebuiltBodies, t: &mut BuildTiming
         freshness: job.freshness.clone(),
         attributions: Some(job.attributions.clone()),
         next_payees: next_payees_msg(job.tip, &job.next_payees),
+        mesh_seq: (job.mesh_seq > 0).then_some(job.mesh_seq),
     };
     match PrebuiltBody::json(&boot) {
         Ok(b) => bodies.bootstrap = Some(b),

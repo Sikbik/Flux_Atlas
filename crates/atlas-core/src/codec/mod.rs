@@ -5,8 +5,9 @@ pub mod container;
 pub mod mesh_bin;
 pub mod nodes_bin;
 
-pub use container::CodecError;
-pub use mesh_bin::{MeshBin, decode_mesh_bin, encode_mesh_bin};
+pub use container::{CodecError, Origin};
+pub use mesh_bin::{MeshBin, decode_mesh_bin, encode_mesh_bin, encode_mesh_bin_from};
 pub use nodes_bin::{
-    NodeBinInput, NodesBin, decode_nodes_bin, encode_nodes_bin, encode_nodes_bin_without,
+    NodeBinInput, NodesBin, decode_nodes_bin, encode_nodes_bin, encode_nodes_bin_from,
+    encode_nodes_bin_without,
 };

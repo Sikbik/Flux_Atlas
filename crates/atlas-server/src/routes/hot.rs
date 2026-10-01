@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use atlas_core::codec::mesh_bin::encode_mesh_bin;
+use atlas_core::codec::mesh_bin::encode_mesh_bin_from;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::Response;
@@ -47,7 +47,15 @@ pub async fn mesh(State(s): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(b) = &p.bodies.mesh_bin {
         return respond_prebuilt(&headers, b, cache::HOT);
     }
-    let body = CachedBody::new(OCTET, encode_mesh_bin(p.seq, p.generated_ms, []));
+    let body = CachedBody::new(
+        OCTET,
+        encode_mesh_bin_from(
+            p.seq,
+            p.generated_ms,
+            [],
+            Some(atlas_engine::origin_of(&p.server)),
+        ),
+    );
     body.respond(&headers, cache::HOT)
 }
 

@@ -270,6 +270,7 @@ impl TimeMachineState {
             ssd_gb: hw.ssd_gb,
             version: n.flux_os.clone().unwrap_or_default(),
             endpoint: n.endpoint.map(|e| e.to_string()).unwrap_or_default(),
+            outpoint: Some(n.outpoint),
         }
     }
 }

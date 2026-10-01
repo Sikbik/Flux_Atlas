@@ -67,6 +67,30 @@ pub mod meta {
     pub const BACKFILL_APP_MESSAGES_DONE: &str = "engine.backfill.app_messages_done_ms";
     /// Unix ms of the last store compaction.
     pub const LAST_COMPACT_MS: &str = "engine.last_compact_ms";
+    /// Random id of this data directory (u64; `ServerInfo.instance` is its hex form). Node ids
+    /// are assigned per data directory, so this names the id space.
+    pub const INSTANCE_ID: &str = "engine.instance_id";
+}
+
+/// The data directory's instance id: read from the store, or created (random) and stored on
+/// first start. A store that cannot be written still gets a random id for this process.
+fn instance_id(store: &Store) -> u64 {
+    if let Ok(Some(id)) = store.meta_u64(meta::INSTANCE_ID)
+        && id != 0
+    {
+        return id;
+    }
+    use std::hash::BuildHasher;
+    // `RandomState` is seeded from the OS random source; mix in the time and the pid.
+    let id = std::collections::hash_map::RandomState::new()
+        .hash_one((now_ms(), std::process::id(), std::thread::current().id()))
+        .max(1);
+    let mut b = atlas_store::WriteBatch::new();
+    b.set_meta_u64(meta::INSTANCE_ID, id);
+    if let Err(e) = store.commit_durable(b) {
+        tracing::warn!(error = %e, "could not store the instance id");
+    }
+    id
 }
 
 /// Bootstrap backfills (background, resumable, polite).
@@ -351,12 +375,15 @@ impl Engine {
     /// Restores the last known state from the store and publishes it immediately as `stale`,
     /// then starts the reducer, the store writer and (unless disabled) the ingest jobs.
     pub fn start(config: EngineConfig, store: Store, clients: Clients) -> EngineHandle {
+        let instance = instance_id(&store);
         let server = ServerInfo {
             name: config.server_name.clone(),
             version: config.version.clone(),
             api_version: atlas_core::API_VERSION,
             started_ms: now_ms(),
+            instance: format!("{instance:016x}"),
         };
+        tracing::info!(instance = %server.instance, started_ms = server.started_ms, "server identity");
         let mut st = restore(&store);
         st.large_transfer = config.ingest.large_transfer;
         // Local GeoIP: an installed database is mapped right away (microseconds), so the first
@@ -467,6 +494,14 @@ impl Engine {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .extend(tasks);
         handle
+    }
+}
+
+/// The binary-snapshot origin of a server.
+pub fn origin_of(s: &ServerInfo) -> atlas_core::codec::Origin {
+    atlas_core::codec::Origin {
+        started_ms: s.started_ms,
+        instance: atlas_core::codec::Origin::parse_instance(&s.instance).unwrap_or(0),
     }
 }
 
@@ -634,9 +669,14 @@ impl EngineHandle {
         self.inner.seq.load(Ordering::Acquire)
     }
 
-    /// Server information (name, version, API version, start time).
+    /// Server information (name, version, API version, start time, instance).
     pub fn server_info(&self) -> &ServerInfo {
         &self.inner.server
+    }
+
+    /// The origin stamped into this server's binary snapshots (section ORIGIN).
+    pub fn origin(&self) -> atlas_core::codec::Origin {
+        origin_of(&self.inner.server)
     }
 
     /// The `hello` message for a new connection, stamped with the current seq.
