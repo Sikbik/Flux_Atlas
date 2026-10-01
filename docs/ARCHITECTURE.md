@@ -146,16 +146,19 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   are removed (streamed as a `mesh` delta).
 > - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
 >   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
-> - **Mempool classification.** The socket `tx` push carries no fluxnode type and no OP_RETURN, so a socket node tx
->   starts as `node_tx`. The chain job then fetches it (`getrawtransaction/<txid>/1`, at most one call every 2.5 s,
->   newest first, each txid once) and classifies it with the block classifier (`atlas_flux::decode::classify_tx`):
->   `node_start` / `node_confirm` / `app_message` / `transfer`, with its serialized size. Socket app payments are
->   fetched too (the OP_RETURN decides), plain socket transfers are complete as pushed, and txids in the 60 s
->   `getrawmempool` reconcile that the socket never pushed are fetched and streamed as new `mempool` entries.
+> - **Mempool classification.** The socket `tx` push carries no fluxnode type, no OP_RETURN and no size, so a socket
+>   node tx starts as `node_tx` with `size: null`. The chain job then fetches it and classifies it with the block
+>   classifier (`atlas_flux::decode::kind_of`, read from the daemon or the Insight form of the tx): `node_start` /
+>   `node_confirm` / `app_message` / `transfer`, with its size. One fetch every 1.25 s, newest first, each txid
+>   once, alternating gateway `getrawtransaction/<txid>/1` and Insight `/api/tx/<txid>` (0.4 req/s per host,
+>   about 0.5 tx/s are broadcast); entries older than 2 min are dropped from the queue (mined by then, and then
+>   classified by the block). Socket app payments are fetched too (the OP_RETURN decides); plain socket transfers
+>   are complete as pushed. The 60 s reconcile is cache-busted (`?nc=`: the gateway's 30 s apicache answers with
+>   the previous block's transactions, already mined), fills sizes, and txids in it that the socket never pushed
+>   are fetched and streamed as new `mempool` entries.
 >   What stays unknown before mining: whether an app payment registers or updates, and which app (known when the
 >   pending `temporarymessages` entry or the mined `permanentmessages` entry is matched); whether a tx is mined at
->   all; and the kind of a tx the gateway no longer knows (evicted or mined meanwhile), which keeps its socket
->   kind (`node_tx`) or stays `unknown`.
+>   all; and the kind of a tx that is mined or evicted before its fetch, which keeps its socket kind (`node_tx`).
 > - **Ingest switch.** `ATLAS_INGEST=0` (or `IngestConfig::disabled()`) runs the engine without ingest jobs: it
 >   restores, publishes and serves the stored state. Tests, fixtures and `demo_server` always run this way.
 
@@ -312,7 +315,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations) |
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
-| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. `/mempool` lists the gateway `getrawmempool` set (exact sizes); each tx is classified by the engine with the block classifier (see MempoolStream in 3.2), falling back to what this process saw on the live stream; `kind` is `unknown` only when the tx could not be fetched yet |
+| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket pushes in real time, reconciled every minute, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
 | `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; cached 60 s per t). Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |

@@ -7,7 +7,7 @@
 //! hash upstream, so always fresh), checked against our tip (`previousblockhash`), gap-filled,
 //! and walked back on a reorg within the 10-block finality window.
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -15,10 +15,11 @@ use std::time::{Duration, Instant};
 use atlas_core::api::PriceInfo;
 use atlas_core::{BlockHash, Collateral, Hash32, Tier, Txid, now_ms};
 use atlas_flux::GuardedEndpoint;
-use atlas_flux::decode::{DecodedBlock, classify_tx, decode_block};
+use atlas_flux::decode::{DecodedBlock, classify_insight_tx, classify_tx, decode_block};
 use atlas_flux::insight_socket::{ChainPush, DualSocket, SocketMessage};
 use atlas_flux::models::apps::APP_PAYMENT_ADDRESS;
 use atlas_flux::models::daemon::{DaemonTx, DaemonVout};
+use atlas_flux::models::insight::{InsightTx, InsightVout};
 use tokio::sync::mpsc;
 
 use super::JobCtx;
@@ -76,11 +77,14 @@ impl Cursor {
     }
 }
 
-/// Mempool enrichment budget: one `getrawtransaction` every 2.5 s (at most 0.4 req/s, the
-/// node-tx enrichment budget of ARCHITECTURE section 3.2).
-const ENRICH_EVERY: Duration = Duration::from_millis(2_500);
-/// A queued txid older than this is dropped (most likely mined or evicted meanwhile).
-const ENRICH_MAX_AGE: Duration = Duration::from_secs(600);
+/// Mempool enrichment cadence: one fetch every 1.25 s, alternating the gateway
+/// (`getrawtransaction`) and Insight (`/api/tx`), so each host sees at most 0.4 req/s (the
+/// node-tx enrichment budget of ARCHITECTURE section 3.2) and together they keep up with the
+/// ~0.5 tx/s the network broadcasts.
+const ENRICH_EVERY: Duration = Duration::from_millis(1_250);
+/// A queued txid older than this is dropped: blocks come every 30 s, so it is most likely mined
+/// (and then classified by the block) or evicted.
+const ENRICH_MAX_AGE: Duration = Duration::from_secs(120);
 /// Queue bound; the oldest entries go first when it overflows.
 const ENRICH_QUEUE_CAP: usize = 512;
 
@@ -151,6 +155,20 @@ pub fn classify_mempool_tx(tx: &DaemonTx) -> Option<Obs> {
     })
 }
 
+/// [`classify_mempool_tx`] for an Insight transaction (same classifier rules).
+pub fn classify_mempool_insight_tx(tx: &InsightTx) -> Option<Obs> {
+    if tx.blockheight.is_some_and(|h| h > 0) || tx.confirmations.is_some_and(|c| c > 0) {
+        return None;
+    }
+    Some(Obs::MempoolClassified {
+        txid: Hash32::from_hex(&tx.txid).ok()?,
+        kind: classify_insight_tx(tx, APP_PAYMENT_ADDRESS),
+        value: tx.vout.iter().map(InsightVout::amount).sum(),
+        size: Some(tx.size).filter(|s| *s > 0),
+        output_count: u16::try_from(tx.vout.len()).unwrap_or(u16::MAX),
+    })
+}
+
 /// Runs the socket, the fallback pollers, the block sync and the mempool reconciliation.
 pub async fn run(ctx: JobCtx, recent: Vec<(u32, BlockHash)>) {
     let (tips_tx, tips_rx) = mpsc::channel::<(BlockHash, u64)>(256);
@@ -169,6 +187,7 @@ pub async fn run(ctx: JobCtx, recent: Vec<(u32, BlockHash)>) {
     let mut mempool_iv = tokio::time::interval(ctx.cfg.mempool_reconcile_interval);
     mempool_iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut enrich = Enricher::default();
+    let mut enrich_insight = false;
     let mut enrich_iv = tokio::time::interval(ENRICH_EVERY);
     enrich_iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_poll: Option<Instant> = None;
@@ -287,11 +306,17 @@ pub async fn run(ctx: JobCtx, recent: Vec<(u32, BlockHash)>) {
                 }
             }
             _ = mempool_iv.tick() => {
-                match ctx.call(Upstream::FluxOs, "getrawmempool", ctx.clients.fluxos.get_raw_mempool()).await {
+                // Cache-busted: the gateway's cached answer lists the previous block's txs.
+                match ctx.call(Upstream::FluxOs, "getrawmempool", ctx.clients.fluxos.get_raw_mempool_fresh()).await {
                     Ok(m) => {
-                        let set: HashSet<Hash32> = m.0.keys().filter_map(|k| Hash32::from_hex(k).ok()).collect();
+                        let sizes: HashMap<Hash32, u32> = m
+                            .0
+                            .iter()
+                            .filter_map(|(k, e)| Some((Hash32::from_hex(k).ok()?, e.size)))
+                            .collect();
+                        let set: HashSet<Hash32> = sizes.keys().copied().collect();
                         enrich.snapshot(&set);
-                        let _ = ctx.send(Obs::MempoolSnapshot(set)).await;
+                        let _ = ctx.send(Obs::MempoolSnapshot(sizes)).await;
                         ctx.ok("mempool_stream");
                     }
                     Err(e) => ctx.fail("mempool_stream", &e),
@@ -299,15 +324,22 @@ pub async fn run(ctx: JobCtx, recent: Vec<(u32, BlockHash)>) {
             }
             _ = enrich_iv.tick(), if !enrich.is_empty() => {
                 let Some(txid) = enrich.next() else { continue };
-                match ctx
-                    .call(Upstream::FluxOs, "getrawtransaction", ctx.clients.fluxos.get_raw_transaction(&txid))
-                    .await
-                {
-                    Ok(tx) => {
-                        if let Some(o) = classify_mempool_tx(&tx) {
-                            let _ = ctx.send(o).await;
-                        }
+                // Alternate the gateway and Insight: each stays within its 0.4 req/s budget.
+                enrich_insight = !enrich_insight;
+                let classified = if enrich_insight {
+                    ctx.call(Upstream::Insight, "insight tx", ctx.clients.insight.tx(&txid))
+                        .await
+                        .map(|tx| classify_mempool_insight_tx(&tx))
+                } else {
+                    ctx.call(Upstream::FluxOs, "getrawtransaction", ctx.clients.fluxos.get_raw_transaction(&txid))
+                        .await
+                        .map(|tx| classify_mempool_tx(&tx))
+                };
+                match classified {
+                    Ok(Some(o)) => {
+                        let _ = ctx.send(o).await;
                     }
+                    Ok(None) => {}
                     // Mined or evicted meanwhile, or unknown to the node that answered: the
                     // transaction keeps what the socket said (or stays unclassified).
                     Err(e) => tracing::debug!(%txid, error = %e, "mempool tx fetch failed"),

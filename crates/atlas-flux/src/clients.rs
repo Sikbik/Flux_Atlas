@@ -283,6 +283,18 @@ impl FluxOsClient {
         .await
     }
 
+    /// `getrawmempool/true` past the gateway's 30 s apicache (`?nc=`): the cached answer lists
+    /// transactions of the previous block, mined by the time it is served. The daemon's own
+    /// 20 s RPC cache still applies.
+    pub async fn get_raw_mempool_fresh(&self) -> Result<RawMempool> {
+        self.get(
+            "getrawmempool",
+            "daemon/getrawmempool/true",
+            &RequestOpts::default().cache_bust(),
+        )
+        .await
+    }
+
     pub async fn get_raw_mempool(&self) -> Result<RawMempool> {
         self.get(
             "getrawmempool",

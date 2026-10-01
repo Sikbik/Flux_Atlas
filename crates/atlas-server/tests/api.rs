@@ -815,7 +815,7 @@ async fn ops_endpoints() {
         assert!(text.contains(needle), "missing {needle}\n{text}");
     }
     // Low cardinality: every family stays small (bounded label sets).
-    let mut per_family: std::collections::BTreeMap<&str, usize> = Default::default();
+    let mut per_family = std::collections::BTreeMap::<&str, usize>::new();
     for line in text.lines().filter(|l| !l.starts_with('#')) {
         let name = line.split(['{', ' ']).next().unwrap();
         *per_family.entry(name).or_default() += 1;

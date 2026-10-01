@@ -368,16 +368,25 @@ impl Reducer {
                 tick.publish = true;
                 self.fresh().ok("mempool_stream");
             }
-            Obs::MempoolSnapshot(set) => {
+            Obs::MempoolSnapshot(sizes) => {
                 let before = self.st.mempool.len();
-                self.st
-                    .mempool
-                    .retain(|t, e| set.contains(t) || now.saturating_sub(e.first_seen_ms) < 90_000);
+                self.st.mempool.retain(|t, e| {
+                    sizes.contains_key(t) || now.saturating_sub(e.first_seen_ms) < 90_000
+                });
+                // The reconcile knows every size the socket push did not carry.
+                for (t, e) in &mut self.st.mempool {
+                    if e.size.is_none()
+                        && let Some(s) = sizes.get(t).filter(|s| **s > 0)
+                    {
+                        e.size = Some(*s);
+                        tick.publish = true;
+                    }
+                }
                 if self.st.mempool.len() != before {
                     self.st.summary_dirty = true;
                     tick.publish = true;
                 }
-                self.st.mempool_set = set;
+                self.st.mempool_set = sizes.into_keys().collect();
             }
             Obs::MempoolClassified {
                 txid,

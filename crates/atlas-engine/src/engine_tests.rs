@@ -629,7 +629,8 @@ async fn mempool_classification_refines_and_discovers() {
         },
     )
     .await;
-    let set: std::collections::HashSet<Hash32> = [h(10), h(11)].into_iter().collect();
+    let set: std::collections::HashMap<Hash32, u32> =
+        [(h(10), 201), (h(11), 0)].into_iter().collect();
     inject(&eng, Obs::MempoolSnapshot(set)).await;
     let classified = |txid, kind| Obs::MempoolClassified {
         txid,
@@ -654,7 +655,8 @@ async fn mempool_classification_refines_and_discovers() {
     let p = eng.published();
     let by: std::collections::HashMap<Hash32, &atlas_core::api::TxLite> =
         p.mempool.iter().map(|(t, _)| (t.txid, t)).collect();
-    assert_eq!(by[&h(10)].size, Some(199));
+    assert_eq!(by[&h(10)].size, Some(201), "size from the reconcile");
+    assert_eq!(by[&h(11)].size, Some(199), "size from the fetched tx");
     assert_eq!(by[&h(11)].kind, TxKind::NodeStart);
     assert!(!by.contains_key(&h(12)));
     // Live: the socket tx as node_tx, then the discovered one; refinements are not re-sent.

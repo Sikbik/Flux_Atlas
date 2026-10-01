@@ -6,7 +6,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use atlas_core::api::{SupplyInfo, TxDetailDto, TxInputDto, TxLite, TxOutputDto, UtxoDto};
-use atlas_core::chain::{BlockSummary, NodeTx, TxKind};
+use atlas_core::chain::{BlockSummary, NodeTx};
 use atlas_core::{Amount, Hash32, now_ms};
 use atlas_flux::Clients;
 use atlas_flux::decode::decode_block;
@@ -455,25 +455,8 @@ pub fn map_insight_tx(t: &InsightTx) -> Option<TxDetailDto> {
         .and_then(Amount::from_flux_f64)
         .or_else(|| value_in.map(|v| v - value_out));
     let node = t.node_tx();
-    let kind = if coinbase {
-        TxKind::Coinbase
-    } else if let Some(n) = &node {
-        if n.kind.is_confirm() {
-            TxKind::NodeConfirm
-        } else {
-            TxKind::NodeStart
-        }
-    } else if outputs
-        .iter()
-        .any(|o| o.address.as_deref() == Some(APP_PAYMENT_ADDRESS))
-        && t.vout
-            .iter()
-            .any(|o| o.script_pub_key.asm.starts_with("OP_RETURN"))
-    {
-        TxKind::AppMessage
-    } else {
-        TxKind::Transfer
-    };
+    // The block / mempool classifier, read from the Insight form.
+    let kind = atlas_flux::decode::classify_insight_tx(t, APP_PAYMENT_ADDRESS);
     Some(TxDetailDto {
         txid,
         height: t.height(),
@@ -539,6 +522,7 @@ pub fn block_view(b: &DaemonBlock) -> Result<BlockView, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use atlas_core::chain::TxKind;
 
     fn fixture(name: &str) -> String {
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
