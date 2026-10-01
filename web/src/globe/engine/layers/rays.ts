@@ -284,6 +284,12 @@ export class RayLayer {
   private high = 0;
   count = 0;
   private dirty = false;
+  /**
+   * Frames left to keep the empty meshes visible. three builds a material's program the first time it draws, so
+   * drawing nothing for a few frames at boot moves the ribbon's and the head's shader compile out of the first beat
+   * (a slow GPU stack would otherwise hitch the globe right as the first block lands).
+   */
+  private warm = 4;
 
   constructor(u: SharedUniforms, capacity = 48, renderOrder = 42, headOrder = 5) {
     this.capacity = capacity;
@@ -459,8 +465,10 @@ export class RayLayer {
     }
     this.geometry.instanceCount = this.high;
     this.headGeometry.instanceCount = this.high;
-    this.mesh.visible = this.high > 0;
-    this.head.visible = this.high > 0;
+    const on = this.high > 0 || this.warm > 0;
+    if (this.warm > 0) this.warm--;
+    this.mesh.visible = on;
+    this.head.visible = on;
   }
 
   clear(): void {
