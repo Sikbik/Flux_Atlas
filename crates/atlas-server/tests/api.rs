@@ -409,6 +409,29 @@ async fn operator_by_address_and_zelid() {
     );
     assert!(a["next_payments"].as_array().unwrap().len() >= 5);
     assert_ne!(a["collateral_locked"], "0.00000000");
+    // Earnings: the fixture stores 40 blocks, too few for any window, so every window is
+    // unknown (never a partial sum), and the covered range sums the payouts to its addresses.
+    assert!(a["earned_24h"].is_null() && a["earned_7d"].is_null() && a["earned_30d"].is_null());
+    assert_eq!(a["earnings_from_height"], TIP - 39);
+    assert!(a["earnings_from_ms"].is_number());
+    let addrs: std::collections::BTreeSet<String> = a["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["payment_address"].as_str().unwrap().to_owned())
+        .collect();
+    let blocks = get(&e.app, "/api/v1/blocks?limit=40").await.json();
+    let expected: f64 = blocks["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|b| b["payouts"].as_array().unwrap().clone())
+        .filter(|p| addrs.contains(p["address"].as_str().unwrap()))
+        .map(|p| p["amount"].as_str().unwrap().parse::<f64>().unwrap())
+        .sum();
+    assert!(expected > 0.0, "the fixture pays operator 0");
+    let covered: f64 = a["earned_covered"].as_str().unwrap().parse().unwrap();
+    assert!((covered - expected).abs() < 1e-6, "{covered} vs {expected}");
     let z = get(&e.app, &format!("/api/v1/operator/{}", operator_zelid(0)))
         .await
         .json();
@@ -507,6 +530,47 @@ async fn analytics_are_cached_per_publish() {
     let d = get(&e.app, "/api/v1/network/decentralization").await.json();
     assert!(d["nakamoto_country"].as_u64().unwrap() >= 1);
     assert!(d["nakamoto_operator"].as_u64().unwrap() > 1);
+    // `top` sizes the operator list; the size distribution covers every operator.
+    let ops = d["operator_count"].as_u64().unwrap();
+    let sizes = d["operator_sizes"].as_array().unwrap();
+    assert_eq!(
+        sizes
+            .iter()
+            .map(|b| b["operators"].as_u64().unwrap())
+            .sum::<u64>(),
+        ops
+    );
+    let one = get(&e.app, "/api/v1/network/decentralization?top=1")
+        .await
+        .json();
+    assert_eq!(one["top_operators"].as_array().unwrap().len(), 1);
+    assert_eq!(one["top_operators"][0], d["top_operators"][0]);
+    assert_eq!(d["top_operators"].as_array().unwrap().len(), 25);
+    let all = get(&e.app, "/api/v1/network/decentralization?top=5000")
+        .await
+        .json();
+    let rows = all["top_operators"].as_array().unwrap();
+    assert_eq!(rows.len() as u64, ops);
+    let in_sizes: u64 = sizes
+        .iter()
+        .map(|b| b["nodes"].as_u64().unwrap() * b["operators"].as_u64().unwrap())
+        .sum();
+    let in_rows: u64 = rows.iter().map(|o| o["count"].as_u64().unwrap()).sum();
+    assert_eq!(
+        in_sizes, in_rows,
+        "both count every node behind an operator"
+    );
+    for bad in ["0", "5001", "x"] {
+        assert_eq!(
+            get(
+                &e.app,
+                &format!("/api/v1/network/decentralization?top={bad}")
+            )
+            .await
+            .status,
+            StatusCode::BAD_REQUEST
+        );
+    }
     let s = get(&e.app, "/api/v1/network/summary").await.json();
     assert_eq!(s["tip"]["height"], TIP);
 
@@ -528,6 +592,48 @@ async fn analytics_are_cached_per_publish() {
     .await;
     assert_eq!(p2.status, StatusCode::OK);
     assert_eq!(p2.json()["providers"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn app_economy() {
+    let e = env();
+    let r = get(&e.app, "/api/v1/network/app-economy?days=30&top=5").await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let a = r.json();
+    assert_eq!(a["tip_height"], TIP);
+    assert_eq!(a["history_complete"], true);
+    // The fixture's one app history: register 5, update 6, update 7 FLUX, about 20 days back.
+    assert_eq!(a["paid_30d"], "18.00000000");
+    assert_eq!(a["paid_7d"], "0.00000000");
+    assert_eq!(a["paid_24h"], "0.00000000");
+    assert_eq!(a["registrations_30d"], 1);
+    assert_eq!(a["updates_30d"], 2);
+    assert_eq!(a["messages_total"], 3);
+    assert_eq!(a["active_apps"], 1);
+    let days = a["days"].as_array().unwrap();
+    assert_eq!(days.len(), 30);
+    let msgs: u64 = days
+        .iter()
+        .map(|d| d["registrations"].as_u64().unwrap() + d["updates"].as_u64().unwrap())
+        .sum();
+    assert_eq!(msgs, 3);
+    assert!(
+        days.windows(2)
+            .all(|w| w[1]["day_ms"].as_u64() > w[0]["day_ms"].as_u64())
+    );
+    assert_eq!(days.last().unwrap()["active_apps"], 1);
+    assert_eq!(a["top_apps_30d"][0]["name"], "kadenanode");
+    assert_eq!(a["top_apps_30d"][0]["display_name"], "KadenaNode");
+    assert_eq!(a["top_apps_30d"][0]["messages"], 3);
+    assert_eq!(a["top_apps_all_time"][0]["paid"], "18.00000000");
+    for bad in ["days=0", "days=366", "top=0", "top=101"] {
+        assert_eq!(
+            get(&e.app, &format!("/api/v1/network/app-economy?{bad}"))
+                .await
+                .status,
+            StatusCode::BAD_REQUEST
+        );
+    }
 }
 
 #[tokio::test]
@@ -623,9 +729,18 @@ async fn blocks_from_published_and_store() {
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        get(&e.app, "/api/v1/blocks?limit=101").await.status,
+        get(&e.app, "/api/v1/blocks?limit=1001").await.status,
         StatusCode::BAD_REQUEST
     );
+    let big = get(&e.app, "/api/v1/blocks?limit=1000").await.json();
+    assert_eq!(big["items"].as_array().unwrap().len(), 40);
+    // A deep page is cached; asking twice gives the same body.
+    let deep_q = format!("/api/v1/blocks?before={}&limit=10", TIP - 15);
+    let d1 = get(&e.app, &deep_q).await;
+    assert_eq!(d1.header("cache-control"), Some("public, max-age=300"));
+    let d2 = get(&e.app, &deep_q).await;
+    assert_eq!(d1.body, d2.body);
+    assert_eq!(d1.json()["items"][0]["height"], TIP - 16);
     // Not stored and upstream unreachable: an upstream error, not a crash.
     let r = get(&e.app, "/api/v1/blocks/100").await;
     assert!(r.status.is_server_error(), "{}", r.status);

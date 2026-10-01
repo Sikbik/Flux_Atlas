@@ -161,6 +161,8 @@ pub struct Views {
     pub(crate) versions: OnceLock<Arc<CachedBody>>,
     pub(crate) capacity: OnceLock<Arc<CachedBody>>,
     pub(crate) decentralization: OnceLock<Arc<CachedBody>>,
+    /// Decentralization bodies for a non-default `top`, by `top` (a few distinct values).
+    pub(crate) decentralization_top: Mutex<HashMap<u32, Arc<CachedBody>>>,
     pub(crate) bootstrap: OnceLock<Arc<CachedBody>>,
     pub(crate) nodes_bin: OnceLock<Arc<CachedBody>>,
     pub(crate) apps_index: OnceLock<Arc<CachedBody>>,
@@ -181,6 +183,7 @@ impl Views {
             versions: OnceLock::new(),
             capacity: OnceLock::new(),
             decentralization: OnceLock::new(),
+            decentralization_top: Mutex::new(HashMap::new()),
             bootstrap: OnceLock::new(),
             nodes_bin: OnceLock::new(),
             apps_index: OnceLock::new(),

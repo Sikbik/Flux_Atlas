@@ -185,8 +185,9 @@ impl Mock {
     }
 }
 
-pub const MOCK_TX_FIXTURES: [&str; 6] = [
+pub const MOCK_TX_FIXTURES: [&str; 7] = [
     "insight_tx_regular.json",
+    "insight_tx_app_message.json",
     "insight_tx_coinbase_pon.json",
     "insight_tx_fluxnode_start_v5.json",
     "insight_tx_unconfirmed_confirm.json",

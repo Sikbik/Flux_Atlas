@@ -78,14 +78,95 @@ pub async fn capacity(State(s): State<AppState>, headers: HeaderMap) -> Response
     )
 }
 
-/// `GET /network/decentralization`.
-pub async fn decentralization(State(s): State<AppState>, headers: HeaderMap) -> Response {
-    derived(
-        &s,
-        &headers,
-        |v| &v.decentralization,
-        |v| CachedBody::json(&analytics::decentralization(v.nodes())),
-    )
+/// `value` when it lies in `1..=max`, `default` when absent, else a 400 naming `name`.
+fn bounded(value: Option<u32>, name: &str, default: u32, max: u32) -> Result<u32, ApiError> {
+    match value {
+        None => Ok(default),
+        Some(n) if (1..=max).contains(&n) => Ok(n),
+        Some(_) => Err(ApiError::bad_request(format!("{name} must be 1..={max}"))),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DecentralizationQuery {
+    pub top: Option<u32>,
+}
+
+/// `GET /network/decentralization?top` (`top` operator rows, 1 to 5,000, default 25).
+pub async fn decentralization(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Q(q): Q<DecentralizationQuery>,
+) -> ApiResult<Response> {
+    let top = bounded(
+        q.top,
+        "top",
+        analytics::TOP_OPERATORS_DEFAULT,
+        analytics::TOP_OPERATORS_MAX,
+    )?;
+    if top == analytics::TOP_OPERATORS_DEFAULT {
+        return Ok(derived(
+            &s,
+            &headers,
+            |v| &v.decentralization,
+            |v| {
+                CachedBody::json(&analytics::decentralization(
+                    v.nodes(),
+                    analytics::TOP_OPERATORS_DEFAULT as usize,
+                ))
+            },
+        ));
+    }
+    let v = s.views();
+    let body = {
+        let mut m = v
+            .decentralization_top
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if m.len() >= 16 && !m.contains_key(&top) {
+            m.clear();
+        }
+        Arc::clone(m.entry(top).or_insert_with(|| {
+            Arc::new(CachedBody::json(&analytics::decentralization(
+                v.nodes(),
+                top as usize,
+            )))
+        }))
+    };
+    Ok(body.respond(&headers, cache::DERIVED))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AppEconomyQuery {
+    pub days: Option<u32>,
+    pub top: Option<u32>,
+}
+
+/// `GET /network/app-economy?days&top` (`days` 1 to 365, default 90; `top` 1 to 100, default
+/// 20): FLUX paid for app messages over 24 h / 7 d / 30 d, messages and active apps per day, top
+/// apps by spend. Served from the app-message ledger; one body per tip, `days` and `top`.
+pub async fn app_economy(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Q(q): Q<AppEconomyQuery>,
+) -> ApiResult<Response> {
+    let days = bounded(q.days, "days", 90, 365)?;
+    let top = bounded(q.top, "top", 20, 100)?;
+    let v = s.views();
+    let (Some(tip), Some(tip_ms)) = (v.tip_height(), v.tip_time_ms()) else {
+        return Err(ApiError::unavailable("chain tip not known yet").with_retry_after(5));
+    };
+    let ledger = s.app_ledger().await?;
+    let key = (tip, days, top);
+    let body = if let Some(b) = s.economy_cache.get(&key).await {
+        b
+    } else {
+        let dto = ledger.economy(tip, tip_ms, days, top as usize, now_ms());
+        let b = Arc::new(CachedBody::json(&dto));
+        s.economy_cache.insert(key, Arc::clone(&b)).await;
+        b
+    };
+    Ok(body.respond(&headers, cache::DERIVED))
 }
 
 // ---------------------------------------------------------------------------------------------

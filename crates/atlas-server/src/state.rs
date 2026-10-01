@@ -13,6 +13,7 @@ use crate::body::CachedBody;
 use crate::config::ServerConfig;
 use crate::error::ApiError;
 use crate::explorer::Explorer;
+use crate::ledger::{AppLedger, PayoutLedger, Slot};
 use crate::live::hub::Hub;
 use crate::metrics::Metrics;
 use crate::views::{ViewCache, Views};
@@ -38,6 +39,14 @@ pub struct Inner {
     pub metrics_cache: moka::future::Cache<String, Arc<CachedBody>>,
     /// `/timeline/state` reconstructions keyed by `t` (60 s).
     pub timeline_cache: moka::future::Cache<u64, Arc<CachedBody>>,
+    /// `/blocks` pages wholly below the finality window, keyed by `(before, limit)` (10 min).
+    pub blocks_cache: moka::future::Cache<(u32, u32), Arc<CachedBody>>,
+    /// `/network/app-economy` bodies keyed by `(tip, days, top)` (60 s).
+    pub economy_cache: moka::future::Cache<(u32, u32, u32), Arc<CachedBody>>,
+    /// Payouts of the last 30 days by address (operator earnings).
+    pub payouts: Arc<Slot<PayoutLedger>>,
+    /// Every permanent app message, compact (app economy).
+    pub app_messages: Arc<Slot<AppLedger>>,
     hosted: tokio::sync::Mutex<HostedSlot>,
 }
 
@@ -102,6 +111,16 @@ impl AppState {
                     .max_capacity(32)
                     .time_to_live(Duration::from_secs(60))
                     .build(),
+                blocks_cache: moka::future::Cache::builder()
+                    .max_capacity(128)
+                    .time_to_live(Duration::from_secs(600))
+                    .build(),
+                economy_cache: moka::future::Cache::builder()
+                    .max_capacity(32)
+                    .time_to_live(Duration::from_secs(60))
+                    .build(),
+                payouts: Arc::default(),
+                app_messages: Arc::default(),
             }),
         };
         let weak = Arc::downgrade(&state.inner);
@@ -161,6 +180,54 @@ impl AppState {
     async fn build_hosted(&self) -> Result<HostedApps, ApiError> {
         self.store_read(|st| Ok(Arc::new(crate::routes::nodes::hosted_map(&st.apps()?))))
             .await
+    }
+
+    /// The payout ledger, rebuilt in the background when the tip moves (at most every 20 s).
+    pub async fn payout_ledger(&self) -> Result<Arc<PayoutLedger>, ApiError> {
+        let key = u64::from(self.views().tip_height().unwrap_or(0));
+        let s = self.clone();
+        self.payouts
+            .get(
+                key,
+                Duration::from_secs(20),
+                Duration::from_secs(600),
+                move || async move { s.store_read(PayoutLedger::build).await },
+            )
+            .await
+    }
+
+    /// The app-message ledger, rebuilt in the background when an app record moves to a newer
+    /// message or the history backfill completes (at most every 60 s).
+    pub async fn app_ledger(&self) -> Result<Arc<AppLedger>, ApiError> {
+        let newest = self
+            .engine
+            .published()
+            .apps
+            .iter()
+            .map(|a| a.height)
+            .max()
+            .unwrap_or(0);
+        let complete = self.history_complete();
+        let key = u64::from(newest) << 1 | u64::from(complete);
+        let s = self.clone();
+        self.app_messages
+            .get(
+                key,
+                Duration::from_secs(60),
+                Duration::from_secs(1800),
+                move || async move { s.store_read(move |st| AppLedger::build(st, complete)).await },
+            )
+            .await
+    }
+
+    /// The one-time permanent app-message backfill has finished.
+    pub fn history_complete(&self) -> bool {
+        self.engine
+            .store()
+            .meta_u64(atlas_engine::meta::BACKFILL_APP_MESSAGES_DONE)
+            .ok()
+            .flatten()
+            .is_some()
     }
 
     /// Closes live connections and refuses new ones.

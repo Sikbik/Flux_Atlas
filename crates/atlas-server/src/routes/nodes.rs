@@ -20,12 +20,12 @@ use serde::Deserialize;
 use crate::body::{cache, json_response};
 use crate::error::{ApiError, ApiResult};
 use crate::extract::{P, Q, check_param, offset_cursor, page_limit};
+use crate::ledger::{Earnings, PayoutLedger};
 use crate::state::AppState;
 use crate::views::feed::{node_feed_item, status_after, status_before};
 use crate::views::{Adjacency, BLOCK_MS, Views, node_dto, node_row};
 
 const DAY_MS: u64 = 86_400_000;
-const BLOCKS_PER_DAY: u32 = 2880;
 
 // ---------------------------------------------------------------------------------------------
 // GET /nodes
@@ -287,8 +287,8 @@ pub fn segments(
     out
 }
 
-/// Share of known time spent confirmed, 0..100.
-pub fn uptime_pct(segments: &[StatusSegment]) -> f64 {
+/// Share of known time spent confirmed, 0..100; `None` when no time is known.
+pub fn uptime_pct(segments: &[StatusSegment]) -> Option<f64> {
     let (mut up, mut known) = (0u64, 0u64);
     for s in segments.iter().filter(|s| s.status != NodeStatus::Unknown) {
         let d = s.to_ms - s.from_ms;
@@ -297,11 +297,7 @@ pub fn uptime_pct(segments: &[StatusSegment]) -> f64 {
             up += d;
         }
     }
-    if known == 0 {
-        0.0
-    } else {
-        up as f64 * 100.0 / known as f64
-    }
+    (known > 0).then(|| up as f64 * 100.0 / known as f64)
 }
 
 /// `GET /nodes/{key}/history?from&to`.
@@ -576,43 +572,53 @@ pub async fn operator(
         }
     }
     next.sort_by_key(|p| (p.eta_blocks, p.node));
-    let ids: Vec<NodeId> = nodes.iter().map(|n| n.id).collect();
-    let tip = v.tip_height();
-    let (earned_24h, earned_30d) = s
-        .store_read(move |st| {
-            let tip = match tip {
-                Some(t) => t,
-                None => st.tip_block()?.map_or(0, |b| b.height),
-            };
-            let (d1, d30) = (
-                tip.saturating_sub(BLOCKS_PER_DAY),
-                tip.saturating_sub(30 * BLOCKS_PER_DAY),
-            );
-            let (mut e1, mut e30) = (Amount::ZERO, Amount::ZERO);
-            for id in ids {
-                for (h, a) in st.payments_for_node(id, None, 400)? {
-                    if h <= d30 {
-                        break;
-                    }
-                    e30 += a;
-                    if h > d1 {
-                        e1 += a;
-                    }
-                }
-            }
-            Ok((e1, e30))
-        })
-        .await?;
+    let ledger = s.payout_ledger().await?;
+    let earnings = operator_earnings(&v, &ledger, &address, &nodes);
     let dto = OperatorDto {
         address,
         nodes: nodes.iter().map(|n| node_row(n)).collect(),
         tiers,
         collateral_locked: collateral,
-        earned_24h,
-        earned_30d,
+        earned_24h: earnings.d1,
+        earned_7d: earnings.d7,
+        earned_30d: earnings.d30,
+        earnings_from_height: ledger.from,
+        earnings_from_ms: ledger.from_ms,
+        earned_covered: earnings.covered,
         next_payments: next,
     };
     Ok(json_response(&headers, &dto, cache::DERIVED))
+}
+
+/// Operator earnings over the stored blocks' payouts, by payment address (no node attribution
+/// needed). A payment-address key owns every payout to it. A ZelID owns the payouts to its
+/// nodes' payment addresses, except that an address also used by another operator's node counts
+/// only payouts attributed to one of this operator's nodes.
+pub fn operator_earnings(
+    v: &Views,
+    ledger: &PayoutLedger,
+    key: &str,
+    nodes: &[&NodeRecord],
+) -> Earnings {
+    let mine: BTreeSet<NodeId> = nodes.iter().map(|n| n.id).collect();
+    let addresses: BTreeSet<&str> = nodes
+        .iter()
+        .map(|n| n.payment_address.as_str())
+        .filter(|a| !a.is_empty())
+        .collect();
+    let mine = &mine;
+    let entries = addresses.into_iter().flat_map(|a| {
+        let exclusive = a == key
+            || v.index
+                .by_address(a)
+                .iter()
+                .all(|&i| mine.contains(&v.at(i as usize).id));
+        ledger
+            .payouts(a)
+            .iter()
+            .filter(move |p| exclusive || p.node.is_some_and(|n| mine.contains(&n)))
+    });
+    ledger.earnings(entries)
 }
 
 /// Map from node id to the apps with an instance on it.
@@ -656,15 +662,18 @@ mod tests {
         );
         assert_eq!(s.len(), 3);
         assert_eq!(s[1].status, NodeStatus::Offline);
-        assert!((uptime_pct(&s) - 75.0).abs() < 1e-9);
+        assert!((uptime_pct(&s).unwrap() - 75.0).abs() < 1e-9);
         // No history at all: the current status for the whole window.
         let s = segments(0, 10, None, &[], NodeStatus::Confirmed);
         assert_eq!(s.len(), 1);
-        assert!((uptime_pct(&s) - 100.0).abs() < 1e-9);
+        assert!((uptime_pct(&s).unwrap() - 100.0).abs() < 1e-9);
+        // Nothing known: no uptime at all, not 0.
+        let s = segments(0, 100, None, &[], NodeStatus::Unknown);
+        assert_eq!(uptime_pct(&s), None);
         // Unknown prefix is excluded from uptime.
         let s = segments(0, 100, None, &[(50, &back)], NodeStatus::Confirmed);
         assert_eq!(s[0].status, NodeStatus::Unknown);
-        assert!((uptime_pct(&s) - 100.0).abs() < 1e-9);
+        assert!((uptime_pct(&s).unwrap() - 100.0).abs() < 1e-9);
     }
 
     #[test]

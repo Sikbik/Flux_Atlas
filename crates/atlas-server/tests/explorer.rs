@@ -68,6 +68,71 @@ async fn tx_mapping_cache_and_negative_cache() {
 }
 
 #[tokio::test]
+async fn app_payment_names_its_app() {
+    use atlas_core::app::{AppMessageRecord, AppSpec, PendingAppMessage};
+    use atlas_core::event::AppMessageKind;
+    let (e, _mock) = env_with_mock(ServerConfig::default()).await;
+    let txid = fixture_txid("insight_tx_app_message.json");
+    // The OP_RETURN of the live-captured payment (block 2,998,352).
+    let hash = Hash32::from_hex("4a474ea9e79e7ba84ec93651b1ea13b979d413508d7cef9662c9cc14cce5bd85")
+        .unwrap();
+    let spec = AppSpec {
+        spec_version: 8,
+        name: "WebShop".into(),
+        ..AppSpec::default()
+    };
+    // Unknown message: an app payment without a reference.
+    let j = get(&e.app, &format!("/api/v1/tx/{txid}")).await.json();
+    assert_eq!(j["kind"], "app_message");
+    assert!(j.get("app_ref").is_none(), "{j}");
+    // Pending (unmined) message: named, without height or price.
+    let mut b = atlas_store::WriteBatch::default();
+    b.put_pending(PendingAppMessage {
+        hash,
+        kind: AppMessageKind::Register,
+        timestamp_ms: 1,
+        received_ms: 1,
+        expires_ms: u64::MAX,
+        arcane_sender: None,
+        spec: spec.clone(),
+    });
+    e.state.engine.store().commit(b).unwrap();
+    let j = get(&e.app, &format!("/api/v1/tx/{txid}")).await.json();
+    assert_eq!(j["app_ref"]["name"], "webshop");
+    assert_eq!(j["app_ref"]["kind"], "register");
+    assert!(j["app_ref"]["height"].is_null() && j["app_ref"]["paid"].is_null());
+    // Mined: the permanent message decides.
+    let mut b = atlas_store::WriteBatch::default();
+    b.put_app_message(AppMessageRecord {
+        hash,
+        txid: Some(Hash32::from_hex(&txid).unwrap()),
+        height: 2_998_352,
+        timestamp_ms: 1,
+        kind: AppMessageKind::Update,
+        paid: Amount::from_flux(25) + Amount(93_000_000),
+        spec,
+    });
+    e.state.engine.store().commit(b).unwrap();
+    let j = get(&e.app, &format!("/api/v1/tx/{txid}")).await.json();
+    let r = &j["app_ref"];
+    assert_eq!(r["name"], "webshop");
+    assert_eq!(r["display_name"], "WebShop");
+    assert_eq!(r["kind"], "update");
+    assert_eq!(r["spec_version"], 8);
+    assert_eq!(r["message_hash"], hash.to_hex());
+    assert_eq!(r["height"], 2_998_352);
+    assert_eq!(r["paid"], "25.93000000");
+    // A transfer never carries one.
+    let t = get(
+        &e.app,
+        &format!("/api/v1/tx/{}", fixture_txid("insight_tx_regular.json")),
+    )
+    .await
+    .json();
+    assert!(t.get("app_ref").is_none());
+}
+
+#[tokio::test]
 async fn single_flight_coalesces_concurrent_misses() {
     let (e, mock) = env_with_mock(ServerConfig::default()).await;
     mock.delay_ms.store(200, Ordering::SeqCst);
