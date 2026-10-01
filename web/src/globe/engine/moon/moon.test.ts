@@ -416,6 +416,19 @@ describe('nothing about the moon pops', () => {
     }
     expect(last).toBe(0);
   });
+
+  it('draws no chain and no wake in the lite tier, even with a block sealed', () => {
+    const m = fresh({ lite: true });
+    const cam = camera(HOME_DIR);
+    let t = 0;
+    for (let k = 0; k < 90; k++) {
+      t += 1 / 60;
+      if (k === 20) m.seal(1, 777000);
+      step(m, cam, T0 + t * 1000, 1 / 60, t);
+    }
+    expect(m.chain.group.visible).toBe(false);
+    expect(m.chain.wakeAlpha).toBe(0);
+  });
 });
 
 describe('a piece flare is crisp, and overlapping flares build on each other', () => {

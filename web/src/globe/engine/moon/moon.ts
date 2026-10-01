@@ -1745,7 +1745,8 @@ export class Moon {
 
     // ---- the chain: the wake and a bead for every block, on the real orbit ----
     // The trail fades in once the boot has landed and after reduced motion ends, and out when either begins.
-    const trailGoal = reduced || boot ? 0 : nearFade;
+    // The lite tier draws no chain and no wake (design 7.10.10): the moon is flat there.
+    const trailGoal = reduced || boot || o.lite ? 0 : nearFade;
     this.trailK = this.placed ? damp(this.trailK, trailGoal, 3.2, dt) : trailGoal;
     const trailA = this.trailK;
     this.chain.update(
