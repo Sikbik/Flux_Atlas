@@ -243,8 +243,9 @@ export function VersionsBody() {
     },
     {
       label: 'ArcaneOS',
+      // `arcane` is true, false or not known (a node no sweep has reached): only an explicit false says "not ArcaneOS".
       value: node ? (
-        node.arcane ? (
+        node.arcane === null ? null : node.arcane ? (
           <VersionValue
             value={arcane ?? 'Unknown release'}
             note={

@@ -123,7 +123,7 @@ export function NetworkSummary() {
     <Sum tone={reachable === true ? 'ok' : 'off'}>
       {reachable === true ? 'Reachable' : reachable === false ? 'Unreachable' : 'Not checked yet'}
       {onHost > 1 ? ` · ${onHost} nodes on this IP` : ''}
-      {out != null || inn != null ? (
+      {(out ?? 0) + (inn ?? 0) > 0 ? (
         <>
           {' '}
           · <span className="ui-mono">{out ?? 0}</span> out, <span className="ui-mono">{inn ?? 0}</span> in

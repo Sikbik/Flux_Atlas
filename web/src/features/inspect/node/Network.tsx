@@ -85,7 +85,17 @@ function ReachPart() {
   const watched = useUi((s) => id !== null && s.watched.includes(id));
   const reachable = live?.reachable ?? node?.reachable ?? null;
   const now = clock.now();
+  // The server stamps this only when a stats round reaches the node (a failed round sets `reachable` to false and
+  // leaves the stamp alone), so it reads "last reached", and an unreachable node with none has never been reached.
   const swept = node?.last_swept_ms ?? null;
+  const sweepLine =
+    reachable === false
+      ? swept
+        ? `The last stats round could not reach it. It was last reached ${formatAgo(now - swept)}.`
+        : 'No stats round has reached it yet.'
+      : swept
+        ? `Last checked ${formatAgo(now - swept)}.`
+        : 'Not checked in a stats round yet.';
 
   return (
     <div>
@@ -108,7 +118,7 @@ function ReachPart() {
         ) : null}
       </div>
       <p className="ix-cap">
-        {swept ? `Last checked ${formatAgo(now - swept)}.` : 'Not checked in a stats round yet.'}
+        {sweepLine}
         {node
           ? ` First seen ${formatUtcDateTime(node.first_seen_ms)}; last seen ${formatAgo(now - node.last_seen_ms)}.`
           : ''}
@@ -188,7 +198,8 @@ function MeshPart() {
 
   return (
     <div>
-      <SubHead title="Mesh" note={`${outCount} out, ${inCount} in`} />
+      {/* No links recorded is not a measured zero, so the count is left out and the line below says so. */}
+      <SubHead title="Mesh" note={outCount + inCount > 0 ? `${outCount} out, ${inCount} in` : undefined} />
       <div className="ix-peers">
         {q.isPending ? <Skeleton w={112} circle /> : <PeerDiagram peers={peers} />}
         <div className="ix-peers-side">
