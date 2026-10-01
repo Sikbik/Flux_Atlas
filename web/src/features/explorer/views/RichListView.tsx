@@ -160,20 +160,26 @@ export function RichListView() {
   const top10 = conc.top(10);
   const largest = entries[0];
   const largestEntity = largest ? knownEntity(largest.address) : null;
-  const items: BarListItem[] = conc.buckets.map((b, i) => ({
-    id: b.key,
-    label: i === 0 && largestEntity ? `${b.label}, ${largestEntity.label}` : b.label,
-    value: b.share,
-    display: formatShare(b.share),
-    detail:
+  // The label is the rank range, which already says how many addresses a bar holds, so the row carries
+  // no count of its own (it would crowd a phone); the full words are the row's title.
+  const items: BarListItem[] = conc.buckets.map((b, i) => {
+    const label = i === 0 && largestEntity ? `${b.label}, ${largestEntity.label}` : b.label;
+    const who =
       b.from === null
-        ? 'not on the list'
+        ? 'everyone not on the list'
         : b.holders === 1
           ? '1 address'
-          : `${formatInt(b.holders)} addresses`,
-    // The bucket for everyone not on the list is not a rank range, so it does not filter the table.
-    onSelect: b.from === null ? undefined : () => setBucketKey(bucketKey === b.key ? null : b.key),
-  }));
+          : `${formatInt(b.holders)} addresses`;
+    return {
+      id: b.key,
+      label,
+      title: `${label}: ${who}, ${formatShare(b.share)} of the supply`,
+      value: b.share,
+      display: formatShare(b.share),
+      // The bucket for everyone not on the list is not a rank range, so it does not filter the table.
+      onSelect: b.from === null ? undefined : () => setBucketKey(bucketKey === b.key ? null : b.key),
+    };
+  });
 
   return (
     <div>
@@ -210,7 +216,7 @@ export function RichListView() {
           items={items}
           max={100}
           selectedId={bucketKey}
-          labelWidth={150}
+          labelWidth="minmax(104px, 150px)"
         />
         <p className="ex-caption">Choose a bar to list its addresses below.</p>
       </Section>
