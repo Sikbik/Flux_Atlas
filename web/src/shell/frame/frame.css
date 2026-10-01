@@ -326,3 +326,17 @@
   border-radius: 0;
   background: transparent;
 }
+
+/* ---- forced colours ---------------------------------------------------------------------------
+   The frame draws its focus rings as box shadows, which forced colours remove: the system's own outline stands in. */
+
+@media (forced-colors: active) {
+  .dk:focus-visible,
+  .menu-trigger:focus-visible,
+  .shell-tab:focus-visible,
+  .ph-search:focus-visible,
+  .ph-moon-door:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
