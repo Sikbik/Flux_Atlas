@@ -19,7 +19,7 @@ mod jobs;
 pub mod obs;
 pub mod publish;
 pub mod reducer;
-mod replay;
+pub mod replay;
 pub mod state;
 pub mod stats;
 pub mod timemachine;
@@ -40,13 +40,13 @@ use atlas_core::live::{LiveBody, LiveMsg, NextPayeeDto};
 use atlas_core::{Amount, NodeId, NodeRecord, now_ms};
 use atlas_flux::Clients;
 use atlas_flux::insight_socket::SocketConfig;
-use atlas_store::{RetentionPolicy, Store};
+use atlas_store::{DiskBudget, HistoryRetention, RetentionPolicy, Store};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 
 pub use body::{Encoding, PrebuiltBodies, PrebuiltBody};
 pub use replay::Resync;
-pub use stats::{CallCount, EngineStats, Upstream};
+pub use stats::{CallCount, EngineStats, StorageStatus, Upstream};
 
 use crate::obs::Obs;
 use crate::state::NetworkState;
@@ -134,6 +134,12 @@ pub struct IngestConfig {
     pub mesh_events_retention: Duration,
     /// Compact the database this often.
     pub compaction_interval: Duration,
+    /// Age limits of the history tables (ARCHITECTURE section 5).
+    pub history: HistoryRetention,
+    /// Disk budget of the database file (`ATLAS_DISK_BUDGET_MB`).
+    pub disk_budget: DiskBudget,
+    /// Refresh the per-table size report (a full page walk) this often.
+    pub table_stats_interval: Duration,
 }
 
 impl IngestConfig {
@@ -183,6 +189,9 @@ impl Default for IngestConfig {
             node_events_retention: Duration::from_secs(90 * 86_400),
             mesh_events_retention: Duration::from_secs(7 * 86_400),
             compaction_interval: Duration::from_secs(7 * 86_400),
+            history: HistoryRetention::default(),
+            disk_budget: DiskBudget::default(),
+            table_stats_interval: Duration::from_secs(6 * 3600),
         }
     }
 }
@@ -194,7 +203,8 @@ pub struct EngineConfig {
     pub server_name: String,
     /// Build version reported in `hello` and bootstrap.
     pub version: String,
-    /// Live messages kept for `since_seq` replay.
+    /// Live messages kept for `since_seq` replay (also bounded to
+    /// [`replay::REPLAY_MAX_BYTES`] of serialized messages).
     pub replay_capacity: usize,
     /// Broadcast channel depth; a subscriber lagging further must resync.
     pub broadcast_capacity: usize,
@@ -523,6 +533,15 @@ impl EngineHandle {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         ring.since(since, self.seq())
+    }
+
+    /// Serialized bytes held by the replay ring.
+    pub fn replay_bytes(&self) -> usize {
+        self.inner
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .bytes()
     }
 
     /// Latest assigned sequence number.

@@ -36,6 +36,14 @@ enum Cmd {
         #[arg(long, default_value_t = 3)]
         timeout_s: u64,
     },
+    /// Print the database file size and per-table sizes (rows, bytes) from redb's table
+    /// stats. The server must be stopped: redb locks the file. A running server reports the
+    /// same sizes in `/metrics/prometheus` (`atlas_store_table_*`).
+    DbStats {
+        /// Directory holding `atlas.redb`.
+        #[arg(long, env = "ATLAS_DATA_DIR", default_value = "/data")]
+        data_dir: PathBuf,
+    },
     /// Write the TypeScript API bindings (ts-rs) into a directory.
     ExportTypes {
         #[arg(long, default_value = "web/src/api/generated")]
@@ -99,6 +107,10 @@ struct ServeArgs {
     /// Maximum concurrent WebSocket connections per client IP.
     #[arg(long, env = "ATLAS_WS_MAX_PER_IP", default_value_t = 16)]
     ws_max_per_ip: u32,
+    /// Disk budget of the database file in MiB: retention prunes the oldest history and
+    /// compacts once the file nears it. Default sized for the 10 GiB Flux volume.
+    #[arg(long, env = "ATLAS_DISK_BUDGET_MB", default_value_t = atlas_store::DEFAULT_DISK_BUDGET_MB)]
+    disk_budget_mb: u64,
     /// Protocol ping cadence for WebSocket clients (`20s`).
     #[arg(long, env = "ATLAS_WS_PING", value_parser = parse_duration_arg)]
     ws_ping: Option<Duration>,
@@ -146,6 +158,7 @@ fn serve_config(a: ServeArgs) -> ServeConfig {
         backfill_days: Some(a.backfill_days),
         backfill_rps: a.backfill_rps,
         socket_urls,
+        disk_budget_mb: Some(a.disk_budget_mb.max(64)),
     };
     cfg.db_cache_mb = a.db_cache_mb.max(1);
     cfg.server.trust_proxy = a.trust_proxy;
@@ -192,6 +205,17 @@ fn main() -> ExitCode {
                     Duration::from_secs(timeout_s),
                 ))
             }),
+        Cmd::DbStats { data_dir } => {
+            let path = data_dir.join("atlas.redb");
+            atlas_store::db_stats_at(&path)
+                .map(|st| print!("{}\n{}", path.display(), st.render()))
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "reading {}: {e} (stop the server first: redb locks the file)",
+                        path.display()
+                    )
+                })
+        }
         Cmd::ExportTypes { out } => atlas_core::export_typescript(&out)
             .map(|()| eprintln!("wrote TypeScript bindings to {}", out.display()))
             .map_err(anyhow::Error::from),

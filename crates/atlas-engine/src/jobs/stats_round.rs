@@ -168,7 +168,7 @@ pub async fn geo(ctx: JobCtx, mut rx: mpsc::Receiver<(IpAddr, bool)>) {
                 continue;
             }
         }
-        if let Ok(Some((g, fetched))) = ctx.handle.store().geo(ip)
+        if let Some(Some((g, fetched))) = ctx.store_read(move |s| s.geo(ip)).await
             && now.saturating_sub(fetched) < GEO_TTL_MS
             && g.has_coords()
         {
