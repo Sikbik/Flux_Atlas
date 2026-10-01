@@ -93,7 +93,9 @@ impl AppState {
     pub fn with_hooks(engine: EngineHandle, cfg: ServerConfig, hooks: Arc<dyn WatchHooks>) -> Self {
         let ring = 4096;
         let hub = Hub::start(&engine, cfg.ws.clone(), ring);
-        let explorer = Explorer::new(engine.clients().clone(), cfg.proxy, cfg.limits);
+        // User lookups draw from their own upstream lane (gates and breakers), never from the
+        // ingest's budget (X1 M2).
+        let explorer = Explorer::new(engine.clients().interactive(), cfg.proxy, cfg.limits);
         let state = Self {
             inner: Arc::new(Inner {
                 hooks,

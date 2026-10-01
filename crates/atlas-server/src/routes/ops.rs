@@ -235,6 +235,7 @@ pub async fn prometheus(State(s): State<AppState>) -> Response {
     render_latency_storage(&mut out, &s.engine.stats(), &rows, file);
     render_process(&mut out);
     render_caches(&mut out, &s);
+    render_lanes(&mut out, &s);
     let mut r = out.into_response();
     let h = r.headers_mut();
     h.insert(
@@ -504,6 +505,71 @@ fn render_caches(out: &mut String, s: &AppState) {
             ("hub", s.hub.stats.ring_bytes.load(Ordering::Relaxed) as f64),
         ],
     );
+}
+
+/// Upstream lanes (X1 M2): the engine's ingest lane and the explorer's interactive lane, each
+/// with its own per-host gates and circuit breakers. Labels are bounded: two lanes, the
+/// configured upstream hosts plus one `direct-node` label, and the configured primaries.
+fn render_lanes(out: &mut String, s: &AppState) {
+    use crate::metrics::{header, sample};
+    let lanes = [s.engine.clients(), s.explorer.clients()];
+    header(
+        out,
+        "atlas_upstream_lane_requests_total",
+        "counter",
+        "Upstream HTTP attempts by lane, host and result.",
+    );
+    for c in lanes {
+        let lane = c.lane().as_str();
+        for h in c.http.lane_stats() {
+            let host = escape(&h.host);
+            for (result, v) in [("ok", h.ok), ("error", h.err)] {
+                sample(
+                    out,
+                    "atlas_upstream_lane_requests_total",
+                    &format!("lane=\"{lane}\",host=\"{host}\",result=\"{result}\""),
+                    v,
+                );
+            }
+        }
+    }
+    header(
+        out,
+        "atlas_upstream_lane_waiting",
+        "gauge",
+        "Requests queued for a host's gate, by lane.",
+    );
+    for c in lanes {
+        let lane = c.lane().as_str();
+        for h in c.http.lane_stats() {
+            sample(
+                out,
+                "atlas_upstream_lane_waiting",
+                &format!("lane=\"{lane}\",host=\"{}\"", escape(&h.host)),
+                h.waiting,
+            );
+        }
+    }
+    header(
+        out,
+        "atlas_upstream_circuit_open",
+        "gauge",
+        "1 while the circuit breaker of a primary upstream is open, by lane.",
+    );
+    for c in lanes {
+        let lane = c.lane().as_str();
+        for (set, upstream, open) in c.breakers() {
+            sample(
+                out,
+                "atlas_upstream_circuit_open",
+                &format!(
+                    "lane=\"{lane}\",set=\"{set}\",upstream=\"{}\"",
+                    escape(&upstream)
+                ),
+                u8::from(open),
+            );
+        }
+    }
 }
 
 /// Engine families: ingest jobs (runs, errors, upstream time, freshness), upstream calls,

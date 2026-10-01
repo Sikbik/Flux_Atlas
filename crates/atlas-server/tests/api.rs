@@ -811,6 +811,11 @@ async fn ops_endpoints() {
         "atlas_replay_ring_messages{ring=\"hub\"}",
         "atlas_replay_ring_capacity{ring=\"engine\"}",
         "atlas_engine_internal_errors_total 0",
+        // Upstream lanes: each lane has its own breakers.
+        "# TYPE atlas_upstream_lane_requests_total counter",
+        "# TYPE atlas_upstream_lane_waiting gauge",
+        "atlas_upstream_circuit_open{lane=\"ingest\",set=\"fluxos\",upstream=\"127.0.0.1\"} 0",
+        "atlas_upstream_circuit_open{lane=\"interactive\",set=\"insight\",upstream=\"127.0.0.1\"} 0",
     ] {
         assert!(text.contains(needle), "missing {needle}\n{text}");
     }

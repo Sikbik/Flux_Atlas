@@ -134,6 +134,12 @@ impl Explorer {
         }
     }
 
+    /// The upstream clients of the explorer's lane (the interactive one in production), for
+    /// metrics.
+    pub fn clients(&self) -> &Clients {
+        &self.clients
+    }
+
     /// Cache name and stats, for metrics.
     pub fn cache_stats(&self) -> Vec<(&'static str, &crate::proxy::CacheStats, u64)> {
         self.cache_sizes()
@@ -334,6 +340,9 @@ impl Explorer {
                         v.sort_by(|a, b| b.value.cmp(&a.value).then_with(|| a.txid.cmp(&b.txid)));
                         Ok(Fetch::Found(v, ttl.utxos))
                     }
+                    Err(atlas_flux::FluxError::AnswerTooLarge { .. }) => Err(ApiError::upstream(
+                        "this address has too many unspent outputs to list",
+                    )),
                     Err(e) => not_found_or(&e, "address", ttl),
                 }
             }),

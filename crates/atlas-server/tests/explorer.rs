@@ -310,3 +310,35 @@ async fn search_probes_upstream_only_for_unknown_hashes() {
     assert_eq!(r.status, StatusCode::OK);
     assert!(r.json()["hits"].as_array().unwrap().is_empty());
 }
+
+/// Explorer lookups draw from the interactive upstream lane: its own gates, counters and
+/// breakers, never the engine's ingest lane (X1 M2).
+#[tokio::test]
+async fn explorer_uses_the_interactive_lane() {
+    let (e, mock) = env_with_mock(ServerConfig::default()).await;
+    assert_eq!(
+        e.state.explorer.clients().lane(),
+        atlas_flux::Lane::Interactive
+    );
+    assert_eq!(e.engine.clients().lane(), atlas_flux::Lane::Ingest);
+    let txid = fixture_txid("insight_tx_regular.json");
+    assert_eq!(
+        get(&e.app, &format!("/api/v1/tx/{txid}")).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(mock.hits(&format!("tx/{txid}")), 1);
+    let user: u64 = e
+        .state
+        .explorer
+        .clients()
+        .http
+        .lane_stats()
+        .iter()
+        .map(|h| h.ok)
+        .sum();
+    assert_eq!(user, 1, "counted on the interactive lane");
+    assert!(
+        e.engine.clients().http.lane_stats().is_empty(),
+        "nothing on the ingest lane"
+    );
+}
