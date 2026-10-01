@@ -183,7 +183,9 @@ a.toast-main:hover .toast-text b {
   --toast-r: 18px;
   top: auto;
   right: 12px;
-  bottom: calc(var(--tabbar-h) + 10px);
+  /* Above the tab bar and its safe area, and above the time machine's sheet while one rests on the bar (it
+     writes its height to --tm-sheet-h on the shell, in px, only then). */
+  bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--tm-sheet-h, 0px) + 10px);
   left: 12px;
   width: auto;
   translate: none;
