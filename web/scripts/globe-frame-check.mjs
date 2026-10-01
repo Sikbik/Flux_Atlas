@@ -307,7 +307,9 @@ if (!flag('quick')) {
   await middleDrag(page, m1, 300);
   await page.mouse.up({ button: 'middle' });
   await page.waitForTimeout(800);
-  await page.click('[data-region=dock] [aria-label^="Globe"]').catch(() => failures.push('no Globe launcher'));
+  await page
+    .click('[data-region=dock] [aria-label^="Globe"]')
+    .catch(() => failures.push('no Globe launcher'));
   await settle(page);
   await check(page, 'home control', {
     extra: (m) => [
