@@ -190,14 +190,15 @@ test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: 
     ['/node/1', 'Node 1'],
     ['/host/5.0.0.1', 'Host 5.0.0.1'],
     ['/app/kadenanode', 'App kadenanode'],
-    ['/app/kadenanode/history/2', 'spec version 2'],
+    ['/app/kadenanode/history/2', 'Revision 2'],
     ['/block/2996914', 'Block 2996914'],
     ['/mempool', 'Mempool'],
     ['/queue', 'Payment queue'],
     ['/queue/stratus', 'Payment queue, stratus'],
     ['/analytics/geography', 'Analytics, geography'],
     ['/time?speed=60', 'Time machine'],
-    ['/weather', 'Network weather'],
+    // The weather heading is the live verdict (Clear, Unsettled...); the view names itself on its article.
+    ['/weather', { role: 'article', name: 'Network weather' }],
     ['/terminal?cmd=help', 'Terminal'],
     ['/about', 'About Flux'],
     ['/settings', 'Settings'],
@@ -207,7 +208,9 @@ test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: 
   ];
   for (const [path, heading] of routes) {
     const page = await open(path);
-    if (heading) {
+    if (heading && typeof heading === 'object') {
+      await page.getByRole(heading.role, { name: heading.name }).first().waitFor({ timeout: 15_000 });
+    } else if (heading) {
       await page.getByRole('heading', { name: heading }).first().waitFor({ timeout: 15_000 });
     } else {
       await page.waitForSelector('[data-globe]', { timeout: 15_000 });
