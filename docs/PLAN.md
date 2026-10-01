@@ -58,8 +58,10 @@ called out in the hand-back.
 | B6 Rank accuracy & API consistency (done, merged; expiry, DOS and queue order exactly as fluxd, 2 h soak with 0 corrections, named counts, next payees at load, mesh hysteresis) | Opus | steady-state rank corrections (expiry vs fluxd, payment_address diffs), one node count across endpoints, city in node rows, slow-request attribution, mesh flapping, next payees in the bootstrap, duplicate feed items |
 | L1 Lead fixes (done) | lead | globe froze 0.5 to 1.2 s on every 12 s topology sweep (each streamed link re-resolved all 134k edges): fixed in f277752, max frame 33 ms live |
 | B7 API defects from the views (running, worktree) | Opus | operator earned_24h bug, top_operators cap, /tx app_ref, app-economy aggregates, blocks limit, mesh outlier hosts, monotonic app records |
+| B8 Server and edge hardening (running, worktree) | Opus | X1 H1 proxy trust and global caps, M1 timeouts and shutdown, M7 request CPU and compression, L1 sub replay, L2 store read timeouts, L3 capabilities, L4-L5 GeoIP, L8, L10 security headers, L15 private metrics |
+| B9 Engine robustness and consistency (running, worktree) | Opus | X1 M2-M3 and M5-M6 upstream budget, failover validation, liveness; M8 mesh resume; M9 instance id and stable node keys on the client; L6, L7, L9, L11-L14 |
 | Q1 Visual QA & polish (next) | Sonnet | screenshot sweep across routes × viewports, motion polish, a11y, reduced motion |
-| X1 Review (running, worktree; report only, to docs/review/X1-security-correctness.md) | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
+| X1 Review (done, b9a68da: 0 critical, 1 high, 9 medium, 15 low; frontend XSS clean; cargo and npm audit clean) | Opus | security (SSRF, input validation, DoS limits), correctness, efficiency |
 
 ## Phase 5 — Ship
 `deploy/Dockerfile`, `deploy/flux_app_spec.json`, README, removal of v1 dirs, final review, and hand-off.
