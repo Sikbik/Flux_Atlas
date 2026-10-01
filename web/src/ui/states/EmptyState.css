@@ -1,0 +1,101 @@
+/* Empty and error states: an icon tile, one sentence, one action (design 8.18). */
+
+.ui-state {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  padding: var(--space-9) var(--space-7);
+  text-align: center;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  isolation: isolate;
+}
+
+.ui-state[data-compact] {
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-6);
+}
+
+/* The hexagon lattice, masked so it fades out before any edge. */
+.ui-state[data-pattern]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--pattern-hex);
+  background-size: var(--pattern-hex-size);
+  background-position: center;
+  -webkit-mask: radial-gradient(60% 70% at 50% 40%, #000 0, transparent 100%);
+  mask: radial-gradient(60% 70% at 50% 40%, #000 0, transparent 100%);
+  pointer-events: none;
+}
+
+.ui-state__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-lg);
+  background: var(--ink-2);
+  color: var(--text-3);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.ui-state[data-tone="warn"] .ui-state__icon {
+  background: var(--status-warn-soft);
+  color: var(--status-warn);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--status-warn) 30%, transparent);
+}
+
+.ui-state[data-tone="error"] .ui-state__icon {
+  background: var(--status-crit-soft);
+  color: var(--status-crit);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--status-crit) 30%, transparent);
+}
+
+.ui-state__title {
+  margin: var(--space-2) 0 0;
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-md) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.ui-state__text {
+  max-width: 44ch;
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  text-wrap: balance;
+}
+
+.ui-state__text code {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.ui-state__action {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+/* Error: a panel with a critical border at 40% (design 8.0), words and an action. */
+.ui-state[data-framed] {
+  border: 1px solid color-mix(in oklab, var(--status-crit) 40%, transparent);
+  border-radius: var(--r-lg);
+  background: color-mix(in oklab, var(--status-crit) 4%, var(--ink-1));
+}
+
+.ui-state[data-framed][data-tone="warn"] {
+  border-color: color-mix(in oklab, var(--status-warn) 40%, transparent);
+  background: color-mix(in oklab, var(--status-warn) 4%, var(--ink-1));
+}
+
+.ui-state[data-framed][data-tone="neutral"] {
+  border-color: var(--line-2);
+  background: var(--ink-1);
+}

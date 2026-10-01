@@ -1,0 +1,70 @@
+import type { LucideIcon } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Button } from '../controls/Button';
+import { describeError } from './describeError';
+import { EmptyState, type StateTone } from './EmptyState';
+
+export interface ErrorStateProps {
+  /** The thrown value (an `ApiError` gets tailored copy and tone); optional when `title` is given. */
+  error?: unknown;
+  /** Overrides the derived title. */
+  title?: ReactNode;
+  /** Overrides the derived explanation. */
+  children?: ReactNode;
+  /** Overrides the derived icon. */
+  icon?: LucideIcon;
+  /** Overrides the derived tone. */
+  tone?: StateTone;
+  /** Shows a Retry button (hidden for errors that retrying cannot fix). */
+  onRetry?: () => void;
+  /** The retry is in flight. */
+  retrying?: boolean;
+  /** Draw the framed panel (critical border at 40%, design 8.0). Default true. */
+  framed?: boolean;
+  compact?: boolean;
+  className?: string;
+}
+
+/** An error state: what happened, what to do next, and a retry where one can help. */
+export function ErrorState({
+  error,
+  title,
+  children,
+  icon,
+  tone,
+  onRetry,
+  retrying,
+  framed = true,
+  compact,
+  className,
+}: ErrorStateProps) {
+  const info = describeError(error);
+  const showRetry = onRetry && (error === undefined || info.retryable);
+  return (
+    <EmptyState
+      role="alert"
+      icon={icon ?? info.icon}
+      title={title ?? info.title}
+      tone={tone ?? info.tone}
+      framed={framed}
+      compact={compact}
+      className={className}
+      action={
+        showRetry ? (
+          <Button size="sm" icon={RefreshCw} loading={retrying} onClick={onRetry}>
+            Retry
+          </Button>
+        ) : undefined
+      }
+    >
+      {children ?? info.text}
+      {info.code && children === undefined ? (
+        <>
+          {' '}
+          <code>{info.code}</code>
+        </>
+      ) : null}
+    </EmptyState>
+  );
+}
