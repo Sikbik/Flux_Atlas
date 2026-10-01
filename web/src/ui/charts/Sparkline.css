@@ -1,0 +1,77 @@
+/* Sparkline (design 8.11): 1.6 px line in --viz-1, a gradient wash for the area, an 8 px end dot with a
+   2 px surface ring, bars with a 2 px radius. Nothing glows and nothing animates except the live
+   glide (script-driven), so the Flux motion language can own every effect.
+
+   Consumer-settable custom properties
+     --ui-spark-color    mark colour (also set by the `color` prop); default var(--viz-1)
+     --ui-spark-surface  the colour of the dot's ring, to match the card behind; default var(--ink-1) */
+
+.ui-spark {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  line-height: 0;
+  color: var(--ui-spark-color, var(--viz-1));
+}
+
+.ui-spark[data-fluid] {
+  display: block;
+  width: 100%;
+}
+
+.ui-spark__svg {
+  display: block;
+  overflow: visible;
+}
+
+.ui-spark__line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The area fades from the line toward the baseline: twice the token alpha at the top, none at the bottom. */
+.ui-spark__area {
+  stroke: none;
+}
+
+.ui-spark__stop {
+  stop-color: currentColor;
+}
+
+.ui-spark__stop[data-end="top"] {
+  stop-opacity: calc(var(--viz-area-alpha) * 2.2);
+}
+
+.ui-spark__stop[data-end="base"] {
+  stop-opacity: 0;
+}
+
+.ui-spark__bars {
+  fill: color-mix(in oklab, currentColor 56%, transparent);
+  stroke: none;
+}
+
+.ui-spark__bar-last {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* The ring is painted first (paint-order) so only its outer 2 px shows around the 8 px disc. */
+.ui-spark__dot {
+  fill: currentColor;
+  stroke: var(--ui-spark-surface, var(--ink-1));
+  stroke-width: 4;
+  paint-order: stroke;
+}
+
+/* No data: a dashed baseline, never a zero line. */
+.ui-spark__base {
+  stroke: var(--text-4);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 4;
+  stroke-linecap: round;
+}

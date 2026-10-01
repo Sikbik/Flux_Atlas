@@ -1,0 +1,19 @@
+/* The tier meter glyph: three capsules, lit bottom-up. Tier colour comes from the data-tier remap. */
+
+.ui-tier-glyph {
+  display: block;
+  flex: none;
+  color: var(--tier, var(--text-3));
+}
+
+.ui-tier-glyph[data-tone="current"] {
+  color: currentColor;
+}
+
+.ui-tier-glyph__cap {
+  fill: color-mix(in oklab, var(--text-1) 16%, transparent);
+}
+
+.ui-tier-glyph__cap[data-lit] {
+  fill: currentColor;
+}

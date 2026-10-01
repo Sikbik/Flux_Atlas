@@ -1,0 +1,136 @@
+/* Freshness: how fresh a source is, in words and one dot (design 6.5, 8.8).
+
+   fresh  --text-3 with the ok dot        aging  --text-2 with a grey dot
+   stale  --status-warn and the word      dead   --status-crit and the word "lost"
+   The chip is a mono pill. While the age counts in seconds it sits in a right-aligned box four
+   characters wide, so `now`, `9 s` and `10 s` all take the same width and nothing next to it moves. A new update gives the dot one soft ping (transform and opacity);
+   the component renders the ping only in full motion.
+
+   Local custom properties (internal, set per state):
+     --ui-fresh-color   text colour of the chip
+     --ui-fresh-dot     colour of the dot
+     --ui-fresh-edge    colour of the chip's hairline border */
+
+.ui-fresh {
+  --ui-fresh-color: var(--text-3);
+  --ui-fresh-dot: var(--status-ok);
+  --ui-fresh-edge: var(--line-1);
+  color: var(--ui-fresh-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-fresh[data-state="aging"] {
+  --ui-fresh-color: var(--text-2);
+  --ui-fresh-dot: var(--status-off);
+}
+
+.ui-fresh[data-state="stale"] {
+  --ui-fresh-color: var(--status-warn);
+  --ui-fresh-dot: var(--status-warn);
+  --ui-fresh-edge: color-mix(in oklab, var(--status-warn) 32%, transparent);
+}
+
+.ui-fresh[data-state="dead"] {
+  --ui-fresh-color: var(--status-crit);
+  --ui-fresh-dot: var(--status-crit);
+  --ui-fresh-edge: color-mix(in oklab, var(--status-crit) 32%, transparent);
+}
+
+.ui-fresh[data-state="unknown"] {
+  --ui-fresh-dot: var(--status-off);
+}
+
+/* The chip: a glass-edged pill in Plex Mono. */
+.ui-fresh[data-variant="chip"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 var(--space-5) 0 10px;
+  border: 1px solid var(--ui-fresh-edge);
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--ink-1) 82%, transparent);
+  box-shadow: var(--shadow-inset-hi);
+  font: var(--fw-regular) 11.5px / 1 var(--font-mono);
+  white-space: nowrap;
+  transition:
+    color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+.ui-fresh__age {
+  display: inline-block;
+  font-weight: var(--fw-medium);
+}
+
+/* Seconds are the only age that changes width as it ticks: reserve room for two digits. */
+.ui-fresh__age[data-unit="s"],
+.ui-fresh__age[data-unit="now"] {
+  min-width: 4ch;
+  text-align: right;
+}
+
+.ui-fresh__word {
+  font-weight: var(--fw-medium);
+}
+
+.ui-fresh__dot {
+  position: relative;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ui-fresh-dot);
+  transition: background-color var(--dur-base) var(--ease-out);
+}
+
+.ui-fresh[data-state="fresh"] .ui-fresh__dot {
+  box-shadow: 0 0 8px color-mix(in oklab, var(--status-ok) 60%, transparent);
+}
+
+/* Unknown: a hollow ring, so it never reads as "all is well". */
+.ui-fresh[data-state="unknown"] .ui-fresh__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--status-off);
+}
+
+/* The ping: one ring per update, in the dot's own colour. */
+.ui-fresh__dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--ui-fresh-dot);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ui-fresh__dot[data-ping="a"]::after {
+  animation: ui-fresh-ping-a var(--dur-pulse) var(--ease-out) both;
+}
+
+.ui-fresh__dot[data-ping="b"]::after {
+  animation: ui-fresh-ping-b var(--dur-pulse) var(--ease-out) both;
+}
+
+@keyframes ui-fresh-ping-a {
+  from {
+    transform: scale(0.5);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes ui-fresh-ping-b {
+  from {
+    transform: scale(0.5);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}

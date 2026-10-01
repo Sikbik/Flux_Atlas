@@ -1,0 +1,267 @@
+/* Stat tile (design 8.11): label, a large tabular figure, delta, caption, sparkline slot. Same material
+   as a Card (a fill one step up, a rim lit at the top left); the figure scales with the tile's own
+   width through container units, so one tile reads well from a 140 px grid cell to a 400 px hero.
+   The hero takes the hexagon chamfer and light numerals. Quiet by default: no entrance flourish and no
+   corner light unless the tile wears a tier. */
+
+.ui-stat {
+  --ui-stat-glow: 0%;
+  position: relative;
+  container-type: inline-size;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  inline-size: 100%;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 13px 14px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(
+      130% 120% at 0% 0%,
+      color-mix(in oklab, var(--accent, var(--accent-500)) var(--ui-stat-glow), transparent),
+      transparent 58%
+    )
+    padding-box,
+    linear-gradient(180deg, color-mix(in oklab, var(--hot) 2.4%, var(--ink-1)), var(--ink-1) 52%) padding-box,
+    var(--ui-rim) border-box;
+  box-shadow: var(--ui-lit), var(--ui-contact);
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  isolation: isolate;
+}
+
+/* A tile that is a button: a veil of light on hover, deeper while pressed. Nothing moves. */
+button.ui-stat {
+  cursor: pointer;
+}
+
+button.ui-stat::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--hot) 4%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  button.ui-stat:hover::after {
+    opacity: 1;
+  }
+}
+
+button.ui-stat[data-pressed]::after {
+  opacity: 1;
+  background: color-mix(in oklab, var(--hot) 7%, transparent);
+}
+
+button.ui-stat:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ui-stat__label {
+  overflow: hidden;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-stat[data-spark] .ui-stat__label {
+  padding-right: 74px;
+}
+
+.ui-stat__value {
+  --ui-number-weight: var(--fw-medium);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-height: 1.12em;
+  color: var(--text-1);
+  font: var(--fw-medium) clamp(20px, 15cqi, 28px) / 1.12 var(--font-display);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* The figure fades in when it replaces the loading bars: no pop-in. */
+  animation: ui-fade-in var(--dur-base) var(--ease-out) both;
+}
+
+.ui-stat__unit {
+  margin-left: 2px;
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+.ui-stat__unknown {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+}
+
+.ui-stat__nodata {
+  color: var(--text-4);
+  font-weight: var(--fw-light);
+}
+
+/* The delta and caption row is always reserved, so loading, loaded and empty tiles are one height. */
+.ui-stat__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-height: 18px;
+}
+
+.ui-stat__stale {
+  color: var(--status-warn);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+.ui-stat__delta {
+  display: inline-flex;
+}
+
+.ui-stat__caption {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+.ui-stat__spark {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: block;
+  line-height: 0;
+}
+
+.ui-stat__skel-value {
+  margin-block: 2px;
+  font-size: clamp(20px, 15cqi, 28px);
+}
+
+/* Hero: the view's one big figure. Chamfered at the hexagon angle; the lit rim runs along three
+   sides and a short diagonal closes the cut. Numerals go light and large. */
+.ui-stat[data-hero] {
+  gap: 8px;
+  padding: 16px 20px 16px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  clip-path: var(--clip-chamfer-sm);
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, var(--accent, var(--accent-500)) 11%, var(--ink-1)),
+    var(--ink-1) 70%
+  );
+}
+
+.ui-stat[data-hero]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  padding: 1px;
+  clip-path: inherit;
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--hot) 50%, transparent),
+    color-mix(in oklab, var(--accent-300) 14%, transparent) 38%,
+    transparent 66%,
+    color-mix(in oklab, var(--accent-400) 26%, transparent)
+  );
+  -webkit-mask:
+    linear-gradient(var(--ink-0) 0 0) content-box,
+    linear-gradient(var(--ink-0) 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(var(--ink-0) 0 0) content-box,
+    linear-gradient(var(--ink-0) 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* The diagonal of the chamfer (14 x 8 px), drawn as a 1 px line across the cut corner. */
+.ui-stat[data-hero]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  inline-size: 14px;
+  block-size: 8px;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.7px),
+    color-mix(in oklab, var(--hot) 45%, transparent) calc(50% - 0.7px) calc(50% + 0.7px),
+    transparent calc(50% + 0.7px)
+  );
+  opacity: 1;
+  pointer-events: none;
+}
+
+.ui-stat[data-hero] .ui-stat__label {
+  font-size: var(--fs-sm);
+}
+
+.ui-stat[data-hero] .ui-stat__value {
+  --ui-number-weight: var(--fw-light);
+  font: var(--fw-light) clamp(32px, 17cqi, 58px) / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+}
+
+.ui-stat[data-hero] .ui-stat__unit {
+  font-size: var(--fs-sm);
+}
+
+.ui-stat[data-hero] .ui-stat__meta {
+  min-height: 20px;
+}
+
+.ui-stat[data-hero] .ui-stat__spark {
+  top: auto;
+  right: 18px;
+  bottom: 18px;
+}
+
+/* The hero's trend sits at the bottom right, so its label needs no room for it. */
+.ui-stat[data-hero][data-spark] .ui-stat__label {
+  padding-right: 0;
+}
+
+/* A hero in a one-column grid is too narrow to hold the figure's caption and a trend side by side. */
+@container (max-width: 259px) {
+  .ui-stat[data-hero] .ui-stat__spark {
+    display: none;
+  }
+}
+
+.ui-stat[data-hero]:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+/* Tier-tinted tiles (node views) light their corner in the tier colour: the tint says which tier. */
+.ui-stat[data-tier] {
+  --ui-stat-glow: 12%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-stat__value {
+    animation-duration: var(--dur-fast);
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-stat__value {
+  animation-duration: var(--dur-fast);
+}
