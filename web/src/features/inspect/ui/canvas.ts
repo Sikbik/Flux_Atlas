@@ -10,8 +10,8 @@ export function withAlpha(color: string, a: number): string {
   return color;
 }
 
-/** A CSS custom property resolved on `el`, or `fallback`. */
-export function readVar(el: Element, name: string, fallback: string): string {
+/** A CSS custom property resolved on `el`; `fallback` (the text colour) if the token is not set. */
+export function readVar(el: Element, name: string, fallback = 'currentColor'): string {
   return getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 }
 

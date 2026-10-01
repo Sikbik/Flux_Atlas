@@ -4,9 +4,10 @@
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveMotion, useUi } from '../../../store/ui';
-import { withAlpha } from './canvas';
-import { cx } from './cx';
+import { cx } from '../../../ui';
+import { readVar, withAlpha } from './canvas';
 import { isLand, type LandMask, loadLand } from './land';
+import './map.css';
 
 export interface MapPoint {
   id: string | number;
@@ -97,27 +98,26 @@ interface Palette {
 }
 
 function readPalette(el: Element): Palette {
-  const cs = getComputedStyle(el);
-  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+  const v = (name: string) => readVar(el, name);
   return {
     tier: {
-      cumulus: v('--tier-cumulus', '#36d3ff'),
-      nimbus: v('--tier-nimbus', '#c77dff'),
-      stratus: v('--tier-stratus', '#ffc857'),
-      unknown: v('--text-3', '#a1a5ab'),
+      cumulus: v('--tier-cumulus'),
+      nimbus: v('--tier-nimbus'),
+      stratus: v('--tier-stratus'),
+      unknown: v('--text-3'),
     },
     tone: {
-      ok: v('--status-ok', '#3fdc95'),
-      warn: v('--status-warn', '#ff9a3d'),
-      crit: v('--status-crit', '#ff5470'),
-      off: v('--status-off', '#717171'),
+      ok: v('--status-ok'),
+      warn: v('--status-warn'),
+      crit: v('--status-crit'),
+      off: v('--status-off'),
     },
-    land: 'rgb(134 161 218 / 0.3)',
-    landLit: 'rgb(176 200 255 / 0.92)',
-    line: v('--line-2', 'rgb(255 255 255 / 0.1)'),
-    text: v('--text-2', '#d5d7db'),
-    halo: 'rgb(8 10 15 / 0.9)',
-    hot: v('--hot', '#ffffff'),
+    land: withAlpha(v('--accent-400'), 0.3),
+    landLit: withAlpha(v('--accent-300'), 0.92),
+    line: v('--line-2'),
+    text: v('--text-2'),
+    halo: withAlpha(v('--ink-0'), 0.9),
+    hot: v('--hot'),
   };
 }
 
@@ -190,7 +190,7 @@ function draw(a: DrawArgs): void {
     ctx.save();
     ctx.setLineDash([3, 4]);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgb(255 255 255 / 0.5)';
+    ctx.strokeStyle = withAlpha(pal.hot, 0.5);
     ctx.beginPath();
     for (const [i, j] of links) {
       const p = xy[i];

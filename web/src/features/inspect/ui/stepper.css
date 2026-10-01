@@ -1,0 +1,101 @@
+/* A lifecycle as stations on a line. Local custom properties, set by the component:
+     --ix-n   how many stations there are
+     --ix-p   0..1, how far along the line the current station is */
+
+.ix-stepper {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--ix-n, 5), 1fr);
+  margin: var(--space-2) 0 var(--space-6);
+  padding: 0;
+  list-style: none;
+}
+
+.ix-stepper::before,
+.ix-stepper::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: calc(50% / var(--ix-n, 5));
+  height: 2px;
+  border-radius: 2px;
+}
+
+.ix-stepper::before {
+  right: calc(50% / var(--ix-n, 5));
+  background: var(--ink-3);
+}
+
+.ix-stepper::after {
+  width: calc(100% - 100% / var(--ix-n, 5));
+  transform-origin: left center;
+  transform: scaleX(var(--ix-p, 0));
+  background: linear-gradient(90deg, var(--status-ok), var(--accent-400));
+  transition: transform var(--dur-stage) var(--ease-out-expo);
+}
+
+.ix-stp {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  text-align: center;
+}
+
+.ix-stp > i:first-child {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-4);
+  background: var(--ink-0);
+  color: var(--text-4);
+  transition:
+    border-color var(--dur-stage) var(--ease-out),
+    background-color var(--dur-stage) var(--ease-out),
+    color var(--dur-stage) var(--ease-out);
+}
+
+.ix-stp[data-state="done"] > i {
+  border-color: var(--status-ok);
+  background: var(--status-ok-soft);
+  color: var(--status-ok);
+}
+
+.ix-stp[data-state="now"] {
+  color: var(--text-1);
+}
+
+.ix-stp[data-state="now"] > i {
+  border-color: var(--accent-400);
+  background: var(--accent-soft);
+  color: var(--accent-300);
+  box-shadow: 0 0 14px -2px var(--accent-500);
+}
+
+.ix-stp[data-tone="warn"] > i {
+  border-color: var(--status-warn);
+  background: var(--status-warn-soft);
+  color: var(--status-warn);
+  box-shadow: 0 0 14px -2px var(--status-warn);
+}
+
+.ix-stp[data-tone="crit"] > i {
+  border-color: var(--status-crit);
+  background: var(--status-crit-soft);
+  color: var(--status-crit);
+  box-shadow: 0 0 14px -2px var(--status-crit);
+}
+
+.ix-stp small {
+  color: var(--text-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}

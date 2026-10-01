@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
+import './stepper.css';
 
 export interface Step {
   key: string;

@@ -15,14 +15,6 @@ export const STATE_WORDS: Record<FleetState, string> = {
   gone: 'Gone',
 };
 
-const FALLBACK: Record<FleetState, string> = {
-  ok: '#3fdc95',
-  risk: '#ff9a3d',
-  down: '#ff5470',
-  pending: '#86a1da',
-  gone: '#717171',
-};
-
 const VAR: Record<FleetState, string> = {
   ok: '--status-ok',
   risk: '--status-warn',
@@ -86,7 +78,7 @@ export function FleetGrid({
     const { pitch, gap, cols } = layout;
     const size = pitch - gap;
     const pal = {} as Record<FleetState, string>;
-    for (const k of Object.keys(VAR) as FleetState[]) pal[k] = readVar(canvas, VAR[k], FALLBACK[k]);
+    for (const k of Object.keys(VAR) as FleetState[]) pal[k] = readVar(canvas, VAR[k]);
     const radius = size >= 12 ? 4 : 2;
     for (let i = 0; i < states.length; i++) {
       const s = states[i] as FleetState;
@@ -101,7 +93,7 @@ export function FleetGrid({
     if (hover) {
       const x = (hover.i % cols) * pitch;
       const y = Math.floor(hover.i / cols) * pitch;
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = readVar(canvas, '--hot');
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.roundRect(x - 1, y - 1, size + 2, size + 2, radius + 1);

@@ -1,0 +1,93 @@
+/* The host port ladder: eight slots, ten ports apart. A free slot is a dashed outline, an occupied one wears the
+   tier's colour and is a link to its node. The kit's EntityLink is the anchor, laid out to fill the slot. */
+
+.ix-ladder {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ix-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-2);
+  height: 56px;
+  min-width: 0;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-2);
+  color: var(--text-4);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.ix-slot small {
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  opacity: 0.8;
+}
+
+.ix-slot[data-free] {
+  font-family: var(--font-sans);
+}
+
+.ix-slot[data-tier] {
+  border-style: solid;
+  border-color: var(--tier-line);
+  background: var(--tier-soft);
+  color: var(--text-2);
+}
+
+.ix-slot[data-tier]:hover {
+  border-color: var(--tier);
+  color: var(--text-1);
+}
+
+.ix-slot[data-sel] {
+  border-color: var(--hot);
+  background: color-mix(in oklab, var(--tier) 22%, transparent);
+  color: var(--text-1);
+  box-shadow: 0 0 16px -2px var(--hot-glow);
+}
+
+/* The link fills the slot and stacks its three lines centred; the kit's accent link colour and underline are
+   not wanted on a tile. */
+.ix-slot > .ix-slot__link {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  border-radius: var(--r-md);
+  color: inherit;
+  text-decoration: none;
+}
+
+.ix-slot > .ix-slot__link .ui-entity__text {
+  display: grid;
+  place-items: center;
+  gap: var(--space-2);
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.ix-slot > .ix-slot__link .ui-tier-glyph {
+  color: var(--tier);
+}
+
+/* A phone gives each port a bigger target: two rows of four. */
+@container ix (max-width: 460px) {
+  .ix-ladder {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ix-slot {
+    height: 52px;
+  }
+}

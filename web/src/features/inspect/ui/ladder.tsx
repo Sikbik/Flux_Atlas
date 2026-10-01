@@ -1,10 +1,9 @@
-import { formatInt, parseEndpoint } from '../../../lib/format';
+import { formatInt } from '../../../lib/format';
+import { EntityLink, TierGlyph, tierLabel } from '../../../ui';
 import { positionOf } from '../derive/queue';
 import { LADDER_PORTS, useHostLive } from '../sources/host';
 import { useQueues } from '../sources/live';
-import { tierLabel } from './chips';
-import { TierGlyph } from './glyphs';
-import { NodeLink } from './links';
+import './ladder.css';
 
 /**
  * A host's eight UPnP ports, each showing the node on it (tier, port, queue position) or "free". Every
@@ -26,25 +25,28 @@ export function HostLadder({ ip, selectedId }: { ip: string; selectedId?: number
           );
         }
         const pos = positionOf(queues, n.id);
+        const place = pos ? `#${formatInt(pos.position + 1)}` : 'n/a';
+        const tier = n.tier === 'unknown' ? 'Unknown tier' : tierLabel(n.tier);
         return (
-          <li key={port} className="ix-slot-cell">
-            <NodeLink
-              nodeKey={n.endpoint || n.id}
-              className="ix-slot"
-              data-tier={n.tier}
-              data-sel={n.id === selectedId}
-              title={`${n.endpoint}, ${tierLabel(n.tier)}${pos ? `, queue position ${formatInt(pos.position + 1)}` : ''}`}
+          <li
+            key={port}
+            className="ix-slot"
+            data-tier={n.tier}
+            data-sel={n.id === selectedId ? '' : undefined}
+          >
+            <EntityLink
+              kind="node"
+              value={n.endpoint || n.id}
+              label={`Open node ${n.endpoint || n.id}, ${tier}${pos ? `, queue position ${formatInt(pos.position + 1)}` : ''}`}
+              className="ix-slot__link"
             >
               <TierGlyph tier={n.tier} size={14} />
               <span>{port}</span>
-              <small>{pos ? `#${formatInt(pos.position + 1)}` : 'n/a'}</small>
-            </NodeLink>
+              <small>{place}</small>
+            </EntityLink>
           </li>
         );
       })}
     </ul>
   );
 }
-
-/** The port of an endpoint, or 0. */
-export const portOf = (endpoint: string): number => parseEndpoint(endpoint)?.port ?? 0;

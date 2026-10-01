@@ -19,7 +19,7 @@
   border: 1px solid var(--line-2);
   border-radius: var(--r-lg);
   background: color-mix(in oklab, var(--ink-1) 94%, transparent);
-  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.7);
+  box-shadow: var(--shadow-pop);
   backdrop-filter: blur(14px);
 }
 

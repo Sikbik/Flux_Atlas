@@ -116,7 +116,6 @@ export function loadLand(): Promise<LandMask> {
         }
         path.closePath();
       }
-      ctx.fillStyle = '#fff';
       ctx.fill(path, 'evenodd');
       const px = ctx.getImageData(0, 0, W, H).data;
       const data = new Uint8Array(W * H);
