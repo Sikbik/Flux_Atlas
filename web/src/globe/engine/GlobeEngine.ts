@@ -1179,16 +1179,43 @@ export class GlobeEngine {
         this.removeLinkInternal(delta.removeA[i]!, delta.removeB[i]!, !this.hidden);
     if (delta.addA && delta.addB) {
       let selectionGained = false;
+      const shown = this.handshakes;
+      shown.length = 0;
+      let firstHand = 0;
       for (let i = 0; i < Math.min(delta.addA.length, delta.addB.length); i++) {
         const e = this.addLinkInternal(delta.addA[i]!, delta.addB[i]!, !this.hidden, false);
         if (e < 0) continue;
-        if (!this.hidden) this.showLink(e);
+        if (!this.hidden && this.canShowLink(e)) {
+          // A link on the selection or a watched node goes first.
+          if (this.linkPriority(e)) {
+            shown.push(shown[firstHand] ?? e);
+            shown[firstHand++] = e;
+          } else shown.push(e);
+        }
         if (this.touchesSelection(e)) selectionGained = true;
       }
+      // Every link is in the store; only a few handshakes light per sweep, so an outlier report (a
+      // queried host that adds thousands of links at once) never reads as a flood of light or costs a
+      // frame: the priority ones, then an even sample of the rest.
+      const cap = GlobeEngine.HANDSHAKE_CAP;
+      if (shown.length <= cap) for (const e of shown) this.drawLink(e);
+      else {
+        const first = Math.min(firstHand, cap);
+        for (let k = 0; k < first; k++) this.drawLink(shown[k]!);
+        const rest = shown.length - firstHand;
+        const want = cap - first;
+        for (let k = 0; k < want && rest > 0; k++)
+          this.drawLink(shown[firstHand + Math.floor(((k + 0.5) * rest) / want)]!);
+      }
+      shown.length = 0;
       // One reveal per sweep: each rebuilds the adjacency and redraws the selection's arcs.
       if (selectionGained) this.revealPeers(this.selectedSlot);
     }
   }
+
+  /** At most this many link handshakes (a ribbon fading in and a packet) light per `updateMesh` call. */
+  static readonly HANDSHAKE_CAP = 48;
+  private readonly handshakes: number[] = [];
 
   private rebuildLinks(): void {
     const m = this.mesh;
@@ -1226,18 +1253,37 @@ export class GlobeEngine {
     return sel >= 0 && (this.mesh.sa[e] === sel || this.mesh.sb[e] === sel);
   }
 
-  /** Draws a freshly added link: fade-in, plus a bright packet so the eye sees the handshake. */
-  private showLink(e: number): void {
+  /** Whether a freshly added link would show its handshake (alive ends, the mesh mode, in view). */
+  private canShowLink(e: number): boolean {
     const m = this.mesh;
-    if (!m.alive[e]) return;
+    if (!m.alive[e]) return false;
     const sa = m.sa[e]!;
     const sb = m.sb[e]!;
-    if (sa === 0xffffffff || sb === 0xffffffff) return;
-    if (this.nodes.alive[sa] !== 1 || this.nodes.alive[sb] !== 1) return;
-    const watchedEnd =
-      (this.nodes.state[sa]! | this.nodes.state[sb]!) & (NodeState.Selected | NodeState.Watched);
-    if (this.meshMode !== 'flow' && !watchedEnd) return;
-    if (!this.fx.visible(sa) && !this.fx.visible(sb)) return;
+    if (sa === 0xffffffff || sb === 0xffffffff) return false;
+    if (this.nodes.alive[sa] !== 1 || this.nodes.alive[sb] !== 1) return false;
+    if (this.meshMode !== 'flow' && !this.linkPriority(e)) return false;
+    return this.fx.visible(sa) || this.fx.visible(sb);
+  }
+
+  /** A link with a selected or watched end. */
+  private linkPriority(e: number): boolean {
+    const m = this.mesh;
+    const sa = m.sa[e]!;
+    const sb = m.sb[e]!;
+    if (sa === 0xffffffff || sb === 0xffffffff) return false;
+    return ((this.nodes.state[sa]! | this.nodes.state[sb]!) & (NodeState.Selected | NodeState.Watched)) !== 0;
+  }
+
+  /** One link's handshake, when it would show (the choreographer's single links). */
+  private showLink(e: number): void {
+    if (this.canShowLink(e)) this.drawLink(e);
+  }
+
+  /** Draws a freshly added link: fade-in, plus a bright packet so the eye sees the handshake. */
+  private drawLink(e: number): void {
+    const m = this.mesh;
+    const sa = m.sa[e]!;
+    const sb = m.sb[e]!;
     const c = this.fx.color('mesh', this.tmpColor);
     this.veil.showEdge(e, this.time, 1.6, c, 1.8);
     this.fx.packetRaw(sa, sb, c.r * 1.6, c.g * 1.6, c.b * 1.6, 0.9, 2.0, 1.4);
