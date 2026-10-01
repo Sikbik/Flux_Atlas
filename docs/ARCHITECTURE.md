@@ -583,7 +583,7 @@ the 31 minutes after the backfill finished (2,832 blocks a day at 30 s spacing).
 | Mesh changes | `mesh_events` | 7 d | topology history | 6,450 to 8,590 | 6,900 to 13,000 | 44 to 111 | 310 to 780 MB |
 | Snapshots | `snapshots` | hourly 30 d, then daily keyframes 365 d | time machine | 525 KB | 24 | 12.6 | 380 + 190 MB |
 | Metrics | `metrics_1m` / `metrics_1h` | 30 d / forever | charts | 160 / 96 | 1,440 / 24 | 0.23 / 0.002 | 7 MB / +1 MB a year |
-| Chain history | `chain_points`, `chain_daily` | per block 31 d, then the 720-block sample grid forever; daily 2 y (upstream's span) | `/network/chain-history` | about 40 | 2,880 per block; 4 grid | 0.12 | 3.6 MB per-block window + 0.06 MB a year of grid rows (0.17 MB for the whole chain so far) |
+| Chain history | `chain_points`, `chain_daily` | per block 31 d, then the 720-block sample grid forever; daily 2 y (upstream's span) | `/network/chain-history` | 45 / 22 | 2,880 per block; 4 grid | 0.13 | 4.0 MB per-block window + 0.07 MB a year of grid rows (0.19 MB for the whole chain so far; measured on 3130: 10,251 rows in 0.44 MiB) |
 | App history | `app_messages`(+`_by_app`) | forever | app spec history (from the six-year bootstrap) | 768 + 91 | ~190 | 0.16 | 58 MB, +60 MB a year |
 | App timelines | `app_events` | forever | app timelines | 175 | 2,300 | 0.4 | +150 MB a year |
 
@@ -721,9 +721,9 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 >   wider than `bucket_ms` is a gap.
 > - **Time per block** is `(time(last) - time(anchor)) / (last - anchor)`, `anchor` being the row just below the
 >   bucket. Per-block rows make it exact (24 h to 30 d). Sampled rows (one every 720 heights) make it the mean
->   between samples; the anchor is used only while it lies in the previous bucket, else the bucket's own rows give
->   the span, and a lone row after a gap is `null`. `block_time_max_s` (the longest gap between consecutive blocks)
->   only where per-block rows cover the bucket. Daily Insight difficulty fills `difficulty` in day-wide buckets whose
+>   between samples; the anchor is used only while it lies in the two previous buckets (a sample interval can be a
+>   little wider than a bucket), else the bucket's own rows give the span, and a lone row after a gap is `null`.
+>   `block_time_max_s` (the longest gap between consecutive blocks) only where per-block rows cover the bucket. Daily Insight difficulty fills `difficulty` in day-wide buckets whose
 >   rows carry none. Nothing is interpolated.
 > - **`targets`**: `[{from_height: 0, from_ms: genesis, seconds: 120}, {from_height: 2,020,000, from_ms:
 >   1761415235000, seconds: 30}]`. The 120 s pre-PoN target is the chain's (blocks 1 to 2,019,999 averaged 120.9 s).
@@ -732,7 +732,8 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 >   spacing), and the lowest height with data in the window. On a fresh instance 24 h and 7 d fill with the block
 >   backfill (about 4.7 h for 7 days), 30 d is partial until 30 days of live blocks exist (or the grid's 6 h samples
 >   remain, which leave the 1 h buckets' time per block `null`), and 1 y / all fill as the sampler runs (coarse
->   first: usable after about 15 minutes, every grid height in about 75 minutes).
+>   first: usable after about 15 minutes, every grid height in about 80 minutes; measured on 3130: 4,167 samples at
+>   0.86 requests a second, no errors, `all` complete after 22 minutes).
 > - **Caching**: one computation per window per reuse period (30 s for 24 h, 60 s for 7 d, 2 min for 30 d, 10 min
 >   for 1 y and all; concurrent identical requests share it), served with an ETag (304 on `If-None-Match`) and
 >   `Cache-Control: public, max-age=30` (24 h, 7 d), `60` (30 d) or `600` (1 y, all).

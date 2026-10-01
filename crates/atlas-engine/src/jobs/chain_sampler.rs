@@ -150,8 +150,15 @@ pub async fn run(ctx: JobCtx) {
             total_samples = counters.samples,
             "chain sampler pass done"
         );
-        // Nothing stored (upstream down): wait before trying the same heights again.
-        if counters.samples == before_s && !ctx.sleep(Duration::from_secs(600)).await {
+        // Nothing stored (upstream down): wait before trying the same heights again. Otherwise
+        // give the store writer time to commit the last chunks, so the next pass does not see
+        // them as missing and fetch them twice.
+        let wait = if counters.samples == before_s {
+            Duration::from_secs(600)
+        } else {
+            Duration::from_secs(15)
+        };
+        if !ctx.sleep(wait).await {
             return;
         }
     }

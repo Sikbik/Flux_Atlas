@@ -11,8 +11,8 @@
 //! **Time per block** of a bucket is `(time(last) - time(anchor)) / (last - anchor)`, where
 //! `last` is the bucket's last row and `anchor` the row just below its first one. With per-block
 //! rows the anchor is the previous block, so the mean is exact. With samples the span reaches
-//! back to the previous sample; it is used only while that sample lies within the previous
-//! bucket. Otherwise (after a gap) the bucket's own rows give the span, from its first row to its
+//! back to the previous sample; it is used only while that sample lies within the two previous
+//! buckets (a sample interval can be a little wider than a bucket, leaving one empty). Otherwise (after a gap) the bucket's own rows give the span, from its first row to its
 //! last, and a bucket with a single row there has a `null` time per block: a gap is never
 //! smeared over.
 //!
@@ -154,7 +154,7 @@ pub fn build(
         let contiguous_anchor = anchor.is_some_and(|((h, _), _)| h + 1 == rows[first].0);
         // Without a usable row below, the bucket's own first row is the base (its own span).
         let base = anchor
-            .filter(|(_, t)| contiguous_anchor || *t >= bucket_start.saturating_sub(step))
+            .filter(|(_, t)| contiguous_anchor || *t >= bucket_start.saturating_sub(2 * step))
             .map(|(row, _)| row)
             .or_else(|| (last > first).then(|| rows[first]));
         let block_time_s = base.and_then(|(h_a, p_a)| {
@@ -499,6 +499,21 @@ mod tests {
         // Daily values never apply to sub-day buckets.
         let month = build(ChainWindow::Month, &rows, &daily, NOON);
         assert!(month.points.iter().all(|pt| pt.difficulty != Some(0.5)));
+    }
+
+    #[test]
+    fn samples_a_little_wider_than_a_bucket_keep_their_anchor() {
+        // A sample every 24.6 h against day buckets: some days have none.
+        let rows: Vec<(u32, ChainPoint)> = (0..400u32)
+            .map(|i| {
+                let h = 2_100_000 + i * 2_952;
+                (h, p(NOON - u64::from(399 - i) * 2_952 * 30_000, Some(0.1)))
+            })
+            .collect();
+        let year = build(ChainWindow::Year, &rows, &[], NOON);
+        assert!(year.points.len() < 365);
+        assert!(year.points.iter().all(|pt| pt.block_time_s == Some(30.0)));
+        assert!(year.coverage.complete, "{:?}", year.coverage);
     }
 
     #[test]
