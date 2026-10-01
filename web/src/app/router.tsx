@@ -9,14 +9,13 @@ import {
   createRouter,
   lazyRouteComponent,
   notFound,
-  Outlet,
   redirect,
   useRouterState,
 } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { queries } from '../api/queries';
-import { GlobeLayer } from '../globe';
-import { ShellFrame } from '../shell';
+import { GlobeCanvas, GlobeProvider } from '../globe';
+import { Shell } from '../shell';
 import { useNetwork, useRuntime } from './context';
 import { NotFound, RouteError } from './errors';
 import {
@@ -43,7 +42,6 @@ import {
   WeatherView,
 } from './placeholders/views';
 import type { AtlasRuntime } from './runtime';
-import { StatusLine } from './StatusLine';
 import {
   ANALYTICS_TABS,
   type AnalyticsTab,
@@ -78,23 +76,21 @@ function useSelectionSync() {
   }, [runtime, location, loaded]);
 }
 
+/**
+ * The root layout never unmounts: the globe (GlobeCanvas, the living wallpaper) is mounted once here,
+ * and the shell turns the matched route into a window over it (the route's component renders inside
+ * the window through the shell's <Outlet />).
+ */
 function RootLayout() {
   useSelectionSync();
   const ambient = useRouterState({ select: (s) => s.location.pathname === '/ambient' });
   return (
-    <div className="atlas" data-ambient={ambient || undefined}>
-      <GlobeLayer />
-      {ambient ? (
-        <Outlet />
-      ) : (
-        <ShellFrame>
-          <StatusLine />
-          <div className="windows">
-            <Outlet />
-          </div>
-        </ShellFrame>
-      )}
-    </div>
+    <GlobeProvider>
+      <div className="atlas" data-ambient={ambient || undefined}>
+        <GlobeCanvas />
+        <Shell />
+      </div>
+    </GlobeProvider>
   );
 }
 

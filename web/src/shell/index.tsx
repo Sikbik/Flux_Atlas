@@ -1,8 +1,4 @@
-// Placeholder. Reserved for the shell (top bar, dock, windows, palette, terminal, toasts, rail,
-// status bar, boot, ambient). The shell team replaces ShellFrame; routes render inside it.
+// The shell: the frame (top bar, dock, stage, rail, status bar, phone tabs) and the window manager
+// that turns routes into windows over the persistent globe. See frame/Shell.tsx and wm/README.md.
 
-import type { ReactNode } from 'react';
-
-export function ShellFrame({ children }: { children: ReactNode }) {
-  return <main className="shell-frame">{children}</main>;
-}
+export { Shell } from './frame/Shell';

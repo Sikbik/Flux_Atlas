@@ -1,0 +1,73 @@
+// What renders inside a window that is not the route's own (`?w=` extras and free windows). The
+// route-bound primary window renders the router's <Outlet />; extras render from this registry, so
+// the same view shows whether a window is primary or riding in `?w=`. Feature teams replace the
+// placeholder views here and in the route tree together.
+
+import type { ReactNode } from 'react';
+import {
+  AboutView,
+  AddressView,
+  AnalyticsView,
+  AppView,
+  BlockView,
+  HostView,
+  MempoolView,
+  NodeView,
+  OperatorView,
+  QueueView,
+  RichListView,
+  SettingsView,
+  SupplyView,
+  TerminalView,
+  TimeMachineView,
+  TxView,
+  WeatherView,
+} from '../app/placeholders/views';
+import { ANALYTICS_TABS, type AnalyticsTab, QUEUE_TIERS, type QueueTier } from '../app/search';
+import type { WindowState } from './wm/types';
+
+export function windowContent(win: WindowState): ReactNode {
+  const k = win.key ?? '';
+  switch (win.type) {
+    case 'node':
+      return <NodeView nodeKey={k} />;
+    case 'host':
+      return <HostView ip={k} />;
+    case 'app':
+      return <AppView name={k} />;
+    case 'block':
+      return <BlockView blockKey={k} />;
+    case 'tx':
+      return <TxView txid={k} />;
+    case 'address':
+      return <AddressView addr={k} />;
+    case 'mempool':
+      return <MempoolView />;
+    case 'supply':
+      return <SupplyView />;
+    case 'richlist':
+      return <RichListView />;
+    case 'queue':
+      return (
+        <QueueView tier={(QUEUE_TIERS as readonly string[]).includes(k) ? (k as QueueTier) : undefined} />
+      );
+    case 'analytics':
+      return (
+        <AnalyticsView
+          tab={(ANALYTICS_TABS as readonly string[]).includes(k) ? (k as AnalyticsTab) : 'overview'}
+        />
+      );
+    case 'operator':
+      return <OperatorView addr={k} />;
+    case 'terminal':
+      return <TerminalView />;
+    case 'time':
+      return <TimeMachineView />;
+    case 'weather':
+      return <WeatherView />;
+    case 'about':
+      return <AboutView />;
+    case 'settings':
+      return <SettingsView />;
+  }
+}
