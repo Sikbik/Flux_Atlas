@@ -8,7 +8,7 @@
 // ImageMagick. The globe and the feed keep running behind it in real time.
 //
 // usage: node src/motion/tools/frames-app.mjs [--base http://127.0.0.1:5380] [--out DIR] [--only a,b]
-//          [--mode full,reduced,off] [--dpr 2] [--list] [--no-gpu]
+//          [--mode full,reduced,off] [--dpr 2] [--list] [--no-gpu] [--debug]
 //
 // Needs the dev server proxied to a backend (see ../README.md), playwright-core, a system Chromium and
 // ImageMagick. A block is injected into the store (window.__atlas.store.apply) so a landing is on demand;
@@ -34,6 +34,7 @@ const only = String(opt('only', '')).split(',').filter(Boolean);
 const modes = String(opt('mode', 'full')).split(',').filter(Boolean);
 const dprOpt = Number(opt('dpr', 2));
 const gpu = !argv.includes('--no-gpu');
+const debug = argv.includes('--debug');
 
 const range = (to, step) => Array.from({ length: Math.floor(to / step) + 1 }, (_, i) => i * step);
 
@@ -42,8 +43,12 @@ const PHONE = { width: 390, height: 844 };
 
 // ---- in-page helpers (serialised into the page) ---------------------------------------------------------------
 
-/** Every Web Animation created from now on starts paused at its first frame and is kept to be seeked. */
-function arm() {
+/**
+ * Every Web Animation created from now on starts paused at its first frame and is kept to be seeked. The page's
+ * timers of 60 to 3000 ms (the runs' watchdogs, the views' clocks) are held too: with `clock` they are kept and
+ * run at their time as the film is seeked (see `seek`); without, they never fire.
+ */
+function arm(clock) {
   if (!window.__fxAnimate) {
     window.__fxAnimate = Element.prototype.animate;
     Element.prototype.animate = function (...args) {
@@ -58,10 +63,18 @@ function arm() {
   window.__fxHeld = [];
   window.__fxBefore = new Set(document.getAnimations());
   window.__fxArmed = true;
+  window.__fxClock = !!clock;
+  window.__fxTimers = [];
+  window.__fxNow = 0;
   // The runs end by their own watchdog timers and the views by theirs: hold the ones that would fire mid-capture.
   window.__fxSetTimeout = window.setTimeout;
-  window.setTimeout = (fn, ms, ...rest) =>
-    typeof ms === 'number' && ms >= 60 && ms <= 3000 ? 0 : window.__fxSetTimeout(fn, ms, ...rest);
+  window.setTimeout = (fn, ms, ...rest) => {
+    if (typeof ms !== 'number' || ms < 60 || ms > 3000) return window.__fxSetTimeout(fn, ms, ...rest);
+    if (window.__fxClock && typeof fn === 'function') {
+      window.__fxTimers.push({ at: window.__fxNow + ms, run: () => fn(...rest), done: false });
+    }
+    return 0;
+  };
 }
 
 /** After the act: stop creating, and take over the CSS animations and transitions the act started. */
@@ -76,9 +89,61 @@ function settle() {
   return window.__fxHeld.length;
 }
 
-function seek(ms) {
-  for (const a of window.__fxHeld) a.currentTime = ms;
-  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+/**
+ * Moves the film to `ms`. Every held animation is put at its own time (an animation a timer started begins when that
+ * timer was due). A scenario that asked for the clock also lets the animations that reached their end finish, so the
+ * run that owns them ends and gives its share of the effect budget back as it does when the page runs by itself,
+ * and runs the page's timers that are due in their order: a row that waits for the block's light to end before its
+ * own (data-fx-delay) lights up at that moment, and finds the budget free.
+ */
+async function seek(ms) {
+  const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const at = (a) => Math.max(0, ms - (a.__fxStart ?? 0));
+  const place = (list) => {
+    for (const a of list) {
+      if (a.playState === 'finished') continue;
+      const end = window.__fxClock
+        ? (a.effect?.getComputedTiming?.().endTime ?? Number.POSITIVE_INFINITY)
+        : Number.POSITIVE_INFINITY;
+      if (Number.isFinite(end) && at(a) >= end) a.finish();
+      else a.currentTime = at(a);
+    }
+  };
+  window.__fxNow = ms;
+  place(window.__fxHeld);
+  await frames();
+  while (window.__fxClock) {
+    const due = window.__fxTimers.filter((t) => !t.done && t.at <= ms).sort((a, b) => a.at - b.at)[0];
+    if (!due) break;
+    due.done = true;
+    window.__fxNow = due.at;
+    window.__fxArmed = true;
+    const from = window.__fxHeld.length;
+    due.run();
+    window.__fxArmed = false;
+    window.__fxNow = ms;
+    const started = window.__fxHeld.slice(from);
+    for (const a of started) a.__fxStart = due.at;
+    place(started);
+    await frames();
+  }
+}
+
+/** What is being held, for --debug: the kind, the property or name, and where it runs. */
+function describe() {
+  const name = (el) =>
+    el
+      ? `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${[...(el.classList ?? [])]
+          .slice(0, 2)
+          .map((c) => `.${c}`)
+          .join('')}`
+      : '?';
+  return window.__fxHeld.map((a) => {
+    const t = a.effect?.target;
+    const kind = a.constructor.name;
+    const what = a.animationName ?? a.transitionProperty ?? '';
+    return `${kind} ${what} on ${name(t)}${a.effect?.pseudoElement ? a.effect.pseudoElement : ''} (${Math.round(a.effect?.getTiming?.().duration ?? 0)} ms)`;
+  });
 }
 
 function release() {
@@ -138,9 +203,19 @@ const tapCenter = async (page, selector) => {
   await page.touchscreen.tap(c.x, c.y);
 };
 
-/** An injected block: the next height, a hash of its own, no payees (a quiet landing; the rail and the tip are all that move). */
-const injectBlock = () => {
+/**
+ * An injected block: the next height and a hash of its own. With no `watch` it has no payees (a quiet landing: the
+ * rail and the tip are all that move); with one, the first node of the table is watched and paid, so the Pulse
+ * gets a P1 row (a payment to a watched node).
+ */
+const injectBlock = async (watch = false) => {
   const s = window.__atlas.store;
+  const payouts = [];
+  if (watch) {
+    const id = s.nodes.ids[0];
+    (await import('/src/store/ui.ts')).useUi.getState().watch(id);
+    payouts.push({ tier: 'cumulus', node: id, address: 't1watched', amount: '1.00000000' });
+  }
   const tip = s.blocks.newest();
   const height = (tip?.height ?? 2_998_000) + 1;
   const hex = (n) => n.toString(16).padStart(64, '0');
@@ -155,7 +230,7 @@ const injectBlock = () => {
     size: 3100,
     tx_count: 12,
     producer: null,
-    payouts: [],
+    payouts,
     heartbeats: [],
     confirms: [],
     starts: [],
@@ -200,6 +275,7 @@ const scenarios = [
     pre: (page) => hoverCenter(page, '.wm-window .wm-btn-close'),
     act: (page, c) => clickAt(page, c),
     waitFor: '.wm-ghost',
+    ghost: true,
     clip: async (page, view) =>
       union([await rectOf(page, '.wm-ghost'), await rectOf(page, '[data-launcher="explorer"]')], 24, view),
   },
@@ -228,10 +304,23 @@ const scenarios = [
     cols: 2,
     tile: 1500,
     pre: async () => {},
-    act: (page) => page.evaluate(injectBlock),
+    act: (page) => page.evaluate(injectBlock, false),
     waitFor: '.blk-item[data-fresh]',
     clip: async (page, view) =>
       union([await rectOf(page, '.railwrap'), await rectOf(page, '.statusbar')], 0, view),
+  },
+  {
+    name: 'pulse-p1',
+    note: 'a payment to a watched node: its row in the Pulse waits for the block light to end, then one streak runs along its top edge, drawn inside the row',
+    view: DESKTOP,
+    clock: true,
+    times: [0, 200, 600, 1000, 1100, 1160, 1230, 1320, 1430, 1550, 1650, 1800],
+    cols: 3,
+    tile: 700,
+    pre: async () => {},
+    act: (page) => page.evaluate(injectBlock, true),
+    waitFor: '.evt[data-kind="paid_mine"][data-fresh]',
+    clip: async (page, view) => union([await rectOf(page, '.pulse')], 12, view),
   },
   {
     name: 'palette',
@@ -287,6 +376,7 @@ const scenarios = [
     pre: async () => {},
     act: (page) => tapCenter(page, '.shell-tab[data-tab="globe"]'),
     waitFor: '.wm-ghost',
+    ghost: true,
     clip: async (_page, view) => ({ x: 0, y: 0, width: view.width, height: view.height }),
   },
 ];
@@ -340,11 +430,15 @@ for (const mode of modes) {
     try {
       await sc.setup?.(page);
       const c = await sc.pre?.(page);
-      await page.evaluate(arm);
+      await page.evaluate(arm, !!sc.clock);
       await sc.act(page, c);
-      if (sc.waitFor) await page.waitForSelector(sc.waitFor, { state: 'attached', timeout: 5000 });
+      // Off draws no ghost: a close has nothing to wait for and the frames show the end state at once.
+      if (sc.waitFor && !(sc.ghost && mode === 'off')) {
+        await page.waitForSelector(sc.waitFor, { state: 'attached', timeout: 5000 });
+      }
       await page.waitForTimeout(160); // the commits and effects that follow the act land
       const n = await page.evaluate(settle);
+      if (debug) for (const line of await page.evaluate(describe)) console.log(`    held: ${line}`);
       const clip = await sc.clip(page, sc.view);
       const times = mode === 'off' ? [0, 120, 400] : sc.times;
       const files = [];
@@ -353,6 +447,14 @@ for (const mode of modes) {
         const f = join(dir, `t${String(t).padStart(4, '0')}.png`);
         await page.screenshot({ path: f, clip });
         files.push(f);
+      }
+      if (debug && sc.clock) {
+        const ran = await page.evaluate(() => ({
+          timers: window.__fxTimers.map((t) => `${t.at}${t.done ? ' ran' : ''}`).join(', '),
+          budget: window.__atlasMotion?.stats() ?? null,
+        }));
+        console.log(`    timers (due ms): ${ran.timers}`);
+        console.log(`    budget: ${JSON.stringify(ran.budget)}`);
       }
       await page.evaluate(release);
       const sheet = join(out, `${sc.name}-${mode}.png`);

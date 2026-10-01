@@ -8,11 +8,27 @@
 // the router outlet, the portals); it adds no DOM and costs one passive listener set at rest.
 
 import { type ReactNode, useEffect } from 'react';
-import { installEngine } from '../engine';
+import { installEngine, stats } from '../engine';
 import '../motion.css';
 
+declare global {
+  interface Window {
+    /** The effect budget's numbers, for the audit and frame tools (read-only use; null until the runners load). */
+    __atlasMotion?: { stats: typeof stats };
+  }
+}
+
 export function MotionRoot({ children }: { children?: ReactNode }) {
-  useEffect(() => installEngine(), []);
+  useEffect(() => {
+    // Exposed for the tools in motion/tools (a dev server serves a module twice once it has been hot-replaced,
+    // so they cannot import the engine and read the live one).
+    window.__atlasMotion = { stats };
+    const release = installEngine();
+    return () => {
+      release();
+      if (window.__atlasMotion?.stats === stats) delete window.__atlasMotion;
+    };
+  }, []);
   return <>{children}</>;
 }
 
