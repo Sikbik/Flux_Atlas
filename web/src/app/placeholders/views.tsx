@@ -239,12 +239,29 @@ export function AmbientView() {
   const { clock } = useRuntime();
   const now = useNow(clock);
   const tip = useTip();
+  // Placeholder until the ambient team's view lands: a quiet caption in the corner, never over the
+  // globe (the user found the full-screen clock ruined the presentation).
   return (
-    <div className="ambient" data-testid="ambient">
-      <p className="ambient-clock tabular">{formatUtcTime(now)}</p>
-      <p className="tabular">
-        {tip ? `Block ${formatHeight(tip.height)}, ${formatAgo(now - tip.time_ms)}` : ''}
-      </p>
+    <div
+      data-testid="ambient"
+      style={{
+        position: 'fixed',
+        left: 24,
+        bottom: 20,
+        zIndex: 10,
+        pointerEvents: 'none',
+        font: '500 12px/1.5 var(--font-mono)',
+        letterSpacing: '0.04em',
+        color: 'var(--text-2)',
+        opacity: 0.75,
+      }}
+    >
+      <span className="tabular">
+        {tip ? `Block ${formatHeight(tip.height)} · ${formatAgo(now - tip.time_ms)}` : ''}
+      </span>
+      <span className="tabular" style={{ marginLeft: 16, opacity: 0.6 }}>
+        {formatUtcTime(now)}
+      </span>
     </div>
   );
 }
