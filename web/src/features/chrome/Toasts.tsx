@@ -3,8 +3,10 @@
 // tab bar on a phone); a payment toast is white-tinted, a warning amber, an achievement chamfered. A toast
 // pauses while the pointer or focus is on the stack or the tab is hidden, a click opens its subject, Esc
 // closes the one that has focus, and a leaving toast fades before the others close the gap. Every toast
-// carries `data-kind` and `data-leaving`, and the stack is a plain list of plain elements, so the motion
-// primitives can attach to them later.
+// carries `data-kind` and `data-leaving`. A toast opens and closes with the motion language's Power-on, panel
+// variant: it grows out of the edge it sits against with one comet along its top edge. The animation is on the
+// toast itself (not a wrapper) because the toast is a pane of glass, and a backdrop blur only sees what is
+// behind it when nothing between the pane and the page is fading.
 
 import { Award, CircleCheck, Coins, Info, OctagonAlert, TriangleAlert, X } from 'lucide-react';
 import {
@@ -19,6 +21,7 @@ import {
   useState,
 } from 'react';
 import { type ToastKind, useToasts } from '../../app/toasts';
+import { powerOff, powerOn } from '../../motion';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import { globeInset } from '../../shell/wm/machine';
 import { useWm } from '../../shell/wm/react';
@@ -151,15 +154,40 @@ export function Toasts({ ref, className, style: given, ...rest }: ComponentProps
       data-docked={dockedRight > 0 || undefined}
     >
       {entries.map((e) => (
-        <ToastItem key={e.toast.id} entry={e} onDismiss={dismiss} />
+        <ToastItem key={e.toast.id} entry={e} phone={phone} onDismiss={dismiss} />
       ))}
     </div>
   );
 }
 
-function ToastItem({ entry, onDismiss }: { entry: Entry; onDismiss: (id: number) => void }) {
+function ToastItem({
+  entry,
+  phone,
+  onDismiss,
+}: {
+  entry: Entry;
+  phone: boolean;
+  onDismiss: (id: number) => void;
+}) {
   const { toast, leaving } = entry;
   const Icon = toast.icon ?? ICON[toast.kind];
+  const ref = useRef<HTMLDivElement>(null);
+  // Out of the edge it sits against: the middle of the right edge on a desktop, the foot of the screen on a phone.
+  const origin = useRef({ fx: 0.5, fy: 1 });
+  origin.current = phone ? { fx: 0.5, fy: 1 } : { fx: 1, fy: 0.5 };
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const h = powerOn(el, { variant: 'panel', origin: origin.current });
+    return () => h?.cancel();
+  }, []);
+  // The exit stays on the element until the stack removes it (EXIT_MS); a toast that comes back cancels it.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!leaving || !el) return;
+    const h = powerOff(el, { variant: 'panel', origin: origin.current });
+    return () => h.cancel();
+  }, [leaving]);
   const close = () => onDismiss(toast.id);
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== 'Escape') return;
@@ -180,6 +208,7 @@ function ToastItem({ entry, onDismiss }: { entry: Entry; onDismiss: (id: number)
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Escape on a toast that has focus closes it
     <div
+      ref={ref}
       className="toast"
       role={roleOf(toast.kind)}
       data-toast-id={toast.id}
