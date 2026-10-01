@@ -26,6 +26,8 @@ export interface FreshOptions {
   ms: number;
   /** More than this many keys at once is a refill, not an arrival. */
   max?: number;
+  /** A change of scope (the Pulse's filter) starts over: what it shows next is a different list, not arrivals. */
+  scope?: string;
 }
 
 const NONE: ReadonlySet<string> = new Set();
@@ -34,13 +36,16 @@ const NONE: ReadonlySet<string> = new Set();
  * The keys that arrived within the last `ms`, as a set to read while rendering (`fresh.has(key)`). `keys` must
  * change identity only when the keys change (memoise it). Nothing is fresh on the first fill.
  */
-export function useFreshKeys(keys: readonly string[], { ms, max }: FreshOptions): ReadonlySet<string> {
+export function useFreshKeys(keys: readonly string[], { ms, max, scope }: FreshOptions): ReadonlySet<string> {
   const seen = useRef<ReadonlySet<string> | null>(null);
+  const scoped = useRef(scope);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(NONE);
 
   useLayoutEffect(() => {
-    const added = arrivals(seen.current, keys, max);
+    const changed = scoped.current !== scope;
+    scoped.current = scope;
+    const added = changed ? [] : arrivals(seen.current, keys, max);
     seen.current = new Set(keys);
     if (added.length === 0) return;
     setFresh((cur) => new Set([...cur, ...added]));
@@ -53,7 +58,7 @@ export function useFreshKeys(keys: readonly string[], { ms, max }: FreshOptions)
       });
     }, ms);
     timers.current.add(timer);
-  }, [keys, ms, max]);
+  }, [keys, ms, max, scope]);
 
   useEffect(() => {
     const held = timers.current;

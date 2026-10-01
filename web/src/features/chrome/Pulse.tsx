@@ -384,7 +384,7 @@ export function PulseCard({ mode }: { mode: PulseMode }) {
   const initial = useRef<Set<string> | null>(null);
   if (initial.current === null && flat.length > 0) initial.current = new Set(flat.map((f) => f.key));
   const flatKeys = useMemo(() => flat.map((f) => f.key), [flat]);
-  const fresh = useFreshKeys(flatKeys, { ms: FRESH_MS });
+  const fresh = useFreshKeys(flatKeys, { ms: FRESH_MS, scope: `${filter}:${mode}` });
 
   // FLIP: rows slide up by one row when a row arrives at the bottom (a fade when motion is reduced).
   const listRef = useRef<HTMLUListElement>(null);
