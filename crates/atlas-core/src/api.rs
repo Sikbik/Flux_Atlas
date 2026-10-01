@@ -835,8 +835,8 @@ pub struct ChainPointDto {
     pub height: u32,
     /// Difficulty at the bucket end (the last known value in the bucket).
     pub difficulty: Option<f64>,
-    /// Mean of the known difficulties in the bucket (Proof of Node difficulty swings block to
-    /// block, so this is the steadier trend line).
+    /// Mean of the known difficulties in the bucket (Proof of Node difficulty can move 100x from
+    /// one day to the next, so this is the steadier trend line).
     pub difficulty_mean: Option<f64>,
     /// Mean seconds per block across the bucket: delta time / delta height from the last data
     /// row before the bucket to the last one in it. `null` when the row before is too far back.

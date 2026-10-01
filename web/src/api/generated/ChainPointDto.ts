@@ -17,8 +17,8 @@ height: number,
  */
 difficulty: number | null, 
 /**
- * Mean of the known difficulties in the bucket (Proof of Node difficulty swings block to
- * block, so this is the steadier trend line).
+ * Mean of the known difficulties in the bucket (Proof of Node difficulty can move 100x from
+ * one day to the next, so this is the steadier trend line).
  */
 difficulty_mean: number | null, 
 /**
