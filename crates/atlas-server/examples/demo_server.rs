@@ -1008,6 +1008,7 @@ async fn main() -> anyhow::Result<()> {
     cfg.ws.max_per_ip = 1_000;
     let state = AppState::new(engine.clone(), cfg);
     let hub = Arc::clone(&state.hub);
+    let conns = Arc::clone(&state.listener);
     let app = router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, block_ms, seed, "demo server listening (http://{addr}, ws://{addr}/ws)");
@@ -1015,18 +1016,20 @@ async fn main() -> anyhow::Result<()> {
     let (stop_tx, stop_rx) = watch::channel(false);
     let demo = tokio::spawn(Demo::new(engine.clone(), f, seed, block_ms).run(stop_rx));
 
-    axum::serve(
+    // The production listener (connection caps, timeouts, bounded drain).
+    atlas_server::net::listener::serve(
+        conns,
         listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(async move {
-        let _ = tokio::signal::ctrl_c().await;
-        tracing::info!("shutting down");
+        app,
+        async move {
+            let _ = tokio::signal::ctrl_c().await;
+            tracing::info!("shutting down");
+            let _ = stop_tx.send(true);
+        },
         // Live clients get close code 1001 and reconnect elsewhere or later.
-        hub.begin_shutdown();
-        let _ = stop_tx.send(true);
-    })
-    .await?;
+        move || hub.begin_shutdown(),
+    )
+    .await;
     let _ = demo.await;
     engine.shutdown().await;
     let _ = std::fs::remove_dir_all(&dir);

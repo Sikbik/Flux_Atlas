@@ -141,9 +141,9 @@ pub struct DerivedLimits {
 impl Default for DerivedLimits {
     fn default() -> Self {
         Self {
-            rps: 10,
-            burst: 40,
-            concurrency: 4,
+            rps: 15,
+            burst: 60,
+            concurrency: 2,
             queue_timeout: Duration::from_secs(5),
         }
     }
@@ -180,7 +180,7 @@ impl Default for WsConfig {
     fn default() -> Self {
         Self {
             max_connections: 6000,
-            max_per_ip: 16,
+            max_per_ip: 32,
             queue: 1024,
             ping_interval: Duration::from_secs(20),
             idle_timeout: Duration::from_secs(75),
