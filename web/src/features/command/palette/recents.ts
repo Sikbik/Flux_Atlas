@@ -1,0 +1,147 @@
+// "Recent": the last things opened from the palette, kept in this browser. Only what the user ran is
+// remembered, never what they typed; the list is short and every read is guarded (private windows,
+// blocked storage and corrupt values all fall back to an empty list).
+
+import type { PaletteRow, RecentEntry, RowAction } from './types';
+
+const KEY = 'atlas.recents.v1';
+const MAX = 12;
+
+const ICONS = new Set([
+  'node',
+  'host',
+  'provider',
+  'app',
+  'block',
+  'tx',
+  'address',
+  'operator',
+  'country',
+  'city',
+  'version',
+  'place',
+  'globe',
+  'queue',
+  'analytics',
+  'explorer',
+  'time',
+  'weather',
+  'terminal',
+  'settings',
+  'award',
+  'moon',
+  'ambient',
+  'mesh',
+  'filter',
+  'art',
+  'perf',
+  'motion',
+  'sound',
+  'link',
+  'info',
+  'egg',
+  'search',
+  'watch',
+]);
+
+const KINDS = new Set([
+  'node',
+  'host',
+  'provider',
+  'app',
+  'block',
+  'tx',
+  'address',
+  'operator',
+  'country',
+  'city',
+  'version',
+  'place',
+  'action',
+  'shielded',
+  'payee',
+  'egg',
+]);
+
+function validAction(a: unknown): a is RowAction {
+  if (!a || typeof a !== 'object') return false;
+  const o = a as Record<string, unknown>;
+  if (o.type === 'go') {
+    const t = o.target as Record<string, unknown> | undefined;
+    return !!t && typeof t.to === 'string';
+  }
+  if (o.type === 'run') return typeof o.id === 'string';
+  return false;
+}
+
+function validEntry(v: unknown): v is RecentEntry {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.id === 'string' &&
+    typeof o.title === 'string' &&
+    typeof o.chip === 'string' &&
+    typeof o.ts === 'number' &&
+    typeof o.kind === 'string' &&
+    KINDS.has(o.kind) &&
+    typeof o.icon === 'string' &&
+    ICONS.has(o.icon) &&
+    validAction(o.action)
+  );
+}
+
+/** Newest first. */
+export function loadRecents(): RecentEntry[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(KEY);
+    if (!raw) return [];
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter(validEntry).slice(0, MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+function store(list: readonly RecentEntry[]): void {
+  try {
+    globalThis.localStorage?.setItem(KEY, JSON.stringify(list));
+  } catch {
+    // Storage unavailable: recents last for the session only.
+  }
+}
+
+/** The entry that remembers `row`, or null when the row is not the kind that is kept. */
+export function entryFromRow(row: PaletteRow, ts: number): RecentEntry | null {
+  if (!row.remember) return null;
+  if (row.action.type !== 'go' && row.action.type !== 'run') return null;
+  return {
+    id: row.id,
+    kind: row.kind,
+    icon: row.icon,
+    title: row.title,
+    ...(row.mono ? { mono: true } : {}),
+    ...(row.sub ? { sub: row.sub } : {}),
+    ...(row.subMono ? { subMono: true } : {}),
+    chip: row.chip,
+    ...(row.tier ? { tier: row.tier } : {}),
+    action: row.action,
+    ...(row.fly ? { fly: row.fly } : {}),
+    ...(row.alsoFly ? { alsoFly: true } : {}),
+    ...(row.alongside ? { alongside: true } : {}),
+    ts,
+  };
+}
+
+/** Puts `row` at the head of the list (once), and returns the list. */
+export function rememberRow(row: PaletteRow, now = Date.now()): RecentEntry[] {
+  const entry = entryFromRow(row, now);
+  const cur = loadRecents();
+  if (!entry) return cur;
+  const next = [entry, ...cur.filter((e) => e.id !== entry.id)].slice(0, MAX);
+  store(next);
+  return next;
+}
+
+export function clearRecents(): void {
+  store([]);
+}

@@ -1,0 +1,365 @@
+/* Result rows (F2b): the row anatomy shared by the palette, the results page and the terminal's
+   link lines. Local custom properties are prefixed --pal-. */
+
+.pal-layer,
+.res-panel {
+  --pal-row-h: 46px;
+  --pal-hl: linear-gradient(90deg, rgb(79 122 212 / 0.24), rgb(79 122 212 / 0.06));
+  --pal-stagger: 18ms;
+}
+
+.pal-group {
+  position: relative;
+  z-index: 1;
+}
+
+.pal-gh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 4px;
+  color: var(--text-3);
+  font: var(--fw-semibold) 11.5px / 1.2 var(--font-display);
+  letter-spacing: 0;
+}
+
+.pal-gh::after {
+  content: "";
+  flex: 1;
+  order: 2;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line-1), transparent);
+}
+
+.pal-gc {
+  order: 3;
+  font: var(--fw-medium) 10.5px / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.pal-group-end {
+  margin-top: 4px;
+}
+
+.pal-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--pal-row-h);
+  padding: 0 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  animation: pal-row-in var(--dur-enter) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * var(--pal-stagger));
+}
+
+@keyframes pal-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(5px * var(--motion-scale)));
+  }
+}
+
+.pal-row[data-inert] {
+  cursor: default;
+}
+
+.pal-ic {
+  --k: var(--accent-400);
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: var(--k);
+  background: color-mix(in oklab, var(--k) 13%, transparent);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.pal-ic[data-tier] {
+  --k: var(--tier);
+  background: var(--tier-soft);
+}
+
+.pal-ic[data-kind="action"],
+.pal-ic[data-kind="place"],
+.pal-ic[data-kind="city"],
+.pal-ic[data-kind="country"] {
+  --k: var(--text-1);
+}
+
+.pal-ic[data-kind="shielded"] {
+  --k: var(--status-warn);
+}
+
+.pal-ic img {
+  display: block;
+}
+
+.pal-row[data-active] .pal-ic {
+  background: color-mix(in oklab, var(--k) 19%, transparent);
+}
+
+.pal-tx {
+  display: grid;
+  min-width: 0;
+  line-height: 1.22;
+}
+
+.pal-title,
+.pal-tx small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pal-title {
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-sm) / 1.22 var(--font-sans);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.pal-row[data-active] .pal-title {
+  color: var(--text-1);
+}
+
+.pal-title.mono {
+  font: var(--fw-medium) 13px / 1.22 var(--font-mono);
+  letter-spacing: -0.005em;
+}
+
+.pal-tx small {
+  color: var(--text-3);
+  font: var(--fw-regular) 11.5px / 1.3 var(--font-sans);
+}
+
+.pal-tx small.mono {
+  font: var(--fw-regular) 11px / 1.3 var(--font-mono);
+}
+
+.pal-row mark {
+  margin: 0 -2px;
+  padding: 1px 2px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.13);
+  color: var(--hot);
+  font-weight: var(--fw-semibold);
+}
+
+.pal-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.pal-chip {
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-pill);
+  color: var(--text-3);
+  font: var(--fw-medium) 10.5px / 16px var(--font-display);
+  letter-spacing: 0.02em;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.pal-row[data-active] .pal-chip {
+  border-color: rgb(79 122 212 / 0.38);
+  background: rgb(79 122 212 / 0.1);
+  color: var(--accent-200);
+}
+
+.pal-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--status-soft);
+  color: var(--text-2);
+  font: var(--fw-medium) 10.5px / 1 var(--font-display);
+}
+
+.pal-status svg {
+  color: var(--status);
+}
+
+.pal-metatext,
+.pal-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--fw-medium) 11px / 1 var(--font-display);
+}
+
+.pal-current {
+  color: var(--accent-200);
+}
+
+.pal-keys {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.pal-enter {
+  display: flex;
+  justify-content: flex-end;
+  width: 42px;
+}
+
+.pal-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--ink-2);
+  color: var(--text-2);
+  font: var(--fw-medium) 11px / 1 var(--font-mono);
+}
+
+/* ---- Empty, loading, footer -------------------------------------------------------------------- */
+
+.pal-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 26px 28px 30px;
+  color: var(--text-3);
+  text-align: center;
+  animation: pal-row-in var(--dur-enter) var(--ease-out) both;
+}
+
+.pal-empty b {
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-md) / 1.3 var(--font-display);
+  overflow-wrap: anywhere;
+}
+
+.pal-empty p {
+  margin: 0;
+  max-width: 40ch;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.pal-skels {
+  display: grid;
+}
+
+.pal-skel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--pal-row-h);
+  padding: 0 12px;
+  animation: pal-row-in var(--dur-enter) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * var(--pal-stagger));
+}
+
+.pal-skel i {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--ink-2);
+}
+
+.pal-skel i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.07), transparent);
+  transform: translateX(-100%);
+  animation: pal-shimmer 1.2s linear infinite;
+}
+
+@keyframes pal-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.pal-skel-ic {
+  flex: none;
+  width: 30px;
+  height: 30px;
+}
+
+.pal-skel > span {
+  display: grid;
+  gap: 6px;
+}
+
+.pal-skel i.pal-skel-a {
+  width: 190px;
+  height: 11px;
+  border-radius: 4px;
+}
+
+.pal-skel i.pal-skel-b {
+  width: 120px;
+  height: 9px;
+  border-radius: 4px;
+}
+
+/* A row that is a real button (the results page): hover and focus take the place of the sliding highlight. */
+button.pal-row {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.pal-row:hover,
+button.pal-row:focus-visible {
+  background: var(--pal-hl);
+}
+
+button.pal-row:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: -2px;
+}
+
+@media (max-width: 719px) {
+  .pal-enter {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .pal-layer,
+  .res-panel {
+    --pal-row-h: 56px;
+  }
+}
+
+@media (max-width: 520px) {
+  .pal-chip {
+    display: none;
+  }
+}
+
+:root[data-motion-off] .pal-row,
+:root[data-motion-off] .pal-empty,
+:root[data-motion-off] .pal-skel {
+  animation: none;
+}
