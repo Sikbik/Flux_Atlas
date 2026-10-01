@@ -345,6 +345,14 @@ export class RibbonLayer {
     this.touch(i);
   }
 
+  /** Starts fading every live ribbon out now, except the ones `keep` returns true for. */
+  fadeAll(time: number, fade = 0.6, keep?: (i: number) => boolean): void {
+    for (let i = 0; i < this.high; i++) {
+      if (this.times[i * 4 + 2]! < 0 || keep?.(i)) continue;
+      this.fadeOut(i, time, fade);
+    }
+  }
+
   /** Changes the lift of a live ribbon (a pillar that follows the zoom). No-op if the slot was reused. */
   setLift(i: number, start: number, lift: number): void {
     if (!this.isActive(i, start)) return;

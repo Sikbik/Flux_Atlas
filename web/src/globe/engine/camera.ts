@@ -11,6 +11,15 @@
 //
 // Motion is spring-damped toward a desired pose, so programmatic moves (the ambient director) and
 // interactive ones (drag inertia, wheel zoom) share one smooth path. Flights are explicit tweens.
+//
+// Pitch (tilt) and framing. In explore (`framed` = 1) the camera pitches about a pivot on the line
+// from the planet's centre to the target: the centre itself at the global view, so the planet stays
+// where the framing put it and only turns, and the target on the surface up close, where a pitch is
+// the cinematic look toward the horizon (`pivotDepthFor`). The pitch is limited by zoom
+// (`maxTiltFor`): a small range at the global view, up to about 70 degrees near the surface. An
+// orbit drag past the limit meets a rubber band and eases back on release; a release keeps its
+// momentum and decays. The ambient director composes with the surface pivot and the full range
+// (`framed` = 0); the rig blends between the two (`framedTarget`).
 
 import * as THREE from 'three';
 import {
@@ -29,6 +38,37 @@ import {
 const MIN_RANGE = 0.012;
 const MAX_RANGE = 9;
 const MAX_TILT = 1.32;
+
+/** Pitch limit at and beyond the global view (explore), radians (about 20 degrees). */
+export const TILT_FAR = 0.35;
+/** Pitch limit near the surface (explore), radians (about 70 degrees). */
+export const TILT_NEAR = 1.22;
+const TILT_FAR_RANGE = 2.2;
+const TILT_NEAR_RANGE = 0.14;
+const PIVOT_FAR_RANGE = 2.2;
+const PIVOT_NEAR_RANGE = 0.35;
+/** Width of the rubber band past the pitch limits while dragging, radians. */
+const TILT_BAND = 0.07;
+
+/** The explore pitch limit at camera range `range`: TILT_FAR at the global view, TILT_NEAR near the surface. */
+export function maxTiltFor(range: number): number {
+  const r = Math.max(MIN_RANGE, range);
+  const t = smoothstep(Math.log(TILT_NEAR_RANGE), Math.log(TILT_FAR_RANGE), Math.log(r));
+  return lerp(TILT_NEAR, TILT_FAR, t);
+}
+
+/** Where pitch pivots, as a fraction of the way from the planet's centre (0) to the surface target (1). */
+export function pivotDepthFor(range: number): number {
+  const r = Math.max(MIN_RANGE, range);
+  return 1 - smoothstep(Math.log(PIVOT_NEAR_RANGE), Math.log(PIVOT_FAR_RANGE), Math.log(r));
+}
+
+/** A limit with a rubber band: identity inside [lo, hi], then approaches `band` past either edge. */
+export function softLimit(x: number, lo: number, hi: number, band = TILT_BAND): number {
+  if (x > hi) return hi + band * Math.tanh((x - hi) / band);
+  if (x < lo) return lo - band * Math.tanh((lo - x) / band);
+  return x;
+}
 
 const _v0 = new THREE.Vector3();
 const _v1 = new THREE.Vector3();
@@ -82,7 +122,15 @@ export class CameraRig {
   shiftY = 0;
   /** Vertical fov in degrees, recomputed from the aspect. */
   baseFov = 34;
+  /** The aspect-adjusted fov before the framing's lens fit. */
+  private fovAspect = 34;
+  /** The framing's lens fit (<= 1 widens the fov so the planet fits the free area; see framing.ts). */
+  fit = 1;
   fovV = 34;
+
+  /** How much the explore framing applies (pitch pivot, pitch limit by zoom); eases toward `framedTarget`. */
+  framed = 1;
+  framedTarget = 1;
 
   // Flight tween state
   private flying = false;
@@ -138,6 +186,13 @@ export class CameraRig {
   private grabbing = false;
   private readonly grabPoint = new THREE.Vector3();
   private lastGrabT = 0;
+
+  // Orbit (pitch and heading) drag state and momentum
+  private orbiting = false;
+  private tiltRaw = 0;
+  private lastOrbitT = 0;
+  private tiltVel = 0;
+  private headVel = 0;
 
   constructor() {
     this.setPose(18, 10, 0, 3.6, 0, true);
@@ -207,15 +262,30 @@ export class CameraRig {
   // ---- flights ----------------------------------------------------------------------------
 
   flyTo(lat: number, lon: number, range: number, opts: FlyOptions = {}): Promise<boolean> {
-    const tiltT = clamp(opts.tilt ?? 0, 0, MAX_TILT);
+    const r = clamp(range, MIN_RANGE, MAX_RANGE);
     const headT = opts.heading ?? 0;
     CameraRig.frameFromLatLon(lat, lon, headT, this.flyQ1);
-    return this.startFlight(this.flyQ1, clamp(range, MIN_RANGE, MAX_RANGE), tiltT, opts);
+    return this.startFlight(this.flyQ1, r, clamp(opts.tilt ?? 0, 0, this.tiltLimit(r, true)), opts);
   }
 
   /** Fly to an explicit frame quaternion (used by the director to keep heading continuity). */
   flyToFrame(q: THREE.Quaternion, range: number, tilt: number, opts: FlyOptions = {}): Promise<boolean> {
-    return this.startFlight(q, clamp(range, MIN_RANGE, MAX_RANGE), clamp(tilt, 0, MAX_TILT), opts);
+    const r = clamp(range, MIN_RANGE, MAX_RANGE);
+    return this.startFlight(q, r, clamp(tilt, 0, this.tiltLimit(r, true)), opts);
+  }
+
+  /** The pitch limit at `range`: the explore limit by zoom while framed, the full range otherwise. */
+  tiltLimit(range: number, target = false): number {
+    const w = clamp(target ? this.framedTarget : this.framed, 0, 1);
+    return lerp(MAX_TILT, Math.min(MAX_TILT, maxTiltFor(range)), w);
+  }
+
+  /** Home: north up, no pitch, at `range` (the home zoom), over the current target. Eased, never a cut. */
+  home(range: number, duration = 1.1): Promise<boolean> {
+    this.getLatLonHeading(_ll, true);
+    this.tiltVel = 0;
+    this.headVel = 0;
+    return this.flyTo(_ll.lat, _ll.lon, range, { tilt: 0, heading: 0, arc: 0, duration });
   }
 
   private startFlight(
@@ -252,6 +322,9 @@ export class CameraRig {
     this.flyT = 0;
     this.flying = true;
     this.omega.set(0, 0, 0);
+    this.tiltVel = 0;
+    this.headVel = 0;
+    this.orbiting = false;
     return new Promise((res) => {
       this.flyResolve = res;
     });
@@ -360,16 +433,62 @@ export class CameraRig {
     this.rangeD = clamp(this.rangeD * factor, MIN_RANGE, MAX_RANGE);
   }
 
-  /** Orbit: change heading (about the target normal) and tilt. */
-  orbitBy(dHeading: number, dTilt: number): void {
+  /** Begins an orbit drag (middle or right button, a modifier drag, a two-finger tilt). */
+  orbitStart(now: number): void {
     this.cancelFlight(false);
-    if (dHeading !== 0) {
-      _v0.set(0, 0, 1).applyQuaternion(this.qD);
-      _q0.setFromAxisAngle(_v0, -dHeading);
-      this.qD.premultiply(_q0).normalize();
-      this.q.copy(this.qD);
+    this.omega.set(0, 0, 0);
+    this.orbiting = true;
+    this.tiltRaw = this.tiltD;
+    this.tiltVel = 0;
+    this.headVel = 0;
+    this.lastOrbitT = now;
+  }
+
+  /**
+   * Orbit: change heading (about the target normal) and pitch. During an orbit drag the pitch meets
+   * a rubber band past its limits (`softLimit`); otherwise it is clamped.
+   */
+  orbitBy(dHeading: number, dTilt: number, now?: number): void {
+    this.cancelFlight(false);
+    if (dHeading !== 0) this.turnHeading(dHeading, true);
+    const hi = this.tiltLimit(this.rangeD);
+    if (this.orbiting) {
+      this.tiltRaw += dTilt;
+      this.tiltD = softLimit(this.tiltRaw, 0, hi);
+      if (now !== undefined) {
+        const dt = Math.max(1 / 240, (now - this.lastOrbitT) / 1000);
+        this.lastOrbitT = now;
+        this.tiltVel = lerp(this.tiltVel, dTilt / dt, 0.35);
+        this.headVel = lerp(this.headVel, dHeading / dt, 0.35);
+      }
+    } else {
+      this.tiltD = clamp(this.tiltD + dTilt, 0, hi);
     }
-    this.tiltD = clamp(this.tiltD + dTilt, 0, MAX_TILT);
+  }
+
+  /** Ends an orbit drag: the pitch eases back inside its limits and the release keeps its momentum. */
+  orbitEnd(now?: number): void {
+    if (!this.orbiting) return;
+    this.orbiting = false;
+    // A pause before the release is not a flick.
+    if (now !== undefined && now - this.lastOrbitT > 90) {
+      this.tiltVel = 0;
+      this.headVel = 0;
+    }
+    this.tiltVel = clamp(this.tiltVel, -1.6, 1.6);
+    this.headVel = clamp(this.headVel, -2.4, 2.4);
+    this.tiltD = clamp(this.tiltD, 0, this.tiltLimit(this.rangeD));
+  }
+
+  get isOrbiting(): boolean {
+    return this.orbiting;
+  }
+
+  private turnHeading(dHeading: number, snapActual: boolean): void {
+    _v0.set(0, 0, 1).applyQuaternion(this.qD);
+    _q0.setFromAxisAngle(_v0, -dHeading);
+    this.qD.premultiply(_q0).normalize();
+    if (snapActual) this.q.copy(this.qD);
   }
 
   /** Nudge the target by angular velocity (used by the ambient director for slow drift). */
@@ -415,12 +534,30 @@ export class CameraRig {
     // Keep the globe fully visible on portrait screens by widening the vertical fov.
     if (this.aspect < 1) {
       const halfH = Math.atan(Math.tan((this.baseFov * DEG) / 2) / this.aspect);
-      this.fovV = clamp((halfH * 2) / DEG, this.baseFov, 66);
+      this.fovAspect = clamp((halfH * 2) / DEG, this.baseFov, 66);
     } else {
-      this.fovV = this.baseFov;
+      this.fovAspect = this.baseFov;
     }
-    this.camera.fov = this.fovV;
+    this.applyFov();
     this.camera.aspect = this.aspect;
+  }
+
+  /** tan(vertical fov / 2) before the framing's fit. */
+  get tanHalfFovBase(): number {
+    return Math.tan((this.fovAspect * DEG) / 2);
+  }
+
+  /** The framing's lens fit (framing.ts): tan(fov/2) is divided by `fit` (below 1 widens the view). */
+  setFit(fit: number): void {
+    const f = clamp(fit, 0.2, 1);
+    if (Math.abs(f - this.fit) < 1e-5) return;
+    this.fit = f;
+    this.applyFov();
+  }
+
+  private applyFov(): void {
+    this.fovV = (2 * Math.atan(this.tanHalfFovBase / this.fit)) / DEG;
+    this.camera.fov = this.fovV;
   }
 
   update(dt: number, time: number): void {
@@ -459,12 +596,34 @@ export class CameraRig {
           this.omega.set(0, 0, 0);
         }
       }
+      // Orbit momentum after a release, then the pitch limit for the zoom: the spring below eases the
+      // actual pitch to it, so a zoom-out or a rubber band never snaps.
+      if (!this.orbiting) {
+        if (this.tiltVel !== 0 || this.headVel !== 0) {
+          this.tiltD += this.tiltVel * dt;
+          if (this.headVel !== 0) this.turnHeading(this.headVel * dt, false);
+          const decay = Math.exp(-this.inertia * 1.6 * dt);
+          this.tiltVel *= decay;
+          this.headVel *= decay;
+          if (Math.abs(this.tiltVel) < 1e-3) this.tiltVel = 0;
+          if (Math.abs(this.headVel) < 1e-3) this.headVel = 0;
+        }
+        const hi = this.tiltLimit(this.rangeD);
+        if (this.tiltD > hi || this.tiltD < 0) {
+          this.tiltD = clamp(this.tiltD, 0, hi);
+          this.tiltVel = 0;
+        }
+      }
       if (!this.grabbing) {
         const k = 1 - Math.exp(-this.springPos * dt);
         this.q.slerp(this.qD, k);
       }
       this.range = Math.exp(damp(Math.log(this.range), Math.log(this.rangeD), this.springRange, dt));
       this.tilt = damp(this.tilt, this.tiltD, this.springTilt, dt);
+    }
+    if (this.framed !== this.framedTarget) {
+      this.framed = damp(this.framed, this.framedTarget, 2.4, dt);
+      if (Math.abs(this.framed - this.framedTarget) < 0.002) this.framed = this.framedTarget;
     }
     if (this.trauma > 0) this.trauma = Math.max(0, this.trauma - dt * 1.4);
     if (this.freeTarget > 0 || this.freeBlend > 0) {
@@ -490,11 +649,15 @@ export class CameraRig {
     _v2.set(1, 0, 0).applyQuaternion(this.q); // right
     const ct = Math.cos(this.tilt);
     const st = Math.sin(this.tilt);
-    // Camera position
+    // Camera position: orbiting the pivot s*T at the distance that keeps the unpitched pose where it
+    // always was (1 + range from the centre). s = 1 is the surface target, s = 0 the centre.
+    const s = lerp(1, pivotDepthFor(this.range), clamp(this.framed, 0, 1));
+    const dP = 1 + this.range - s;
     this.position
       .copy(_v0)
-      .addScaledVector(_v0, this.range * ct)
-      .addScaledVector(_v1, -this.range * st);
+      .multiplyScalar(s)
+      .addScaledVector(_v0, dP * ct)
+      .addScaledVector(_v1, -dP * st);
     // View basis: d = -ct*T + st*up; camera up = st*T + ct*up; back = -d
     _v3.copy(_v1).multiplyScalar(ct).addScaledVector(_v0, st); // camera up
     _v4.copy(_v0).multiplyScalar(ct).addScaledVector(_v1, -st); // back
