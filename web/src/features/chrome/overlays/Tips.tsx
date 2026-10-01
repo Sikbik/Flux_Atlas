@@ -9,7 +9,7 @@
 // point toward an edge.
 
 import { useLayoutEffect, useMemo, useRef } from 'react';
-import { useNetwork, useRuntime } from '../../../app/context';
+import { useNetwork, useRuntime, useSummary } from '../../../app/context';
 import { type Anchor, type GlobeHover, GlobeLabel, type PlaceOptions } from '../../../globe';
 import { formatHeight, formatInt } from '../../../lib/format';
 import { useBeat } from '../../../lib/useClock';
@@ -171,7 +171,9 @@ function SiteTip({ loc }: { loc: number }) {
 export function MoonCard() {
   const runtime = useRuntime();
   const beat = useBeat(runtime.clock);
-  const nodes = useNetwork((s) => s.nodes.count);
+  // The headline count is the summary's: confirmed nodes. The node table also holds started, DOS and expired
+  // rows, so its length is not "the network's size".
+  const summary = useSummary();
   const tip = useNetwork((s) => s.tip);
   const anchor = useMemo<Anchor>(() => ({ kind: 'moon' }), []);
   const { ref, options } = useCardPlacement('moon');
@@ -185,7 +187,9 @@ export function MoonCard() {
         <span className="gt-row gt-dim tabular">
           {beat.height === null ? '' : `Next block in ${Math.ceil(beat.remainingMs / 1000)} s`}
         </span>
-        <span className="gt-row gt-dim tabular">Network {formatInt(nodes)} nodes</span>
+        <span className="gt-row gt-dim tabular">
+          {summary ? `Network ${formatInt(summary.node_count)} nodes` : 'Network size unknown'}
+        </span>
         <span className="gt-hint">
           Click for About Flux <kbd className="kbd">M</kbd>
         </span>
