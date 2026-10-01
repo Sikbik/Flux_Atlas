@@ -50,7 +50,9 @@ pub fn parse_iso8601_ms(s: &str) -> Option<u64> {
     };
     let days = days_from_civil(i64::from(y), mo, d);
     let secs = days * 86_400 + i64::from(h) * 3600 + i64::from(mi) * 60 + i64::from(se) - offset_s;
-    u64::try_from(secs).ok().map(|s| s * 1000 + millis)
+    u64::try_from(secs)
+        .ok()
+        .and_then(|s| s.checked_mul(1000)?.checked_add(millis))
 }
 
 #[cfg(test)]

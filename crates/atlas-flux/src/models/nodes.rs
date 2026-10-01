@@ -105,11 +105,14 @@ impl NodeListEntry {
             confirmed_height: nz(self.confirmed_height),
             last_confirmed_height: nz(self.last_confirmed_height),
             last_paid_height: nz(self.last_paid_height),
-            active_since_ms: self.activesince.filter(|v| *v > 0).map(|s| s * 1000),
+            active_since_ms: self
+                .activesince
+                .filter(|v| *v > 0)
+                .map(|s| s.saturating_mul(1000)),
             last_paid_ms: self
                 .lastpaid
                 .filter(|v| *v > 0 && *v != NEVER_PAID_SENTINEL)
-                .map(|s| s * 1000),
+                .map(|s| s.saturating_mul(1000)),
             collateral_amount: amount,
         })
     }

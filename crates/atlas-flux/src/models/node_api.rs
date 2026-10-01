@@ -95,7 +95,7 @@ impl Bench {
             arm_board: self.armboard.trim().into(),
             bench_status,
             bench_tier,
-            bench_time_ms: self.time.map_or(0, |t| t * 1000),
+            bench_time_ms: self.time.map_or(0, |t| t.saturating_mul(1000)),
             bench_error: self.error.as_deref().map(Into::into),
             system_secure: self.systemsecure,
         })
