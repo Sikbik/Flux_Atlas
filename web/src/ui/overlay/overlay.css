@@ -1,0 +1,74 @@
+/* Tooltips and hover cards (design 8.17): glass, a hairline rim lit from the top (the sun side), a
+   deep pop shadow. They float above everything (--z-tooltip) and never move the layout. */
+
+.ui-tooltip,
+.ui-hovercard {
+  --ui-pop-dx: 0px;
+  --ui-pop-dy: 4px;
+  z-index: var(--z-tooltip);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-pop), var(--shadow-inset-hi);
+  color: var(--text-1);
+  animation: ui-pop-in var(--dur-fast) var(--ease-out) both;
+}
+
+.ui-tooltip[data-side="bottom"],
+.ui-hovercard[data-side="bottom"] {
+  --ui-pop-dy: -4px;
+}
+
+.ui-tooltip[data-side="left"],
+.ui-hovercard[data-side="left"] {
+  --ui-pop-dx: 4px;
+  --ui-pop-dy: 0px;
+}
+
+.ui-tooltip[data-side="right"],
+.ui-hovercard[data-side="right"] {
+  --ui-pop-dx: -4px;
+  --ui-pop-dy: 0px;
+}
+
+.ui-tooltip {
+  max-width: 280px;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--r-md);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  pointer-events: none;
+}
+
+.ui-hovercard {
+  min-width: 224px;
+  max-width: 360px;
+  padding: var(--space-5);
+  border-radius: var(--r-lg);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-normal) var(--font-sans);
+}
+
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(var(--ui-pop-dx), var(--ui-pop-dy));
+  }
+}
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ui-tooltip,
+  :root:not([data-motion="full"]) .ui-hovercard {
+    animation-name: ui-fade-in;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-tooltip,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-hovercard {
+  animation-name: ui-fade-in;
+}

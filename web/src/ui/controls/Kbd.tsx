@@ -18,7 +18,8 @@ export interface KbdComboProps {
 /** A shortcut as separate key caps (`ctrl` `K`), with a screen-reader friendly label. */
 export function KbdCombo({ keys, className }: KbdComboProps) {
   return (
-    <span className={cx('ui-kbd-combo', className)} role="group" aria-label={keys.join(' plus ')}>
+    <span className={cx('ui-kbd-combo', className)}>
+      <span className="ui-kbd-combo__sr">{keys.join(' plus ')}</span>
       {keys.map((k, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: a key sequence is positional and can repeat a key
         <Kbd key={i} aria-hidden="true">

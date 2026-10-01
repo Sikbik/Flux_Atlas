@@ -1,0 +1,66 @@
+/* Copy button: a quiet glyph that wakes on hover, with extra hit area around it so a 20 px glyph is
+   still an easy target (design 10.2). */
+
+.ui-copy {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-4);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+}
+
+.ui-copy[data-size="md"] {
+  width: 28px;
+  height: 28px;
+}
+
+/* Hit slop: the interactive area is larger than the glyph. */
+.ui-copy::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+.ui-copy:hover {
+  background: var(--ink-3);
+  color: var(--text-1);
+}
+
+.ui-copy:active {
+  transform: scale(0.94);
+}
+
+.ui-copy:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  color: var(--text-1);
+}
+
+.ui-copy[data-state="copied"] {
+  color: var(--status-ok);
+}
+
+.ui-copy[data-state="failed"] {
+  color: var(--status-warn);
+}
+
+.ui-copy__live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
