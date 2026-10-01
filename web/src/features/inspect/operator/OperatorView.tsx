@@ -21,7 +21,6 @@ import {
 import { useFleet, useFleetEarnings, WATCHLIST_KEY } from '../sources/fleet';
 import { useWatchMany } from '../sources/hooks';
 import { useOpenSet } from '../ui/openset';
-import { WatchAlerts } from '../watch/WatchAlerts';
 import { AttentionCallouts, ConcentrationCallout } from './Callouts';
 import { AddressFold, AppsFold, HardwareFold, VersionsFold } from './Details';
 import { FleetGrid, STATE_WORDS } from './FleetGrid';
@@ -178,7 +177,6 @@ export function OperatorView({ addr }: { addr: string }) {
         <div className="ix-pad ix-gap-top">
           <WatchAdd />
         </div>
-        <WatchAlerts />
       </article>
     );
   }
@@ -260,7 +258,6 @@ export function OperatorView({ addr }: { addr: string }) {
           open={open}
         />
       )}
-      <WatchAlerts />
     </article>
   );
 }
