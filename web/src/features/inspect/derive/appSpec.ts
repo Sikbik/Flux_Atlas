@@ -177,9 +177,11 @@ export function appStage(i: AppStageInput): AppStageInfo {
   const base = { running: i.running, target: i.target, installing: i.installing };
   if (!i.exists) return { ...base, stage: 'pending', pendingUpdate: false };
   const pendingUpdate = i.pending?.kind === 'update';
+  // An app with any instance up is running, even while more are installing (a rollout or a replacement);
+  // "installing" is the stage of an app whose first instances are still coming up.
+  if (i.running > 0) return { ...base, stage: 'running', pendingUpdate };
   if (i.installing > 0) return { ...base, stage: 'installing', pendingUpdate };
-  if (i.running <= 0) return { ...base, stage: 'confirmed', pendingUpdate };
-  return { ...base, stage: 'running', pendingUpdate };
+  return { ...base, stage: 'confirmed', pendingUpdate };
 }
 
 /** Index of a stage on the four-step stepper. */

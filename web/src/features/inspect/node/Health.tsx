@@ -16,7 +16,18 @@ import { CHECKIN, checkinGauge, GAUGE_ZONES, lifeStage } from '../derive/expiry'
 import { heartbeatTicks, ipHistory, uptimeCells } from '../derive/uptime';
 import { useFirstIngestMs, useHostRows } from '../sources/hooks';
 import { LADDER_PORTS, useHostLive } from '../sources/host';
-import { Block, Digits, HostLadder, HostLink, NodeLink, OperatorLink, Sk, tierLabel } from '../ui';
+import {
+  Block,
+  Digits,
+  HostLadder,
+  HostLink,
+  NodeLink,
+  OperatorLink,
+  Sk,
+  type Step,
+  Stepper,
+  tierLabel,
+} from '../ui';
 import { useNodeCtx } from './context';
 
 const DAY_MS = 86_400_000;
@@ -99,7 +110,7 @@ export function useSince(): number | null {
   return lastConfirmed && tip ? Math.max(0, tip.height - lastConfirmed) : null;
 }
 
-function Stepper() {
+function LifecycleStepper() {
   const { node, live } = useNodeCtx();
   const since = useSince();
   const status = live?.status ?? node?.status ?? 'unknown';
@@ -126,35 +137,17 @@ function Stepper() {
     expired: { label: 'Expired', sub: `${CHECKIN.expire} blocks`, icon: OctagonX },
   };
 
-  return (
-    <ol
-      className="ix-stepper"
-      aria-label="Node lifecycle"
-      style={{ '--ix-p': at < 0 ? 0 : at / 4 } as CSSProperties}
-    >
-      {STATIONS.map((s, i) => {
-        const m = meta[s];
-        const Icon = m.icon;
-        const state = i < at ? 'done' : i === at ? 'now' : 'next';
-        const tone = s === 'atRisk' ? 'warn' : s === 'expired' ? 'crit' : undefined;
-        return (
-          <li
-            className="ix-stp"
-            data-state={state}
-            data-tone={state !== 'next' ? tone : undefined}
-            key={s}
-            aria-current={state === 'now' ? 'step' : undefined}
-          >
-            <i>
-              <Icon size={12} strokeWidth={2} aria-hidden="true" />
-            </i>
-            <span>{m.label}</span>
-            <small>{m.sub}</small>
-          </li>
-        );
-      })}
-    </ol>
-  );
+  const steps: Step[] = STATIONS.map((s) => {
+    const m = meta[s];
+    return {
+      key: s,
+      label: m.label,
+      sub: m.sub,
+      icon: m.icon,
+      tone: s === 'atRisk' ? 'warn' : s === 'expired' ? 'crit' : undefined,
+    };
+  });
+  return <Stepper steps={steps} at={at} label="Node lifecycle" />;
 }
 
 function Gauge() {
@@ -356,7 +349,7 @@ export function HealthBody() {
   const hist = useNodeHistory(apiKey, { from });
   return (
     <>
-      <Stepper />
+      <LifecycleStepper />
       <Gauge />
       <Strips hist={hist} />
     </>

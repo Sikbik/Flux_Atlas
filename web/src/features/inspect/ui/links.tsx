@@ -71,6 +71,28 @@ export function AppLink({ name, children, className, title, beside, ...aria }: L
   );
 }
 
+export function AppHistoryLink({
+  name,
+  n,
+  children,
+  className,
+  title,
+  ...aria
+}: LinkProps & { name: string; n: number }) {
+  return (
+    <Link
+      to="/app/$name/history/$n"
+      params={{ name, n }}
+      search={true as never}
+      className={cx('ix-link', className)}
+      title={title}
+      {...aria}
+    >
+      {children}
+    </Link>
+  );
+}
+
 export function OperatorLink({
   addr,
   children,

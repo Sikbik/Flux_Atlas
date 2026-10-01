@@ -15,6 +15,7 @@ export function Disclosure({
   open,
   onToggle,
   index = 0,
+  compact,
   className,
   children,
 }: {
@@ -26,6 +27,8 @@ export function Disclosure({
   onToggle: (next: boolean) => void;
   /** Staggers the entrance (capped by the design at 8). */
   index?: number;
+  /** A lighter row without the icon box, for disclosures nested inside a disclosure. */
+  compact?: boolean;
   className?: string;
   children: ReactNode;
 }) {
@@ -37,6 +40,7 @@ export function Disclosure({
       className={cx('ix-disc ix-rise', className)}
       data-open={open || undefined}
       data-state={open ? 'open' : 'closed'}
+      data-size={compact ? 'sm' : undefined}
       style={{ '--ix-i': index } as CSSProperties}
     >
       <h3 className="ix-disc-h">

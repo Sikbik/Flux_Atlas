@@ -111,6 +111,12 @@ describe('appStage', () => {
     expect(appStage({ ...base, running: 3 }).stage).toBe('running');
   });
 
+  it('keeps an app running while more instances install', () => {
+    const s = appStage({ ...base, running: 1, installing: 2 });
+    expect(s.stage).toBe('running');
+    expect(s.installing).toBe(2);
+  });
+
   it('marks an update that is broadcast but not mined', () => {
     const s = appStage({ ...base, running: 3, pending: { kind: 'update', expiresMs: 1 } });
     expect(s.stage).toBe('running');

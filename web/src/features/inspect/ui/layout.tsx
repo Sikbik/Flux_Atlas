@@ -213,15 +213,23 @@ export function State({
   children,
   action,
   tone,
+  compact,
 }: {
   icon?: ReactNode;
   title: ReactNode;
   children?: ReactNode;
   action?: ReactNode;
   tone?: 'warn' | 'crit';
+  /** Smaller padding, for a state inside a disclosure. */
+  compact?: boolean;
 }) {
   return (
-    <div className="ix-state" data-tone={tone} role={tone === 'crit' ? 'alert' : 'status'}>
+    <div
+      className="ix-state"
+      data-tone={tone}
+      data-compact={compact || undefined}
+      role={tone === 'crit' ? 'alert' : 'status'}
+    >
       <span className="ix-state-i" aria-hidden="true">
         {icon ?? <CircleAlert size={20} strokeWidth={1.5} />}
       </span>

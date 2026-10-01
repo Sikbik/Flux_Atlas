@@ -16,6 +16,7 @@ export { HostLadder, portOf } from './ladder';
 export { Alert, Block, Grid, Kv, KvRow, Meter, Section, Sk, State, Tile } from './layout';
 export {
   AddressLink,
+  AppHistoryLink,
   AppLink,
   BlockLink,
   HostLink,
@@ -25,4 +26,5 @@ export {
 } from './links';
 export { type MapPoint, MiniMap } from './map';
 export { etaShort, QueueCell } from './queuecell';
+export { type Step, Stepper } from './stepper';
 export { VirtualList } from './VirtualList';
