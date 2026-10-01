@@ -7,7 +7,7 @@ import { X } from 'lucide-react';
 import { type ReactNode, useId, useRef } from 'react';
 import { useWindowManager, useWm } from './react';
 import { useMoreBelow } from './scrollfade';
-import { SNAP_ORDER, sheetHeights, sheetTop } from './sheet';
+import { cycleSnap, sheetHeights, sheetTop, stepSnap } from './sheet';
 import { slideAway, useSheetDrag } from './useSheetDrag';
 import './wm.css';
 
@@ -42,8 +42,9 @@ export function PhoneSheet({
   const rootRef = useRef<HTMLElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  const height = sheetHeights(viewportH)[snap];
-  const nextSnap = SNAP_ORDER[(SNAP_ORDER.indexOf(snap) + 1) % SNAP_ORDER.length] ?? 'half';
+  const heights = sheetHeights(viewportH);
+  const height = heights[snap];
+  const nextSnap = cycleSnap(snap, heights);
   const drag = useSheetDrag({
     elRef: rootRef,
     snap,
@@ -54,8 +55,8 @@ export function PhoneSheet({
   useMoreBelow(bodyRef);
 
   const stepSheet = (dir: 1 | -1) => {
-    const to = SNAP_ORDER[Math.min(SNAP_ORDER.length - 1, Math.max(0, SNAP_ORDER.indexOf(snap) + dir))];
-    if (to && to !== snap) wm.dispatch({ t: 'setSheet', snap: to });
+    const to = stepSnap(snap, dir, heights);
+    if (to !== snap) wm.dispatch({ t: 'setSheet', snap: to });
   };
   const close = () => {
     const el = rootRef.current;

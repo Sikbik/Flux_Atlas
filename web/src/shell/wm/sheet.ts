@@ -23,6 +23,25 @@ export function sheetHeights(viewportH: number): SheetHeights {
   };
 }
 
+/** The snaps that differ in height for this viewport, lowest first: a short viewport folds tall into half. */
+export function distinctSnaps(heights: SheetHeights): SheetSnap[] {
+  return SNAP_ORDER.filter((s, i) => SNAP_ORDER.findIndex((o) => heights[o] === heights[s]) === i);
+}
+
+/** Where a tap on the grabber goes: the next snap up, and back to the lowest after the highest. */
+export function cycleSnap(from: SheetSnap, heights: SheetHeights): SheetSnap {
+  const snaps = distinctSnaps(heights);
+  const at = snaps.findIndex((s) => heights[s] === heights[from]);
+  return snaps[(at + 1) % snaps.length] ?? from;
+}
+
+/** One snap up (`1`) or down (`-1`); it stops at the ends. */
+export function stepSnap(from: SheetSnap, dir: 1 | -1, heights: SheetHeights): SheetSnap {
+  const snaps = distinctSnaps(heights);
+  const at = snaps.findIndex((s) => heights[s] === heights[from]);
+  return snaps[Math.min(snaps.length - 1, Math.max(0, at + dir))] ?? from;
+}
+
 /** The y of a sheet's top edge: it stands on the tab bar. */
 export const sheetTop = (viewportH: number, height: number): number => viewportH - TABBAR_H - height;
 
@@ -56,7 +75,7 @@ export function nearestSnap(rel: SheetRelease, heights: SheetHeights): SheetOutc
   const projected = rel.height - rel.velocity * FLICK_CARRY_MS;
   if (projected < heights.peek * DISMISS_BELOW) return { kind: 'dismiss' };
   // Snaps that share a height (a short viewport folds tall into half) count once, the lowest first.
-  const snaps = SNAP_ORDER.filter((s, i) => SNAP_ORDER.findIndex((o) => heights[o] === heights[s]) === i);
+  const snaps = distinctSnaps(heights);
   let best = snaps[0] ?? rel.from;
   for (const s of snaps) if (Math.abs(heights[s] - projected) < Math.abs(heights[best] - projected)) best = s;
   if (Math.abs(rel.velocity) >= FLICK_PX_PER_MS && heights[best] === heights[rel.from]) {

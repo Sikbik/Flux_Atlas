@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { initialWmState, windowRect, wmReduce } from './machine';
 import {
+  cycleSnap,
+  distinctSnaps,
   FLICK_PX_PER_MS,
   nearestSnap,
   releaseVelocity,
@@ -9,6 +11,7 @@ import {
   scrollsAt,
   sheetHeights,
   sheetTop,
+  stepSnap,
 } from './sheet';
 import { TABBAR_H } from './specs';
 import type { SheetSnap } from './types';
@@ -131,5 +134,36 @@ describe('releaseVelocity', () => {
 describe('scrollsAt', () => {
   it('scrolls the content only from tall up', () => {
     expect(SNAP_ORDER.map(scrollsAt)).toEqual([false, false, true, true]);
+  });
+});
+
+describe('the snaps a tap and the arrow keys walk', () => {
+  it('has four distinct snaps on a tall phone and cycles through them', () => {
+    const h = sheetHeights(844);
+    expect(distinctSnaps(h)).toEqual(['peek', 'half', 'tall', 'full']);
+    expect(cycleSnap('peek', h)).toBe('half');
+    expect(cycleSnap('half', h)).toBe('tall');
+    expect(cycleSnap('tall', h)).toBe('full');
+    expect(cycleSnap('full', h)).toBe('peek');
+  });
+
+  it('folds tall into half on a short phone, so a tap never lands on a step that looks the same', () => {
+    const h = sheetHeights(667);
+    expect(h.tall).toBe(h.half);
+    expect(distinctSnaps(h)).toEqual(['peek', 'half', 'full']);
+    expect(cycleSnap('half', h)).toBe('full');
+    expect(cycleSnap('full', h)).toBe('peek');
+    // a sheet left on tall by a taller screen is treated as half
+    expect(cycleSnap('tall', h)).toBe('full');
+  });
+
+  it('steps one snap and stops at the ends', () => {
+    const h = sheetHeights(844);
+    expect(stepSnap('half', 1, h)).toBe('tall');
+    expect(stepSnap('half', -1, h)).toBe('peek');
+    expect(stepSnap('peek', -1, h)).toBe('peek');
+    expect(stepSnap('full', 1, h)).toBe('full');
+    const short = sheetHeights(667);
+    expect(stepSnap('half', 1, short)).toBe('full');
   });
 });

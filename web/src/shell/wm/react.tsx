@@ -30,7 +30,7 @@ import { WINDOW_ACCENT, WindowGlyph } from './glyphs';
 import { minimizedWindows, snapPreview, visibleWindows, windowRect } from './machine';
 import { metaEqual, type WindowMeta, WindowMetaContext, type WindowMetaSink } from './meta';
 import { useMoreBelow } from './scrollfade';
-import { SNAP_ORDER } from './sheet';
+import { cycleSnap, sheetHeights, stepSnap } from './sheet';
 import { WINDOW_SPECS } from './specs';
 import type { WindowManager } from './store';
 import type { Rect, WindowState, WmAction, WmState } from './types';
@@ -286,7 +286,8 @@ function Frame({
   });
 
   const toggleMaximize = () => dispatch(maximized ? { t: 'restore', id } : { t: 'maximize', id });
-  const nextSnap = SNAP_ORDER[(SNAP_ORDER.indexOf(sheet) + 1) % SNAP_ORDER.length] ?? 'half';
+  const heights = sheetHeights(viewportH);
+  const nextSnap = cycleSnap(sheet, heights);
   // The phone's sheet: the grabber and the title bar drag it between its snaps (sheet.ts, useSheetDrag.ts).
   const sheetDrag = useSheetDrag({
     elRef: rootRef,
@@ -296,8 +297,8 @@ function Frame({
     onDismiss: () => onRequestClose(winRef.current),
   });
   const stepSheet = (dir: 1 | -1) => {
-    const to = SNAP_ORDER[Math.min(SNAP_ORDER.length - 1, Math.max(0, SNAP_ORDER.indexOf(sheet) + dir))];
-    if (to && to !== sheet) dispatch({ t: 'setSheet', snap: to });
+    const to = stepSnap(sheet, dir, heights);
+    if (to !== sheet) dispatch({ t: 'setSheet', snap: to });
   };
   const tier = win.type === 'node' && meta?.tier && meta.tier !== 'unknown' ? meta.tier : undefined;
   const accent = meta?.accent ?? WINDOW_ACCENT[win.type];
