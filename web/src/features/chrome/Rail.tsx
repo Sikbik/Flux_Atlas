@@ -20,6 +20,7 @@ import { useChainBlocks, useRuntime } from '../../app/context';
 import { formatBytes, formatHeight, formatInt, UNKNOWN } from '../../lib/format';
 import { useAgo, useBeat } from '../../lib/useClock';
 import { useFresh } from '../../motion/fresh';
+import { Current } from '../../motion/react/Current';
 import { useShellActions } from '../../shell/frame/actions';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import type { ChainBlock } from '../../store/network';
@@ -114,6 +115,10 @@ function RailTrack() {
   // two at once is a resync, not blocks). The FLIP below keeps its own record of the keys it has seen.
   const cardKeys = useMemo(() => cards.map((c) => keyOf(c.block)), [cards]);
   const fresh = useFresh(cardKeys, { max: 2 });
+  // The block's light (motion language 3.4): one streak along the rail's top edge for a block that lands, keyed to
+  // the newest fresh card so the first fill and a resync (which `useFresh` does not call arrivals) draw nothing.
+  const landed = cards.find((c) => fresh.has(keyOf(c.block)));
+  const landedKey = landed ? keyOf(landed.block) : null;
   const seen = useRef<Set<string> | null>(null);
   const flip = useRef(new Map<string, number>());
 
@@ -179,6 +184,7 @@ function RailTrack() {
 
   return (
     <div className="rail" data-frozen={frozen || undefined}>
+      <Current signal={landedKey} edge="top" tail={120} disabled={frozen || landedKey === null} />
       <ol ref={trackRef} className="rail-track" aria-label="Recent blocks, newest first" onScroll={onScroll}>
         <GhostCard />
         {live.length === 0
@@ -267,6 +273,8 @@ function BlockCard({ block, orphan, isNew }: { block: ChainBlock; orphan: boolea
           </span>
         </ShellLink>
       </HoverCard>
+      {/* The new card is circled once, from the moment its landing shows (the CSS holds it back 90 ms). */}
+      {isNew ? <Current signal="landed" edge="perimeter" fireOnMount delay={90} /> : null}
     </li>
   );
 }
