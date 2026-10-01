@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import type { TxLite } from '../../../api/generated/TxLite';
 import { useMempool } from '../../../api/queries';
 import { useMempoolEntries } from '../../../app/context';
+import { anyUnknownSize } from '../lib/txsize';
 
 export interface MempoolRow {
   tx: TxLite;
@@ -40,11 +41,14 @@ export function useMempoolLive() {
       .map((x) => x.r);
   }, [snap, live]);
   const bytes = snap ? snap.bytes : null;
+  // `bytes` adds up the sizes the server knows; with an unknown one in the list it is a floor.
+  const bytesPartial = useMemo(() => anyUnknownSize(rows.map((r) => r.tx.size)), [rows]);
   return {
     ...q,
     rows,
     size: Math.max(snap?.size ?? 0, rows.length),
     bytes,
+    bytesPartial,
     updatedMs: snap?.updated_ms ?? null,
   };
 }

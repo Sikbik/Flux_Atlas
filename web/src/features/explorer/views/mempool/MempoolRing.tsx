@@ -48,11 +48,15 @@ export function MempoolRing({
   rows,
   size,
   bytes,
+  bytesPartial = false,
   nextHeight,
 }: {
   rows: readonly MempoolRow[];
   size: number;
+  /** Total of the sizes the server knows. */
   bytes: number | null;
+  /** Some transaction's size is unknown, so `bytes` is a floor. */
+  bytesPartial?: boolean;
   nextHeight: number | null;
 }) {
   const { clock } = useRuntime();
@@ -193,7 +197,9 @@ export function MempoolRing({
           <b>{late ? 'late' : `in ${seconds} s`}</b>
         </span>
         {bytes !== null ? (
-          <span className="ex-ring__bytes">{bytes > 0 ? formatBytes(bytes) : null}</span>
+          <span className="ex-ring__bytes">
+            {bytes > 0 ? `${bytesPartial ? 'at least ' : ''}${formatBytes(bytes)}` : null}
+          </span>
         ) : null}
       </div>
       {hotDot && width > 0 ? (

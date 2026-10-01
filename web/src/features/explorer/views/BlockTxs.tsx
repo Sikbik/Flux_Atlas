@@ -7,8 +7,9 @@ import { useMemo, useState } from 'react';
 import type { NodeTxDto } from '../../../api/generated/NodeTxDto';
 import type { TxKind } from '../../../api/generated/TxKind';
 import type { TxLite } from '../../../api/generated/TxLite';
-import { formatBytes, formatInt, parseFlux } from '../../../lib/format';
+import { formatInt, parseFlux } from '../../../lib/format';
 import { BLOCK_GROUP_ORDER, NODE_TX_KINDS, TX_KINDS } from '../lib/txkinds';
+import { txSizeText } from '../lib/txsize';
 import { Amount, EntityLink, Section, Windowed } from '../parts';
 import { KindTile, NodeLink } from './shared';
 import './block.css';
@@ -42,10 +43,8 @@ function TxRow({ tx, node }: { tx: TxLite; node: NodeTxDto | undefined }) {
                 />
               ) : null}
             </>
-          ) : tx.size > 0 ? (
-            <span>{formatBytes(tx.size)}</span>
           ) : (
-            <span>{TX_KINDS[tx.kind].label}</span>
+            <span>{txSizeText(tx.size)}</span>
           )}
         </span>
       </div>

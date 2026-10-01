@@ -5,12 +5,13 @@
 import { Activity, Layers2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useChainBlocks, useRuntime, useSummary, useTip } from '../../../app/context';
-import { formatAge, formatBytes, formatInt, parseFlux } from '../../../lib/format';
+import { formatAge, formatInt, parseFlux } from '../../../lib/format';
 import { useNow } from '../../../lib/useClock';
 import { Sparkline } from '../../analytics/viz/Sparkline';
 import { TimeChart } from '../../analytics/viz/TimeChart';
 import { useMempoolLive } from '../hooks/useMempoolLive';
 import { TX_KINDS } from '../lib/txkinds';
+import { txSizeText } from '../lib/txsize';
 import {
   Amount,
   CompactAmount,
@@ -101,7 +102,7 @@ function Feed({ rows }: { rows: ReturnType<typeof useMempoolLive>['rows'] }) {
                   <EntityLink kind="tx" value={r.tx.txid} className="ex-feedrow__link" />
                   <span className="ex-feedrow__sub">
                     {check ? 'Node check-in' : TX_KINDS[r.tx.kind].label}
-                    {r.tx.size > 0 ? <span>{formatBytes(r.tx.size)}</span> : null}
+                    <span>{txSizeText(r.tx.size)}</span>
                   </span>
                 </div>
                 <div className="ex-feedrow__side">
@@ -225,7 +226,13 @@ export function MempoolView() {
       />
       <Section>
         <div className="ex-mempool-grid">
-          <MempoolRing rows={m.rows} size={m.size} bytes={m.bytes} nextHeight={nextHeight} />
+          <MempoolRing
+            rows={m.rows}
+            size={m.size}
+            bytes={m.bytes}
+            bytesPartial={m.bytesPartial}
+            nextHeight={nextHeight}
+          />
           <div className="ex-mempool-side">
             <StatGrid min={150} columns={1}>
               <Stat
