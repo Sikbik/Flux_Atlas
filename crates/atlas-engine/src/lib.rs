@@ -663,6 +663,20 @@ impl EngineHandle {
         self.inner.freshness.snapshot()
     }
 
+    /// Run counters and freshness of every ingest job (metrics).
+    pub fn job_counters(&self) -> Vec<freshness::JobCounters> {
+        self.inner.freshness.counters()
+    }
+
+    /// Messages held by the engine's replay ring, and its capacity.
+    pub fn replay_ring(&self) -> (usize, usize) {
+        self.inner
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len_cap()
+    }
+
     /// Stops the ingest jobs, flushes the store durably, then stops the reducer. The handle
     /// stays readable.
     pub async fn shutdown(&self) {

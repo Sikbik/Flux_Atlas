@@ -800,9 +800,31 @@ async fn ops_endpoints() {
         "atlas_ws_messages_sent_total",
         "atlas_ws_messages_dropped_total",
         "atlas_proxy_cache_requests_total{cache=\"tx\",result=\"hit\"}",
+        // Engine families.
+        "atlas_ingest_job_runs_total{job=\"stats_round\"}",
+        "atlas_ingest_job_errors_total{job=\"node_registry\"} 0",
+        "atlas_ingest_job_stale{job=\"block_decoder\"}",
+        "# TYPE atlas_upstream_request_duration_seconds histogram",
+        "# TYPE atlas_ingest_job_upstream_seconds_total counter",
+        "atlas_store_commit_duration_seconds_bucket{le=\"+Inf\"}",
+        "atlas_publish_duration_seconds_count",
+        "atlas_replay_ring_messages{ring=\"hub\"}",
+        "atlas_replay_ring_capacity{ring=\"engine\"}",
+        "atlas_engine_internal_errors_total 0",
     ] {
         assert!(text.contains(needle), "missing {needle}\n{text}");
     }
+    // Low cardinality: every family stays small (bounded label sets).
+    let mut per_family: std::collections::BTreeMap<&str, usize> = Default::default();
+    for line in text.lines().filter(|l| !l.starts_with('#')) {
+        let name = line.split(['{', ' ']).next().unwrap();
+        *per_family.entry(name).or_default() += 1;
+    }
+    for (name, n) in &per_family {
+        assert!(*n <= 200, "{name} has {n} series");
+    }
+    // Unknown is absent, not 0: no job has succeeded in a stale-free fixture without ingest.
+    assert!(!text.contains("atlas_ingest_job_last_success_age_seconds{job=\"stats_round\"}"));
 
     // A stale engine is alive but not ready.
     let dir = tempfile::tempdir().unwrap();

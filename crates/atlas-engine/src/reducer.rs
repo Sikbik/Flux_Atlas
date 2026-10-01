@@ -66,9 +66,11 @@ pub fn spawn_writer(
                     WriterCmd::Commit(batch) => {
                         let ops = batch.len() as u64;
                         match store.commit(batch) {
-                            Ok(_) => handle.inner.stats.with(|s| {
+                            Ok(c) => handle.inner.stats.with(|s| {
                                 s.commits += 1;
                                 s.commit_ops += ops;
+                                s.commit_seconds
+                                    .observe(crate::stats::LOCAL_BUCKETS, c.elapsed.as_secs_f64());
                             }),
                             Err(e) => {
                                 tracing::error!(error = %e, "store commit failed");
@@ -604,6 +606,8 @@ impl Reducer {
                     s.publishes += 1;
                     s.publish_last_ms = elapsed_ms;
                     s.publish_max_ms = s.publish_max_ms.max(elapsed_ms);
+                    s.publish_seconds
+                        .observe(crate::stats::LOCAL_BUCKETS, elapsed_ms as f64 / 1000.0);
                 });
             }
             Obs::Flush(ack) => {
