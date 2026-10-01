@@ -42,6 +42,11 @@
   vertical-align: bottom;
 }
 
+/* A time inside the aside reads in the aside's own face: the kit sets times in mono, which beside words is a seam. */
+.ix-aside .ui-reltime {
+  font-family: inherit;
+}
+
 /* Alerts under the lead tiles; each is a full callout, so they stack with one gap. */
 .ix-callouts {
   display: grid;

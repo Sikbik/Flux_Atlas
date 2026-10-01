@@ -73,7 +73,7 @@ export function HealthSummary() {
   }
   return (
     <Sum tone="ok">
-      Checked in {spanText(since * 30_000)} ago
+      Last check-in {spanText(since * 30_000)} ago
       {g.state === 'due' ? ', due now' : `, next due in ${spanText((g.blocksToDue ?? 0) * 30_000)}`}
     </Sum>
   );
