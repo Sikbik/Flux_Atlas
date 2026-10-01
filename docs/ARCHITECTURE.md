@@ -16,7 +16,7 @@
 | Hot API latency | p99 < 5 ms for snapshot endpoints (served from memory, pre-serialized, pre-compressed) |
 | **Live-first** | Every change reaches browsers as an event, animated as it happens. Freshness tiers: T1 ≤ 3 s (blocks, producer, payouts, node heartbeats/starts, mempool), T2 ≤ 60 s (app deploys/updates, instance placement, node-list reconciliation), T3 continuous rolling crawl (peers, reachability, benchmarks, installed apps; each host revisited ≤ 20 min, and updates stream out per host, never as a batch) |
 | Frontend perf | 60 fps globe at 1440p with 15k nodes + 200 arcs + 50 pulses; first meaningful paint < 2 s |
-| Footprint | one self-contained binary (API + embedded web app) + one data dir; < 250 MB RSS; fits the Flux app spec (1 vCPU / 1 GB / 5 GB) |
+| Footprint | one self-contained binary (API + embedded web app) + one data dir, one process, one port (3000); fits the live Flux app spec (1 vCPU / 2,500 MB RAM / 10 GB disk) with wide headroom, measured in section 11 |
 | Upstream etiquette | bounded req/s, conditional requests where possible, failover, no hammering of individual nodes |
 | Resilience | serves the last-known state instantly on restart; degrades gracefully when upstream is down |
 
@@ -36,7 +36,7 @@ crates/
 web/                       # React 19 + TypeScript + Vite frontend
 labs/globe/                # standalone globe/ambient renderer lab (ported into web/src/globe)
 docs/                      # ARCHITECTURE.md, PLAN.md, research/, design/
-deploy/                    # Dockerfile, flux_app_spec.json, docker-compose.yml
+deploy/                    # Dockerfile (+ Dockerfile.dockerignore), flux_app_spec.json
 ```
 
 The v1 dirs (`backend/`, `frontend/`, root Dockerfile/compose/spec) stay until the v2 cut-over (PLAN phase 5),
@@ -441,17 +441,19 @@ web/src/
 
 ## 10. Build, deploy, quality gates
 
-- `deploy/Dockerfile`: node stage (build web) → rust stage (build `atlas` with embedded dist, `--release`,
-  LTO thin, `codegen-units=1`) → `gcr.io/distroless/cc-debian12` runtime, non-root, volume `/data`.
-  `atlas healthcheck` subcommand for Docker HEALTHCHECK.
-- `deploy/flux_app_spec.json`: Flux app spec (see legacy spec; ports/containerData [TBD research: current spec version & port rules]).
+- `deploy/Dockerfile` (section 11): node stage (`npm ci`, `npm run build`) → rust stage (static musl build of
+  `atlas` with the embedded dist, `--release`, LTO thin, `codegen-units=1`) → `scratch` runtime with the
+  binary, the CA bundle and `/app/backend/data`. `atlas healthcheck` is the Docker HEALTHCHECK.
+- `deploy/flux_app_spec.json`: the live v8 spec of the Flux app `atlas` (section 11).
 - Config: env vars (each also a flag; full table in `crates/atlas-server/README.md`): `ATLAS_BIND` (default
-  `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`), `ATLAS_INGEST` (`1`; `0` serves stored state only),
-  `ATLAS_BACKFILL_DAYS` (7), `ATLAS_BACKFILL_RPS` (1.5), `ATLAS_DB_CACHE_MB` (32), `ATLAS_INTERVALS`
+  `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`; the image sets `/app/backend/data`), `ATLAS_INGEST` (`1`; `0`
+  serves stored state only), `ATLAS_BACKFILL_DAYS` (7), `ATLAS_BACKFILL_RPS` (1.5), `ATLAS_DB_CACHE_MB` (32),
+  `ATLAS_DISK_BUDGET_MB` (6144), `ATLAS_INTERVALS`
   (`job=duration,...` per-job interval overrides), `ATLAS_FLUX_API`, `ATLAS_EXPLORER_API`, `ATLAS_STATS_API`,
   `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_DB` (accepted, not used yet), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
   `ATLAS_CLIENT_RPS` / `ATLAS_CLIENT_BURST`, `ATLAS_WS_MAX_CONNECTIONS` / `ATLAS_WS_MAX_PER_IP` / `ATLAS_WS_PING`,
-  `ATLAS_LOG`. The web smoke targets a running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).
+  `ATLAS_LOG`, `ATLAS_HEALTHCHECK_ADDR` (`127.0.0.1:3000`, for `atlas healthcheck`). The web smoke targets a
+  running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).
 - Gates. Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. Web: `tsc --noEmit`,
   `biome check`, `vitest run`, Playwright smoke. Perf: an ingest-cycle benchmark on the full raw node dump, `oha`
   load test on `/api/v1/nodes.bin` and `/bootstrap`, globe FPS via the team shot tool `--gpu --fps`.
