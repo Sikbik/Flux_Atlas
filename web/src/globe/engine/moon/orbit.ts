@@ -180,7 +180,7 @@ export const MIN_MOON_PX = 40;
  */
 export const SHELL_ROLL = { landscape: 11 * DEG } as const;
 export const SHELL_OPEN = { landscape: 13 * DEG, portrait: 18 * DEG } as const;
-export const SHELL_SIZE = { landscape: 0.2, portrait: 0.235 } as const;
+export const SHELL_SIZE = { landscape: 0.22, portrait: 0.28 } as const;
 const ROLLS = [11, 20, 30, 40, 50, 60, 70, 80, 90].map((d) => d * DEG);
 
 /**
