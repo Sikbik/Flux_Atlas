@@ -3,7 +3,7 @@ import { CircleHelp, ListOrdered, WifiOff } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useConnection, useNetwork, useRuntime } from '../../../app/context';
 import { formatInt } from '../../../lib/format';
-import { EmptyState, EntityLink, Section, Skeleton, tierLabel } from '../../../ui';
+import { EmptyState, EntityLink, ErrorState, Section, Skeleton, tierLabel } from '../../../ui';
 import { positionOf, QUEUE_TIERS, type QueueTier } from '../derive/queue';
 import { readNodeLive, useNodeLive, useQueues, useResolvedId, useTipAnchor } from '../sources/live';
 import { type NodeHit, usePhaseLoop } from '../sources/queueFeed';
@@ -149,6 +149,28 @@ function QueueSkeleton({
   );
 }
 
+/** The connection failed before the first snapshot: there is nothing to draw, and the view says why. */
+function QueueUnreachable({
+  focus,
+  active,
+  onActive,
+}: {
+  focus: QueueTier | null;
+  active: QueueTier;
+  onActive: (t: QueueTier) => void;
+}) {
+  return (
+    <article className="ix ix-queue" data-focus={focus ?? undefined} aria-label="Payment queues">
+      <QueueHeader focus={focus} active={active} onActive={onActive} empty />
+      <Section>
+        <ErrorState title="Cannot reach the network" icon={WifiOff} framed={false}>
+          The payment queues appear once the connection returns.
+        </ErrorState>
+      </Section>
+    </article>
+  );
+}
+
 // ---- the view -----------------------------------------------------------------------------------------------
 
 /**
@@ -164,6 +186,7 @@ export function QueueView({ tier }: { tier?: QueueTier }) {
   const sel = useSelection();
   const [active, setActive] = useState<QueueTier>(tier ?? 'stratus');
   const open = useOpenSet('queue');
+  const { status } = useConnection();
 
   const focus = tier ?? null;
   const shown = focus ? [focus] : TIER_ORDER;
@@ -180,7 +203,13 @@ export function QueueView({ tier }: { tier?: QueueTier }) {
   const clear = useCallback(() => sel.set(null), [sel]);
   const onPick = useCallback((h: NodeHit) => select(h.id), [select]);
 
-  if (!loaded) return <QueueSkeleton focus={focus} active={current} onActive={setActive} />;
+  if (!loaded) {
+    return status === 'offline' || status === 'closed' ? (
+      <QueueUnreachable focus={focus} active={current} onActive={setActive} />
+    ) : (
+      <QueueSkeleton focus={focus} active={current} onActive={setActive} />
+    );
+  }
   const empty = QUEUE_TIERS.every((t) => queues.tiers[t].size === 0);
 
   return (
