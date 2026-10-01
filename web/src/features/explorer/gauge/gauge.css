@@ -1,0 +1,137 @@
+/* The confirmation gauge: ten hexagons of finality. Every value is a token. Looping animation stops
+   under reduced motion (the guard block at the end). */
+
+.ex-gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  --ex-gauge: var(--accent-500);
+  color: var(--text-2);
+}
+
+.ex-gauge[data-final] {
+  --ex-gauge: var(--status-ok);
+}
+
+.ex-gauge__svg {
+  display: block;
+  overflow: visible;
+}
+
+.ex-gauge__line {
+  fill: none;
+  stroke: var(--line-3);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.ex-gauge__fill {
+  fill: var(--ex-gauge);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.6);
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out-expo);
+}
+
+.ex-gauge__cell[data-on] .ex-gauge__fill {
+  opacity: 1;
+  transform: none;
+  filter: drop-shadow(0 0 4px color-mix(in oklab, var(--ex-gauge) 70%, transparent));
+}
+
+.ex-gauge__cell[data-on] .ex-gauge__line {
+  stroke: var(--ex-gauge);
+}
+
+.ex-gauge__flash {
+  fill: var(--hot);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ex-hex-flash var(--dur-slower) var(--ease-out) both;
+  pointer-events: none;
+}
+
+@keyframes ex-hex-flash {
+  from {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+
+.ex-gauge__cell[data-next] .ex-gauge__line {
+  stroke: var(--ex-gauge);
+  animation: ex-hex-breathe 2.4s var(--ease-in-out) infinite;
+}
+
+@keyframes ex-hex-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.ex-gauge[data-pending] .ex-gauge__line {
+  stroke: var(--status-pending);
+  animation: ex-hex-sweep 2.6s var(--ease-in-out) infinite;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+
+@keyframes ex-hex-sweep {
+  0%,
+  60%,
+  100% {
+    opacity: 0.28;
+  }
+
+  30% {
+    opacity: 1;
+  }
+}
+
+.ex-gauge__label {
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+  white-space: nowrap;
+}
+
+.ex-gauge[data-final] .ex-gauge__label {
+  color: var(--text-1);
+}
+
+.ex-gauge[data-pending] .ex-gauge__label {
+  color: var(--status-pending);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ex-gauge__cell[data-next] .ex-gauge__line,
+  :root:not([data-motion="full"]) .ex-gauge[data-pending] .ex-gauge__line,
+  :root:not([data-motion="full"]) .ex-gauge__flash {
+    animation: none;
+  }
+
+  :root:not([data-motion="full"]) .ex-gauge__fill {
+    transition-duration: 1ms;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-gauge__cell[data-next] .ex-gauge__line,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-gauge[data-pending] .ex-gauge__line,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-gauge__flash {
+  animation: none;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-gauge__fill {
+  transition-duration: 1ms;
+}

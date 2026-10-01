@@ -1,5 +1,6 @@
 // Small pieces several explorer views share: node references resolved from the live store, address
-// labels, and the glyph tile of a transaction kind.
+// labels, and the glyph tile of a transaction kind. Built from the kit; what is here is only what needs
+// the live store or this feature's knowledge of entities.
 
 import {
   ArrowLeftRight,
@@ -15,10 +16,9 @@ import {
 import type { TxKind } from '../../../api/generated/TxKind';
 import { useNetwork } from '../../../app/context';
 import { shallowEqual } from '../../../store/react';
+import { Chip, cx, EntityLink, TierGlyph, type TierName, Unknown } from '../../../ui';
 import { knownEntity } from '../lib/entities';
-import { cx, TierGlyph, type TierName } from '../parts';
 import './shared.css';
-import { EntityLink } from '../parts/identity';
 
 const TIERS = ['unknown', 'cumulus', 'nimbus', 'stratus'] as const;
 
@@ -60,11 +60,11 @@ export function NodeLink({
   const endpoint = info?.endpoint || fallbackEndpoint || null;
   const tier = (info?.tier ?? (fallbackTier as TierName | null) ?? 'unknown') as TierName | 'unknown';
   const key = endpoint || (id !== null && id !== undefined ? String(id) : null);
-  if (!key) return <span className="ex-unknown">Unknown node</span>;
+  if (!key) return <Unknown>Unknown node</Unknown>;
   return (
-    <span className="ex-nodelink" data-tier={tier === 'unknown' ? undefined : tier}>
+    <span className="ex-nodelink">
       {glyph ? <TierGlyph tier={tier} size={14} /> : null}
-      <EntityLink kind="node" value={key}>
+      <EntityLink kind="node" value={key} mono>
         {endpoint ?? `Node ${id}`}
       </EntityLink>
     </span>
@@ -84,23 +84,23 @@ export function AddressTag({
   /** Skip the known-entity chip when the surrounding text already says what it is. */
   hideLabel?: boolean;
 }) {
-  if (!address) return <span className="ex-unknown">Unknown</span>;
+  if (!address) return <Unknown />;
   const k = knownEntity(address);
   return (
     <span className={cx('ex-addrtag', className)} data-entity={k?.kind}>
-      <EntityLink kind="address" value={address}>
+      <EntityLink kind="address" value={address} mono={full || undefined}>
         {full ? address : undefined}
       </EntityLink>
       {k && !hideLabel ? (
-        <span className="ex-addrtag__label" title={k.note}>
+        <Chip size="sm" tone="accent" title={k.note}>
           {k.label}
-        </span>
+        </Chip>
       ) : null}
     </span>
   );
 }
 
-const KIND_ICON: Record<TxKind, LucideIcon> = {
+export const KIND_ICON: Record<TxKind | 'heartbeat', LucideIcon> = {
   coinbase: Coins,
   transfer: ArrowLeftRight,
   app_message: Boxes,
@@ -108,11 +108,12 @@ const KIND_ICON: Record<TxKind, LucideIcon> = {
   node_confirm: ShieldCheck,
   node_tx: Server,
   unknown: CircleHelp,
+  heartbeat: HeartPulse,
 };
 
-/** The square glyph tile that stands for a transaction kind. */
+/** The square glyph tile that stands for a transaction kind (kept until every view is on chips). */
 export function KindTile({ kind, pulse }: { kind: TxKind | 'heartbeat'; pulse?: boolean }) {
-  const Icon = kind === 'heartbeat' ? HeartPulse : KIND_ICON[kind];
+  const Icon = KIND_ICON[kind];
   return (
     <span className="ex-kindtile" data-kind={kind} data-pulse={pulse || undefined} aria-hidden="true">
       <Icon size={15} strokeWidth={1.5} />

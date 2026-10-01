@@ -1,3 +1,4 @@
+export { ConfirmationGauge } from '../gauge/ConfirmationGauge';
 export {
   Button,
   Chip,
@@ -20,7 +21,6 @@ export {
   ToggleChip,
   Unknown,
 } from './basics';
-export { ConfirmationGauge } from './ConfirmationGauge';
 export { EntityHead, HeroAmount, HeroNumber, Numeral } from './EntityHead';
 export {
   Amount,

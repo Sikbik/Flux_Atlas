@@ -1,113 +1,34 @@
-/* Transaction view: annotations, the input and output lists. */
+/* Transaction view: the hero row, the tab strip, notes and code. */
 
-.ex-head__word {
-  font: var(--fw-semibold) var(--fs-3xl) / var(--lh-tight) var(--font-display);
-  letter-spacing: var(--tracking-display);
+.ex-hero {
+  padding: var(--space-6) var(--space-6) 0;
 }
 
-.ex-hashrow {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  max-width: 100%;
-  overflow-wrap: anywhere;
+.ex-tabs {
+  padding: var(--space-4) var(--space-6) 0;
 }
 
-.ex-tierrow {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-5);
+.ex-note {
+  margin: 0 0 var(--space-5);
+  color: var(--text-3);
+  text-wrap: pretty;
 }
 
-.ex-io {
-  display: grid;
-  grid-template-columns: 1fr;
-}
-
-@container ex (min-width: 760px) {
-  .ex-io {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .ex-io > .ex-section {
-    border-top: 0;
-  }
-
-  .ex-io > .ex-section + .ex-section {
-    border-left: 1px solid var(--line-1);
-  }
-}
-
-.ex-iolist {
-  display: grid;
-  gap: var(--space-2);
+/* A note inside a table cell or a flush section sits on one line with no bottom gap. */
+.ex-note.ex-pad {
   margin: 0;
-  padding: 0;
-  list-style: none;
+  padding: 0 var(--space-6);
 }
 
-.ex-iorow {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  margin-inline: calc(var(--space-4) * -1);
-  border-radius: var(--r-md);
-  transition: background var(--dur-fast) var(--ease-out);
+td .ex-note,
+.ui-table__cell .ex-note {
+  margin: 0;
 }
 
-.ex-iorow:hover {
-  background: var(--ink-1);
-}
-
-.ex-iorow__n {
-  display: inline-grid;
-  place-items: center;
-  height: 22px;
-  border-radius: var(--r-sm);
-  background: var(--ink-2);
-  color: var(--text-3);
-  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
-}
-
-.ex-iorow__main {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.ex-iorow__sub {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-4);
-  color: var(--text-3);
-  font-size: var(--fs-xs);
-}
-
-.ex-iorow__data code {
+.ex-code {
   margin-left: var(--space-3);
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   overflow-wrap: anywhere;
-}
-
-.ex-iorow__unspent {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.ex-iorow__unspent > i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--status-ok);
-}
-
-.ex-iorow > .ex-amount {
-  font-size: var(--fs-sm);
-  text-align: right;
 }

@@ -8,10 +8,10 @@ import { Landmark, Link2, Sparkles } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { TxDetailDto } from '../../../api/generated/TxDetailDto';
 import { formatInt, formatPercent } from '../../../lib/format';
+import { Amount, Chip, CopyButton, EntityLink, TierGlyph, tierLabel } from '../../../ui';
 import { useWidth } from '../hooks/useDom';
 import { knownEntity } from '../lib/entities';
 import { buildFlow, type FlowCard, type FlowModel, layoutFlow, type Placed, ribbonPath } from '../lib/txflow';
-import { Amount, Chip, CopyButton, EntityLink, TIER_LABEL, TierGlyph } from '../parts';
 import { AddressTag } from '../views/shared';
 import './flow.css';
 
@@ -32,7 +32,7 @@ function roleLabel(c: FlowCard, model: FlowModel): { glyph: ReactNode; text: str
     };
   }
   if (c.role === 'tier' && c.tier)
-    return { glyph: <TierGlyph tier={c.tier} size={14} />, text: `${TIER_LABEL[c.tier]} payout` };
+    return { glyph: <TierGlyph tier={c.tier} size={14} />, text: `${tierLabel(c.tier)} payout` };
   if (c.role === 'devfund') return { glyph: <Landmark size={13} strokeWidth={1.5} />, text: 'Dev fund' };
   if (c.role === 'change')
     return {
@@ -108,11 +108,17 @@ function Card({
           <AddressTag address={card.address} hideLabel={card.role === 'devfund'} />
         </div>
       ) : card.role === 'coinbase' ? (
-        <div className="ex-fcard__addr ex-muted">Newly issued coins</div>
+        <div className="ex-fcard__addr" data-muted>
+          Newly issued coins
+        </div>
       ) : card.folded ? (
-        <div className="ex-fcard__addr ex-muted">Smaller amounts, folded</div>
+        <div className="ex-fcard__addr" data-muted>
+          Smaller amounts, folded
+        </div>
       ) : (
-        <div className="ex-fcard__addr ex-muted">{entity ? entity.label : 'No address'}</div>
+        <div className="ex-fcard__addr" data-muted>
+          {entity ? entity.label : 'No address'}
+        </div>
       )}
       <Amount className="ex-fcard__amt" value={card.sats} exact unit="FLUX" />
       <div className="ex-fcard__foot">

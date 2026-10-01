@@ -210,6 +210,10 @@
   font-size: var(--fs-sm);
 }
 
+.ex-fcard__addr[data-muted] {
+  color: var(--text-3);
+}
+
 .ex-fcard__amt {
   font-size: var(--fs-sm);
   color: var(--text-1);

@@ -5,8 +5,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { formatInt } from '../../../lib/format';
+import { cx } from '../../../ui';
 import { FINAL_DEPTH } from '../hooks/useChain';
-import { cx } from './basics';
+import './gauge.css';
 
 const SQ3 = Math.sqrt(3) / 2;
 

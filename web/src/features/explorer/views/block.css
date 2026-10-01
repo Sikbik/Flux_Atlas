@@ -1,208 +1,27 @@
-/* Rows and groups shared by the block, address and mempool views. */
+/* The block view: the producer's mark, the notes, and the ghost of a block that is not mined yet. */
 
-/* ---- groups and rows --------------------------------------------------------------------------- */
-
-.ex-group {
-  margin-top: var(--space-6);
-}
-
-.ex-group:first-of-type {
-  margin-top: 0;
-}
-
-.ex-group__head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  margin-bottom: var(--space-3);
-}
-
-.ex-group__title {
+.ex-note {
   margin: 0;
-  color: var(--text-2);
-  font: var(--fw-semibold) var(--fs-sm) / var(--lh-snug) var(--font-display);
-}
-
-.ex-group__count {
   color: var(--text-3);
-  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
-}
-
-.ex-group__total {
-  margin-left: auto;
-  color: var(--text-3);
-  font-size: var(--fs-xs);
-}
-
-.ex-group__rows {
-  display: grid;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ex-txrow {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-5);
-  min-height: 46px;
-  padding: var(--space-3) var(--space-4);
-  margin-inline: calc(var(--space-4) * -1);
-  border-radius: var(--r-md);
-  transition: background var(--dur-fast) var(--ease-out);
-}
-
-.ex-txrow:hover {
-  background: var(--ink-1);
-}
-
-.ex-txrow__main {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-/* The transaction link covers the row; inner links sit above it. */
-.ex-txrow__link::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-
-.ex-txrow__sub {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-4);
-  color: var(--text-3);
-  font-size: var(--fs-xs);
-  pointer-events: none;
-}
-
-.ex-txrow__sub a {
-  pointer-events: auto;
-}
-
-.ex-txrow__val {
-  position: relative;
-  color: var(--text-2);
-  font-size: var(--fs-sm);
-  text-align: right;
-}
-
-.ex-txrow[data-large] .ex-txrow__val {
-  color: var(--text-1);
-  font-weight: var(--fw-semibold);
-}
-
-.ex-txrow[data-large]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: var(--space-3);
-  bottom: var(--space-3);
-  width: 2px;
-  border-radius: 2px;
-  background: var(--accent-500);
-  box-shadow: 0 0 8px var(--accent-500);
-}
-
-.ex-group__more {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  min-height: 28px;
-  padding: 0 var(--space-4);
-  margin-left: calc(var(--space-4) * -1);
-  border: 0;
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--text-3);
-  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out);
-}
-
-.ex-group__more:hover {
-  color: var(--text-1);
-  background: var(--ink-1);
-}
-
-.ex-group__more:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.ex-group__more svg {
-  transition: transform var(--dur-base) var(--ease-out);
-}
-
-.ex-group__more svg[data-open] {
-  transform: rotate(180deg);
+  text-wrap: pretty;
 }
 
 /* ---- producer ---------------------------------------------------------------------------------- */
 
-.ex-producer {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-5);
-  padding: var(--space-5) var(--space-6);
-  border-radius: var(--r-lg);
-  background: var(--ex-card);
-  box-shadow:
-    inset 0 0 0 1px var(--line-1),
-    var(--shadow-inset-hi);
-}
-
 .ex-producer__mark {
-  position: relative;
   display: grid;
   place-items: center;
+  flex: none;
   width: 40px;
   height: 44px;
-  color: var(--tier, var(--text-3));
-  background: var(--tier-soft, var(--ink-2));
+  color: var(--text-3);
+  background: var(--ink-2);
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
 }
 
-.ex-producer__body {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.ex-producer__name {
-  font: var(--fw-medium) var(--fs-md) / var(--lh-snug) var(--font-mono);
-  min-width: 0;
-}
-
 .ex-producer__sub {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-5);
   color: var(--text-3);
   font-size: var(--fs-xs);
-}
-
-@container ex (max-width: 460px) {
-  .ex-producer {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .ex-producer > :last-child {
-    grid-column: 1 / -1;
-  }
 }
 
 /* ---- ghost (the next block, not mined yet) ------------------------------------------------------ */
@@ -211,7 +30,7 @@
   display: grid;
   justify-items: center;
   gap: var(--space-5);
-  margin: var(--space-9) var(--ex-pad);
+  margin: var(--space-9) var(--space-6);
   padding: var(--space-9) var(--space-7);
   border-radius: var(--r-xl);
   text-align: center;

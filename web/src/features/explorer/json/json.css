@@ -1,7 +1,7 @@
 .ex-json {
   margin: 0;
   border-radius: var(--r-lg);
-  background: var(--ex-card);
+  background: var(--ink-1);
   box-shadow: inset 0 0 0 1px var(--line-1);
   overflow: hidden;
 }
@@ -17,7 +17,19 @@
   font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
 }
 
+.ex-json__count {
+  color: var(--text-4);
+  font-weight: var(--fw-regular);
+}
+
+.ex-json__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .ex-json__pre {
+  max-height: min(64vh, 680px);
   margin: 0;
   padding: var(--space-5) var(--space-6);
   overflow: auto;

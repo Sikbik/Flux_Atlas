@@ -1,37 +1,46 @@
-// /block/$key: a block as a place on the chain. A hero height with previous and next, ten hexagons of
-// finality that fill as blocks land, who produced it, where its reward went, and everything in it
-// grouped by kind. A height one past the tip is a ghost that fills in the moment the block is mined.
+// /block/$key: a block as a place on the chain. Its height, ten hexagons of finality that fill as
+// blocks land, who produced it, where its reward went, and everything in it grouped by kind. A height
+// one past the tip is a ghost that fills in the moment the block is mined.
 
-import { Blocks, ChevronLeft, ChevronRight, Clock, Server } from 'lucide-react';
-import { useMemo } from 'react';
+import { Blocks, ChevronLeft, ChevronRight, Clock, type LucideIcon, Server } from 'lucide-react';
+import { type MouseEvent, useMemo } from 'react';
 import { useRuntime } from '../../../app/context';
-import { formatBytes, formatInt, formatUtcDateTime, shortCollateral } from '../../../lib/format';
+import {
+  formatBytes,
+  formatHeight,
+  formatInt,
+  formatUtcDateTime,
+  shortCollateral,
+} from '../../../lib/format';
 import { useBeat } from '../../../lib/useClock';
+import {
+  Amount,
+  Card,
+  Chip,
+  EmptyState,
+  EntityLink,
+  ErrorState,
+  Hash,
+  IconButton,
+  KeyValue,
+  RelativeTime,
+  Row,
+  Section,
+  Skeleton,
+  Stack,
+  StatusChip,
+  TierChip,
+  TierGlyph,
+  type TierName,
+  Unknown,
+  useEntityLinkProps,
+  ViewHeader,
+} from '../../../ui';
+import { ConfirmationGauge } from '../gauge/ConfirmationGauge';
 import { useTipHeight } from '../hooks/useChain';
 import { isNotFound, useBlockData } from '../hooks/useExplorerData';
 import { useMempoolLive } from '../hooks/useMempoolLive';
 import { payoutSchedule } from '../lib/emission';
-import {
-  Amount,
-  Chip,
-  ConfirmationGauge,
-  CopyButton,
-  EmptyState,
-  EntityHead,
-  EntityLink,
-  ErrorState,
-  Hash,
-  IconLink,
-  KeyValue,
-  LiveBadge,
-  Numeral,
-  RelativeTime,
-  Section,
-  Skeleton,
-  TierChip,
-  TierGlyph,
-  type TierName,
-} from '../parts';
 import { BlockTxs } from './BlockTxs';
 import { buildSlices, RewardSplit } from './RewardSplit';
 import { NodeLink, useNodeInfo } from './shared';
@@ -39,27 +48,22 @@ import './block.css';
 
 function BlockSkeleton() {
   return (
-    <div className="ex-root" role="status" aria-busy="true" aria-label="Loading block">
-      <EntityHead kind="Block" icon={Blocks} title={<Skeleton w={280} h={46} radius={8} />} loading>
+    <div role="status" aria-busy="true" aria-label="Loading block">
+      <ViewHeader kind="Block" icon={Blocks} title={<Skeleton w={190} h={26} radius={6} />}>
         <Skeleton w={190} h={22} radius={11} />
         <Skeleton w={150} h={22} radius={11} />
-        <Skeleton w={90} h={22} radius={11} />
-      </EntityHead>
+      </ViewHeader>
       <Section title="Produced by">
-        <Skeleton h={66} radius={14} />
+        <Skeleton h={64} radius={12} />
       </Section>
       <Section title="Where the reward went">
-        <Skeleton h={12} radius={6} style={{ marginBottom: 12 }} />
-        <div className="ex-payouts">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} h={106} radius={14} />
-          ))}
-        </div>
+        <Stack gap={5}>
+          <Skeleton h={16} radius={8} />
+          <Skeleton h={112} radius={8} />
+        </Stack>
       </Section>
       <Section title="Transactions">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} h={46} radius={10} style={{ marginBottom: 6 }} />
-        ))}
+        <Skeleton h={150} radius={8} />
       </Section>
     </div>
   );
@@ -77,10 +81,10 @@ function BlockGhost({ height, tip }: { height: number; tip: number | null }) {
   const C = 2 * Math.PI * R;
   const progress = next ? beat.progress : 0;
   return (
-    <div className="ex-root">
-      <EntityHead kind="Block" icon={Blocks} title={<Numeral value={height} />} status="pending">
+    <div>
+      <ViewHeader kind="Block" icon={Blocks} title={formatHeight(height)} mono>
         <Chip icon={Clock}>Not mined yet</Chip>
-      </EntityHead>
+      </ViewHeader>
       <div className="ex-ghost" role="status">
         <div className="ex-ghost__ring">
           <svg width="112" height="112" viewBox="0 0 112 112" aria-hidden="true">
@@ -132,33 +136,61 @@ function Producer({
   const known = t === 'cumulus' || t === 'nimbus' || t === 'stratus';
   const ep = info?.endpoint || endpoint;
   return (
-    <div className="ex-producer" data-tier={known ? t : undefined}>
-      <span className="ex-producer__mark" aria-hidden="true">
-        {known ? <TierGlyph tier={t} size={20} /> : <Server size={18} strokeWidth={1.5} />}
-      </span>
-      <div className="ex-producer__body">
-        {ep || id !== null ? (
-          <span className="ex-producer__name">
-            <NodeLink id={id} fallbackEndpoint={endpoint} fallbackTier={tier} glyph={false} />
+    <Card padding="md">
+      <Row gap={5} justify="between">
+        <Row gap={5} wrap={false}>
+          <span className="ex-producer__mark" aria-hidden="true">
+            {known ? <TierGlyph tier={t} size={22} /> : <Server size={20} strokeWidth={1.5} />}
           </span>
-        ) : (
-          <span className="ex-unknown">Unknown producer</span>
-        )}
-        <span className="ex-producer__sub">
-          {info?.cc ? (
-            <span>
-              Hosted in <EntityLink kind="country" value={info.cc} />
-            </span>
-          ) : null}
-          {outpoint ? (
-            <span className="ex-mono" title={outpoint}>
-              collateral {shortCollateral(outpoint)}
-            </span>
-          ) : null}
-        </span>
-      </div>
-      <TierChip tier={known ? t : 'unknown'} />
-    </div>
+          <Stack gap={2}>
+            {ep || id !== null ? (
+              <NodeLink id={id} fallbackEndpoint={endpoint} glyph={false} />
+            ) : (
+              <Unknown>Unknown producer</Unknown>
+            )}
+            <Row gap={5} className="ex-producer__sub">
+              {info?.cc ? (
+                <span>
+                  Hosted in <EntityLink kind="country" value={info.cc} />
+                </span>
+              ) : null}
+              {outpoint ? (
+                <span className="ui-mono" title={outpoint}>
+                  collateral {shortCollateral(outpoint)}
+                </span>
+              ) : null}
+            </Row>
+          </Stack>
+        </Row>
+        <TierChip tier={known ? t : 'unknown'} />
+      </Row>
+    </Card>
+  );
+}
+
+/** Previous and next block: an icon button that navigates like the entity link it stands for. */
+function StepButton({
+  height,
+  label,
+  icon,
+  disabled,
+}: {
+  height: number;
+  label: string;
+  icon: LucideIcon;
+  disabled?: boolean;
+}) {
+  const link = useEntityLinkProps('block', String(height));
+  return (
+    <IconButton
+      size="sm"
+      icon={icon}
+      label={label}
+      disabled={disabled}
+      onClick={(e: MouseEvent<HTMLButtonElement>) =>
+        link.onClick?.(e as unknown as MouseEvent<HTMLAnchorElement>)
+      }
+    />
   );
 }
 
@@ -179,21 +211,17 @@ export function BlockView({ blockKey }: { blockKey: string }) {
       if (asHeight !== null && (tip === null || asHeight > tip))
         return <BlockGhost height={asHeight} tip={tip} />;
       return (
-        <div className="ex-root">
-          <EmptyState icon={Blocks} title="No such block">
-            {asHeight !== null
-              ? `Block ${formatInt(asHeight)} is not in the chain this server knows.`
-              : 'No block has this hash on the chain this server knows.'}
-          </EmptyState>
-        </div>
+        <EmptyState icon={Blocks} title="No such block" pattern>
+          {asHeight !== null
+            ? `Block ${formatInt(asHeight)} is not in the chain this server knows.`
+            : 'No block has this hash on the chain this server knows.'}
+        </EmptyState>
       );
     }
     return (
-      <div className="ex-root">
-        <ErrorState title="Could not load this block" onRetry={() => void q.refetch()}>
-          The explorer did not answer. The block is fine; try again in a moment.
-        </ErrorState>
-      </div>
+      <ErrorState error={q.error} title="Could not load this block" onRetry={() => void q.refetch()}>
+        The explorer did not answer. The block is fine; try again in a moment.
+      </ErrorState>
     );
   }
 
@@ -202,43 +230,38 @@ export function BlockView({ blockKey }: { blockKey: string }) {
   const kindWord =
     b.kind === 'pon' ? 'Proof of Node' : b.kind === 'pow' ? 'Proof of Work' : 'Unknown consensus';
   const hasPrev = b.height > 0;
+  const hasValue = d.txs.some((t) => t.kind !== 'coinbase');
   return (
-    <div className="ex-root">
-      <EntityHead
+    <div>
+      <ViewHeader
         kind="Block"
         icon={Blocks}
-        title={<Numeral value={b.height} />}
-        status={final ? 'ok' : 'pending'}
-        aside={final ? null : <LiveBadge label="Following the chain" />}
-        actions={
+        title={formatHeight(b.height)}
+        mono
+        subtitle={
           <>
-            <IconLink
-              kind="block"
-              value={hasPrev ? b.height - 1 : null}
-              label="Previous block"
-              disabled={!hasPrev}
-            >
-              <ChevronLeft size={16} strokeWidth={1.6} aria-hidden="true" />
-            </IconLink>
-            <IconLink
-              kind="block"
-              value={b.height + 1}
-              label={q.hasNext ? 'Next block' : 'Next block (not mined yet)'}
-            >
-              <ChevronRight size={16} strokeWidth={1.6} aria-hidden="true" />
-            </IconLink>
+            {formatInt(b.tx_count)} transactions{b.size > 0 ? `, ${formatBytes(b.size)}` : ''}, produced{' '}
+            <RelativeTime ts={b.time_ms} />
           </>
         }
-        sub={<Hash value={b.hash} full copy="always" what="block hash" />}
+        freshness={final ? undefined : <StatusChip status="live" label="Following the chain" />}
+        actions={
+          <>
+            <StepButton height={b.height - 1} label="Previous block" icon={ChevronLeft} disabled={!hasPrev} />
+            <StepButton
+              height={b.height + 1}
+              label={q.hasNext ? 'Next block' : 'Next block (not mined yet)'}
+              icon={ChevronRight}
+            />
+          </>
+        }
       >
         <ConfirmationGauge confirmations={q.confirmations} />
         <Chip>{kindWord}</Chip>
-        <Chip icon={Clock}>
-          {formatUtcDateTime(b.time_ms)} <RelativeTime ts={b.time_ms} />
+        <Chip icon={Clock} mono>
+          {formatUtcDateTime(b.time_ms)}
         </Chip>
-        <Chip mono>{formatInt(b.tx_count)} tx</Chip>
-        {b.size > 0 ? <Chip mono>{formatBytes(b.size)}</Chip> : null}
-      </EntityHead>
+      </ViewHeader>
 
       <Section title="Produced by">
         <Producer
@@ -269,6 +292,20 @@ export function BlockView({ blockKey }: { blockKey: string }) {
       </Section>
 
       <BlockTxs txs={d.txs} nodeTxs={d.node_txs} />
+      {hasValue ? null : (
+        <Section title="Transactions">
+          <p className="ex-muted">
+            This block holds only its coinbase
+            {d.txs.some((t) => t.kind === 'coinbase') ? (
+              <>
+                {', '}
+                <EntityLink kind="tx" value={d.txs.find((t) => t.kind === 'coinbase')?.txid} />
+              </>
+            ) : null}
+            .
+          </p>
+        </Section>
+      )}
 
       <Section title="Details" collapsible defaultOpen={false}>
         <KeyValue
@@ -282,7 +319,7 @@ export function BlockView({ blockKey }: { blockKey: string }) {
               ) : q.hasNext ? (
                 <EntityLink kind="block" value={b.height + 1} />
               ) : (
-                <span className="ex-muted">Not mined yet</span>
+                <Unknown>Not mined yet</Unknown>
               ),
             },
             { label: 'Version', value: formatInt(d.version), mono: true },
@@ -291,12 +328,8 @@ export function BlockView({ blockKey }: { blockKey: string }) {
             {
               label: 'Producer collateral',
               value: d.producer_collateral ? (
-                <span className="ex-hashrow">
-                  {d.producer_collateral}
-                  <CopyButton value={d.producer_collateral} what="collateral" />
-                </span>
+                <Hash value={d.producer_collateral} full copy="hover" what="collateral" />
               ) : null,
-              mono: true,
             },
           ]}
         />

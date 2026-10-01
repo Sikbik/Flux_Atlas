@@ -1,16 +1,23 @@
-// Where a block's reward went: one proportional strip (Stratus, Nimbus, Cumulus, dev fund) and a card
-// per recipient. Hover or focus on either side lights the matching part of the other, so the strip
-// reads as an instrument and the cards as its legend. Tier colours appear here because a payout
-// ARRIVES here (design 5.2); nowhere else on the page.
+// Where a block's reward went: one proportional bar (Stratus, Nimbus, Cumulus, dev fund) and a table of
+// the recipients. Tier colours appear here because a payout ARRIVES here (design 5.2).
 
 import { Landmark } from 'lucide-react';
-import { useState } from 'react';
 import type { PayoutDto } from '../../../api/generated/PayoutDto';
 import { formatPercent, parseFlux } from '../../../lib/format';
+import {
+  Amount,
+  Chip,
+  DataTable,
+  type DataTableColumn,
+  ShareBar,
+  type ShareSegment,
+  Stack,
+  TierChip,
+  type TierName,
+  tierLabel,
+} from '../../../ui';
 import { DEV_FUND_ADDRESS } from '../lib/entities';
-import { Amount, cx, TIER_LABEL, TierGlyph, type TierName } from '../parts';
 import { AddressTag, NodeLink } from './shared';
-import './reward.css';
 
 export interface Slice {
   key: string;
@@ -36,7 +43,7 @@ export function buildSlices(
     if (sats === null || (p.tier !== 'stratus' && p.tier !== 'nimbus' && p.tier !== 'cumulus')) return;
     slices.push({
       key: `${p.tier}:${i}`,
-      label: TIER_LABEL[p.tier],
+      label: tierLabel(p.tier),
       tier: p.tier,
       sats,
       address: p.address,
@@ -57,76 +64,67 @@ export function buildSlices(
   return slices;
 }
 
-const color = (s: Slice) => (s.tier ? `var(--tier-${s.tier}-ink)` : 'var(--accent-500)');
-
-export function RewardSplit({ slices, loading }: { slices: readonly Slice[]; loading?: boolean }) {
-  const [hot, setHot] = useState<string | null>(null);
+export function RewardSplit({ slices }: { slices: readonly Slice[] }) {
   const total = slices.reduce((s, x) => s + x.sats, 0n);
-  const pct = (x: Slice) => (total > 0n ? Number((x.sats * 10_000n) / total) / 10_000 : 0);
-  const summary = slices.map((s) => `${s.label} ${Number(s.sats) / 1e8} FLUX`).join(', ');
+  const share = (x: Slice) => (total > 0n ? Number((x.sats * 10_000n) / total) / 10_000 : 0);
+  const segments: ShareSegment[] = slices.map((s) => ({
+    id: s.key,
+    label: s.label,
+    value: Number(s.sats) / 1e8,
+    tier: s.tier,
+  }));
+  const columns: readonly DataTableColumn<Slice>[] = [
+    {
+      id: 'who',
+      header: 'Recipient',
+      cell: (s) =>
+        s.tier ? (
+          <TierChip tier={s.tier} size="sm" />
+        ) : (
+          <Chip size="sm" icon={Landmark} title={s.note}>
+            {s.label}
+          </Chip>
+        ),
+      minWidth: 120,
+    },
+    {
+      id: 'amount',
+      header: 'Amount',
+      numeric: true,
+      cell: (s) => <Amount value={s.sats} decimals={s.sats % 1_000_000n === 0n ? 2 : 8} />,
+    },
+    { id: 'share', header: 'Share', numeric: true, cell: (s) => formatPercent(share(s), 1) },
+    {
+      id: 'node',
+      header: 'Node',
+      cell: (s) =>
+        s.tier ? <NodeLink id={s.node ?? null} glyph={false} /> : <span className="ex-note">{s.note}</span>,
+      minWidth: 210,
+    },
+    {
+      id: 'address',
+      header: 'Address',
+      cell: (s) => <AddressTag address={s.address} hideLabel />,
+      minWidth: 150,
+    },
+  ];
   return (
-    <div className="ex-split" data-loading={loading || undefined} onPointerLeave={() => setHot(null)}>
-      <div
-        className="ex-strip"
-        role="img"
-        aria-label={`Reward split: ${summary}`}
-        data-hot={hot ? '' : undefined}
-      >
-        {slices.map((s, i) => (
-          <i
-            key={s.key}
-            className="ex-strip__seg"
-            data-hot={hot === s.key || undefined}
-            data-tier={s.tier}
-            style={{
-              flexGrow: Math.max(1, Number(s.sats / 1_000_000n)),
-              ['--c' as string]: color(s),
-              ['--i' as string]: i,
-            }}
-            onPointerEnter={() => setHot(s.key)}
-          />
-        ))}
-      </div>
-      <ul className="ex-payouts" aria-label="Recipients">
-        {slices.map((s, i) => (
-          <li
-            key={s.key}
-            className={cx('ex-payout')}
-            data-tier={s.tier}
-            data-devfund={s.tier ? undefined : ''}
-            data-hot={hot === s.key || undefined}
-            style={{ ['--i' as string]: i }}
-            onPointerEnter={() => setHot(s.key)}
-            onFocus={() => setHot(s.key)}
-            onBlur={() => setHot(null)}
-          >
-            <div className="ex-payout__head">
-              {s.tier ? (
-                <TierGlyph tier={s.tier} size={15} />
-              ) : (
-                <Landmark size={15} strokeWidth={1.5} aria-hidden="true" />
-              )}
-              <span className="ex-payout__name">{s.label}</span>
-              <span className="ex-payout__share">{formatPercent(pct(s), 1)}</span>
-            </div>
-            <Amount
-              className="ex-payout__amt"
-              value={s.sats}
-              decimals={s.sats % 1_000_000n === 0n ? 2 : 8}
-              dimFraction
-              unit="FLUX"
-            />
-            <div className="ex-payout__who">
-              {s.tier ? (
-                <NodeLink id={s.node ?? null} glyph={false} />
-              ) : (
-                <span className="ex-payout__note">{s.note}</span>
-              )}
-              <AddressTag address={s.address} />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <Stack gap={6}>
+      <ShareBar
+        segments={segments}
+        legend="none"
+        size="lg"
+        label="How the block reward was split"
+        format={(v) => `${v.toFixed(2)} FLUX`}
+      />
+      <DataTable
+        aria-label="Recipients of the block reward"
+        rows={slices}
+        columns={columns}
+        rowKey={(s) => s.key}
+        rowHeight="compact"
+        zebra={false}
+      />
+    </Stack>
   );
 }

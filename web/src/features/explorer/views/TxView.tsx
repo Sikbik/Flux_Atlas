@@ -7,39 +7,59 @@ import { ArrowLeftRight, Boxes, Clock, Coins, Layers, Server } from 'lucide-reac
 import { useMemo, useState } from 'react';
 import type { NodeTxDto } from '../../../api/generated/NodeTxDto';
 import type { TxDetailDto } from '../../../api/generated/TxDetailDto';
+import type { TxInputDto } from '../../../api/generated/TxInputDto';
+import type { TxOutputDto } from '../../../api/generated/TxOutputDto';
 import { useNetwork, usePendingApps } from '../../../app/context';
 import { formatBytes, formatInt, formatSats, formatUtcDateTime, parseFlux } from '../../../lib/format';
-import { FlowDiagram } from '../flow/FlowDiagram';
-import { isNotFound, useTxData } from '../hooks/useExplorerData';
-import { payoutSchedule } from '../lib/emission';
-import { buildFlow } from '../lib/txflow';
-import { NODE_TX_KINDS, TX_KINDS } from '../lib/txkinds';
 import {
   Amount,
   Chip,
-  ConfirmationGauge,
   CopyButton,
+  DataTable,
+  type DataTableColumn,
   EmptyState,
-  EntityHead,
   EntityLink,
   ErrorState,
   Hash,
-  HeroAmount,
   KeyValue,
-  LiveBadge,
   RelativeTime,
+  Row,
   Section,
   Skeleton,
+  Stat,
+  StatGrid,
+  StatusChip,
   TabPanel,
   Tabs,
   TierChip,
   type TierName,
-} from '../parts';
-import { JsonView } from '../parts/JsonView';
+  Unknown,
+  ViewHeader,
+} from '../../../ui';
+import { FlowDiagram } from '../flow/FlowDiagram';
+import { ConfirmationGauge } from '../gauge/ConfirmationGauge';
+import { isNotFound, useTxData } from '../hooks/useExplorerData';
+import { JsonView } from '../json/JsonView';
+import { payoutSchedule } from '../lib/emission';
+import { buildFlow } from '../lib/txflow';
+import { NODE_TX_KINDS, TX_KINDS } from '../lib/txkinds';
 import { AddressTag, NodeLink } from './shared';
 import './tx.css';
 
 type TabId = 'overview' | 'io' | 'raw';
+
+/** "2,560.00000000" -> "2,560": a headline figure shows the digits that matter, not eight decimals of zeros. */
+function trimFlux(s: string): string {
+  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s;
+}
+
+/** The fee tile's caption: the rate and the size, or a plain statement when no fee was paid. */
+function feeCaption(fee: bigint, size: number): string | undefined {
+  const bytes = size > 0 ? formatBytes(size) : null;
+  if (fee === 0n) return bytes ? `No fee paid, ${bytes}` : 'No fee paid';
+  if (size <= 0) return undefined;
+  return `${(Number(fee) / size).toFixed(1)} sat per byte, ${bytes}`;
+}
 
 function kindHead(tx: TxDetailDto): { kind: string; icon: typeof ArrowLeftRight } {
   switch (tx.kind) {
@@ -56,20 +76,34 @@ function kindHead(tx: TxDetailDto): { kind: string; icon: typeof ArrowLeftRight 
   }
 }
 
+interface Hero {
+  /** What the figure is ("Sent", "Block reward"). */
+  label: string;
+  sats: bigint | null;
+  word: string | null;
+  sentence: string;
+}
+
 /** What the headline number is: value moved to others, the reward, or a word for value-less transactions. */
-function useHero(tx: TxDetailDto): { sats: bigint | null; word: string | null; sentence: string } {
+function useHero(tx: TxDetailDto): Hero {
   return useMemo(() => {
     const model = buildFlow(tx);
     const node = tx.node_tx;
     if (tx.kind === 'node_start' || tx.kind === 'node_confirm' || tx.kind === 'node_tx') {
       const w = node ? NODE_TX_KINDS[node.kind].label : TX_KINDS[tx.kind].label;
-      return { sats: null, word: w, sentence: node ? NODE_TX_KINDS[node.kind].hint : TX_KINDS[tx.kind].hint };
+      return {
+        label: 'Action',
+        sats: null,
+        word: w,
+        sentence: node ? NODE_TX_KINDS[node.kind].hint : TX_KINDS[tx.kind].hint,
+      };
     }
     if (model.coinbase) {
       return {
+        label: 'Block reward',
         sats: model.valueOutSats,
         word: null,
-        sentence: 'The reward of this block, paid out to one node per tier and the dev fund.',
+        sentence: 'Paid out to one node per tier and the dev fund.',
       };
     }
     let sent = 0n;
@@ -84,6 +118,7 @@ function useHero(tx: TxDetailDto): { sats: bigint | null; word: string | null; s
     }
     if (model.selfTransfer || recipients === 0) {
       return {
+        label: 'Value moved',
         sats: model.valueOutSats,
         word: null,
         sentence: 'Moved between addresses of the same sender; nothing left the wallet.',
@@ -96,57 +131,43 @@ function useHero(tx: TxDetailDto): { sats: bigint | null; word: string | null; s
         : change > 0
           ? 'The rest returns to the sender as change.'
           : '';
-    return { sats: sent, word: null, sentence: `Sent to ${to}. ${kindNote}`.trim() };
+    return { label: 'Sent', sats: sent, word: null, sentence: `Sent to ${to}. ${kindNote}`.trim() };
   }, [tx]);
 }
 
 function TxSkeleton() {
   return (
-    <div className="ex-root" role="status" aria-busy="true" aria-label="Loading transaction">
-      <EntityHead
-        kind="Transaction"
-        icon={ArrowLeftRight}
-        title={<Skeleton w={260} h={46} radius={8} />}
-        loading
-      >
+    <div role="status" aria-busy="true" aria-label="Loading transaction">
+      <ViewHeader kind="Transaction" icon={ArrowLeftRight} title={<Skeleton w={260} h={26} radius={6} />}>
         <Skeleton w={200} h={22} radius={11} />
         <Skeleton w={110} h={22} radius={11} />
-        <Skeleton w={170} h={22} radius={11} />
-      </EntityHead>
-      <div style={{ padding: '0 var(--ex-pad)' }}>
-        <Skeleton h={36} radius={10} style={{ margin: '14px 0' }} />
+      </ViewHeader>
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat hero label="Sent" loading />
+        </StatGrid>
       </div>
       <Section title="Where the value went">
-        <Skeleton h={230} radius={14} />
+        <Skeleton h={230} radius={12} />
       </Section>
     </div>
   );
 }
 
 function NodeTxCard({ n }: { n: NodeTxDto }) {
-  const info = NODE_TX_KINDS[n.kind];
   const tier = (n.benchmark_tier ?? 'unknown') as TierName | 'unknown';
   return (
-    <Section title="Fluxnode transaction" icon={Server} aside={info.label}>
-      <p className="ex-note">{info.hint}</p>
+    <Section title="The node" icon={Server}>
       <KeyValue
+        align="start"
         items={[
           {
             label: 'Node',
             value: <NodeLink id={n.node} fallbackEndpoint={n.endpoint} fallbackTier={n.benchmark_tier} />,
           },
-          {
-            label: 'Collateral',
-            value: (
-              <span className="ex-hashrow">
-                {n.collateral}
-                <CopyButton value={n.collateral} what="collateral" />
-              </span>
-            ),
-            mono: true,
-          },
+          { label: 'Collateral', value: <Hash value={n.collateral} full copy="hover" what="collateral" /> },
           { label: 'Benchmark tier', value: n.benchmark_tier ? <TierChip tier={tier} /> : null },
-          { label: 'Signed', value: formatUtcDateTime(n.sig_time_ms) },
+          { label: 'Signed', value: formatUtcDateTime(n.sig_time_ms), mono: true },
           { label: 'Version', value: formatInt(n.tx_version), mono: true },
           { label: 'Collateral type', value: n.p2sh ? 'P2SH (multisig capable)' : 'P2PKH' },
         ]}
@@ -166,11 +187,11 @@ function AppMessageCard({ tx }: { tx: TxDetailDto }) {
         the app's node specification is stored separately.
       </p>
       <KeyValue
+        align="start"
         items={[
           {
             label: 'Message hash',
             value: payload ? <Hash value={payload} full copy="hover" what="message hash" /> : null,
-            mono: true,
           },
           {
             label: 'App',
@@ -179,7 +200,7 @@ function AppMessageCard({ tx }: { tx: TxDetailDto }) {
                 {known.app}
               </EntityLink>
             ) : (
-              <span className="ex-muted">Not recorded in this transaction</span>
+              <Unknown>Not recorded in this transaction</Unknown>
             ),
           },
         ]}
@@ -191,31 +212,29 @@ function AppMessageCard({ tx }: { tx: TxDetailDto }) {
 function CoinbaseCard({ tx }: { tx: TxDetailDto }) {
   const sched = tx.height !== null ? payoutSchedule(tx.height) : null;
   if (!sched) return null;
-  const rows: [string, bigint, TierName | null][] = [
-    ['Stratus', sched.stratus, 'stratus'],
-    ['Nimbus', sched.nimbus, 'nimbus'],
-    ['Cumulus', sched.cumulus, 'cumulus'],
+  const rows: [TierName, bigint][] = [
+    ['stratus', sched.stratus],
+    ['nimbus', sched.nimbus],
+    ['cumulus', sched.cumulus],
   ];
   return (
     <Section
       title="How this reward is split"
       icon={Layers}
       aside={`subsidy ${formatSats(sched.subsidy, { decimals: 2 })}`}
+      collapsible
+      defaultOpen={false}
     >
       <p className="ex-note">
         Every output of a Proof of Node coinbase is recognised by its amount. One node per tier is paid its
         tier's share of the subsidy; the dev fund receives the remainder plus the fees of the block.
       </p>
       <KeyValue
+        align="start"
         items={[
-          ...rows.map(([label, sats, tier]) => ({
-            label,
-            value: (
-              <span className="ex-tierrow">
-                <TierChip tier={tier} label={label} size="sm" />
-                <Amount value={sats} decimals={2} />
-              </span>
-            ),
+          ...rows.map(([tier, sats]) => ({
+            label: <TierChip tier={tier} size="sm" />,
+            value: <Amount value={sats} decimals={2} />,
           })),
           { label: 'Dev fund (minimum)', value: <Amount value={sched.devFundMin} decimals={2} /> },
         ]}
@@ -224,85 +243,157 @@ function CoinbaseCard({ tx }: { tx: TxDetailDto }) {
   );
 }
 
-function IoRows({ tx }: { tx: TxDetailDto }) {
+// ---- inputs and outputs --------------------------------------------------------------------------
+
+interface InRow {
+  n: number;
+  input: TxInputDto;
+}
+interface OutRow {
+  n: number;
+  output: TxOutputDto;
+}
+
+// The address and its amount sit side by side, and the link to the neighbouring transaction comes last:
+// on a phone the table scrolls sideways and the amount stays in view.
+const indexColumn = { id: 'n', header: '#', numeric: true, width: 56, sticky: false } as const;
+
+function inputColumns(coinbase: boolean): readonly DataTableColumn<InRow>[] {
+  return [
+    { ...indexColumn, cell: (r) => r.n },
+    {
+      id: 'from',
+      header: 'From',
+      cell: (r) =>
+        coinbase || r.input.coinbase ? (
+          <span className="ex-note">Newly issued coins</span>
+        ) : (
+          <AddressTag address={r.input.address} />
+        ),
+      minWidth: 150,
+    },
+    {
+      id: 'amount',
+      header: 'Amount',
+      numeric: true,
+      cell: (r) => <Amount value={r.input.value} exact />,
+      minWidth: 160,
+    },
+    {
+      id: 'spends',
+      header: 'Spends',
+      cell: (r) =>
+        r.input.prev_txid ? (
+          <span>
+            output {r.input.prev_vout} of <EntityLink kind="tx" value={r.input.prev_txid} />
+          </span>
+        ) : (
+          <span className="ex-note">No earlier output</span>
+        ),
+      minWidth: 210,
+    },
+  ];
+}
+
+const OUTPUT_COLUMNS: readonly DataTableColumn<OutRow>[] = [
+  { ...indexColumn, cell: (r) => r.n },
+  {
+    id: 'to',
+    header: 'To',
+    cell: (r) => {
+      const o = r.output;
+      return o.script_type === 'nulldata' || (o.address === null && o.op_return !== null) ? (
+        <span>
+          Data output <code className="ex-code">{o.op_return ?? 'binary'}</code>
+        </span>
+      ) : (
+        <AddressTag address={o.address} />
+      );
+    },
+    minWidth: 150,
+  },
+  {
+    id: 'amount',
+    header: 'Amount',
+    numeric: true,
+    cell: (r) => <Amount value={r.output.value} exact />,
+    minWidth: 160,
+  },
+  {
+    id: 'state',
+    header: 'Spent',
+    cell: (r) => {
+      const o = r.output;
+      if (o.spent_txid) {
+        return (
+          <span>
+            in <EntityLink kind="tx" value={o.spent_txid} />
+            {o.spent_height !== null ? (
+              <>
+                {' at '}
+                <EntityLink kind="block" value={o.spent_height} />
+              </>
+            ) : null}
+          </span>
+        );
+      }
+      if (o.script_type === 'nulldata') return <span className="ex-note">Not spendable</span>;
+      return (
+        <Chip size="sm" tone="ghost">
+          Unspent
+        </Chip>
+      );
+    },
+    minWidth: 210,
+  },
+];
+
+function IoTables({ tx }: { tx: TxDetailDto }) {
   const coinbase = tx.kind === 'coinbase' || tx.inputs.some((i) => i.coinbase);
+  const inRows = useMemo<InRow[]>(() => tx.inputs.map((input, n) => ({ n, input })), [tx.inputs]);
+  const outRows = useMemo<OutRow[]>(
+    () => tx.outputs.map((output) => ({ n: output.n, output })),
+    [tx.outputs],
+  );
+  const inCols = useMemo(() => inputColumns(coinbase), [coinbase]);
+  const nodeTx = tx.kind === 'node_start' || tx.kind === 'node_confirm' || tx.kind === 'node_tx';
   return (
-    <div className="ex-io">
-      <Section title="Inputs" aside={formatInt(tx.inputs.length)}>
+    <>
+      <Section title="Inputs" aside={formatInt(tx.inputs.length)} flush>
         {tx.inputs.length === 0 ? (
-          <p className="ex-muted">
-            {tx.kind === 'node_start' || tx.kind === 'node_confirm' || tx.kind === 'node_tx'
+          <p className="ex-note ex-pad">
+            {nodeTx
               ? 'A fluxnode transaction spends nothing: it is signed by the node collateral.'
               : 'The explorer did not list any inputs.'}
           </p>
         ) : (
-          <ol className="ex-iolist">
-            {tx.inputs.map((inp, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: inputs are positional
-              <li key={i} className="ex-iorow">
-                <span className="ex-iorow__n">{i}</span>
-                <div className="ex-iorow__main">
-                  {coinbase || inp.coinbase ? (
-                    <span>Newly issued coins</span>
-                  ) : (
-                    <AddressTag address={inp.address} />
-                  )}
-                  {inp.prev_txid ? (
-                    <span className="ex-iorow__sub">
-                      spends output {inp.prev_vout} of <EntityLink kind="tx" value={inp.prev_txid} />
-                    </span>
-                  ) : null}
-                </div>
-                <Amount value={inp.value} exact />
-              </li>
-            ))}
-          </ol>
+          <DataTable
+            aria-label="Inputs"
+            rows={inRows}
+            columns={inCols}
+            rowKey={(r) => r.n}
+            rowHeight="compact"
+            maxHeight={360}
+          />
         )}
       </Section>
-      <Section title="Outputs" aside={formatInt(tx.outputs.length)}>
-        <ol className="ex-iolist">
-          {tx.outputs.map((o) => (
-            <li key={o.n} className="ex-iorow">
-              <span className="ex-iorow__n">{o.n}</span>
-              <div className="ex-iorow__main">
-                {o.script_type === 'nulldata' || (o.address === null && o.op_return !== null) ? (
-                  <span className="ex-iorow__data">
-                    Data output <code>{o.op_return ?? 'binary'}</code>
-                  </span>
-                ) : (
-                  <AddressTag address={o.address} />
-                )}
-                <span className="ex-iorow__sub">
-                  {o.script_type ? <Chip size="sm">{o.script_type}</Chip> : null}
-                  {o.spent_txid ? (
-                    <span>
-                      spent in <EntityLink kind="tx" value={o.spent_txid} />
-                      {o.spent_height !== null ? (
-                        <>
-                          {' '}
-                          at block <EntityLink kind="block" value={o.spent_height} />
-                        </>
-                      ) : null}
-                    </span>
-                  ) : o.script_type === 'nulldata' ? null : (
-                    <span className="ex-iorow__unspent">
-                      <i aria-hidden="true" /> unspent
-                    </span>
-                  )}
-                </span>
-              </div>
-              <Amount value={o.value} exact />
-            </li>
-          ))}
-        </ol>
+      <Section title="Outputs" aside={formatInt(tx.outputs.length)} flush>
+        <DataTable
+          aria-label="Outputs"
+          rows={outRows}
+          columns={OUTPUT_COLUMNS}
+          rowKey={(r) => r.n}
+          rowHeight="compact"
+          maxHeight={360}
+        />
       </Section>
-    </div>
+    </>
   );
 }
 
 export function TxView({ txid }: { txid: string }) {
   const q = useTxData(txid);
-  const [tab, setTab] = useState<TabId>('overview');
+  const [picked, setTab] = useState<TabId>('overview');
   const firstSeen = useNetwork((s) => s.mempool.get(txid)?.firstSeenMs ?? null);
   const tx = q.data;
 
@@ -311,21 +402,17 @@ export function TxView({ txid }: { txid: string }) {
   if (!tx) {
     if (isNotFound(q.error)) {
       return (
-        <div className="ex-root">
-          <EmptyState icon={ArrowLeftRight} title="No such transaction">
-            The chain and the mempool this server follows have no transaction with this id. A transaction that
-            was just broadcast can take a moment to appear; this page will not refresh by itself, so open it
-            again shortly.
-          </EmptyState>
-        </div>
+        <EmptyState icon={ArrowLeftRight} title="No such transaction" pattern>
+          The chain and the mempool this server follows have no transaction with this id. A transaction that
+          was just broadcast can take a moment to appear; this page will not refresh by itself, so open it
+          again shortly.
+        </EmptyState>
       );
     }
     return (
-      <div className="ex-root">
-        <ErrorState title="Could not load this transaction" onRetry={() => void q.refetch()}>
-          The explorer did not answer. The transaction is fine; try again in a moment.
-        </ErrorState>
-      </div>
+      <ErrorState error={q.error} title="Could not load this transaction" onRetry={() => void q.refetch()}>
+        The explorer did not answer. The transaction is fine; try again in a moment.
+      </ErrorState>
     );
   }
 
@@ -333,33 +420,43 @@ export function TxView({ txid }: { txid: string }) {
   const pending = q.pending;
   const final = !pending && q.confirmations >= 10;
   const feeSats = parseFlux(tx.fee);
-  const rate = feeSats !== null && tx.size > 0 ? Number(feeSats) / tx.size : null;
+  // A coinbase and a node transaction pay no fee worth a tile; a transfer shows even a zero one.
+  const showFee = feeSats !== null && (feeSats > 0n || tx.kind === 'transfer' || tx.kind === 'app_message');
+  const hasIo = tx.inputs.length > 0 || tx.outputs.length > 0;
+  const tab: TabId = picked === 'io' && !hasIo ? 'overview' : picked;
   const tabs = [
     { id: 'overview' as const, label: 'Overview' },
-    { id: 'io' as const, label: 'Inputs and outputs', badge: `${tx.inputs.length}/${tx.outputs.length}` },
+    ...(hasIo
+      ? [
+          {
+            id: 'io' as const,
+            label: 'Inputs and outputs',
+            badge: `${tx.inputs.length}/${tx.outputs.length}`,
+          },
+        ]
+      : []),
     { id: 'raw' as const, label: 'Raw' },
   ];
   const tabsId = `tx-${txid.slice(0, 8)}`;
 
   return (
-    <div className="ex-root">
-      <EntityHead
+    <div>
+      <ViewHeader
         kind={head.kind}
         icon={head.icon}
-        status={pending ? 'pending' : 'ok'}
-        aside={final ? null : <LiveBadge label={pending ? 'Watching the mempool' : 'Following the chain'} />}
-        title={
-          hero.sats !== null ? (
-            <HeroAmount sats={hero.sats} decimals={hero.sats % 1_000_000n === 0n ? 2 : 8} />
-          ) : (
-            <span className="ex-head__word">{hero.word}</span>
-          )
-        }
-        sub={
-          <>
-            <span>{hero.sentence}</span>
-            <Hash value={tx.txid} full copy="always" what="transaction id" />
-          </>
+        title={tx.txid}
+        mono
+        subtitle={hero.sentence}
+        freshness={
+          <Row gap={3} wrap={false}>
+            {final ? null : (
+              <StatusChip
+                status={pending ? 'pending' : 'live'}
+                label={pending ? 'Watching the mempool' : 'Following the chain'}
+              />
+            )}
+            <CopyButton size="md" value={tx.txid} what="transaction id" />
+          </Row>
         }
       >
         <ConfirmationGauge confirmations={q.confirmations} pending={pending} />
@@ -380,70 +477,86 @@ export function TxView({ txid }: { txid: string }) {
         ) : (
           <Chip icon={Clock}>In the mempool</Chip>
         )}
-        {feeSats !== null && feeSats > 0n ? (
-          <Chip mono title={rate === null ? undefined : `${rate.toFixed(1)} sat per byte`}>
-            fee <Amount value={feeSats} decimals={8} unit={false} />
-          </Chip>
-        ) : null}
-        {tx.size > 0 ? <Chip mono>{formatBytes(tx.size)}</Chip> : null}
-      </EntityHead>
+      </ViewHeader>
 
-      <Tabs items={tabs} value={tab} onChange={setTab} label="Transaction sections" id={tabsId} />
-
-      {tab === 'overview' ? (
-        <TabPanel tabsId={tabsId} id="overview">
-          {tx.outputs.length > 0 || tx.inputs.length > 0 ? (
-            <Section title="Where the value went" aside="band width is proportional to the amount">
-              <FlowDiagram tx={tx} pending={pending} />
-            </Section>
-          ) : null}
-          {tx.node_tx ? <NodeTxCard n={tx.node_tx} /> : null}
-          {tx.kind === 'app_message' ? <AppMessageCard tx={tx} /> : null}
-          {tx.kind === 'coinbase' ? <CoinbaseCard tx={tx} /> : null}
-          <Section title="Details" collapsible defaultOpen={false}>
-            <KeyValue
-              items={[
-                {
-                  label: 'Transaction id',
-                  value: <Hash value={tx.txid} full copy="hover" what="transaction id" />,
-                },
-                {
-                  label: 'Block',
-                  value:
-                    tx.height !== null ? (
-                      <EntityLink kind="block" value={tx.height} />
-                    ) : (
-                      <span className="ex-muted">Pending</span>
-                    ),
-                },
-                {
-                  label: 'Block hash',
-                  value: tx.block_hash ? (
-                    <Hash value={tx.block_hash} full copy="hover" what="block hash" />
-                  ) : null,
-                },
-                { label: 'Version', value: formatInt(tx.version), mono: true },
-                {
-                  label: 'Value in',
-                  value: tx.value_in === null ? null : <Amount value={tx.value_in} exact />,
-                },
-                { label: 'Value out', value: <Amount value={tx.value_out} exact /> },
-              ]}
+      <div className="ex-hero">
+        <StatGrid min={220}>
+          <Stat
+            hero
+            label={hero.label}
+            value={
+              hero.sats !== null ? trimFlux(formatSats(hero.sats, { decimals: 8, unit: false })) : hero.word
+            }
+            unit={hero.sats !== null ? 'FLUX' : undefined}
+          />
+          {showFee && feeSats !== null ? (
+            <Stat
+              label="Fee"
+              value={trimFlux(formatSats(feeSats, { decimals: 8, unit: false }))}
+              unit="FLUX"
+              caption={feeCaption(feeSats, tx.size)}
             />
+          ) : null}
+        </StatGrid>
+      </div>
+
+      <div className="ex-tabs">
+        <Tabs items={tabs} value={tab} onChange={setTab} aria-label="Transaction sections" id={tabsId} />
+      </div>
+
+      <TabPanel tabsId={tabsId} id="overview" value={tab}>
+        {hasIo ? (
+          <Section title="Where the value went" aside="band width is proportional to the amount">
+            <FlowDiagram tx={tx} pending={pending} />
           </Section>
-        </TabPanel>
-      ) : tab === 'io' ? (
-        <TabPanel tabsId={tabsId} id="io">
-          <IoRows tx={tx} />
-        </TabPanel>
-      ) : (
-        <TabPanel tabsId={tabsId} id="raw">
-          <Section>
-            <JsonView value={tx} label="Transaction record, as served" />
-          </Section>
-        </TabPanel>
-      )}
-      <span className="ex-sr" aria-live="polite">
+        ) : null}
+        {tx.node_tx ? <NodeTxCard n={tx.node_tx} /> : null}
+        {tx.kind === 'app_message' ? <AppMessageCard tx={tx} /> : null}
+        {tx.kind === 'coinbase' ? <CoinbaseCard tx={tx} /> : null}
+        <Section title="Details" collapsible defaultOpen={false}>
+          <KeyValue
+            align="start"
+            items={[
+              {
+                label: 'Transaction id',
+                value: <Hash value={tx.txid} full copy="hover" what="transaction id" />,
+              },
+              {
+                label: 'Block',
+                value:
+                  tx.height !== null ? (
+                    <EntityLink kind="block" value={tx.height} />
+                  ) : (
+                    <Unknown>Pending</Unknown>
+                  ),
+              },
+              {
+                label: 'Block hash',
+                value: tx.block_hash ? (
+                  <Hash value={tx.block_hash} full copy="hover" what="block hash" />
+                ) : null,
+              },
+              { label: 'Version', value: formatInt(tx.version), mono: true },
+              { label: 'Size', value: tx.size > 0 ? formatBytes(tx.size) : null },
+              { label: 'Fee', value: feeSats === null ? null : <Amount value={feeSats} exact /> },
+              {
+                label: 'Value in',
+                value: tx.value_in === null ? null : <Amount value={tx.value_in} exact />,
+              },
+              { label: 'Value out', value: <Amount value={tx.value_out} exact /> },
+            ]}
+          />
+        </Section>
+      </TabPanel>
+      <TabPanel tabsId={tabsId} id="io" value={tab}>
+        <IoTables tx={tx} />
+      </TabPanel>
+      <TabPanel tabsId={tabsId} id="raw" value={tab}>
+        <Section>
+          <JsonView value={tx} label="Transaction record, as served" />
+        </Section>
+      </TabPanel>
+      <span className="ui-sr-only" aria-live="polite">
         {pending ? 'Waiting for the next block' : final ? 'Confirmed' : `${q.confirmations} confirmations`}
       </span>
     </div>
