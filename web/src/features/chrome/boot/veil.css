@@ -1,0 +1,97 @@
+/* The boot's veil (design 6.4 J, 9.1): the black screen over the app from its first frame, with the lockup. It is
+   the whole quick path, and the screen a full boot starts from, so it is in the app's own stylesheet; the rest of
+   the boot (the log, the numeral, the symbol's surroundings: boot.css) loads with the full sequence. */
+
+.boot {
+  --boot-cx: 50vw;
+  --boot-cy: 50vh;
+  --boot-size: 250px;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-boot);
+  overflow: hidden;
+  background: var(--void);
+  color: var(--text-1);
+  pointer-events: auto;
+  transition: background-color 500ms var(--ease-out);
+}
+
+.boot[data-engine="on"] {
+  background-color: transparent;
+}
+
+.boot[data-done] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 600ms var(--ease-out),
+    visibility 0s linear 600ms,
+    background-color 500ms var(--ease-out);
+}
+
+/* The quick path fades in 300 ms. */
+.boot[data-mode="instant"][data-done] {
+  transition-duration: 300ms, 0s, 300ms;
+  transition-delay: 0s, 300ms, 0s;
+}
+
+.boot-brand {
+  position: absolute;
+  top: 36px;
+  left: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  animation: boot-in 700ms var(--ease-out) 200ms forwards;
+}
+
+.boot-word {
+  font: 600 24px / 1 var(--font-display);
+  letter-spacing: -0.006em;
+}
+
+@keyframes boot-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 719px) {
+  .boot-brand {
+    top: 26px;
+    left: 24px;
+  }
+}
+
+/* ---- motion preferences: nothing travels ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .boot-brand {
+    animation-name: boot-fade;
+  }
+}
+
+:root[data-motion="reduced"] .boot-brand {
+  animation-name: boot-fade;
+}
+
+:root[data-motion-off] .boot-brand {
+  animation: none;
+  opacity: 1;
+}
+
+@keyframes boot-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

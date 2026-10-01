@@ -1,0 +1,178 @@
+/* The globe's hover cards (design 7.7, 8.17) and the moon's card. Loaded with the cards' chunk after globe.css,
+   so these rules refine its structure. Cards are positioned by the anchor system with a transform on the outer
+   element; every animation here is on an inner element and only moves opacity and transform. */
+
+.globe-tipwrap {
+  z-index: 2;
+}
+
+.globe-tip {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-width: 190px;
+  max-width: 280px;
+  padding: 9px 12px 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-pop), var(--shadow-inset-hi);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  white-space: normal;
+  /* Up and to the right of the node; the flips below keep it on screen and under the top bar. */
+  translate: 14px calc(-100% - 8px);
+  animation: gt-in 140ms var(--ease-out) backwards;
+}
+
+.globe-tip[data-flip-x] {
+  translate: calc(-100% - 14px) calc(-100% - 8px);
+}
+
+.globe-tip[data-flip-y] {
+  translate: 14px 14px;
+}
+
+.globe-tip[data-flip-x][data-flip-y] {
+  translate: calc(-100% - 14px) 14px;
+}
+
+@keyframes gt-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.gt-title {
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+  line-height: 1.25;
+}
+
+.gt-title.mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0;
+}
+
+.gt-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.gt-dim {
+  color: var(--text-3);
+}
+
+.gt-row b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.gt-tier {
+  color: var(--tier, var(--text-1));
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+}
+
+.gt-tiers {
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.gt-tier-chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid var(--tier-line);
+  border-radius: var(--r-pill);
+  background: var(--tier-soft);
+  color: var(--text-1);
+  font-size: 11px;
+}
+
+.gt-hint {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* The moon's card: wider, beside the moon and clear of it; it opens to the right near the dock, and the
+   anchor loop nudges it down (--card-nudge) when it would run under the top chrome. */
+.globe-tip[data-kind="moon"] {
+  min-width: 224px;
+  border-radius: 14px;
+  translate: calc(-100% - 64px) calc(-50% + var(--card-nudge, 0px));
+}
+
+.globe-tip[data-kind="moon"][data-flip-x] {
+  translate: 64px calc(-50% + var(--card-nudge, 0px));
+}
+
+/* The first-visit hint beside the moon (design 9.1): two quiet lines, smaller than the moon's card, leaving
+   with a fade. */
+.globe-tip.globe-hint {
+  min-width: 0;
+  gap: 2px;
+  padding: 8px 12px 9px;
+  pointer-events: none;
+}
+
+.globe-tip.globe-hint[data-leaving] {
+  animation: gt-out 320ms var(--ease-in) forwards;
+}
+
+@keyframes gt-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes gt-out-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .globe-tip {
+    animation-name: gt-fade;
+  }
+
+  :root:not([data-motion="full"]) .globe-tip.globe-hint[data-leaving] {
+    animation-name: gt-out-fade;
+  }
+}
+
+:root[data-motion="reduced"] .globe-tip {
+  animation-name: gt-fade;
+}
+
+:root[data-motion="reduced"] .globe-tip.globe-hint[data-leaving] {
+  animation-name: gt-out-fade;
+}
+
+:root[data-motion-off] .globe-tip,
+:root[data-motion-off] .globe-tip.globe-hint[data-leaving] {
+  animation: none;
+}
+
+@keyframes gt-fade {
+  from {
+    opacity: 0;
+  }
+}

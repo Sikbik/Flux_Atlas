@@ -25,11 +25,11 @@ import { AimStrip } from '../../features/chrome/AimStrip';
 import { Boot } from '../../features/chrome/boot/Boot';
 import { bootInstant, finishBoot, useBootPhase } from '../../features/chrome/boot/state';
 import { useApplyLayers } from '../../features/chrome/layers';
-import { Pulse } from '../../features/chrome/Pulse';
+import { lazyCard } from '../../features/chrome/lazyCard';
 import { useRootPrefs } from '../../features/chrome/prefs';
 import { BlockRail } from '../../features/chrome/Rail';
 import { StatusBar } from '../../features/chrome/StatusBar';
-import { Toasts } from '../../features/chrome/Toasts';
+import { ToastHost } from '../../features/chrome/toasthost';
 import { CommandLayer } from '../../features/command';
 import {
   type Anchor,
@@ -56,6 +56,9 @@ import { PhoneTabs } from './regions';
 import { useGlobeInsetSync, useWindowRouting } from './routing';
 import { TopBar } from './TopBar';
 import './frame.css';
+
+/** The Pulse is its own chunk: it mounts with the shell and is long loaded by the time the boot is over. */
+const pulse = lazyCard(() => import('../../features/chrome/Pulse').then((m) => m.Pulse));
 
 /** The workspace stops this far from the right edge: a docked inspector floats clear of the screen (design 3.1). */
 const WORKSPACE_MARGIN = 12;
@@ -168,7 +171,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         <TopBar ref={topRef} phone={phone} />
         {phone ? null : <Dock ref={dockRef} />}
         {phone ? null : <AimStrip />}
-        {phone ? null : <Pulse />}
+        {phone ? null : <pulse.Card />}
         <main className="shell-stage" id="shell-stage" tabIndex={-1} data-region="stage" aria-label="Globe">
           {pageRoute ? (
             <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
@@ -187,7 +190,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
           onRequestClose={requestClose}
           onFocusWindow={focusWindow}
         />
-        <Toasts />
+        <ToastHost />
         <CommandLayer />
         <Boot />
       </div>

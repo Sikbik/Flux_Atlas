@@ -1,40 +1,8 @@
-/* The boot (design 6.4 J, 9.1). The overlay is opaque black until the globe is ready to draw the symbol, then it
-   turns transparent so the globe's own canvas shows through: the symbol, the reveal wave and the planet are the
-   renderer's. Only the text, the lattice and the progress line are DOM. Everything that updates every frame is
-   a text node, an opacity or a transform. */
-
-.boot {
-  --boot-cx: 50vw;
-  --boot-cy: 50vh;
-  --boot-size: 250px;
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-boot);
-  overflow: hidden;
-  background: var(--void);
-  color: var(--text-1);
-  pointer-events: auto;
-  transition: background-color 500ms var(--ease-out);
-}
-
-.boot[data-engine="on"] {
-  background-color: transparent;
-}
-
-.boot[data-done] {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition:
-    opacity 600ms var(--ease-out),
-    visibility 0s linear 600ms,
-    background-color 500ms var(--ease-out);
-}
-
-.boot[data-mode="instant"][data-done] {
-  transition-duration: 300ms, 0s, 300ms;
-  transition-delay: 0s, 300ms, 0s;
-}
+/* The full boot (design 6.4 J, 9.1), the part that loads with the sequence; the veil under it (the black screen,
+   the lockup, the fade) is veil.css. The overlay is opaque black until the globe is ready to draw the symbol,
+   then it turns transparent so the globe's own canvas shows through: the symbol, the reveal wave and the planet
+   are the renderer's. Only the text, the lattice and the progress line are DOM. Everything that updates every
+   frame is a text node, an opacity or a transform. */
 
 /* The lattice, faint at the bottom left under a radial mask. */
 .boot-pat {
@@ -56,37 +24,10 @@
 
 /* ---- the lockup and the tip --------------------------------------------------------------------------------- */
 
-.boot-brand {
-  position: absolute;
-  top: 36px;
-  left: 48px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  opacity: 0;
-  animation: boot-in 700ms var(--ease-out) 200ms forwards;
-}
-
-.boot-word {
-  font: 600 24px / 1 var(--font-display);
-  letter-spacing: -0.006em;
-}
-
 .boot-brand small {
   margin-left: 6px;
   color: var(--text-3);
   font-size: var(--fs-sm);
-}
-
-@keyframes boot-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 .boot-tip {
@@ -462,23 +403,9 @@
   box-shadow: var(--focus-ring);
 }
 
-/* ---- the quick path: a quiet screen with the lockup, then a 300 ms fade --------------------------------------------- */
-
-.boot[data-mode="instant"] > :not(.boot-brand, .sr-only) {
-  display: none;
-}
-
-.boot[data-mode="instant"] .boot-brand small {
-  display: none;
-}
-
 /* ---- phone: the same sequence, the symbol at 150 px, five log lines over a scrim ------------------------------------ */
 
 @media (max-width: 719px) {
-  .boot-brand {
-    top: 26px;
-    left: 24px;
-  }
   .boot-brand small {
     display: none;
   }
@@ -551,7 +478,6 @@
     animation: none;
     border-color: rgb(134 161 218 / 0.6);
   }
-  :root:not([data-motion="full"]) .boot-brand,
   :root:not([data-motion="full"]) .boot-fail {
     animation-name: boot-fade;
   }
@@ -566,7 +492,6 @@
   border-color: rgb(134 161 218 / 0.6);
 }
 
-:root[data-motion="reduced"] .boot-brand,
 :root[data-motion="reduced"] .boot-fail {
   animation-name: boot-fade;
 }
@@ -576,17 +501,7 @@
   animation: none;
 }
 
-:root[data-motion-off] .boot-brand,
 :root[data-motion-off] .boot-fail {
   animation: none;
   opacity: 1;
-}
-
-@keyframes boot-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }

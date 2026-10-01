@@ -1,0 +1,30 @@
+/* The globe's place labels (design 7.7): quiet names that float above their towers. Loaded with the labels' chunk
+   after globe.css, so these rules refine its structure. A label is positioned by the anchor system with a
+   transform on the outer element. */
+
+.globe-place {
+  padding: 2px 0;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow:
+    0 0 5px rgb(2 6 16 / 0.95),
+    0 0 2px rgb(2 6 16 / 0.95),
+    0 1px 1px rgb(0 0 0 / 0.9);
+}
+
+/* The label's opacity is written inline from the anchor loop (limb and top-chrome fade), so the resting
+   softness of a country name lives in its colour. */
+.globe-place-country {
+  color: color-mix(in srgb, var(--globe-label) 80%, transparent);
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.globe-place-city {
+  color: var(--globe-label);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
