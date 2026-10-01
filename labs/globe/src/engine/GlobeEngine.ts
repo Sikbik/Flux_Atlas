@@ -320,6 +320,7 @@ export class GlobeEngine {
     this.beams = new BeamLayer(this.u, 48);
     this.moon = new Moon(this.u, { lite: this.profile.moonLite, ...(opts.moon ?? {}) });
     this.moon.setTokens(this.tokens);
+    this.moon.setArt(this.artDirection, true);
     this.scene.add(this.clusterLayer.mesh, this.nodeLayer.mesh, this.links.mesh, this.held.mesh, this.arcs.mesh, this.packets.mesh, this.rings.mesh, this.rays.mesh, this.moon.group);
     this.overlayScene.add(this.moon.overlay, this.beams.mesh);
 
@@ -427,6 +428,7 @@ export class GlobeEngine {
     const body = this.ensureBody(art);
     for (const k of Object.keys(this.bodies) as ArtDirection[]) this.bodies[k]?.setVisible(k === art);
     body.setVisible(true);
+    this.moon?.setArt(art);
     this.setTokens({});
   }
 

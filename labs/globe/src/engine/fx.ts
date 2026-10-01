@@ -6,7 +6,7 @@ import type { CameraRig } from './camera';
 import { RibbonLayer, RibbonStyle } from './layers/ribbons';
 import { BeamEase, BeamKind, BeamLayer } from './layers/beams';
 import { ANCHOR_BASE, RayKind, RayLayer } from './layers/rays';
-import { RingLayer } from './layers/rings';
+import { RingKind, RingLayer } from './layers/rings';
 import type { Activity } from './activity';
 import { NO_CLUSTER, type NodeStore } from './nodes/store';
 import type { SharedUniforms } from './uniforms';
@@ -121,6 +121,11 @@ export class Fx {
     return this.t.rings.add(slot, kind, this.time + delay, dur, -px1, c.r, c.g, c.b, intensity, seed, px0);
   }
 
+  /** A camera-facing six-point spark that opens from `px0` to `px1` CSS pixels (the landing spark). */
+  sparkPx(slot: number, c: THREE.Color, px0: number, px1: number, dur: number, intensity: number, delay = 0): number {
+    return this.t.rings.add(slot, RingKind.Spark, this.time + delay, dur, -px1, c.r, c.g, c.b, intensity, 0, px0);
+  }
+
   ringAt(x: number, y: number, z: number, kind: number, c: THREE.Color, maxRad: number, dur: number, intensity: number): number {
     return this.t.rings.addFree(x, y, z, kind, this.time, dur, maxRad, c.r, c.g, c.b, intensity);
   }
@@ -174,8 +179,8 @@ export class Fx {
    * `dur` seconds and leaves the conduit lit behind it until `life`. The color runs from `a` at the
    * start to `b` at the end.
    */
-  ray(slotA: number, slotB: number, a: THREE.Color, b: THREE.Color, dur: number, life: number, widthPx: number, intensity: number, delay = 0): number {
-    return this.t.rays.add(slotA, slotB, RayKind.Beam, this.time + delay, dur, life, widthPx, a.r, a.g, a.b, b.r, b.g, b.b, intensity);
+  ray(slotA: number, slotB: number, a: THREE.Color, b: THREE.Color, dur: number, life: number, widthPx: number, intensity: number, delay = 0, kind: number = RayKind.Beam): number {
+    return this.t.rays.add(slotA, slotB, kind, this.time + delay, dur, life, widthPx, a.r, a.g, a.b, b.r, b.g, b.b, intensity);
   }
 
   /** A faint dashed guide line (the pre-aim from the moon to a payee). */
@@ -214,7 +219,10 @@ export class Fx {
       return;
     }
     this.color('block', _c);
-    this.ray(producer, this.moonAnchor(0), _c, _tint, travel + 0.3, travel + 2.0, 2.8, 1.6, delay);
+    // The head reaches the moon exactly when the moon receives the block (`travel`). Under reduced motion the whole
+    // route is lit at once instead.
+    if (red) this.ray(producer, this.moonAnchor(0), _c, _tint, 0.38, 0.9, 2.8, 1.3, delay, RayKind.Beam + RayKind.Still);
+    else this.ray(producer, this.moonAnchor(0), _c, _tint, travel, travel + 1.2, 3.2, 1.9, delay);
   }
 
   /**
@@ -234,7 +242,27 @@ export class Fx {
       return;
     }
     this.color('shockHot', _c);
-    this.ray(this.moonAnchor(piece), slot, _c, tier, travel, travel + 1.4, 2.3, 1.8, delay);
+    if (red) this.ray(this.moonAnchor(piece), slot, _c, tier, 0.42, 0.95, 2.3, 1.4, delay, RayKind.Down + RayKind.Still);
+    else this.ray(this.moonAnchor(piece), slot, _c, tier, travel, travel + 1.1, 2.3, 1.8, delay, RayKind.Down);
+  }
+
+  /**
+   * The dev-fund pulse: the fourth coinbase output leaves the slanted bar and drifts out into space, away from
+   * the planet, to where no node is. A slow white streak with a light-blue tail (the tier colors belong to the
+   * payees), so it reads as something different from a payout.
+   */
+  devPulse(): void {
+    const red = this.reduced;
+    const travel = red ? 0.42 : 1.0;
+    if (this.companion) {
+      this.cb[0] = 0.52; this.cb[1] = 0.63; this.cb[2] = 0.85;
+      this.cb[3] = 0.76; this.cb[4] = 0.83; this.cb[5] = 0.93;
+      this.cb[6] = this.cb[7] = this.cb[8] = 1;
+      this.t.beams.add(ANCHOR_BASE, ANCHOR_BASE + 5, BeamKind.Beam, this.time, travel, travel + 0.5, red ? BeamEase.Static : BeamEase.OutCubic, 0.1, 0, 0, 0.34, 0, red ? 5 : 9, red ? 2.4 : 4, red ? 1.2 : 1.8, 0.9, this.cb);
+      return;
+    }
+    _c.set('#ffffff');
+    this.ray(this.moonAnchor(0), this.moonAnchor(5), _c, _tint, travel, travel + 0.9, 2.0, red ? 1.0 : 1.3, 0, RayKind.Drift + (red ? RayKind.Still : 0));
   }
 
   /**

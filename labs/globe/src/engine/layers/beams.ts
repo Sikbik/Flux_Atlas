@@ -124,7 +124,7 @@ void main() {
     head = easeInOut(hd);
     fade = (1.0 - smoothstep(tu, 1.0, u)) * aW.w;
   } else if (ease < 1.5) {
-    head = (1.0 - pow(1.0 - hd, 3.0)) * 0.985 + 0.015 * hd;
+    head = (1.0 - pow(1.0 - hd, 3.0)) * 0.8 + 0.2 * hd;
     fade = (1.0 - smoothstep(tu, 1.0, u)) * aW.w;
   } else {
     // Reduced motion: the whole route fades in and out with no head.
@@ -133,7 +133,10 @@ void main() {
     fade = smoothstep(0.0, 0.3, u) * (1.0 - smoothstep(0.55, 1.0, u)) * aW.w;
   }
 
-  float t = aSeg.x;
+  // The strip runs a little past both ends of the route, so a head sitting at an end (leaving a piece, landing on a
+  // node) keeps its whole halo instead of having it cut square by the end of the strip.
+  float ext = kind > 0.5 ? 0.0 : 30.0 / (L * 1.06);
+  float t = mix(-ext, 1.0 + ext, aSeg.x);
   vec2 P = (1.0 - t) * (1.0 - t) * A + 2.0 * (1.0 - t) * t * C + t * t * B;
   vec2 tang = 2.0 * (1.0 - t) * (C - A) + 2.0 * t * (B - C);
   float tl = max(length(tang), 1e-4);
@@ -210,20 +213,25 @@ void main() {
   } else {
     float t0 = max(0.0, head - trail);
     float span = max(head - t0, 1e-4);
-    // The whole route as a hairline, then the lit trail behind the head.
-    col += vC1 * 0.26 * a * band(d, 1.0);
+    // The whole route as a faint hairline, then the lit tail behind the head: it thins to nothing at its end
+    // (a streak, not a bar) and gets brighter and wider toward the head.
+    col += vC1 * 0.15 * a * band(d, 1.0) * step(0.0, vT) * step(vT, 1.0);
     if (vT >= t0 && vT <= head) {
       float k = clamp((vT - t0) / span, 0.0, 1.0);
-      float kk = pow(k, 1.5);
-      float wf = 0.35 + 0.65 * k;
-      col += vC0 * 0.10 * kk * a * band(d, vW.x * wf);
-      col += vC1 * 0.40 * kk * a * band(d, vW.y * wf);
+      float kk = pow(k, 1.8);
+      float wf = 0.06 + 0.94 * pow(k, 0.85);
+      col += vC0 * 0.12 * kk * a * band(d, vW.x * wf);
+      col += vC1 * 0.42 * kk * a * band(d, vW.y * wf);
       col += vC2 * 1.00 * kk * a * band(d, vW.z * wf);
     }
     if (kind < 1.5) {
-      float dh = length(vPx - vHeadPx);
+      vec2 hp = vPx - vHeadPx;
+      float dh = length(hp);
       col += vec3(0.81, 0.855, 0.94) * haloG(dh / 26.0) * a;
       col += vec3(1.0) * coreG(dh / 6.0) * a;
+      // A fine four-point star on the head.
+      float arm = exp(-abs(hp.x) / 8.5) * exp(-hp.y * hp.y / 0.5) + exp(-abs(hp.y) / 8.5) * exp(-hp.x * hp.x / 0.5);
+      col += vec3(1.0) * arm * 0.5 * a;
     }
   }
   gl_FragColor = vec4(srgbToLin(clamp(col, 0.0, 1.0)), 1.0);
