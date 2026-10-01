@@ -1,29 +1,7 @@
-// Turns the columnar `/metrics` payload into chart-ready frames and keeps the history honest.
-//
-// Rows backfilled from the 30-day stats history only know the node counts; every other column of such
-// a row is 0 on the wire (a server defect the backend team is fixing: those cells should be null). A
-// recorded row always has a chain tip, so `tip_height` is the marker: where it is 0 or null, the
-// columns that the backfill cannot know are treated as unknown, never as 0. Once the server sends nulls
-// this masking changes nothing.
+// Turns the columnar `/metrics` payload into chart-ready frames. The server sends null for a value it
+// did not record and never 0 in its place, so a 0 here is a real 0 (no DoS nodes, no pending apps).
 
 import type { MetricsSeriesDto } from '../../../api/generated/MetricsSeriesDto';
-
-/** Series the 30-day backfill really fills (the node counts). */
-export const BACKFILLED_SERIES: ReadonlySet<string> = new Set(['node_count', 'cumulus', 'nimbus', 'stratus']);
-
-/** Gauges that cannot be 0 on a live network: a 0 means "not recorded". */
-const NEVER_ZERO: ReadonlySet<string> = new Set([
-  'tip_height',
-  'host_count',
-  'country_count',
-  'total_cores',
-  'total_ram_gb',
-  'total_storage_gb',
-  'supply_flux_f64',
-  'price_usd',
-  'app_count',
-  'instance_count',
-]);
 
 export interface MetricFrame {
   /** Unix ms of each bucket start. */
@@ -33,18 +11,9 @@ export interface MetricFrame {
 }
 
 export function frameFromDto(dto: MetricsSeriesDto): MetricFrame {
-  const n = dto.t.length;
-  const tip = dto.series.tip_height;
-  const recorded: boolean[] = new Array<boolean>(n).fill(true);
-  if (tip) for (let i = 0; i < n; i++) recorded[i] = (tip[i] ?? 0) > 0;
   const v: Record<string, (number | null)[]> = {};
   for (const [name, col] of Object.entries(dto.series)) {
-    v[name] = col.map((x, i) => {
-      if (x === null || x === undefined || !Number.isFinite(x)) return null;
-      if (!BACKFILLED_SERIES.has(name) && tip && !recorded[i]) return null;
-      if (NEVER_ZERO.has(name) && x === 0) return null;
-      return x;
-    });
+    v[name] = col.map((x) => (x === null || x === undefined || !Number.isFinite(x) ? null : x));
   }
   return { t: [...dto.t], v };
 }

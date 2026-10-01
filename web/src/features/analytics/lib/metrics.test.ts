@@ -13,20 +13,20 @@ import {
 
 const HOUR = 3_600_000;
 
-/** Two backfilled hours (tier counts only, the rest 0 on the wire), two recorded hours, one open bucket. */
+/** Two backfilled hours (tier counts only, the rest not recorded), two recorded hours, one open bucket. */
 const dto: MetricsSeriesDto = {
   from_ms: 0,
   to_ms: 5 * HOUR,
   step_ms: HOUR,
   t: [0, HOUR, 2 * HOUR, 3 * HOUR, 4 * HOUR],
   series: {
-    tip_height: [0, 0, 2_997_000, 2_997_120, null],
+    tip_height: [null, null, 2_997_000, 2_997_120, null],
     node_count: [6500, 6510, 6520, 6530, null],
     stratus: [1700, 1701, 1702, 1703, null],
-    host_count: [0, 0, 2650, 2655, null],
-    pending_app_count: [0, 0, 0, 2, null],
-    app_count: [0, 0, 1890, 1895, null],
-    price_usd: [0, 0, 0.0737, 0.0738, null],
+    host_count: [null, null, 2650, 2655, null],
+    pending_app_count: [null, null, 0, 2, null],
+    dos_count: [null, null, 0, 0, null],
+    price_usd: [null, null, 0.0737, 0.0738, null],
   },
 };
 
@@ -38,37 +38,20 @@ describe('frameFromDto', () => {
     expect(f.v.stratus).toEqual([1700, 1701, 1702, 1703, null]);
   });
 
-  it('treats the zeros of unrecorded rows as unknown, never as 0', () => {
+  it('keeps what the server did not record as unknown', () => {
     expect(f.v.host_count).toEqual([null, null, 2650, 2655, null]);
-    expect(f.v.app_count).toEqual([null, null, 1890, 1895, null]);
     expect(f.v.price_usd).toEqual([null, null, 0.0737, 0.0738, null]);
     expect(f.v.tip_height).toEqual([null, null, 2_997_000, 2_997_120, null]);
   });
 
-  it('masks a gauge that can legitimately be 0 only on unrecorded rows', () => {
+  it('keeps a real 0 as 0', () => {
     expect(f.v.pending_app_count).toEqual([null, null, 0, 2, null]);
+    expect(f.v.dos_count).toEqual([null, null, 0, 0, null]);
   });
 
-  it('is a no-op once the server sends nulls instead of zeros', () => {
-    const clean: MetricsSeriesDto = {
-      ...dto,
-      series: {
-        ...dto.series,
-        host_count: [null, null, 2650, 2655, null],
-        pending_app_count: [null, null, 0, 2, null],
-        app_count: [null, null, 1890, 1895, null],
-        price_usd: [null, null, 0.0737, 0.0738, null],
-        tip_height: [null, null, 2_997_000, 2_997_120, null],
-      },
-    };
-    const g = frameFromDto(clean);
-    expect(g.v).toEqual(f.v);
-  });
-
-  it('does not mask anything when there is no tip_height column to judge by', () => {
-    const noTip: MetricsSeriesDto = { ...dto, series: { host_count: [0, 5, 6, 7, null] } };
-    // host_count is a never-zero gauge, so a 0 is still unknown.
-    expect(frameFromDto(noTip).v.host_count).toEqual([null, 5, 6, 7, null]);
+  it('turns a value that is not a finite number into unknown', () => {
+    const g = frameFromDto({ ...dto, series: { a: [1, Number.NaN, Number.POSITIVE_INFINITY, 4, null] } });
+    expect(g.v.a).toEqual([1, null, null, 4, null]);
   });
 });
 
