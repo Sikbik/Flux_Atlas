@@ -113,9 +113,10 @@ function ThirtyDays() {
     [flat, day, first],
   );
 
-  if (q.isPending) return <Stat label="30 days" loading />;
-  // A ledger younger than 30 days says so in the label, so the figure is never read as a full month.
+  // A ledger younger than 30 days says so in the label, so the figure is never read as a full month. Whether it
+  // is young depends on the ledger's start, not on the payments, so the loading tile already wears the right label.
   const young = !totals.complete && first !== null;
+  if (q.isPending) return <Stat label={young ? 'Paid so far' : '30 days'} loading />;
   const count = `${formatInt(totals.count)} ${totals.count === 1 ? 'payment' : 'payments'}`;
   return (
     <Stat
