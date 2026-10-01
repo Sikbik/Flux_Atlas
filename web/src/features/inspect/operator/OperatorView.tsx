@@ -29,6 +29,7 @@ import { FleetTable } from './FleetTable';
 import { FleetHeader } from './Header';
 import { EarningsSection, FleetStats } from './Lead';
 import { AlertsFold, WatchAdd } from './WatchPanel';
+import '../ui/parts.css';
 import './operator.css';
 
 const LEGEND: readonly FleetState[] = ['ok', 'risk', 'down', 'pending', 'gone'];

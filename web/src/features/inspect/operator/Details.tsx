@@ -2,58 +2,16 @@
 // whose one-line summary already answers "is it fine?", so the view stays short until a reader asks.
 
 import { AppWindow, Cpu, Fingerprint, GitBranch } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useNetworkVersions } from '../../../api/queries';
 import { formatInt } from '../../../lib/format';
-import {
-  Amount,
-  BarList,
-  type BarListItem,
-  Endpoint,
-  EntityLink,
-  Hash,
-  KeyValue,
-  Row,
-  Section,
-} from '../../../ui';
+import { Amount, BarList, type BarListItem, Endpoint, EntityLink, Hash, KeyValue, Row } from '../../../ui';
 import { type FleetNode, hardwareMix, stragglers, type TierMix, versionCounts } from '../derive/operator';
 import { latestVersion } from '../derive/versions';
-import type { useOpenSet } from '../ui/openset';
-
-type OpenSet = ReturnType<typeof useOpenSet>;
+import { Fold } from '../ui/fold';
+import type { OpenSet } from '../ui/openset';
 
 const gb = (n: number) =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)} TB` : `${formatInt(n)} GB`;
-
-function Fold({
-  id,
-  open,
-  title,
-  icon,
-  summary,
-  children,
-}: {
-  id: string;
-  open: OpenSet;
-  title: string;
-  icon: typeof Cpu;
-  summary: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <Section
-      collapsible
-      level={3}
-      title={title}
-      icon={icon}
-      aside={summary}
-      open={open.isOpen(id)}
-      onOpenChange={(v) => open.setOpen(id, v)}
-    >
-      {children}
-    </Section>
-  );
-}
 
 export function VersionsFold({ nodes, open }: { nodes: readonly FleetNode[]; open: OpenSet }) {
   const v = useNetworkVersions();

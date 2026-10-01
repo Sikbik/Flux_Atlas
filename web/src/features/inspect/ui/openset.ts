@@ -25,3 +25,5 @@ export function useOpenSet(scope: string, initial: readonly string[] = []) {
   );
   return { isOpen, setOpen };
 }
+
+export type OpenSet = ReturnType<typeof useOpenSet>;

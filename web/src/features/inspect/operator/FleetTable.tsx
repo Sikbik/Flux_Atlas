@@ -4,20 +4,14 @@ import { DataTable, type DataTableColumn, StatusChip, TierGlyph, Unknown, useFre
 import { etaShort } from '../derive/eta';
 import { type FleetNode, fleetState } from '../derive/operator';
 import { estimatePayment } from '../derive/queue';
+import { type NodeStatusKind, nodeStatusKind } from '../derive/statusKind';
 import { useChainClock } from '../sources/live';
 
-/** The state chip a node wears in the list: the kit's status words for the node's own status. */
-function chipStatus(n: FleetNode): string {
-  if (!n.present) return 'departed';
-  if (n.status === 'confirmed' || n.status === 'offline') {
-    if (n.sinceConfirm !== null && n.sinceConfirm >= 640) return 'expired';
-    if (n.atRisk) return 'at-risk';
-    if (n.status === 'offline') return 'offline';
-    if (n.reachable === false) return 'unreachable';
-    return 'confirmed';
-  }
-  return n.status;
-}
+/** The state word a node wears in the list: one shared rule for fleet and host rows. */
+const kindOf = (n: FleetNode): NodeStatusKind =>
+  n.present
+    ? nodeStatusKind({ status: n.status, reachable: n.reachable, sinceConfirm: n.sinceConfirm })
+    : 'departed';
 
 /** When a node is paid, ticking: an estimate at about 30 s per block, so the cell says how it was made. */
 export function PaidIn({ node }: { node: FleetNode }) {
@@ -51,7 +45,7 @@ const nodeColumn: DataTableColumn<FleetNode> = {
       {fleetState(n) === 'ok' ? (
         <span className="ui-sr-only">Confirmed</span>
       ) : (
-        <StatusChip className="ix-fleet-state" status={chipStatus(n)} size="sm" />
+        <StatusChip className="ix-fleet-state" status={kindOf(n)} size="sm" />
       )}
     </span>
   ),

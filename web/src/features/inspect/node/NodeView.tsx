@@ -1,11 +1,12 @@
 import { Coins, Cpu, Fingerprint, GitBranch, HeartPulse, Layers, Network, SearchX } from 'lucide-react';
-import { type ReactNode, useMemo } from 'react';
+import { useMemo } from 'react';
 import { isApiError } from '../../../api/http';
 import { useNodeDetail } from '../../../api/queries';
 import { useNetwork } from '../../../app/context';
 import { EmptyState, ErrorState, Section, Skeleton, Stat, StatGrid } from '../../../ui';
 import { ipOfEndpoint } from '../sources/host';
 import { useNodeLive, useResolvedId } from '../sources/live';
+import { Fold } from '../ui/fold';
 import { useOpenSet } from '../ui/openset';
 import { ActivityBody } from './Activity';
 import { NodeContext, type NodeCtx } from './context';
@@ -101,36 +102,6 @@ export function NodeView({ nodeKey }: { nodeKey: string }) {
     <NodeContext.Provider value={ctx}>
       <NodeBody tier={tier} label={endpoint || nodeKey} />
     </NodeContext.Provider>
-  );
-}
-
-function Fold({
-  id,
-  open,
-  title,
-  icon,
-  summary,
-  children,
-}: {
-  id: string;
-  open: ReturnType<typeof useOpenSet>;
-  title: string;
-  icon: typeof Coins;
-  summary: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <Section
-      collapsible
-      level={3}
-      title={title}
-      icon={icon}
-      aside={summary}
-      open={open.isOpen(id)}
-      onOpenChange={(v) => open.setOpen(id, v)}
-    >
-      {children}
-    </Section>
   );
 }
 
