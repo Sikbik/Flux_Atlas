@@ -4,6 +4,7 @@
 // other way round, small to large, in the order the chain lists them).
 
 import type { CapacityDto } from '../../../api/generated/CapacityDto';
+import type { DataAttribution } from '../../../api/generated/DataAttribution';
 import type { TierStats } from '../../../api/generated/TierStats';
 import { BLOCK_MS, formatBytes, formatFlux, formatInt, formatSats, parseFlux } from '../../../lib/format';
 
@@ -155,4 +156,56 @@ export function capacityRows(cap: CapacityDto): CapacityRow[] {
       share: clamp01(l.hdd_gb / t.ssd_gb),
     },
   ];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Data credits
+// ---------------------------------------------------------------------------------------------
+
+/** One credit line, ready to draw: the links are only ever http or https. */
+export interface CreditLine {
+  key: string;
+  /** The credit line, verbatim (`IP Geolocation by DB-IP`). */
+  text: string;
+  href: string | null;
+  /** `CC BY 4.0`. */
+  license: string;
+  licenseHref: string | null;
+  /** What the data is used for. */
+  scope: string;
+  /** `2026-09`, when the server knows it. */
+  version: string | null;
+}
+
+/** A link a credit may carry: web addresses only, so a bad value from a server never becomes a script. */
+export function safeHref(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The credits the server says the UI must show (licence terms), one line each, in the order sent. The list
+ * is optional on older servers and empty when none applies; a line with no text is dropped, never invented.
+ */
+export function creditLines(list: readonly DataAttribution[] | null | undefined): CreditLine[] {
+  const out: CreditLine[] = [];
+  for (const a of list ?? []) {
+    const text = a.text?.trim();
+    if (!text) continue;
+    out.push({
+      key: `${a.name}:${a.license}:${a.url}`,
+      text,
+      href: safeHref(a.url),
+      license: a.license,
+      licenseHref: safeHref(a.license_url),
+      scope: a.scope,
+      version: a.version?.trim() || null,
+    });
+  }
+  return out;
 }

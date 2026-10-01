@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { CapacityDto } from '../../../api/generated/CapacityDto';
+import type { DataAttribution } from '../../../api/generated/DataAttribution';
 import type { TierStats } from '../../../api/generated/TierStats';
-import { capacityRows, cycleLabel, devFundShare, legendRows, roughSpan } from './model';
+import {
+  capacityRows,
+  creditLines,
+  cycleLabel,
+  devFundShare,
+  legendRows,
+  roughSpan,
+  safeHref,
+} from './model';
 
 const tier = (t: TierStats['tier'], count: number, payout: string): TierStats => ({
   tier: t,
@@ -99,5 +108,67 @@ describe('capacityRows', () => {
   it('keeps a share inside 0 to 1 even for odd data', () => {
     const odd = { ...cap, total: { ...cap.total, cores: 0 } };
     expect(capacityRows(odd)[0]?.share).toBe(0);
+  });
+});
+
+const DBIP: DataAttribution = {
+  name: 'DB-IP',
+  text: 'IP Geolocation by DB-IP',
+  url: 'https://db-ip.com',
+  license: 'CC BY 4.0',
+  license_url: 'https://creativecommons.org/licenses/by/4.0/',
+  scope: 'City names and approximate node locations',
+  version: '2026-09',
+};
+
+describe('data credits', () => {
+  it('draws every attribution the server sends, verbatim, with its licence, scope and version', () => {
+    const [c] = creditLines([DBIP]);
+    expect(c).toMatchObject({
+      text: 'IP Geolocation by DB-IP',
+      href: 'https://db-ip.com/',
+      license: 'CC BY 4.0',
+      licenseHref: 'https://creativecommons.org/licenses/by/4.0/',
+      scope: 'City names and approximate node locations',
+      version: '2026-09',
+    });
+  });
+
+  it('keeps the order sent and gives each line its own key', () => {
+    const other: DataAttribution = {
+      ...DBIP,
+      name: 'Other',
+      text: 'Other data',
+      url: 'https://example.org/a',
+    };
+    const lines = creditLines([DBIP, other]);
+    expect(lines.map((l) => l.text)).toEqual(['IP Geolocation by DB-IP', 'Other data']);
+    expect(new Set(lines.map((l) => l.key)).size).toBe(2);
+  });
+
+  it('is empty when the server sends none, an older server sends no list, or a line has no text', () => {
+    expect(creditLines([])).toEqual([]);
+    expect(creditLines(undefined)).toEqual([]);
+    expect(creditLines(null)).toEqual([]);
+    expect(creditLines([{ ...DBIP, text: '  ' }])).toEqual([]);
+  });
+
+  it('leaves the version out when the server does not know it', () => {
+    expect(creditLines([{ ...DBIP, version: null }])[0]?.version).toBeNull();
+    expect(creditLines([{ ...DBIP, version: '  ' }])[0]?.version).toBeNull();
+  });
+
+  it('links web addresses only', () => {
+    expect(safeHref('https://db-ip.com')).toBe('https://db-ip.com/');
+    expect(safeHref('http://example.org/x')).toBe('http://example.org/x');
+    expect(safeHref('javascript:alert(1)')).toBeNull();
+    expect(safeHref('data:text/html,hi')).toBeNull();
+    expect(safeHref('not a url')).toBeNull();
+    expect(safeHref('')).toBeNull();
+    expect(safeHref(null)).toBeNull();
+    const [c] = creditLines([{ ...DBIP, url: 'javascript:alert(1)', license_url: 'ftp://x' }]);
+    expect(c?.href).toBeNull();
+    expect(c?.licenseHref).toBeNull();
+    expect(c?.text).toBe('IP Geolocation by DB-IP');
   });
 });

@@ -26,7 +26,8 @@ import {
 import { ATLAS_VERSION } from '../version';
 import { FluxPieces } from './FluxPieces';
 import { LockupL2 } from './Lockup';
-import { capacityRows, legendRows, roughSpan, TIER_NAME, type TierKey } from './model';
+import { capacityRows, creditLines, legendRows, roughSpan, TIER_NAME, type TierKey } from './model';
+import { useAttributions } from './useAttributions';
 import '../settings.css';
 import './about.css';
 
@@ -407,6 +408,54 @@ const LINKS = [
   { label: 'Explorer API', href: 'https://explorer.runonflux.io' },
 ] as const;
 
+/** A link that leaves Atlas, in the text's own colour until it is pointed at. */
+function Out({ href, children }: { href: string | null; children: ReactNode }): ReactNode {
+  if (!href) return children;
+  return (
+    <a className="ab-credit-link" href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  );
+}
+
+/**
+ * The third-party data credits the server asks the UI to show (a licence term: DB-IP's city data is CC BY
+ * 4.0). Always on the page, never behind a fold, and quiet: the credit line links to its source, the licence
+ * to its terms, and the dataset version and what it is used for sit beside them.
+ */
+function Credits() {
+  const lines = creditLines(useAttributions());
+  if (lines.length === 0) return null;
+  return (
+    <section className="ab-credits" aria-label="Data credits" data-testid="credits">
+      <ul>
+        {lines.map((c) => (
+          <li key={c.key}>
+            <span className="ab-credit-main">
+              <Out href={c.href}>{c.text}</Out>
+              <span className="ab-credit-sep" aria-hidden="true">
+                {' · '}
+              </span>
+              <Out href={c.licenseHref}>{c.license}</Out>
+              {c.version ? (
+                <>
+                  <span className="ab-credit-sep" aria-hidden="true">
+                    {' · '}
+                  </span>
+                  <span className="ab-credit-ver" title="Dataset version">
+                    {c.version}
+                  </span>
+                </>
+              ) : null}
+            </span>
+            <span className="ab-credit-scope">{c.scope}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Footer() {
   return (
     <footer className="ab-foot">
@@ -420,6 +469,7 @@ function Footer() {
           </li>
         ))}
       </ul>
+      <Credits />
       <p className="ab-fine">
         Flux Atlas {ATLAS_VERSION} preview, data from the Flux network, open to everyone. Flux and the Flux
         symbol are trademarks of their owners. Flux Atlas is an ecosystem tool for the Flux network.

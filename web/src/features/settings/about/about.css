@@ -471,7 +471,7 @@
 
 .ab-chip svg {
   color: var(--text-3);
-  transition: transform var(--dur-fast) var(--ease-out);
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 .ab-chip:hover {
@@ -482,11 +482,66 @@
 
 .ab-chip:hover svg {
   color: var(--accent-400);
-  transform: translate(1px, -1px);
 }
 
 .ab-chip:focus-visible {
   outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The data credits: small, always there, in the notice's own register. */
+.ab-credits ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ab-credits li {
+  display: grid;
+  gap: 1px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.ab-credit-main {
+  color: var(--text-2);
+}
+
+.ab-credit-sep {
+  color: var(--text-4);
+}
+
+.ab-credit-ver {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.ab-credit-scope {
+  color: var(--text-3);
+}
+
+.ab-credit-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-3);
+  text-underline-offset: 2px;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    text-decoration-color var(--dur-fast) var(--ease-out);
+}
+
+.ab-credit-link:hover {
+  color: var(--accent-300);
+  text-decoration-color: currentColor;
+}
+
+.ab-credit-link:focus-visible {
+  outline: none;
+  border-radius: 2px;
   box-shadow: var(--focus-ring);
 }
 
