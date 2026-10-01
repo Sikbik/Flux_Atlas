@@ -1,0 +1,244 @@
+/* App and spec revision inspectors (F3). Kit components carry almost everything; these are the few local
+   pieces: the instance cell of the list, the component and placement panels, and the change list of one
+   revision. Colour, type, space and motion come from the design tokens. */
+
+.ix-app {
+  padding-bottom: var(--space-9);
+}
+
+/* Three stat tiles: three across when the grid is wide enough for each to hold a figure with its unit, else
+   two, with the third taking the whole row so no cell is left empty. */
+@container (max-width: 483px) {
+  .ix-app-trio > :nth-child(3):last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The description under the title keeps to two lines; the full text is under "Owner and details". */
+.ix-clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* A link that wears a Button: no underline, the Button's own colours. */
+.ix-link-button {
+  text-decoration: none;
+}
+
+.ix-link-button:hover {
+  text-decoration: none;
+}
+
+/* A fold's aside is one line that gives way before the title does: the kit's aside never shrinks, so a long
+   one would squeeze the title into a column of single letters. It keeps to half the window and ends in an
+   ellipsis. */
+.ix-aside {
+  display: inline-block;
+  max-width: 50cqw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+/* A time inside the aside reads in the aside's own face: the kit sets times in mono, which beside words is a seam. */
+.ix-aside .ui-reltime {
+  font-family: inherit;
+}
+
+/* Alerts under the lead tiles; each is a full callout, so they stack with one gap. */
+.ix-callouts {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+}
+
+.ix-callouts > .ix-cap {
+  margin: 0;
+}
+
+.ix-cap-first {
+  margin-top: 0;
+}
+
+/* Rows of a loading list, at the height of the real ones. */
+.ix-skel-rows {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* ---- instances ------------------------------------------------------------------------------------ */
+
+.ix-inst-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ix-inst-node > svg {
+  flex: none;
+}
+
+/* The endpoint over the tier and the country, so the tier never rests on a glyph alone. */
+.ix-inst-id {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.ix-inst-ep {
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ix-inst-sub {
+  overflow: hidden;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1.2 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The state chip sits at the right of the node cell and gives way last: the endpoint shortens first. */
+.ix-inst-node > .ix-inst-chip {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* ---- components, placement, owner ------------------------------------------------------------------ */
+
+.ix-comps,
+.ix-comp,
+.ix-place {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ix-comps-panel {
+  min-width: 0;
+}
+
+.ix-app-desc {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+/* A short caption and the chips it names. */
+.ix-chipgroup {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ix-chipgroup > .ix-cap,
+.ix-comp .ix-cap,
+.ix-place > .ix-cap {
+  margin: 0;
+}
+
+/* ---- spec history ---------------------------------------------------------------------------------- */
+
+.ix-hist {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ix-hist > .ui-button {
+  justify-self: start;
+}
+
+/* ---- one revision's changes ------------------------------------------------------------------------ */
+
+.ix-chg-groups {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.ix-chg-group {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ix-chg-scope {
+  margin: 0;
+  color: var(--text-2);
+  font: var(--fw-semibold) var(--fs-xs) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.ix-chg-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ix-chg {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-5);
+  padding: var(--space-4) 0;
+}
+
+.ix-chg + .ix-chg {
+  border-top: 1px solid var(--line-1);
+}
+
+.ix-chg-i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--ink-2);
+  color: var(--text-2);
+}
+
+.ix-chg[data-kind="added"] .ix-chg-i {
+  border-color: color-mix(in oklab, var(--status-ok) 50%, transparent);
+  background: var(--status-ok-soft);
+  color: var(--status-ok);
+}
+
+.ix-chg[data-kind="removed"] .ix-chg-i {
+  border-color: color-mix(in oklab, var(--status-crit) 50%, transparent);
+  background: var(--status-crit-soft);
+  color: var(--status-crit);
+}
+
+.ix-chg-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+.ix-chg-main > b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.ix-chg-v {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+/* The direction, said in words as well as by the glyph and its tint. */
+.ix-chg-k {
+  padding-top: var(--space-2);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}

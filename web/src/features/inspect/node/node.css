@@ -1,0 +1,208 @@
+/* Node inspector (F3). The kit carries the structure; these are the few local pieces: the lead's hero row,
+   the spec gauges, the heartbeat and uptime strips, and the peer diagram. Tokens only. */
+
+.ix-node {
+  padding-bottom: var(--space-9);
+}
+
+/* The lead: the next-payment tile takes the whole row, the two tiles under it share the next one. */
+.ix-paylead > [data-hero],
+.ix-paylead > .ix-wide {
+  grid-column: 1 / -1;
+}
+
+/* A fold's one-line summary: a status dot, then the words. */
+.ix-sum {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* ---- hardware and versions ------------------------------------------------------------------------ */
+
+.ix-spec {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ix-spec > .ui-mono {
+  flex: none;
+  white-space: nowrap;
+}
+
+.ix-spec-m {
+  flex: 1 1 auto;
+  min-width: 48px;
+  max-width: 120px;
+}
+
+.ix-ver {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.ix-bench {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--fs-xs);
+}
+
+/* ---- related things ------------------------------------------------------------------------------- */
+
+.ix-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-7);
+  font-size: var(--fs-sm);
+}
+
+.ix-link-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* ---- heartbeat and uptime strips ------------------------------------------------------------------ */
+
+.ix-beats {
+  position: relative;
+  height: 18px;
+}
+
+.ix-beats-track {
+  position: absolute;
+  inset: 8px 0 auto;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--ink-3), var(--line-3));
+}
+
+.ix-beats > i {
+  position: absolute;
+  top: 2px;
+  width: 2px;
+  height: 14px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--accent-400);
+  box-shadow: 0 0 10px -1px var(--accent-500);
+}
+
+.ix-beats-now {
+  position: absolute;
+  top: 5px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hot);
+  box-shadow: var(--glow-hot);
+}
+
+.ix-uptime {
+  display: grid;
+  grid-template-columns: repeat(90, minmax(0, 1fr));
+  gap: 1.5px;
+}
+
+.ix-uptime > i {
+  display: block;
+  height: 16px;
+  border-radius: 1.5px;
+  background: var(--ink-3);
+}
+
+.ix-uptime > i[data-state="up"] {
+  background: var(--status-ok);
+  opacity: 0.8;
+}
+
+.ix-uptime > i[data-state="part"] {
+  background: var(--status-warn);
+}
+
+.ix-uptime > i[data-state="down"] {
+  background: var(--status-crit);
+  opacity: 0.9;
+}
+
+/* ---- mesh ----------------------------------------------------------------------------------------- */
+
+.ix-peers {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: center;
+}
+
+.ix-peers-svg {
+  width: 112px;
+  height: 112px;
+}
+
+.ix-pg-ring {
+  fill: none;
+  stroke: var(--line-2);
+}
+
+.ix-pg-ring-in {
+  stroke: var(--line-1);
+}
+
+.ix-pg-spoke {
+  stroke: color-mix(in oklab, var(--accent-300) 28%, transparent);
+}
+
+.ix-pg-out {
+  fill: var(--accent-400);
+}
+
+.ix-pg-in {
+  fill: none;
+  stroke: var(--accent-400);
+  stroke-width: 1.1;
+}
+
+.ix-pg-core {
+  fill: var(--hot);
+}
+
+.ix-pg-halo {
+  fill: none;
+  stroke: color-mix(in oklab, var(--hot) 50%, transparent);
+}
+
+.ix-peers-side {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ix-peer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--fs-xs);
+}
+
+.ix-peer > em {
+  font-style: normal;
+  font-size: var(--fs-2xs);
+}
+
+@container ix (max-width: 380px) {
+  .ix-peers {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .ix-peers-side {
+    width: 100%;
+  }
+}

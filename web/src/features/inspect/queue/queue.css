@@ -1,0 +1,534 @@
+/* Payment queue view (F3). The kit carries the header, the sections, the table and the node finder; this file
+   styles what stays local: the rings, the belts and the layout that places them. Tier colour comes from
+   `data-tier` (tokens.css): `--tier`, `--tier-soft` and `--tier-line` follow it. Everything that moves is a
+   transform or opacity; the rings themselves are canvases (see Wheel.tsx). Class names are prefixed `ix-`. */
+
+.ix-queue {
+  padding-bottom: var(--space-6);
+}
+
+/* ---- header ------------------------------------------------------------------------------------- */
+
+.ix-q-clock {
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+
+.ix-q-clock[data-late] {
+  color: var(--status-warn);
+}
+
+/* The tier picker of the narrow all-tiers view; the kit's `data-full` display rule is outranked on purpose. */
+.ix-queue .ix-q-switch.ui-seg {
+  display: none;
+}
+
+.ix-q-note {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+/* A link in a note reads like the kit's entity links: accent, underlined on hover. */
+.ix-q-note a:not(.ui-entity) {
+  border-radius: var(--r-xs);
+  color: var(--accent-400);
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.ix-q-note a:not(.ui-entity):hover {
+  color: var(--accent-300);
+  text-decoration: underline;
+}
+
+.ix-q-note a:not(.ui-entity):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ---- the lead: rings, and beside them (one tier) the list --------------------------------------- */
+
+.ix-q-main {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.ix-q-wheels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-7);
+}
+
+.ix-q-wheels[data-n="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ix-q-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.ix-wheel {
+  position: relative;
+  container: ixw / inline-size;
+  width: 100%;
+  max-width: 232px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  cursor: crosshair;
+}
+
+.ix-q-card[data-solo] .ix-wheel {
+  max-width: 340px;
+}
+
+.ix-wheel > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* A ring that has not arrived: the same square, round. The kit's skeleton sets a 12 px height, which the
+   square's aspect ratio only replaces once the height is auto again. */
+.ix-queue .ix-wheel-skel {
+  display: block;
+  width: 100%;
+  max-width: 232px;
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: 50%;
+}
+
+.ix-queue .ix-q-card[data-solo] .ix-wheel-skel {
+  max-width: 340px;
+}
+
+.ix-wheel-mid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-1);
+  text-align: center;
+  pointer-events: none;
+}
+
+.ix-wheel-name {
+  color: var(--tier);
+  font-family: var(--font-display);
+  font-size: clamp(10px, 4.6cqw, 13px);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.ix-wheel-n {
+  color: var(--text-1);
+  font-size: clamp(20px, 11.5cqw, 34px);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+}
+
+.ix-wheel-cap {
+  color: var(--text-3);
+  font-size: clamp(9px, 3.6cqw, 11px);
+}
+
+/* The card that follows the pointer over a ring: place, node and time. */
+.ix-wheel-tip {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass-bg-strong);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 14px));
+}
+
+.ix-wheel-tip[data-align="start"] {
+  transform: translate(calc(-1 * var(--space-6)), calc(-100% - 14px));
+}
+
+.ix-wheel-tip[data-align="end"] {
+  transform: translate(calc(-100% + var(--space-6)), calc(-100% - 14px));
+}
+
+.ix-wheel-tip > b {
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+}
+
+.ix-wheel-tip > small {
+  color: var(--text-3);
+}
+
+/* The two lines under a ring keep their height, so a selection never moves what is below it. */
+.ix-q-foot {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 48px;
+  text-align: center;
+}
+
+.ix-q-foot-1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.ix-q-foot-1 small {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+.ix-q-foot-2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 30px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ix-q-card .ix-q-focus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: fit-content;
+  border-radius: var(--r-sm);
+  color: var(--tier);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+}
+
+.ix-q-card .ix-q-focus:hover {
+  color: var(--text-1);
+}
+
+.ix-q-card .ix-q-focus:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ---- the list beside a single ring -------------------------------------------------------------- */
+
+.ix-q-next {
+  min-width: 0;
+}
+
+.ix-q-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The endpoint never shrinks beside the country: a share of a few hundredths of a pixel would still draw an
+   ellipsis. Only a cell narrower than the endpoint itself shortens it. */
+.ix-q-ep {
+  flex: none;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The country gives way first: it shortens before the endpoint does, and goes when the list is narrow. */
+.ix-q-where {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-inline-start: auto;
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- belts -------------------------------------------------------------------------------------- */
+
+.ix-q-lanes {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ix-q-lane-h {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  color: var(--tier);
+  font-family: var(--font-display);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+
+.ix-q-lane-h > small {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+}
+
+.ix-lane {
+  --ix-S: 112px;
+  --ix-G: 140px;
+}
+
+.ix-lane-view {
+  position: relative;
+  height: 56px;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--tier) 7%, var(--ink-1)), var(--ink-1));
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+/* The belt runs inside a clip that stops short of the end cap and fades out toward it. */
+.ix-lane-clip {
+  position: absolute;
+  z-index: 1;
+  inset: 0 96px 0 0;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    var(--ink-0) 34px,
+    var(--ink-0) calc(100% - 52px),
+    transparent
+  );
+}
+
+.ix-lane-gate {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--ix-G) - 9px);
+  width: 2px;
+  background: linear-gradient(180deg, transparent, var(--hot) 28%, var(--hot) 72%, transparent);
+  box-shadow: 0 0 9px 0 var(--hot-glow);
+  pointer-events: none;
+}
+
+.ix-lane-track {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  will-change: transform;
+}
+
+.ix-btile-cell {
+  position: absolute;
+  top: var(--space-3);
+  left: calc(var(--ix-G) + (var(--ix-i) + 1) * var(--ix-S));
+  width: calc(var(--ix-S) - 8px);
+}
+
+.ix-btile {
+  display: grid;
+  align-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 44px;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  background: var(--ink-2);
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+div.ix-btile {
+  cursor: default;
+}
+
+.ix-btile:hover {
+  border-color: var(--tier-line);
+  background: var(--tier-soft);
+}
+
+.ix-btile:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ix-btile[data-state="next"] {
+  border-color: var(--tier);
+  background: var(--tier-soft);
+  box-shadow: 0 0 22px -8px var(--tier);
+  color: var(--text-1);
+}
+
+.ix-btile[data-state="paid"] {
+  border-style: dashed;
+  background: var(--ink-1);
+  color: var(--text-3);
+}
+
+.ix-btile[data-selected] {
+  box-shadow:
+    0 0 0 1px var(--hot),
+    0 0 18px -4px var(--hot-glow);
+}
+
+.ix-btile-ep {
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ix-btile-eta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+.ix-btile-eta > i {
+  color: var(--text-3);
+  font-style: normal;
+}
+
+/* A tight belt (a phone) keeps the time whole and drops the port; the tile's title still names it. */
+.ix-lane[data-tight] .ix-btile-eta > i {
+  display: none;
+}
+
+.ix-btile[data-state="paid"] .ix-btile-eta {
+  color: var(--status-ok);
+}
+
+.ix-lane-end {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  align-content: center;
+  justify-items: end;
+  gap: var(--space-1);
+  width: 96px;
+  padding-right: var(--space-5);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.ix-lane-end > b {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0;
+}
+
+/* The paid node sets off toward the back of the queue as a small token: up, along the belt, away. */
+@keyframes ix-back {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  16% {
+    opacity: 1;
+    transform: translate(0, -22px) scale(1);
+  }
+  84% {
+    opacity: 0.85;
+    transform: translate(calc(var(--ix-fly) - 24px), -22px) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--ix-fly), -4px) scale(0.5);
+  }
+}
+
+.ix-ghost {
+  position: absolute;
+  z-index: 3;
+  top: 18px;
+  left: calc(var(--ix-G) + 10px);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--tier);
+  border-radius: 50%;
+  background: var(--tier-soft);
+  box-shadow: 0 0 14px -2px var(--tier);
+  color: var(--hot);
+  pointer-events: none;
+  animation: ix-back 1.15s var(--ease-in-out) both;
+}
+
+/* A wide window puts the single ring and its list side by side. */
+@container ix (min-width: 700px) {
+  .ix-queue[data-focus] .ix-q-main {
+    grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+/* ---- narrow windows: one tier at a time -------------------------------------------------------- */
+
+@container ix (max-width: 559px) {
+  .ix-q-wheels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ix-q-card:not([data-active]),
+  .ix-q-lane:not([data-active]) {
+    display: none;
+  }
+
+  .ix-queue:not([data-focus]) .ix-q-switch.ui-seg {
+    display: grid;
+  }
+
+  .ix-q-where {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .ix-q-card .ix-q-focus {
+    min-height: 40px;
+  }
+}
