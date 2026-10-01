@@ -1,6 +1,6 @@
 # Flux Atlas v2 - Motion Language
 
-> Status: **v1.0, built and running in `web/src/motion`** (the engine, the stylesheet, the React layer and the `/dev/motion` gallery). This is the contract for how controls and chrome respond: a press, a hover, a toggle turning on, a live arrival, a window opening. It sits under section 6 of `design-direction.md` and does not repeat it: the Beat, the boot, the moon, the globe, the odometer and the camera stay with 6.4. Section 14 lists the few places where this document is stricter than that one (the chrome has no idle loops).
+> Status: **v1.1, built, running in `web/src/motion` and wired into the app** (the engine, the stylesheet, the React layer, the `/dev/motion` gallery, and the frame: windows, sheets, toasts, the rail, the Pulse, the phone tab bar and the command palette). This is the contract for how controls and chrome respond: a press, a hover, a toggle turning on, a live arrival, a window opening. It sits under section 6 of `design-direction.md` and does not repeat it: the Beat, the boot, the moon, the globe, the odometer and the camera stay with 6.4. Section 14 lists the few places where this document is stricter than that one (the chrome has no idle loops).
 >
 > Clean-room: nothing here comes from v1 (`backend/`, `frontend/`). Brand: Flux Blue `#2B61D1`, its tints, and white. No emoji anywhere.
 >
@@ -138,13 +138,13 @@ A Switch turned on (the kit's knob takes 220 ms to travel and the head waits 65%
 
 **Means** that the network did something, not the person. It is the one word that is about the world rather than about you, so it is also the one that yields: it is the live class of the budget and always gives way to the user's own effects.
 
-**Fires on** `data-fresh` appearing on an element that opted in with `data-fx="current"` (a feed row, a card), a `<Current signal={...}>` whose signal changed (the block rail), and `<Current fireOnMount>` on a card that has just landed. Nothing on first paint, on a route change or for restored data.
+**Fires on** `data-fresh` appearing on an element that opted in with `data-fx="current"` (a feed row, a card), a `<Current signal={...}>` whose signal changed (the block rail), and `<Current fireOnMount>` on a card that has just landed. Nothing on first paint, on a route change or for restored data. The attribute has to appear on an element that already exists (an element created with it fires nothing, and the engine does not watch the document for new nodes), so a view writes it with `useFresh` and nothing else; the first fill, a resync and a change of filter are not arrivals, and a test fails a view that renders the attribute without the hook.
 
-**Anatomy.** On a straight edge, one ribbon (three passes: wide and faint, medium, thin and hot, the globe's beam) enters at one end, runs the straight part between the corner radii and leaves. As a lap, a chain follows the whole outline once, clockwise from the top edge.
+**Anatomy.** On a straight edge, one ribbon (three passes: wide and faint, medium, thin and hot, the globe's beam) enters at one end, runs the straight part between the corner radii and leaves. As a lap, a chain follows the whole outline once, clockwise from the top edge. The light is drawn inside the row or card it belongs to (a track the run adds and removes, or the zero-size track a `<Current>` renders), so it goes where the host goes while the host slides in or the list scrolls; only a host that is not positioned gets an overlay over its rectangle.
 
-**Time.** On an edge, `--fx-dur-current` is the run along a 700 px edge and every 100 px more or less moves it 40 ms, clamped to 440 to 920 ms (a 400 px card edge 520 ms, a 1,200 px rail 840 ms), with `--fx-ease-run`. A lap is `--fx-dur-lap` (900 ms) with `--fx-ease-lap` (nearly even, so the head reads as one steady lap). Tails: 0.1 times the edge length (56 to 160 px) on an edge, 0.14 times the perimeter (40 to 84 px) on a lap.
+**Time.** On an edge, `--fx-dur-current` is the run along a 700 px edge and every 100 px more or less moves it 40 ms, clamped to 440 to 920 ms (a 400 px card edge 520 ms, a 1,200 px rail 840 ms), with `--fx-ease-run`. A lap is `--fx-dur-lap` (900 ms) with `--fx-ease-lap` (nearly even, so the head reads as one steady lap). Tails: 0.1 times the edge length (56 to 160 px) on an edge, 0.14 times the perimeter (40 to 84 px) on a lap. A host that is itself still arriving can hold the light back (`delay`): the new card's own landing waits 90 ms, and its lap starts when the card shows. A row that is the consequence of an arrival with a light of its own says so with `data-fx-delay`: the engine asks the budget only when the wait is over (one timer, started by the arrival, and nothing is drawn if the row went away or stopped being fresh meanwhile).
 
-**Used on.** The rail's top edge once per block; the card that just landed, once around; P1 rows in the Pulse feed (a payment to a watched or owned node, 6.5), which arrive about two seconds after the block's own light is gone; toasts (as the Power-on panel's top edge).
+**Used on.** The rail's top edge once per block; the card that just landed, once around; P1 rows in the Pulse feed (a payment to a watched or owned node, 6.5), whose streak starts 1.1 s after the block was seen, when the block's own two lights are gone, so the payment reads as the consequence and the budget never has to refuse it; toasts (as the Power-on panel's top edge).
 
 **Never on.** The P0 block row (the rail already carries the block's light), P2 and P3 events (the rows arrive with the kit's own wash), table rows, anything that arrives more than twice a second, anything on mount that was already there.
 
@@ -165,15 +165,17 @@ A block lands on a 900 px rail (the edge run is 720 ms with a 90 px tail; the ne
 
 **Means** "here is what you opened", and where it came from. Everything comes from somewhere (6.1.3): the dock launcher, the clicked node, the result row, the moon.
 
-**Window.** A plain wrapper (no clip, shadow or mask of its own; the framed, chamfered, shadowed window sits inside it) is revealed by a circle that widens from the source point to cover the window (the aperture, 6.4 A), while a surge of light, a thin white leading edge with a faint wake behind it, rides the circle's edge. The wrapper itself scales from 0.95 and fades in during the first 50 ms, so the content is live the moment it mounts and the light rides over it.
+**Window.** The window's own element (no clip, shadow, mask or filter of its own; the chamfer, the material and the drop shadow are on elements inside it) is revealed by a circle that widens from the source point to cover the window (the aperture, 6.4 A), while a surge of light, a thin white leading edge with a faint wake behind it, rides the circle's edge. The element itself scales from 0.95 and fades in during the first 50 ms, so the content is live the moment it mounts and the light rides over it.
 
-**Close** is faster than the open (180 against 420 ms, as the aperture's 220 against 660): the wrapper scales to 0.96 toward the source, fades, and the circle closes back into it. It stays invisible until its owner unmounts it, so a React unmount never flashes it back; re-opening mid-close brings it back visible.
+**The source** is the dock launcher that stands for the window's type (a phone sheet's is the middle of its foot, a toast's the middle of the edge it sits against). It is given as an element, a rectangle, a point, or as fractions of the element's own box (`{ fx: 1, fy: 0.5 }`), and it is held to 48 px outside the element: a launcher a thousand pixels away would otherwise open as a circle that has not reached the window yet (nothing to see for the first frames, which is a wait) and scale about a far point (the window would slide). Held near, the first frame already shows the window and the light still comes in from the side the source is on.
 
-**Panel** (toasts, the command palette): a quicker scale from 0.97 and fade (260 ms) with one comet along the top edge (420 ms, 80 px tail). No aperture.
+**Close** is faster than the open (180 against 420 ms, as the aperture's 220 against 660): the element scales to 0.96 toward the source, fades, and the circle closes back into it. It stays invisible until its owner unmounts it, so a React unmount never flashes it back; re-opening mid-close brings it back visible. A thing that is already gone from its owner's state when it closes (a window leaves the window manager's state at once, and a route-bound window's body is the router's outlet, which empties with the route) plays the exit on the copy it leaves behind, a ghost; a thing that can stay mounted (the palette) is kept mounted until the exit's `onExited`.
+
+**Panel** (toasts, the command palette, phone sheets): a quicker scale from 0.97 and fade (260 ms) with one comet along the top edge (420 ms, 80 px tail), which follows the element's corner radii (a sheet's rounded top, a toast's 16 px). No aperture. A toast is a pane of glass, so its animation is on the toast itself and not on a wrapper: an ancestor that is fading stops a backdrop blur seeing the page behind it.
 
 **Time.** Entrance `--fx-dur-power-on` (420 ms, `--fx-ease-arrive`); aperture and surge `--fx-dur-surge` (480 ms, `--fx-ease-run`); exit `--fx-dur-power-off` (180 ms, `--ease-in`). This is faster than the design's `--dur-portal-open` (660 ms): the aperture idea is kept, the wait is not. `--dur-portal-open` stays in the token sheet for anything that still wants the slow version.
 
-**Used on.** Windows, toasts and the palette. **Never on.** Menus, selects, tooltips and hover cards (tools used dozens of times a minute; the kit's own entrance is enough), tabs and in-window route changes (6.4 G).
+**Used on.** Windows, phone sheets, toasts and the palette. **Never on.** Menus, selects, tooltips and hover cards (tools used dozens of times a minute; the kit's own entrance is enough), tabs and in-window route changes (6.4 G).
 
 **Reduced.** A 160 ms cross-fade in and 120 ms out; no clip, no light. **Off.** Instant. The aperture is used only when the element can be clipped safely (no shadow, mask, clip or filter of its own); otherwise the scale, fade and surge still play and the clip is skipped.
 
@@ -199,9 +201,9 @@ Closing: 0 to 180 ms the same circle closes into the launcher while the wrapper 
 
 ### 3.7 Slide: the selection moved (optional)
 
-**Means** that the selection moved from here to there. The kit's `Tabs` and `SegmentedControl` already move their own ink, and they keep it. `<TabIndicator/>` is for a tab-like list that has none (a window's tab strip drawn without the kit, a custom segmented list).
+**Means** that the selection moved from here to there. The kit's `Tabs` and `SegmentedControl` already move their own ink, and they keep it. `<TabIndicator/>` is for a tab-like list that has none: a window's tab strip drawn without the kit, a custom segmented list, a bar of routes (the phone's tab bar, where the pill behind the lit tab stays as a state and the line is what moves), the command palette's kind chips.
 
-**Anatomy.** A 2 px line under the selected tab. Its leading edge arrives first (0.85 of `--fx-dur-slide`, `--fx-ease-lead`) and the trailing edge catches up (1.15 of it, `--fx-ease-trail`), so the line stretches and relaxes like current finding a new path. A white head glows on the leading end and fades over 1.3 times `--fx-dur-slide` (390 ms); a soft Blue Wave bloom sits under the line. It finds the selected tab by itself (`aria-selected`, `aria-current` or `data-selected`), watches for changes and for resizes, and costs nothing between them.
+**Anatomy.** A 2 px line under the selected tab. Its leading edge arrives first (0.85 of `--fx-dur-slide`, `--fx-ease-lead`) and the trailing edge catches up (1.15 of it, `--fx-ease-trail`), so the line stretches and relaxes like current finding a new path. A white head glows on the leading end and fades over 1.3 times `--fx-dur-slide` (390 ms); a soft Blue Wave bloom sits under the line. It finds the selected tab by itself (`aria-selected`, any `aria-current` that is not `false`, which is `page` on a bar of routes, or `data-selected`), watches for changes and for resizes, and costs nothing between them. It measures in the host's own pixels, so a host that is still scaling when it mounts (the palette's chips mount under a panel that is at 97%) gets its line in the right place.
 
 **Reduced and Off.** The line jumps to its new place. **Not compositor-only**: two registered custom properties clip a 2 px strip (paint only, never layout); see section 10.
 
@@ -323,7 +325,9 @@ One answer in the same order the kit's `useMotionMode()` uses, so CSS, kit compo
 2. `<html data-motion>`: a mode the page forced (a gallery, a screenshot run, an embedding shell). The kit's stylesheets and `tokens.css` switch on this attribute.
 3. The stored preference (`useUi.motion`), where `system` follows the OS setting.
 
-Nothing in the kit mirrors the stored preference to `<html data-motion>`, so `<MotionRoot/>` does: while no one has forced a mode it writes the effective mode there, follows the Settings choice and the OS setting live, and never overwrites a value it did not write. It also keeps `<html data-fx-mode>` current (the resolved mode, which this language's own CSS and runners read).
+Nothing in the kit mirrors the stored preference to `<html data-motion>`, so `<MotionRoot/>` does: while no one has forced a mode it writes the effective mode there (`full`, `reduced` or `off`), follows the Settings choice and the OS setting live, and never overwrites a value it did not write. It also keeps `<html data-fx-mode>` current (the resolved mode, which this language's own CSS and runners read). **It must be the only writer**: it takes any other writer's value for a mode the page forced, so a second mirror that wrote `reduced` for Off made the Off setting read as Reduced for the kit and for every effect. The frame's stylesheets also key on a `data-motion-off` marker, which the frame's root-prefs hook keeps beside `data-motion="off"` and which does not take part in the mode.
+
+`tokens.css` shrinks its durations under `[data-motion="reduced"]` and the OS query only, so with the Off preference every token would come back at its full value. `motion.css` therefore carries the same block for `[data-motion="off"]`, and a test fails if the two ever differ (section 14 asks the token sheet to take it over).
 
 ### 6.3 What the engine reads
 
@@ -334,7 +338,7 @@ The kit writes these attributes (`web/src/ui/README.md`, "Attach points") and th
 | `data-pressed` | appears while a pointer button or Space or Enter is held | Pulse, if the element is on the press list |
 | `data-state` | turns `on`, `copied` or `selected` | Spark, if the element is on the spark list and a person just acted |
 | `aria-checked`, `aria-pressed`, `aria-selected` | turn `true` | the same Spark, for controls that report through ARIA |
-| `data-fresh` | appears on a row or card | Current, if the element says `data-fx="current"` |
+| `data-fresh` | appears on a row or card that already exists (`useFresh` writes it) | Current, if the element says `data-fx="current"` |
 | `data-flash`, `data-enter` | the kit's changes and arrivals | nothing from this folder: the kit's wash is Settle |
 | `data-motion`, `data-fx-mode` | `<html>` and subtrees | the mode (6.2) |
 
@@ -350,7 +354,8 @@ For elements outside the kit, and for opting out:
 | `data-fx="off"` | no effect on this element or anything inside it |
 | `data-fx-density="dense"` | a dense zone: no Pulse, Charge or Current inside (section 7) |
 | `data-fx-tone="hot"` or `"accent"` | the colour of the light |
-| `data-fx-spark="end"`, `"start"`, `"icon"`, `data-fx-delay="ms"` | where and when a Spark lands |
+| `data-fx-spark="end"`, `"start"`, `"icon"` | where a Spark lands |
+| `data-fx-delay="ms"` | when it lands: a Spark waits for a knob that is still sliding; a Current on a fresh row waits for the light of the arrival it follows (P1 rows) |
 
 Tokens combine with spaces: `data-fx="press charge"`.
 
@@ -374,7 +379,7 @@ Live effects therefore yield to the user's own input, and a burst of network eve
 
 Light is for the sparse, the important and the user's own action. These stay quiet:
 
-- **Dense views.** `data-fx-density="dense"` on a container, and every kit `DataTable`, silence Pulse, Charge and Current inside. A Spark may still confirm the person's own toggle (it is tiny and follows an action), unless `data-fx="off"` says no. Dense means, and the shell marks it so: tables and feeds, lists of more than about eight rows, toolbars of four or more small controls, window title bars and the status bar.
+- **Dense views.** `data-fx-density="dense"` on a container, and every kit `DataTable`, silence Pulse, Charge and Current inside. A Spark may still confirm the person's own toggle (it is tiny and follows an action), unless `data-fx="off"` says no. Dense means, and the shell marks it so: tables and feeds, lists of more than about eight rows (the palette's results, the search results page, the terminal), toolbars of four or more small controls, the top bar, window title bars and the status bar.
 - **Scaled by size.** Elsewhere the light scales with the thing: the tail follows the control's short side (28 to 76 px), the bloom is 36 to 88 px, the charge reach is 38 to 120 px, and a control under 14 px gets nothing. A small control gets a small, quick light.
 - **Opt out.** `data-fx="off"` on any element silences it and everything inside.
 - **Hidden.** No overlay is drawn while the page is hidden or the element is off screen.
@@ -387,7 +392,7 @@ Light is for the sparse, the important and the user's own action. These stay qui
 4. Live yields to user. A block landing never delays, replaces or competes with a press; it is dropped.
 5. Nothing lasts a second. Every light in the vocabulary ends within 920 ms. The only longer thing is the kit's Settle wash, which is a tint, not light.
 6. Nothing fires on mount, on a route change or for restored state. A Spark needs a recent input; a Current needs an arrival; `fireOnMount` is only for a card that has just landed.
-7. The same event never gets two lights. A block landing is one streak on the rail and one lap on the new card (the two Currents the budget allows) and a Settle on the number; nothing else.
+7. The same event never gets two lights at once. A block landing is one streak on the rail and one lap on the new card (the two Currents the budget allows) and a Settle on the number; the payment row it brings to a watched node lights only after those are gone (3.4), never beside them.
 8. No loops in chrome. If something needs to say "still going", it is a static state (a dot, a word), not a cycle.
 9. Every effect is interruptible and leaves nothing behind: cancelling one removes all of its nodes, a window re-opened mid-close comes back visible, an unmounted `<Current>` stops.
 10. A dropped effect never looks like a bug. The static state is complete without the light, so a dropped Pulse is a button that simply pressed.
@@ -404,15 +409,24 @@ Which surface speaks which word. A surface that is not listed does not move.
 | Switch, toggle chip, copy button | Spark when on | automatic | off is quiet |
 | Tabs and segmented control (kit) | their own ink | none from this folder | no Pulse on a tab |
 | A tab-like list without ink | Slide | `<TabIndicator/>` | optional |
+| Phone tab bar | Slide | `<TabIndicator/>` as the bar's last child, on its top edge, reading `aria-current` | the pill behind the lit tab is a state and changes without moving |
+| Command palette kind chips | Slide | `<TabIndicator/>` reading `data-selected` | one line under the chosen chip, stretching to each new kind; the chips draw no mark of their own |
 | Text fields, sliders, selects | their own focus ring | none | |
 | Menus, popovers, tooltips, hover cards | none | none | used dozens of times a minute |
-| Windows | Power-on | `<PowerOn open origin>` | the wrapper carries no clip or shadow |
-| Toasts, the command palette | Power-on, panel variant | `<PowerOn variant="panel">` | a quick sweep along the top edge |
+| Windows | Power-on | `powerOn(el, { origin })` on the window's own element when it mounts, `powerOff` on its ghost when it closes | the element carries no clip, mask, shadow or filter; the origin is the dock launcher for its type; no flare on a window that is opening |
+| Phone sheets (windows and the Live sheet) | Power-on, panel variant | `powerOn(el, { variant: 'panel', origin: { fx: 0.5, fy: 1 } })` | unfolds from its foot with a comet along its rounded top edge; dragging ends the entrance; the exit is the sheet sliding down |
+| Toasts | Power-on, panel variant | `powerOn` and `powerOff` on the toast itself | grows out of the edge it sits against; a pane of glass is never animated through a wrapper |
+| Command palette | Power-on, panel variant | `<PowerOn variant="panel" origin onExited>` | the middle of its top edge stays put while the rest scales; the result list is dense (no light inside) and the search field keeps its own focus ring |
+| Command palette result list | none | `data-fx-density="dense"` on the list | groups of rows that grow and shrink as you type: a quiet zone; the highlighted row is a static state that moves, not light |
+| Settings: globe art cards | Charge | `data-fx="charge"` on the card's frame | the radio inside holds the focus, so the frame lights while the control inside has visible focus (`:has(:focus-visible)`) and wears the energised outline; the card is checked and focused at once without the two reading as one |
 | `DataTable` rows | Settle | the kit | dense: no light |
-| Pulse feed rows | Settle for all, Current for P1 only | the kit's `data-fresh`; `data-fx="current"` on P1 rows only | a payment to a watched or owned node; the block row settles like the rest, the rail carries the block's light |
-| Block rail | Current | `<Current signal={tip} edge="top"/>`, and `<Current edge="perimeter" fireOnMount/>` in each new card | not while the rail is hover-frozen or scrolled into history |
+| Pulse feed rows | Settle for all, Current for P1 only | `useFresh` writes `data-fresh`; `data-fx="current"` on P1 rows only | a payment to a watched or owned node, drawn inside the row; the block row settles like the rest, the rail carries the block's light |
+| Block rail | Current | `<Current signal={newest fresh card} edge="top"/>`, and `<Current edge="perimeter" fireOnMount delay={90}/>` in each new card | not while the rail is hover-frozen or scrolled into history; not for the first fill or a resync; the card's own radius, so the lap follows it |
 | Status bar: tip and counters | Settle | the kit's `AnimatedNumber` and `FlashOnChange` | no light |
 | Status bar: connection, freshness chips | none | a static dot and a word | the state change is its own answer |
+| Top bar | none | `data-fx-density="dense"` | a toolbar of small controls: no Pulse, Charge or Current inside |
+| Search results page, terminal output | none | `data-fx-density="dense"` on the list and the log | a list and a text surface |
+| A button whose answer is a bigger event (the results page's close, Settings' "Try ambient mode") | none | `data-fx="off"` on the button | the screen changing is the answer; a light on the button would be a second one |
 | Beat chip | the design's own ping per block (8.4) | CSS, event-driven | not part of this language |
 | Aim strip and chips | none | static states (`data-soon`, `data-late`, `data-pending`, `data-mine`) | no loops in chrome |
 | The globe and the moon | their own (6.4, 7) | not this language | the renderer's |
@@ -433,7 +447,12 @@ Which surface speaks which word. A surface that is not listed does not move.
 - **Compositor only.** Light is `transform` and `opacity` on tiny `will-change` elements (a Pulse is two chains of 4 to 18 links and two blooms, for 180 to 260 ms), plus gradients, masks and clips that are static while they run. Every node is removed when its effect ends.
 - **Two named exceptions, both paint-only and bounded.** The slide line animates two registered custom properties on a 2 px strip for 300 ms. The window surge animates one registered length (`--fx-ring`) through a radial gradient on a window-sized, mostly transparent layer for 480 ms, at most two at once; its box is `contain: layout style`.
 - **Lite tier.** Under `data-perf="lite"` the heads lose their wide bloom and the slide line its blurred glow.
-- **Measured** at 1600 by 900, device pixel ratio 1 and 2, with the globe running: frame times at rest and during about 25 interactions in 8 seconds (presses, switches, window opens and closes, simulated blocks) hold 16.7 ms at the median and 16.8 ms at the 99th percentile, and no frame over 25 ms belongs to an effect. `web/src/motion/tools/frametime.mjs` repeats the measurement and attributes every frame over 25 ms to the script that held it, so a long frame from elsewhere in the app is never mistaken for one of ours (and the reverse).
+- **Measured** on the merged app at 1600 by 900, with the real globe and the live feed, on the GPU (`web/src/motion/tools/`). The numbers are from the production build served by `vite preview`, which is the one to trust: the dev server runs React in development mode.
+  - `frametime.mjs --app`: windows opened and closed from the dock, blocks landing on the rail, the command palette, a switch and a press in Settings (19 interactions in 8 s). At device pixel ratio 1 and 2: mean 16.67 ms, median 16.7, 99th percentile 16.8, longest 16.8, and no frame over 25 ms; at rest the same. The tool attributes every frame over 25 ms to the script that held it (the long-animation-frame entries), so a long frame from elsewhere in the app is never mistaken for one of ours, and the reverse.
+  - `window-cost.mjs`: the same windows opened and closed in Full and in Off, 32 of each at 1x. Opens: 16.68 ms mean in both. Closes: 16.74 in Full against 16.67 in Off. The aperture clip over the window's drop shadow, the surge and the ghost cost nothing the frame counter can see. What does show is cold: the first open of the Explorer window and the first closes of the About window have one 33 ms frame, in Full and Off alike (the first paint of a large page); from then on nothing is over 17 ms.
+  - `scripts/globe-check.mjs fps` at 2560 by 1440: 60 fps, 16.8 ms at the 99th percentile, 0.3 ms of engine CPU and 1.35 ms of GPU time per frame.
+  - On the dev server the same mix has 16 frames over 25 ms out of 411: 12 inside React's synchronous work in a click handler (mounting a window's content, 50 to 165 ms) or the palette's key handler, one the socket's, three with no script behind them; none is in `web/src/motion`. The live WebSocket handler's globe update, which stalls the dev server for 1 to 2 s about every 12 s, is one 50 ms frame in the production build.
+- **Audited** (`audit.mjs`, six runs: Full, Reduced and Off, on a desktop and on a phone). At rest, between two blocks, only states run: the block timer's ring and the top bar's and status bar's progress (six animations on a desktop, four on a phone), no event, no loop, no light drawn, an empty budget. A burst of four blocks with four toasts, four windows and the palette (on a phone the tabs) peaks at four effects at once on a desktop (two Power-ons, two Currents) and three on a phone (two Power-ons, one Slide), never over a cap, and the light is gone and the budget empty when it ends; in Off nothing is drawn. The one loop in Full is a page's own decoration: the About window's 56 s hex drift and 7 s glow (both silenced in Reduced and Off), which run only while that window is open.
 
 ## 11. Joining the language
 
@@ -482,7 +501,23 @@ node src/motion/tools/frames.mjs --only pulse-primary,window-open --mode full --
 | `window-open`, `window-close`, `toast` | 0 to 560, 0 to 200, 0 to 440 | the circle grows from the launcher; the white edge rides its rim; the content is live from 50 ms; the close is shorter |
 | `block-arrives` | 0, 60, 120, 200, 300, 420, 560, 700, 860, 1000 | one streak on the rail, the card circled once, the number settling; nothing else; still by 1 s |
 
-Each is captured in `full`, and the ones that matter in `reduced` and `off` (`--mode`). Defects found while building this, which every capture is checked for:
+Each is captured in `full`, and the ones that matter in `reduced` and `off` (`--mode`).
+
+`web/src/motion/tools/frames-app.mjs` does the same on the live app at `/`, with real input, so the integration is judged as a person sees it. For the length of the act it wraps `Element.prototype.animate` so every Web Animation starts paused, sweeps up the CSS animations that began, then seeks all of them to each sample time and screenshots a clip around the thing; a contact sheet per scenario and mode goes to `/home/stache/.cache/flux-atlas/shots/m1/app/`. A scenario that asks for the clock keeps the page's own timers (60 to 3000 ms) and runs them at their time as the film is seeked, and lets an animation that reached its end finish for real, so the budget is given back as it is in real life: that is how a row that waits for the block's light is checked. Off captures three frames (0, 120 and 400 ms), because nothing moves.
+
+| Scenario | Samples (ms) | What to look for |
+|---|---|---|
+| `window-open`, `window-close` | 0 to 560 every 40, 0 to 200 every 25 | out of the Explorer launcher; the surge on the circle's rim; the window live from 50 ms; the close shorter, back into the launcher, nothing left |
+| `toast` | 0 to 440 every 40 | scale from 0.97 and fade on the toast itself, one comet along its top edge |
+| `block` | 0, 60, 120, 200, 300, 420, 560, 700, 860, 1000 | the rail's streak, the new card circled once, the number settling; still by 1 s |
+| `pulse-p1` | 0, 200, 600, 1000, then 1100 to 1800 | the payment row waits: nothing on it at 1000 ms. Then one streak along its top edge, inside the row, 1100 to 1640 ms |
+| `palette` | 0 to 420 every 40 | the panel powers on from the middle of its top edge; the line under the chosen kind stays in place |
+| `phone-tab` | 0 to 480 every 40 | the line on the bar's top edge stretches to the new tab |
+| `phone-sheet-open`, `phone-sheet-close` | 0 to 480 every 40, 0 to 240 every 30 | the sheet unfolds from its foot with a comet along its top; it slides down and fades |
+
+`audit.mjs` (what animates at rest, and a burst against the budget, with a shot at the peak and after to look at for overlap), `frametime.mjs --app` and `window-cost.mjs` (frame time, section 10) are run on a phone and a desktop, in all three modes, before the integration is called done.
+
+Defects found while building this, which every capture is checked for:
 
 - A straight tail sticking out of a corner (an X-shaped antenna): the light must bend with the outline.
 - Bright ticks, beading or seams along a tail: the ribbon must be continuous.
@@ -502,5 +537,7 @@ Section 6 of the design direction describes motion across the product, and this 
 | 6.5 Connection indicator | the Live dot carries a slow 2.4 s ping ring | A static dot and the words. The per-block ping already belongs to the Beat chip (8.4) |
 | 6.4 A and `--dur-portal-open` | a 660 ms aperture, a 1.5 px mouth ring at the source, a 2 px rim ring, a 220 ms close | Power-on: a 420 and 480 ms open, the rim is the surge's leading edge, the mouth ring is dropped (a launcher is already charged from the hover), a 180 ms close. Same aperture, faster |
 | 6.6 table row "Loops" | rim sweep, live ping, anticipation glow, aim breath are off in Reduced and Off | In chrome there are none in Full either. The aim breath and the moon's anticipation glow are the globe's (6.4 M, 7.10) and unchanged; their chrome mirrors (`data-soon` on the aim strip) are static states |
+| Token sheet, reduced block | the durations shrink under `[data-motion="reduced"]` and the OS query | The Off preference writes `data-motion="off"`, which that block does not match, so `motion.css` repeats it for Off (a test keeps the two identical). The token sheet should add `[data-motion="off"]` to its selector, and the copy can go |
+| 6.4 I (landing) | a watched payee's feed row and its P1 toast arrive when its beam lands (1880 to 2140 ms) | The row is derived from the block and shows with it, and its Current waits until the block's own light is gone: 1.1 s after the block was seen. A row the choreography holds back to the beam's landing lights at once, because the wait is counted from the block |
 | 6.1 principle 2 (one loud motion) | a single loud effect in view, quiet motion may coexist | Unchanged. Power-on is the aperture, one of the loud effects (at most two alive, and a window opens one at a time); Pulse, Charge, Spark, Current and Slide are quiet and budgeted (section 7) |
 | 8.5 dock hover | scale 1.08 with a spring | Unchanged. Charge adds the ring; scale and ring are one hover state, not two effects |
