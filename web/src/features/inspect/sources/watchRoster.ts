@@ -3,9 +3,10 @@
 // the last sweep reached it, its last check-in); the alert engine reads the same record for the check-in
 // height. One key, so each node is asked for once however many parts of the app need it.
 
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api } from '../../../api/endpoints';
+import type { Geo } from '../../../api/generated/Geo';
 import type { NodeRow } from '../../../api/generated/NodeRow';
 import { rowFromDetail } from '../derive/operator';
 import { WATCH_LIVE_LIMIT } from '../watch/model';
@@ -27,4 +28,14 @@ export function useWatchRows(ids: readonly number[], enabled: boolean): Readonly
     for (const node of results) if (node) m.set(node.id, rowFromDetail(node));
     return m;
   }, [results]);
+}
+
+/**
+ * The geolocation of a fleet's only node, from its detail record: the roster rows say nothing about a city, so a
+ * fleet of one asks for the one record (the same key the watchlist already shares, so it is one request).
+ */
+export function useSoleGeo(nodes: readonly { id: number; present: boolean }[]): Geo | null {
+  const sole = nodes.length === 1 && nodes[0]?.present ? nodes[0] : null;
+  const q = useQuery({ ...watchNodeQuery(sole?.id ?? -1), enabled: sole !== null });
+  return sole ? (q.data?.node.geo ?? null) : null;
 }

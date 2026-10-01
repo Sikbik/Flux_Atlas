@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { useNodePayments } from '../../../api/queries';
 import { useRuntime } from '../../../app/context';
 import { fluxToNumber, formatInt } from '../../../lib/format';
+import { useUi } from '../../../store/ui';
 import {
   AnimatedNumber,
   FlashOnChange,
@@ -18,7 +19,7 @@ import {
 import { etaShort } from '../derive/eta';
 import { paymentDays, windowTotals } from '../derive/payments';
 import { estimatePayment, queueProgress } from '../derive/queue';
-import { useFirstIngestMs } from '../sources/hooks';
+import { useFirstIngestMs, useRiseFlash } from '../sources/hooks';
 import { useChainClock } from '../sources/live';
 import { useNodeCtx } from './context';
 import { NOT_QUEUED, type PayInfo, usePayInfo } from './pay';
@@ -32,8 +33,13 @@ const shortDate = (ms: number) =>
 
 /** The next payment, counting down. The only tile that re-renders every second. */
 function NextPayment({ pay }: { pay: PayInfo }) {
+  const { id } = useNodeCtx();
   const { tip, anchorMs, nowMs } = useChainClock();
   const { queued, position, size, tier, status, payout, lastPaid } = pay;
+  // A payment that lands while you look says so for a moment; on a watched node it also earns the language's
+  // Current (the attributes below are all the motion layer needs: no effect code lives here).
+  const paidNow = useRiseFlash(lastPaid);
+  const watched = useUi((s) => id !== null && s.watched.includes(id));
   const est =
     queued && position !== null && tip !== null && anchorMs !== null
       ? estimatePayment(position, size, tip, anchorMs, nowMs)
@@ -62,7 +68,9 @@ function NextPayment({ pay }: { pay: PayInfo }) {
   return (
     <Stat
       hero
-      label={next ? 'Paid in the next block' : 'Next payment'}
+      data-fx={watched ? 'current' : undefined}
+      data-fresh={paidNow || undefined}
+      label={paidNow ? 'Paid just now' : next ? 'Paid in the next block' : 'Next payment'}
       value={
         figure === null ? null : (
           <FlashOnChange value={lastPaid} tone="white">

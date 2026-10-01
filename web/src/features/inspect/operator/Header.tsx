@@ -3,17 +3,18 @@ import { useMemo } from 'react';
 import { useGlobeEngine } from '../../../globe';
 import { formatInt } from '../../../lib/format';
 import { Button, Hash, IconButton, StatusChip, TierChip, ViewHeader } from '../../../ui';
-import { countryName } from '../derive/appSpec';
 import {
   type FleetNode,
   type FleetState,
   fleetCentroid,
+  fleetPlace,
   fleetState,
   flyRangeFor,
   type TierMix,
   tierMix,
 } from '../derive/operator';
 import type { QueueTier } from '../derive/queue';
+import { useSoleGeo } from '../sources/watchRoster';
 import { LocationMap } from '../ui/locationmap';
 import type { MapPoint } from '../ui/map';
 
@@ -24,29 +25,6 @@ const TONE: Record<FleetState, MapPoint['tone']> = {
   pending: 'off',
   gone: 'off',
 };
-
-/** The place line of a fleet: its biggest countries, and how many nodes sit on how many hosts. */
-export function fleetPlace(nodes: readonly FleetNode[]): { lead: string; detail: string } {
-  const by = new Map<string, number>();
-  const orgs = new Map<string, number>();
-  const hosts = new Set<string>();
-  for (const n of nodes) {
-    if (n.country) by.set(n.country, (by.get(n.country) ?? 0) + 1);
-    if (n.org) orgs.set(n.org, (orgs.get(n.org) ?? 0) + 1);
-    if (n.ip) hosts.add(n.ip);
-  }
-  const provider = [...orgs].sort((a, b) => b[1] - a[1])[0]?.[0];
-  const ranked = [...by].sort((a, b) => b[1] - a[1]).map(([cc]) => countryName(cc));
-  const lead =
-    ranked.length === 0
-      ? 'Location unknown'
-      : ranked.length <= 2
-        ? ranked.join(' and ')
-        : `${ranked[0]}, ${ranked[1]} and ${formatInt(ranked.length - 2)} more`;
-  const h = hosts.size;
-  const where = `${formatInt(h)} ${h === 1 ? 'host' : 'hosts'}`;
-  return { lead, detail: provider ? `${provider} · ${where}` : where };
-}
 
 /** The fleet's one-line health as chips: everything fine, or the problems by weight. */
 function HealthChips({ counts, total }: { counts: Record<FleetState, number>; total: number }) {
@@ -99,7 +77,8 @@ export function FleetHeader({
   const mix: TierMix = useMemo(() => tierMix(nodes), [nodes]);
   const dominant: QueueTier | undefined = (['stratus', 'nimbus', 'cumulus'] as const).find((t) => mix[t] > 0);
   const centre = useMemo(() => fleetCentroid(nodes), [nodes]);
-  const place = useMemo(() => fleetPlace(nodes), [nodes]);
+  const sole = useSoleGeo(nodes);
+  const place = useMemo(() => fleetPlace(nodes, sole), [nodes, sole]);
 
   return (
     <>

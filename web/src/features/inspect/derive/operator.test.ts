@@ -10,6 +10,7 @@ import {
   concentration,
   type FleetNode,
   fleetCentroid,
+  fleetPlace,
   fleetState,
   flyRangeFor,
   hardwareMix,
@@ -401,5 +402,35 @@ describe('buildFleet places', () => {
     const [n] = buildFleet([row(1, { lat: 60, lon: 25 })], t, q, 1_000, {});
     expect(n!.lat).toBeCloseTo(12.5, 4);
     expect(n!.lon).toBeCloseTo(34.5, 4);
+  });
+});
+
+describe('fleetPlace', () => {
+  it('names a fleet by its biggest countries and counts hosts', () => {
+    const p = fleetPlace([
+      node(1, { country: 'DE', ip: '1.1.1.1', org: 'Hetzner' }),
+      node(2, { country: 'DE', ip: '1.1.1.2', org: 'Hetzner' }),
+      node(3, { country: 'FI', ip: '1.1.1.3', org: 'OVH' }),
+    ]);
+    expect(p.lead).toBe('Germany and Finland');
+    expect(p.detail).toBe('Hetzner · 3 hosts');
+  });
+
+  it('names a fleet of one by its city when the detail record knows it', () => {
+    const only = [node(1, { country: 'CA', ip: '2.2.2.2', org: 'OVH Hosting' })];
+    expect(fleetPlace(only, { city: 'Port Coquitlam', country_code: 'CA' }).lead).toBe(
+      'Port Coquitlam, Canada',
+    );
+    expect(fleetPlace(only, { city: '', country_code: 'CA' }).lead).toBe('Canada');
+    expect(fleetPlace(only, null).lead).toBe('Canada');
+  });
+
+  it("never names a bigger fleet by one node's city", () => {
+    const two = [node(1, { country: 'CA' }), node(2, { country: 'CA' })];
+    expect(fleetPlace(two, { city: 'Port Coquitlam', country_code: 'CA' }).lead).toBe('Canada');
+  });
+
+  it('says so when no location is known', () => {
+    expect(fleetPlace([node(1, { country: '' })]).lead).toBe('Location unknown');
   });
 });

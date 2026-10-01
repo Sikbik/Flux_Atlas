@@ -7,8 +7,9 @@ import type { NodeDto } from '../../../api/generated/NodeDto';
 import type { NodeRow } from '../../../api/generated/NodeRow';
 import type { NodeStatus } from '../../../api/generated/NodeStatus';
 import { STATUS_CODES } from '../../../api/nodesBin';
-import { parseEndpoint } from '../../../lib/format';
+import { formatInt, parseEndpoint } from '../../../lib/format';
 import { type NodeTable, Reach } from '../../../store/nodeTable';
+import { countryName } from './appSpec';
 import { blocksSinceConfirm, CHECKIN, isAtRisk } from './expiry';
 import { fluxPerDay, positionOf, QUEUE_TIERS, type QueueSnapshot, type QueueTier } from './queue';
 import { type VersionStanding, versionStanding } from './versions';
@@ -550,4 +551,38 @@ export function sumSince(
     sum += toFlux(p.amount) ?? 0;
   }
   return sum;
+}
+
+/**
+ * The place line of a fleet: its biggest countries, and how many nodes sit on how many hosts. A fleet of one
+ * node whose detail record knows its city is named by it ("Helsinki, Finland"); the roster rows carry no city,
+ * so a bigger fleet is named by country and never by a guess.
+ */
+export function fleetPlace(
+  nodes: readonly FleetNode[],
+  sole?: { city: string; country_code: string } | null,
+): { lead: string; detail: string } {
+  const by = new Map<string, number>();
+  const orgs = new Map<string, number>();
+  const hosts = new Set<string>();
+  for (const n of nodes) {
+    if (n.country) by.set(n.country, (by.get(n.country) ?? 0) + 1);
+    if (n.org) orgs.set(n.org, (orgs.get(n.org) ?? 0) + 1);
+    if (n.ip) hosts.add(n.ip);
+  }
+  const provider = [...orgs].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const ranked = [...by].sort((a, b) => b[1] - a[1]).map(([cc]) => countryName(cc));
+  let lead =
+    ranked.length === 0
+      ? 'Location unknown'
+      : ranked.length <= 2
+        ? ranked.join(' and ')
+        : `${ranked[0]}, ${ranked[1]} and ${formatInt(ranked.length - 2)} more`;
+  if (nodes.length === 1 && sole?.city) {
+    const cc = sole.country_code || nodes[0]?.country || '';
+    lead = [sole.city, cc ? countryName(cc) : ''].filter(Boolean).join(', ');
+  }
+  const h = hosts.size;
+  const where = `${formatInt(h)} ${h === 1 ? 'host' : 'hosts'}`;
+  return { lead, detail: provider ? `${provider} · ${where}` : where };
 }
