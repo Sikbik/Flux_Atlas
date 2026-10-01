@@ -18,9 +18,12 @@ fn modified(p: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(p).and_then(|m| m.modified()).ok()
 }
 
-/// Opens `path` off the runtime and sends it to the reducer.
-async fn load(ctx: &JobCtx, path: PathBuf) -> bool {
-    match tokio::task::spawn_blocking(move || LoadedGeoIp::open(&path)).await {
+/// Opens `path` (through a private copy in `copy_dir`, if set) off the runtime and sends it to
+/// the reducer.
+async fn load(ctx: &JobCtx, path: PathBuf, copy_dir: Option<PathBuf>) -> bool {
+    match tokio::task::spawn_blocking(move || LoadedGeoIp::open_in(&path, copy_dir.as_deref()))
+        .await
+    {
         Ok(Ok(g)) => ctx.send(Obs::GeoIp(g)).await,
         Ok(Err(e)) => {
             ctx.fail(JOB, &e);
@@ -70,7 +73,7 @@ pub async fn run(ctx: JobCtx, cfg: GeoIpConfig) {
                         "geoip: DB-IP City Lite installed"
                     );
                     seen_mtime = modified(&db_path);
-                    if !load(&ctx, db_path.clone()).await {
+                    if !load(&ctx, db_path.clone(), cfg.copy_dir.clone()).await {
                         return;
                     }
                     ctx.ok(JOB);
@@ -96,7 +99,7 @@ pub async fn run(ctx: JobCtx, cfg: GeoIpConfig) {
             if m.is_some() && m != seen_mtime {
                 seen_mtime = m;
                 tracing::info!(path = %db_path.display(), "geoip: database file changed; reloading");
-                if !load(&ctx, db_path.clone()).await {
+                if !load(&ctx, db_path.clone(), cfg.copy_dir.clone()).await {
                     return;
                 }
             }

@@ -38,6 +38,9 @@ pub const LICENSE_URL: &str = "https://creativecommons.org/licenses/by/4.0/";
 pub const DB_FILE: &str = "dbip-city-lite.mmdb";
 /// File name of the previous database (kept after every install).
 pub const PREVIOUS_FILE: &str = "dbip-city-lite.prev.mmdb";
+/// File name of the private copy of an operator-managed database (`ATLAS_GEOIP_DB`).
+pub const OPERATOR_COPY_FILE: &str = "operator-copy.mmdb";
+
 /// Install record (month, size, time) next to the database.
 pub const STATE_FILE: &str = "dbip-city-lite.json";
 
@@ -177,6 +180,54 @@ impl GeoIpDb {
         Ok(Self { reader, info })
     }
 
+    /// Copies an operator-managed database into `dir` and maps the copy, so rewriting the
+    /// operator's file in place (`cp new old`) can never truncate a live mapping (a SIGBUS).
+    /// The copy is written under a staging name, synced and renamed over the previous copy; a
+    /// reader of the previous copy keeps its inode until it drops the map. A source that
+    /// changes while it is copied is copied again (up to three times).
+    pub fn open_private_copy(src: &Path, dir: &Path) -> Result<Self> {
+        std::fs::create_dir_all(dir)?;
+        let staging = dir.join(format!(".staging-{OPERATOR_COPY_FILE}"));
+        let dst = dir.join(OPERATOR_COPY_FILE);
+        let stamp = |p: &Path| -> Result<(u64, Option<std::time::SystemTime>)> {
+            let m = std::fs::metadata(p)?;
+            Ok((m.len(), m.modified().ok()))
+        };
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let before = stamp(src)?;
+            install::ensure_space(dir, before.0, 64 << 20, "the GeoIP database copy")?;
+            let copied = std::fs::copy(src, &staging);
+            let after = stamp(src)?;
+            match copied {
+                Ok(n) if n == before.0 && before == after => break,
+                Ok(_) if attempts < 3 => {}
+                Ok(_) => {
+                    let _ = std::fs::remove_file(&staging);
+                    return Err(GeoIpError::Rejected(format!(
+                        "{} kept changing while it was copied",
+                        src.display()
+                    )));
+                }
+                Err(e) => {
+                    let _ = std::fs::remove_file(&staging);
+                    return Err(e.into());
+                }
+            }
+        }
+        std::fs::File::open(&staging)?.sync_all()?;
+        // Check the copy before it replaces the previous one.
+        if let Err(e) = Self::open(&staging) {
+            let _ = std::fs::remove_file(&staging);
+            return Err(e);
+        }
+        std::fs::rename(&staging, &dst)?;
+        let mut db = Self::open(&dst)?;
+        db.info.path = src.to_path_buf();
+        Ok(db)
+    }
+
     pub fn info(&self) -> &DbInfo {
         &self.info
     }
@@ -237,6 +288,34 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures")
             .join(name)
+    }
+
+    #[test]
+    fn operator_file_rewritten_in_place_cannot_break_the_mapping() {
+        // X1 L4: mapping the operator's file directly, an in-place rewrite (`cp new old`
+        // truncates it first) turned the next lookup into SIGBUS. The private copy is immune.
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("city.mmdb");
+        std::fs::copy(fixture("GeoIP2-City-Test.mmdb"), &src).unwrap();
+        let private = dir.path().join("geoip");
+        let db = GeoIpDb::open_private_copy(&src, &private).unwrap();
+        assert_eq!(db.info().path, src, "reported as the operator's file");
+        assert!(private.join(OPERATOR_COPY_FILE).exists());
+        assert!(
+            !private
+                .join(format!(".staging-{OPERATOR_COPY_FILE}"))
+                .exists()
+        );
+        // Truncate and rewrite the source in place.
+        std::fs::write(&src, b"").unwrap();
+        let ip = "81.2.69.142".parse().unwrap();
+        assert_eq!(db.lookup(ip).unwrap().city, "London");
+        std::fs::write(&src, b"not a database").unwrap();
+        assert_eq!(db.lookup(ip).unwrap().city, "London");
+        // A broken source is refused and the previous copy stays in place.
+        assert!(GeoIpDb::open_private_copy(&src, &private).is_err());
+        assert!(GeoIpDb::open(&private.join(OPERATOR_COPY_FILE)).is_ok());
+        assert_eq!(db.lookup(ip).unwrap().city, "London");
     }
 
     #[test]

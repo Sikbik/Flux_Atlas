@@ -17,6 +17,7 @@ thiserror.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util"] }
 reqwest.workspace = true
+rustix = { version = "1.1.5", features = ["fs"] }
 
 [dev-dependencies]
 tempfile.workspace = true
