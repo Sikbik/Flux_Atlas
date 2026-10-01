@@ -35,6 +35,7 @@ import { create } from 'zustand';
 import { useChainBlocks, useFeed, useRuntime } from '../../app/context';
 import { formatBytes, formatFlux, formatHeight, formatInt } from '../../lib/format';
 import { useAgo } from '../../lib/useClock';
+import { useFresh } from '../../motion/fresh';
 import { ShellLink } from '../../shell/frame/ShellLink';
 import { visibleWindows } from '../../shell/wm/machine';
 import { useWm } from '../../shell/wm/react';
@@ -43,7 +44,6 @@ import type { WindowType } from '../../shell/wm/types';
 import { useUi } from '../../store/ui';
 import { LiveDot } from '../../ui';
 import { useNodeFacts } from './data';
-import { useFreshKeys } from './fresh';
 import { useLiveView } from './live';
 import { cssValue, play } from './motion';
 import { amountLabel } from './payouts';
@@ -308,8 +308,6 @@ function BurstRow({
 const DOM_ROWS = 14;
 /** Recent blocks the card starts with: enough to fill the tallest card (ten rows) before the feed has anything to add. */
 const BLOCK_ROWS = 12;
-/** A row stays fresh a little longer than its wash takes to decay (1.6 s). */
-const FRESH_MS = 1800;
 
 function usePulseRows(filter: PulseFilter) {
   const feed = useFeed();
@@ -380,11 +378,11 @@ export function PulseCard({ mode }: { mode: PulseMode }) {
   }, [rows, openBursts, mode]);
 
   // Rows present at first paint are history; later ones are fresh for a moment (the wash, and a Current for a
-  // payment to a watched node).
+  // payment to a watched node). `useFresh` is what gives the motion language the attribute AFTER the row exists.
   const initial = useRef<Set<string> | null>(null);
   if (initial.current === null && flat.length > 0) initial.current = new Set(flat.map((f) => f.key));
   const flatKeys = useMemo(() => flat.map((f) => f.key), [flat]);
-  const fresh = useFreshKeys(flatKeys, { ms: FRESH_MS, scope: `${filter}:${mode}` });
+  const fresh = useFresh(flatKeys, { scope: `${filter}:${mode}` });
 
   // FLIP: rows slide up by one row when a row arrives at the bottom (a fade when motion is reduced).
   const listRef = useRef<HTMLUListElement>(null);

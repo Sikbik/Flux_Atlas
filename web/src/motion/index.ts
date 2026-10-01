@@ -12,6 +12,7 @@
 //   <Current signal edge />  a light streak along a container edge on a live arrival
 //   <PowerOn open />         a window or panel opening and closing
 //   <TabIndicator />         a stretching selection line, for tab-like lists that have none of their own
+//   useFresh(keys, opts)     which rows and cards just arrived: the only way a view writes `data-fresh`
 //
 // A changed value landing (Settle) is the kit's FlashOnChange, AnimatedNumber and fresh table rows.
 
@@ -26,6 +27,7 @@ export {
   spark,
   stats as motionStats,
 } from './engine';
+export { arrivals, FRESH_MS, type FreshOptions, useFresh } from './fresh';
 export type {
   CurrentOptions,
   Edge,
