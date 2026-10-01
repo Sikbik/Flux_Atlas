@@ -130,7 +130,9 @@
 }
 
 .phone-header .beat-ring {
-  transition: scale var(--park-ms) var(--ease-in-out);
+  transition:
+    scale var(--park-ms) var(--ease-in-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 
 .phone-header .beat-core {
