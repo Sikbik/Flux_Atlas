@@ -54,6 +54,9 @@ pub enum StoreError {
         /// Highest version this build understands.
         supported: u64,
     },
+    /// Reading file metadata failed.
+    #[error("file: {0}")]
+    Io(#[from] std::io::Error),
     /// A batch tried to intern an outpoint or id that is already mapped differently.
     #[error("interning conflict: {0}")]
     InternConflict(String),
