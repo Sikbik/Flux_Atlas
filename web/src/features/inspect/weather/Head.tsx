@@ -62,7 +62,7 @@ export function WeatherHead({ w, onClose }: { w: WeatherData; onClose: () => voi
       icon={CloudSun}
       title={
         <span className="ix-verdict" data-level={w.failed ? 'unknown' : w.verdict.level}>
-          <LiveDot status={tone} ping={tone === 'ok'} size={9} />
+          <LiveDot status={tone} ping={false} size={9} />
           {word}
         </span>
       }
