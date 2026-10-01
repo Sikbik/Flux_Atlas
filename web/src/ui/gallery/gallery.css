@@ -1,0 +1,304 @@
+/* /dev/kit gallery: a full-bleed panel over the globe (the gallery needs room), laid out like the
+   design mock's component sheet. Dev tooling only: nothing here ships in a product view. */
+
+.kit-gallery {
+  position: fixed;
+  inset: var(--topbar-h) 0 var(--statusbar-h) 0;
+  z-index: calc(var(--z-topbar) - 1);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
+  background:
+    radial-gradient(
+      1000px 600px at 85% -10%,
+      color-mix(in oklab, var(--accent-600) 22%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      800px 500px at 0% 40%,
+      color-mix(in oklab, var(--accent-500) 10%, transparent),
+      transparent 62%
+    ),
+    var(--void);
+  color: var(--text-1);
+}
+
+.kg-head {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--space-11) var(--space-12) var(--space-2);
+}
+
+.kg-head h1 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--lh-tight);
+}
+
+.kg-head p {
+  margin: 0;
+  max-width: 78ch;
+  color: var(--text-3);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+}
+
+.kg-head__mark {
+  display: block;
+  margin-bottom: var(--space-7);
+}
+
+.kg-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-7);
+  padding: var(--space-4) var(--space-12);
+  overflow-x: auto;
+  background: color-mix(in oklab, var(--void) 86%, transparent);
+  backdrop-filter: blur(var(--blur-hud));
+  border-bottom: 1px solid var(--line-1);
+  scrollbar-width: none;
+}
+
+.kg-nav a {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 var(--space-5);
+  border-radius: var(--r-pill);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+}
+
+@media (pointer: coarse) {
+  .kg-nav a {
+    height: var(--touch-min);
+  }
+}
+
+.kg-nav a:hover {
+  background: var(--ink-2);
+  color: var(--text-1);
+}
+
+.kg-nav a:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.kg-section {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--space-11) var(--space-12) 0;
+  scroll-margin-top: 56px;
+}
+
+.kg-section__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+}
+
+.kg-section__lead {
+  margin: 0 0 var(--space-8);
+  max-width: 86ch;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.kg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--kg-min, 320px)), 1fr));
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+.kg-spec {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: 0;
+  align-content: stretch;
+}
+
+.kg-spec[data-span="2"] {
+  grid-column: span 2;
+}
+
+.kg-spec[data-span="3"] {
+  grid-column: span 3;
+}
+
+.kg-stage {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-6);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-1);
+  background: var(--ink-0);
+}
+
+.kg-stage[data-layout="stack"] {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+}
+
+.kg-stage[data-surface="raised"] {
+  background: var(--ink-1);
+}
+
+.kg-stage[data-surface="void"] {
+  background: var(--void);
+}
+
+.kg-stage[data-surface="globe"] {
+  background:
+    radial-gradient(
+      120% 120% at 30% 10%,
+      color-mix(in oklab, var(--accent-600) 34%, transparent),
+      transparent 60%
+    ),
+    linear-gradient(180deg, var(--globe-ocean-lit), var(--globe-ocean));
+}
+
+.kg-stage[data-flush] {
+  padding: 0;
+  overflow: hidden;
+}
+
+.kg-stage__inner {
+  min-width: 0;
+}
+
+/* A constrained flush specimen is a window slab resting on the desk: lit rim, deep shadow. */
+.kg-stage[data-windowed] {
+  display: block;
+  padding: var(--space-8) var(--space-6);
+  background:
+    radial-gradient(
+      110% 80% at 15% 0%,
+      color-mix(in oklab, var(--accent-700) 26%, transparent),
+      transparent 70%
+    ),
+    var(--void);
+}
+
+.kg-stage[data-windowed] .kg-stage__inner {
+  margin-inline: auto;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--r-xl);
+  background:
+    linear-gradient(var(--slab-bg-solid), var(--slab-bg-solid)) padding-box,
+    var(--ui-rim-hot) border-box;
+  box-shadow: var(--shadow-window);
+}
+
+.kg-caption {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+
+.kg-caption b {
+  color: var(--text-2);
+  font-weight: var(--fw-medium);
+}
+
+.kg-note {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+
+.kg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.kg-line {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.kg-preview {
+  display: grid;
+  gap: var(--space-4);
+  width: 260px;
+  max-width: 100%;
+}
+
+.kg-qb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: var(--space-5);
+  width: 100%;
+}
+
+.kg-qb-title {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.kg-foot {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--space-12) var(--space-12) var(--space-14);
+  color: var(--text-4);
+  font-size: var(--fs-xs);
+}
+
+@media (max-width: 719px) {
+  .kit-gallery {
+    inset: var(--topbar-h) 0 var(--tabbar-h) 0;
+  }
+
+  .kg-head,
+  .kg-section,
+  .kg-foot {
+    padding-inline: var(--space-6);
+  }
+
+  .kg-head {
+    padding-top: var(--space-9);
+  }
+
+  .kg-head h1 {
+    font-size: var(--fs-2xl);
+  }
+
+  .kg-nav {
+    padding-inline: var(--space-6);
+  }
+
+  .kg-spec[data-span="2"],
+  .kg-spec[data-span="3"] {
+    grid-column: auto;
+  }
+
+  .kg-stage {
+    padding: var(--space-5);
+  }
+}
