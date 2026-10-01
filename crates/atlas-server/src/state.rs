@@ -139,6 +139,21 @@ impl AppState {
                 inner.explorer.guard.prune();
             }
         });
+        // Build the ledgers once in the background, so the first request after a start does
+        // not wait for them (the app-message ledger reads every stored message: about 1 s on a
+        // cold page cache).
+        let weak = Arc::downgrade(&state.inner);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            let Some(inner) = weak.upgrade() else { return };
+            let s = Self { inner };
+            if let Err(e) = s.payout_ledger().await {
+                tracing::debug!(error = %e.message, "payout ledger warm-up failed");
+            }
+            if let Err(e) = s.app_ledger().await {
+                tracing::debug!(error = %e.message, "app ledger warm-up failed");
+            }
+        });
         state
     }
 

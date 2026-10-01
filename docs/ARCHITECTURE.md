@@ -212,7 +212,50 @@ app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` 
 >   churn remains comes mostly from a few queried hosts (5.230.173.205 and .206, every port) whose copies of the
 >   reporters' lists hold far more links than other nodes' copies: a call to one of them adds 2,400 to 3,900 links
 >   where a typical call adds about 250, and the next covering reports from other nodes remove them again.
+> - **Mesh outlier calls (B7).** Measured over 63 minutes with the B6 rule (296 calls): calls to hosts in
+>   5.230.0.0/16 (64 endpoints on 17 IPs in that hour) were 22% of all calls, added 3,271 links per call on average against 373
+>   elsewhere at the same reporter count (61 against 58), and came in runs of up to 19 consecutive calls, because
+>   the sweep walks the node list in id order and those nodes were registered together. Rule
+>   (`state::mesh::CallScreen`): before a call is merged, the links it would add per reporter are compared with the
+>   median rate of the last 64 *accepted* calls; a call over 4 times that median that would add at least 500 links is
+>   discarded whole (no report replaced, no link added or removed, a `topology_swept` event with 0 added and 0
+>   removed, an info log line, and the Prometheus counters `atlas_engine_mesh_calls_rejected_total` and
+>   `atlas_engine_mesh_links_rejected_total`). Rejected calls never enter the median, so a run of them cannot raise
+>   it. A real network-wide change is told apart by its spread: when at least half of the last 16 calls were over
+>   the limit and they came from at least 4 IPv4 /16 networks, calls are accepted again and the median follows. The
+>   first 16 accepted calls after a start are never judged. TopologySweep then skips a host whose call was discarded
+>   for 6 hours (every port of the IP), so its calls go to other hosts. Measured on 3107 (each run seeded with a copy
+>   of the 3100 store, the first 15 minutes left out, `examples/mesh_churn`):
+>
+>   | | before (B6 rule, 63 min, 296 calls) | after (64 min, 288 calls) |
+>   |---|---|---|
+>   | links added per call: median / p95 / max | 396 / 3,488 / 4,146 | 167 / 293 / 409 |
+>   | links removed per call: median / p95 / max | 898 / 1,772 / 2,345 | 160 / 263 / 361 |
+>   | links added / removed in the hour | 296,232 / 324,097 | 43,553 / 63,064 |
+>   | removed links back within 10 min | 22,437 of 293,102 (7.7%) | 7,780 of 53,747 (14.5%) |
+>   | removed links back within 30 min | 30,796 of 187,527 (16.4%) | 7,178 of 27,664 (25.9%) |
+>   | calls discarded | none | 40 of 288, all in 5.230.0.0/16, none elsewhere |
+>
+>   The links that flap fell by about two thirds (7,780 against 22,437 back within 10 minutes), but their share of the
+>   removals rose, because the phantom links the outlier hosts added and other hosts' reports removed (which rarely
+>   came back) made most of the removals before. What remains is the ordinary disagreement between copies that the
+>   B6 hysteresis already damps. The removals after include the expiry of the seeded store's restored reports.
+> - **Topology reply caps (B7, X1 M4).** A queried node chooses its whole reply, so a reply is checked before
+>   anything in it is trusted (`jobs::topology::plausible_reports`): more than 128 reporters, or any reporter listing
+>   more than 200 peers (outbound plus inbound), drops the reply whole and skips its host like a failing one; nothing
+>   it names is marked covered, so no reply can mark the whole network covered. The most seen live are 95 reporters
+>   and 62 peers. Reporters with an empty list are left out (they could only count as omissions of real links). A
+>   reply is therefore bounded to 25,600 links, and the mesh screen discards any call that would add more than
+>   10,000, whatever the median (a cold start adds at most about 6,000). A forged empty list can still count one
+>   omission against real links, but removal needs two consecutive covering omissions and any honest report listing
+>   the link resets the count.
 >   `bidirectional` still means both latest reports list each other.
+> - **Monotonic app records (B7).** A catalog fetch can be stale (B6 saw one roll a record back to an older spec,
+>   with no event). A catalog spec now replaces the held record only when its height is higher (at the same height,
+>   only when the held record has no hash), and an app missing from the catalog is removed only when its record is
+>   not newer than the catalog's newest spec, so a stale copy neither rolls a record back nor drops an app registered
+>   after it was built. The chain feed was already monotonic (an older message never replaces a newer record). The
+>   catalog log line reports `stale` and `kept_newer`.
 > - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
 >   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
 > - **Mempool classification.** The socket `tx` push carries no fluxnode type, no OP_RETURN and no size. Its
@@ -387,7 +430,12 @@ byte. Large blobs are **zstd**-compressed.
 > `pending_app_messages`, `mesh_edges` + `mesh_events`. Notes: the global event key is a store row counter
 > (not the live `seq`). Non-durable commits use `Durability::None`, fsynced at most every 10 s (a crash can lose
 > up to 10 s of history, which re-ingest recovers). Event pruning (`Store::prune_events`) keeps global events 30 d,
-> per-node events 90 d, mesh change rows 7 d. redb's page cache defaults to 1 GiB, so the server sets
+> per-node events 90 d, mesh change rows 7 d (since B7 a mesh change row is version 2: the reporter, then the
+> added and removed edges as sorted delta-varint lists, zstd-compressed when smaller, without repeating the key's time;
+> about 2.2 bytes per edge against 4.0 for version 1, which is still read). Measured on 3107: rows averaged
+> 6,471 bytes (3.97 bytes per edge, 1,629 edges per row, 55.9 MB a day) before B7, and 848 bytes (2.71 bytes per
+> edge, 313 edges per row, 6.5 MB a day) after, the outlier rule cutting the edges per row by 5 and the format the bytes
+> per edge by a third. redb's page cache defaults to 1 GiB, so the server sets
 > `cache_size_bytes` (`ATLAS_DB_CACHE_MB`, default 32 MB); the hot state lives in memory anyway.
 > `MetricsRow` is schema version 2: every series is an `Option` (`None` = not recorded, never 0). Version 1 rows
 > (0 for unknown) are upgraded on read: a row with `tip_height == 0` is a backfilled `fluxhistorystats` point that
@@ -425,7 +473,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization?top` | analytics aggregates. The summary's counts are defined under Node counts below. Decentralization (B7): `top` (1 to 5,000, default 25) is the number of `top_operators` rows; `operator_count` counts every operator and `operator_sizes` is the whole distribution as `[{nodes, operators}]` (ascending by `nodes`: how many operators run exactly that many confirmed nodes), so the long tail needs no long list |
 | `GET /network/app-economy?days&top` | app economy (B7), see App economy below |
 | `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
-| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. `limit` is 1 to 1,000 (B7, was 100; default 20); page with `before = next_before`. A page wholly below the finality window is immutable and served from a cache keyed by `(before, limit)`. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
+| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. `limit` is 1 to 1,000 (B7, was 100; default 20); page with `before = next_before`. A full, gapless page wholly below the finality window is immutable and served from a cache keyed by `(before, limit)` (10 min); a page that reaches the tip is built once per tip block hash (10 s). Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations). An app payment (`kind: app_message`) carries `app_ref` (B7, typed optional): `{name, display_name, kind: register\|update, spec_version, message_hash, height, paid}` from the permanent message its OP_RETURN names, or from the pending message while it is unmined (`height` and `paid` null). Absent when the tx is no app payment or the message is not known yet. `/address/{addr}/txs` items carry it too |
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
 | `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket transfers in real time, node txs from the 20 s reconcile, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream |
@@ -479,7 +527,7 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 >   86,400 blocks; `registrations_30d`, `updates_30d`; `paid_all_time`, `messages_total`.
 > - `days`: one row per UTC day, oldest first, today last (partial): `{day_ms, registrations, updates, paid,
 >   active_apps}`. A message falls on the day of its block; block times are estimated from the height (tip time
->   minus 30 s per block), which is within minutes over the range.
+>   minus 30 s per block, 2 minutes per block before the PoN fork), which is within minutes over the range.
 > - `active_apps` (per day and at the tip): apps whose latest spec at the end of the day had not expired (the expiry
 >   rule of `app_expire_height`). At the tip it matches the live app count.
 > - `top_apps_30d`, `top_apps_all_time`: `{name, display_name, paid, messages, last_height}` by FLUX paid.
