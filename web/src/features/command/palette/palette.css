@@ -61,15 +61,12 @@
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--accent-400), transparent);
   opacity: 0;
-  transform: scaleX(0.4);
-  transition:
-    opacity var(--dur-base) var(--ease-out),
-    transform var(--dur-slow) var(--ease-out-expo);
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
+/* The field's focus is a state, drawn at full width: the panel's entrance is the one thing that moves. */
 .pal-in:focus-within::after {
   opacity: 0.85;
-  transform: scaleX(1);
 }
 
 .pal-glass {
@@ -170,6 +167,10 @@
   width: 38%;
   background: linear-gradient(90deg, transparent, var(--accent-400), var(--accent-200), transparent);
   transform: translateX(-100%);
+}
+
+/* Only while a search is out: nothing loops at rest. */
+.pal-sweep[data-on]::before {
   animation: pal-sweep 1.15s var(--ease-in-out) infinite;
 }
 
@@ -407,10 +408,6 @@
 
 .pal-hint .ui-kbd:last-of-type {
   margin-right: 2px;
-}
-
-.pal-hint[data-pop] {
-  animation: pal-fade var(--dur-base) var(--ease-out) both;
 }
 
 .pal-r {

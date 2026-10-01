@@ -3,7 +3,7 @@
 // row anatomy and the highlight. The results page and the terminal reuse them.
 
 import { ArrowDown, ArrowUp, Check, CornerDownLeft } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Kbd, KbdCombo, Skeleton, StatusChip } from '../../../ui';
 import { RowIcon } from '../icons';
 import { altKeyLabel, modKeyLabel } from '../keys';
@@ -94,6 +94,11 @@ export interface RowViewProps {
   row: PaletteRow;
   q: string;
   active: boolean;
+  /**
+   * Whether the row fades in when it appears. Read once, when the row mounts: a row that was there when the
+   * list first showed does not fade (the palette's own entrance carries the opening), one that arrives later does.
+   */
+  enter?: boolean;
   onHover?(row: PaletteRow): void;
   onPick(row: PaletteRow, e: React.MouseEvent): void;
   /** `option` is a listbox option driven by the palette's input; `button` is a real button (results page). */
@@ -129,10 +134,12 @@ export const RowView = memo(function RowView({
   row,
   q,
   active,
+  enter = true,
   onHover,
   onPick,
   as = 'option',
 }: RowViewProps) {
+  const [enters] = useState(enter);
   const inert = row.action.type === 'none';
   if (as === 'button') {
     return (
@@ -142,6 +149,7 @@ export const RowView = memo(function RowView({
         data-row={row.id}
         data-kind={row.kind}
         data-inert={inert || undefined}
+        data-enter={enters || undefined}
         aria-disabled={inert || undefined}
         onClick={(e) => onPick(row, e)}
       >
@@ -162,6 +170,7 @@ export const RowView = memo(function RowView({
       data-kind={row.kind}
       data-active={active || undefined}
       data-inert={inert || undefined}
+      data-enter={enters || undefined}
       // The input keeps the keyboard: pressing a row must not take focus from it.
       onMouseDown={(e) => e.preventDefault()}
       onPointerMove={(e) => {

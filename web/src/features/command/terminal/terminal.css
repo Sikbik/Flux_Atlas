@@ -313,16 +313,13 @@
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--accent-400), transparent);
   opacity: 0;
-  transform: scaleX(0.35);
   pointer-events: none;
-  transition:
-    opacity var(--dur-base) var(--ease-out),
-    transform var(--dur-slow) var(--ease-out-expo);
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
+/* Focus is a state: the line is there, at full width, while the terminal has the keyboard. */
 .term[data-focused] .term-prompt::after {
   opacity: 0.5;
-  transform: scaleX(1);
 }
 
 .term-ps1 {

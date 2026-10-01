@@ -50,10 +50,14 @@
   border-radius: 12px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* A dense list: a result that arrives after the list is up fades in, like the kit's table rows, and nothing
+   travels. The ones that were there when the list first showed do not (RowView says `enter` once). */
+.pal-row[data-enter] {
   animation: pal-fade var(--dur-base) var(--ease-out) both;
 }
 
-/* A dense list: results arrive as a quick fade, like the kit's table rows, and nothing travels. */
 @keyframes pal-fade {
   from {
     opacity: 0;
@@ -212,7 +216,6 @@
   gap: 12px;
   height: var(--pal-row-h);
   padding: 0 12px;
-  animation: pal-fade var(--dur-base) var(--ease-out) both;
 }
 
 .pal-skel-ic {
@@ -265,7 +268,6 @@ button.pal-row:focus-visible {
 }
 
 :root[data-motion="off"] .pal-row,
-:root[data-motion="off"] .pal-empty,
-:root[data-motion="off"] .pal-skel {
+:root[data-motion="off"] .pal-empty {
   animation: none;
 }

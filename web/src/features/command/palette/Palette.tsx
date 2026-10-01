@@ -41,6 +41,8 @@ export interface PaletteProps {
 
 const URL_WRITE_MS = 220;
 const PAGE_ROWS = 6;
+/** The panel's entrance (Power-on, panel variant) is about 260 ms: results that arrive after it fade in. */
+const ENTER_AFTER_MS = 320;
 
 const PLACEHOLDER = 'Search nodes, apps, blocks, addresses, or type a command';
 
@@ -55,6 +57,12 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
   const [recents] = useState(() => loadRecents());
   const [userActive, setUserActive] = useState<string | null>(null);
   const [pending, setPending] = useState<RunMode | null>(null);
+  // Rows present while the panel opens do not fade (the entrance is the one thing that moves); later ones do.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettled(true), ENTER_AFTER_MS);
+    return () => window.clearTimeout(t);
+  }, []);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -437,6 +445,7 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
                   row={r}
                   q={text}
                   active={r.id === activeId}
+                  enter={settled}
                   onHover={onHover}
                   onPick={onPick}
                 />
@@ -450,6 +459,7 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
                 row={model.seeAll}
                 q=""
                 active={model.seeAll.id === activeId}
+                enter={settled}
                 onHover={onHover}
                 onPick={onPick}
               />
@@ -473,14 +483,14 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
           open
         </span>
         {active?.alongside ? (
-          <span className="pal-hint" data-pop="">
+          <span className="pal-hint">
             <KeyCap k="shift" />
             <KeyCap k="enter" />
             alongside
           </span>
         ) : null}
         {active?.fly ? (
-          <span className="pal-hint" data-pop="">
+          <span className="pal-hint">
             <KeyCap k="alt" />
             <KeyCap k="enter" />
             fly
