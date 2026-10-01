@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MeshBin } from '../api/meshBin';
 import { type EffectSink, recordingSink } from '../choreo/effects';
 import { NetworkStore } from '../store/network';
+import { NodeTable } from '../store/nodeTable';
 import { bootstrap, live, syntheticNodesBin } from '../testing/fixtures';
 import {
   bindGlobe,
@@ -484,5 +485,66 @@ describe('the view from a location', () => {
     expect(ipOf('2001:db8::1')).toBe('2001:db8::1');
     expect(meshModeFor(undefined)).toBe('selection');
     expect(meshModeFor('-mesh')).toBe('off');
+  });
+});
+
+describe('archive view (time machine)', () => {
+  const past = () => NodeTable.fromSnapshot(syntheticNodesBin(5, 90));
+
+  it('shows a past node table, detaches live effects and holds live changes back', () => {
+    const { binding, named, last, sinkRef, store } = setup();
+    expect(sinkRef()).not.toBeNull();
+    binding.setArchive(past());
+
+    const sets = named('setNodes');
+    expect(sets.length).toBe(2);
+    const [cols, opts] = sets[1]!.args as [NodeColumns, { animate: boolean; intro: boolean }];
+    expect(Array.from(cols.ids)).toEqual([1, 2, 3, 4, 5]);
+    // The globe already has nodes, so the swap cross-fades instead of replaying the intro.
+    expect(opts).toEqual({ animate: true, intro: false });
+    expect(last('setMoonStatus')!.args).toEqual(['archive']);
+    expect(sinkRef()).toBeNull();
+    const [a] = last('setMesh')!.args as [ArrayLike<number>];
+    expect(a.length).toBe(0);
+
+    // Live changes keep updating the store, not the engine.
+    store.apply(nodesMsg(101, { added: [lite(500)], removed: [3] }));
+    expect(named('updateNodes').length).toBe(0);
+    // Another table swaps the picture without re-announcing the archive.
+    binding.setArchive(NodeTable.fromSnapshot(syntheticNodesBin(8, 91)));
+    expect(named('setNodes').length).toBe(3);
+    expect(named('setMoonStatus').length).toBe(1);
+  });
+
+  it('applies the URL filters to the archived rows', () => {
+    const { binding, view, last } = setup();
+    view('/time', { cc: 'FI' });
+    const table = past();
+    binding.setArchive(table);
+    const [, allow] = last('setFilter')!.args as [unknown, number[]];
+    const want: number[] = [];
+    for (let i = 0; i < table.count; i++) if (table.countryCode(i) === 'FI') want.push(table.ids[i]! + 1);
+    expect(want.length).toBeGreaterThan(0);
+    expect(allow).toEqual(want);
+  });
+
+  it('leaving the archive brings back the current table, effects and moon at once', () => {
+    const { binding, named, last, sinkRef, store } = setup();
+    binding.setArchive(past());
+    // While away the live network moved on: one node joined.
+    store.apply(nodesMsg(101, { added: [lite(500)] }));
+    binding.setArchive(null);
+
+    const [cols, opts] = last('setNodes')!.args as [NodeColumns, { animate: boolean }];
+    expect(cols.ids.length).toBe(21);
+    expect(Array.from(cols.ids)).toContain(501);
+    expect(opts.animate).toBe(true);
+    expect(last('setMoonStatus')!.args).toEqual(['live']);
+    expect(sinkRef()).not.toBeNull();
+    // Leaving twice is harmless, and live changes flow again.
+    binding.setArchive(null);
+    expect(named('setNodes').length).toBe(3);
+    store.apply(nodesMsg(102, { removed: [1] }));
+    expect(named('updateNodes').length).toBe(1);
   });
 });
