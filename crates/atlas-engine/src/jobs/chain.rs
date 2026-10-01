@@ -275,10 +275,38 @@ async fn block_sync(
         if ctx.stopping() {
             break;
         }
-        sync_to(&ctx, &mut cursor, hash, received_ms).await;
+        sync_retrying(&ctx, &mut cursor, &tips, hash, received_ms, &TIP_RETRY_MS).await;
         if let Some((h, _)) = cursor.tip() {
             tip_height.store(h, Ordering::Release);
         }
+    }
+}
+
+/// Delays between attempts to reach a pushed tip the gateway cannot serve yet (about 12 s in
+/// all, well inside the 30 s block spacing).
+const TIP_RETRY_MS: [u64; 6] = [300, 700, 1_200, 2_000, 3_000, 4_500];
+
+/// [`sync_to`], retried while the tip is still out of reach and no newer tip is queued. The
+/// Insight push can beat the FluxOS gateway's daemon to the block (measured: `getblock`
+/// answered "Can't read block from disk" right after a push), and giving up there left the
+/// block for the next tip, 30 s later.
+async fn sync_retrying(
+    ctx: &JobCtx,
+    cursor: &mut Cursor,
+    tips: &mpsc::Receiver<(BlockHash, u64)>,
+    hash: BlockHash,
+    received_ms: u64,
+    delays_ms: &[u64],
+) {
+    sync_to(ctx, cursor, hash, received_ms).await;
+    for d in delays_ms {
+        if cursor.contains(&hash) || !tips.is_empty() || ctx.stopping() {
+            return;
+        }
+        if !ctx.sleep(Duration::from_millis(*d)).await {
+            return;
+        }
+        sync_to(ctx, cursor, hash, received_ms).await;
     }
 }
 
@@ -481,5 +509,124 @@ pub async fn failover_pool(ctx: JobCtx) {
         if !ctx.sleep(Duration::from_secs(600)).await {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::AtomicUsize;
+
+    use atlas_flux::{Clients, ClientsConfig};
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    use super::*;
+    use crate::{Engine, EngineConfig, IngestConfig, WatchSet};
+
+    /// A gateway that fails `getblock` `fail` times ("Can't read block from disk"), then serves
+    /// the fixture block.
+    async fn gateway(fail: usize) -> (String, Arc<AtomicUsize>) {
+        let block = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/research/fixtures/flux/daemon_getblock_2996916_verbosity2.json"
+        ))
+        .unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let c = Arc::clone(&calls);
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = listener.accept().await else {
+                    break;
+                };
+                let mut buf = vec![0u8; 4096];
+                let _ = s.read(&mut buf).await;
+                let n = c.fetch_add(1, Ordering::SeqCst);
+                let body: Vec<u8> = if n < fail {
+                    br#"{"status":"error","data":{"code":-32603,"name":"Error","message":"Can't read block from disk"}}"#.to_vec()
+                } else {
+                    block.clone()
+                };
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = s.write_all(head.as_bytes()).await;
+                let _ = s.write_all(&body).await;
+            }
+        });
+        (base, calls)
+    }
+
+    /// Senders the job context watches; dropping them would read as a shutdown.
+    type Keep = (
+        tokio::sync::watch::Sender<bool>,
+        tokio::sync::watch::Sender<WatchSet>,
+    );
+
+    fn ctx(base: &str) -> (tempfile::TempDir, JobCtx, mpsc::Receiver<Obs>, Keep) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = atlas_store::Store::open(dir.path().join("atlas.redb")).unwrap();
+        let mut cc = ClientsConfig {
+            fluxos_gateway: base.to_owned(),
+            ..ClientsConfig::default()
+        };
+        cc.http.attempts = 1;
+        let clients = Clients::new(cc).unwrap();
+        let cfg = EngineConfig {
+            ingest: IngestConfig::disabled(),
+            ..EngineConfig::default()
+        };
+        let handle = Engine::start(cfg.clone(), store, clients.clone());
+        let (obs_tx, obs_rx) = mpsc::channel(64);
+        let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+        let (w_tx, w_rx) = tokio::sync::watch::channel(WatchSet::default());
+        let ctx = JobCtx::new(clients, obs_tx, handle, Arc::new(cfg.ingest), stop_rx, w_rx);
+        (dir, ctx, obs_rx, (stop_tx, w_tx))
+    }
+
+    fn fixture_hash() -> BlockHash {
+        Hash32::from_hex("fedbc9240264f9cb2cb9b90508cbb4184ff1d4f23ffe639c957e9b91967065f8")
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_tip_the_gateway_cannot_serve_yet_is_retried() {
+        let (base, calls) = gateway(2).await;
+        let (_dir, ctx, mut obs, _keep) = ctx(&base);
+        let (_tx, tips) = mpsc::channel(4);
+        let mut cursor = Cursor::default();
+        let hash = fixture_hash();
+        sync_retrying(&ctx, &mut cursor, &tips, hash, 7, &[10, 10, 10, 10]).await;
+        assert!(cursor.contains(&hash));
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        let Some(Obs::Block {
+            block, received_ms, ..
+        }) = obs.recv().await
+        else {
+            panic!("expected the block");
+        };
+        assert_eq!(block.summary.hash, hash);
+        // The push time is kept, so pipeline latency includes the wait.
+        assert_eq!(received_ms, 7);
+    }
+
+    #[tokio::test]
+    async fn a_newer_tip_supersedes_the_retries() {
+        let (base, calls) = gateway(usize::MAX).await;
+        let (_dir, ctx, _obs, _keep) = ctx(&base);
+        let (tx, tips) = mpsc::channel(4);
+        tx.send((Hash32([9; 32]), 1)).await.unwrap();
+        let mut cursor = Cursor::default();
+        sync_retrying(&ctx, &mut cursor, &tips, fixture_hash(), 7, &[10, 10, 10]).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "no retry once a newer tip is queued"
+        );
+        // Without a newer tip, every delay gets one more attempt.
+        let (_tx2, tips) = mpsc::channel(4);
+        sync_retrying(&ctx, &mut cursor, &tips, fixture_hash(), 7, &[10, 10, 10]).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 5);
     }
 }
