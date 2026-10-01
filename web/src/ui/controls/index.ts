@@ -7,3 +7,4 @@ export {
   IconButton,
   type IconButtonProps,
 } from './Button';
+export { Kbd, KbdCombo, type KbdComboProps, type KbdProps } from './Kbd';
