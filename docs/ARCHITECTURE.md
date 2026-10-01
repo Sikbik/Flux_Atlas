@@ -69,7 +69,9 @@ Environment: the Rust toolchain lives in `~/.cargo/bin` (`export PATH="$HOME/.ca
   swaps it in with `arc_swap`. Readers never block.
 - **Pre-built bodies.** On publish, the reducer (or a helper task it spawns) serializes the hot endpoints once
   (`bootstrap.json`, `nodes.bin`, `apps.json`, …), pre-compresses each one (br + gzip + zstd), and computes a
-  strong ETag. Handlers just pick the right encoding: zero serialization per request.
+  strong ETag. Handlers just pick the right encoding: zero serialization per request. **Brotli runs at quality 6**
+  (measured on `nodes.bin`: q6 9.4 ms / 74 KB, q9 20 ms / 73 KB, q11 563 ms / 52 KB); q11 is far too slow for a
+  body rebuilt every block.
 - **Sequencing.** Every publish increments `seq: u64`. Snapshot bodies carry `seq`; WS deltas carry
   `seq` / `prev_seq`, so clients can detect gaps and resync.
 - **Persistence is write-behind.** The StoreWriter batches everything from a tick into one redb write
@@ -105,7 +107,7 @@ expensive payload only when that indicator moves. v1 rebuilt everything every 30
 | T1 | **ChainStream** | Insight socket.io (Engine.IO 3) `wss://explorer.runonflux.io/socket.io/?EIO=3&transport=websocket`, send `42["subscribe","inv"]`, ping `2` every 25 s. Run **two sockets at once** (main + `explorer2.runonflux.io`), dedupe by hash. Unhealthy after 90 s without a block or a ping timeout. Fallback only while no socket is healthy: poll Insight `/api/status?q=getLastBlockHash` every 2 s. **Never** poll the FluxOS gateway for liveness (30 s apicache, measured 27 s lag). | push (0.94 s median after block time) | `NewTip(hash)` |
 | T1 | **BlockDecoder** | FluxOS `GET /daemon/getblock/{hash}` (verbosity 2, ~160 ms, ~10 KB): every tx decoded, including fluxnode fields. Producer = header `collateral` (10-hex prefix + index), resolved against the local node table (Insight `/api/block/{hash}` `nodesCollateral` for the full txid if ambiguous). Payouts: classify the coinbase outputs **by amount** (Cumulus 1.0 / Nimbus 3.5 / Stratus 9.0 × reduction factor; the remainder, 0.5 + fees, goes to the dev fund `t3hPu1YDeGUCp8m7BQCnnNUmRMJBa5RadyA`). Reorg-aware: check `previousblockhash` against our tip, walk back on mismatch, fill gaps. 10-block finality window. Optional `getblockdeltas/{hash}` for transfer inputs. | per block (~30 s), ~3 upstream calls | `BlockAdded` (producer, payouts, dev fund, tx mix), `NodeHeartbeat` (confirm tx, `update_type` 1), `NodeConfirmed` (`update_type` 0 = initial confirm), `NodeStarted` (start tx, v5/v6, incl. P2SH/multisig), `NodePaid`, `NodeIpChanged` (confirm carries IP), `LargeTransfer` |
 | T1 | **PayoutAttribution** | Our own payment-queue model per tier (rank order from the node list, advanced locally on every block; the paid node moves to the back). Match each coinbase payee `(tier, address)` against the head of that tier's queue. Reconcile with `last_paid_height` from NodeReconcile. **Must be recorded at ingest time**, since `last_paid_height` is overwritten on the next payment and one address can own 180+ nodes. | per block | `NodePaid` with an exact node; drives the **"next to be paid"** predictive highlight (head of each tier queue) before the block lands |
-| T1 | **MempoolStream** | the same Insight socket, `tx` events (~23/min; ~91% are fluxnode confirms/starts with empty `vout`, ~2/min regular transfers carrying value + outputs). Push transfers immediately. Show node txs as pending check-ins, fully classified when their block lands. Optional enrichment: `/api/tx/{txid}` for node txs (≤ 0.4 req/s) to animate check-ins before inclusion. Reconcile the set every 60 s. | push | `MempoolTx` (transfer / pending node tx) |
+| T1 | **MempoolStream** | the same Insight socket, `tx` events (~23/min; ~91% are fluxnode confirms/starts with empty `vout`, ~2/min regular transfers carrying value + outputs). Push transfers immediately. Socket fluxnode txids do not resolve, so node txs come from the 20 s reconcile, fetched and classified (≤ 0.4 req/s per host) before they are streamed; see Mempool classification below. | push | `MempoolTx` (transfer / app payment; node txs from the reconcile) |
 | T1 | **Expiry watch** | derived: a node expires after **640 blocks** without a confirm; confirms are allowed every **≥ 500 blocks** | per block | `NodeAtRisk` (≥ 560 blocks since last confirm), `NodeExpired` (predicted, then confirmed by reconcile) |
 | T1 | **AppChainFeed** | app register/update payments are txs with an OP_RETURN (message hash) to the app address; seen in the decoded block → `GET /apps/permanentmessages?hash=<h>` for the exact spec + price paid | per block | `AppRegistered`, `AppUpdated` (spec diff + FLUX paid) |
 | T2 | **AppPending** | `/apps/temporarymessages` (5 s apicache, 12.8 KB br). Pending deploys appear a median ~168 s before they're mined; ~15% never get mined (show as pending, expire after 1 h) | 10 s | `AppPending` → promoted when the OP_RETURN lands, or `AppPendingExpired` |
@@ -127,7 +129,41 @@ node APIs for TopologySweep, WatchProbe and failover reads, always through the S
 
 **Bootstrap backfills (background, resumable, polite):** `stats /fluxhistorystats` (30 days of tier counts at
 ~15-min resolution → metrics); `/apps/permanentmessages` full (one call, 24.5 MB, 6 years of app history →
-app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` (≤ 2 req/s), extendable to 30 days.
+app timelines and "spec archaeology"); the last 7 days of blocks via `getblock` (1.5 req/s by default,
+`ATLAS_BACKFILL_DAYS` / `ATLAS_BACKFILL_RPS`), extendable to 30 days.
+
+> **Implemented (B2, I1).** Deviations and precisions over the table above:
+> - **Gap jump.** The block sync fills gaps of up to 30 blocks (`max_live_gap`) live. A larger gap (after downtime)
+>   jumps straight to the tip: that block is applied as **discontinuous** (no expiry/at-risk derivation across the
+>   hole), and the block backfill fills the hole in the background.
+> - **Reorgs.** On a `previousblockhash` mismatch the sync walks back through the 10-block finality window to the
+>   fork, then the reducer deletes the orphaned blocks (store and recent ring), moves the tip to the fork, clears
+>   the expected payees, emits `reorg` (+ a feed item), and **triggers an immediate NodeRegistry reconcile**. The
+>   replacement blocks then arrive as ordinary `block` messages. A reorg deeper than the window is logged as an
+>   error and treated as a discontinuity.
+> - **Mesh expiry.** Each TopologySweep reporter's peer list replaces its previous one; an undirected edge is decided
+>   by the newer of its two reports. A report not refreshed for **1 h** (about two sweep cycles) expires and its edges
+>   are removed (streamed as a `mesh` delta).
+> - **Watch hooks.** The server forwards every `sub` with `watch` / `watch_apps` to `EngineHandle::set_watch`
+>   (and `clear_watch` on disconnect); the engine unions them into WatchProbe targets and hot-app polling.
+> - **Mempool classification.** The socket `tx` push carries no fluxnode type, no OP_RETURN and no size. Its
+>   fluxnode pushes also carry txids that resolve nowhere (not in the daemon mempool, not in any block, and
+>   Insight's own `/api/tx` answers "Not found"; measured: 66 of 66 over 150 s), so the engine ignores them and
+>   takes node txs from the reconcile only. Socket transfers are pushed immediately (complete as pushed: kind
+>   `transfer`, `size: null` until the reconcile fills it); socket app payments are pushed as `app_message` and
+>   fetched (the OP_RETURN decides). The 20 s reconcile is cache-busted (`?nc=`: the gateway's 30 s apicache
+>   answers with the previous block's transactions, already mined), fills sizes, and txids in it that the socket
+>   never pushed are fetched, classified with the block classifier (`atlas_flux::decode::kind_of`, from the
+>   daemon or the Insight form of the tx: `node_start` / `node_confirm` / `app_message` / `transfer`, with the
+>   size) and only then streamed as new `mempool` entries. One fetch every 1.25 s, newest first, each txid
+>   once, alternating gateway `getrawtransaction/<txid>/1` and Insight `/api/tx/<txid>` (0.4 req/s per host);
+>   entries older than 2 min are dropped from the queue (mined by then, and classified by the block).
+>   What stays unknown before mining: whether an app payment registers or updates, and which app (known when the
+>   pending `temporarymessages` entry or the mined `permanentmessages` entry is matched); whether a tx is mined at
+>   all; and, for up to one reconcile plus the fetch queue (about 20-30 s), the node txs themselves, which
+>   appear once fetched rather than at broadcast.
+> - **Ingest switch.** `ATLAS_INGEST=0` (or `IngestConfig::disabled()`) runs the engine without ingest jobs: it
+>   restores, publishes and serves the stored state. Tests, fixtures and `demo_server` always run this way.
 
 **FluxOS caching facts:** apicache keys on the full URL (30 s default; 5 s for topology/temporarymessages;
 2 min for permanentmessages), and **a unique query string (`?nc=<ts>`) bypasses it**. Only use that where freshness
@@ -246,7 +282,14 @@ byte. Large blobs are **zstd**-compressed.
 > `block_payouts`, `node_txs` + `node_txs_by_node`, `app_messages` + `app_messages_by_app`,
 > `pending_app_messages`, `mesh_edges` + `mesh_events`. Notes: the global event key is a store row counter
 > (not the live `seq`). Non-durable commits use `Durability::None`, fsynced at most every 10 s (a crash can lose
-> up to 10 s of history, which re-ingest recovers). Event pruning is not implemented yet (B2).
+> up to 10 s of history, which re-ingest recovers). Event pruning (`Store::prune_events`) keeps global events 30 d,
+> per-node events 90 d, mesh change rows 7 d. redb's page cache defaults to 1 GiB, so the server sets
+> `cache_size_bytes` (`ATLAS_DB_CACHE_MB`, default 32 MB); the hot state lives in memory anyway.
+> `MetricsRow` is schema version 2: every series is an `Option` (`None` = not recorded, never 0). Version 1 rows
+> (0 for unknown) are upgraded on read: a row with `tip_height == 0` is a backfilled `fluxhistorystats` point that
+> only knows `node_count` and the tier counts; in a live v1 row a 0 is read as unknown for the gauges that are
+> never 0 on a populated network (supply, price, hardware and locked totals, countries, providers, apps,
+> instances, mesh edges, ArcaneOS, unreachable) and for `avg_block_time_ms`.
 
 A retention task runs hourly: prune `metrics_1m` older than 30 d, roll up `metrics_1h`, keep hourly
 snapshots for 30 d, then daily keyframes forever. `compact()` runs weekly. **Time machine:** state at `t` =
@@ -271,16 +314,16 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /apps` / `GET /apps/{name}` | app index / full app: normalized spec, components, instances (node ids), history |
 | `GET /apps/{name}/history` | spec versions with diffs |
 | `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization` | analytics aggregates |
-| `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{t:[…], a:[…], b:[…]}`) |
-| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs |
+| `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
+| `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations) |
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
-| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras [TBD research] |
+| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket transfers in real time, node txs from the 20 s reconcile, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
-| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t |
+| `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`; header `seq` = 0, `generated_ms` = t; cached 60 s per t). Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs |
 | `GET /ws` | WebSocket live stream (§8) |
-| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops |
+| `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine) |
 
 Everything else serves the embedded web app (SPA fallback to `index.html`, immutable caching for hashed assets).
 
@@ -291,6 +334,11 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > (0 = not queued); index 0 means "unknown" in the country/org/version/location tables; `mesh.bin` uses the
 > same sectioned container (magic `FXMS`) instead of bare arrays. Golden file:
 > `crates/atlas-core/tests/golden/nodes.bin` + `nodes.expected.json`.
+> **A missing column means "not recorded"**: unknown for every row, never zeros. Producers that lack a column
+> leave it out (`encode_nodes_bin_without`; `/timeline/state` does so for `rank`, and for `last_paid`, `app_count`
+> and `flags` without a format-2 keyframe). Decoders default missing columns so old readers keep working, and
+> expose which columns were present (Rust `NodesBin::has`, web `NodesBin.present` / `hasColumn`); a reader must
+> not show a defaulted column as data.
 
 Little-endian and columnar. Every section starts on an 8-byte boundary, so the client can wrap sections as
 typed-array views with zero copying.
@@ -348,7 +396,8 @@ Text frames with JSON messages `{ "t": <type>, … }`. All message types are Rus
     heartbeats: [NodeId], starts: [NodeRef], updates: [NodeId], transfers_over_threshold: [TxLite], reward }`.
     One message per block with its child events, so the client can stage the choreography.
   - `reorg { from_height, to_height, orphaned: [hash] }`
-  - `mempool { txs: [TxLite{txid, value, kind, size}] }` (coalesced per ≤ 500 ms)
+  - `mempool { txs: [TxLite{txid, value, kind, size}] }` (coalesced per ≤ 500 ms; `size` is `null` when unknown,
+    which is the case for socket pushes; a tx the socket never pushed arrives once classified)
   - `nodes { prev_seq, added: [NodeLite], removed: [id], changed: [{id, …changed fields}], cause }`
     (`cause`: reconcile | block | sweep | geo)
   - `apps { prev_seq, upserted: [AppLite], removed: [name], instances: [{app, started: [id], removed: [id]}], cause }`
@@ -371,6 +420,21 @@ every 30 s). Each tier's queue is a strict rotation, so clients maintain ranks d
 3. A `nodes` delta with `cause: reconcile` carries authoritative ranks for every node whose rank differs from the
    rotation model. After applying it, clients are exact again. The server sends one after every NodeRegistry
    reconcile (≤ 10 min) and whenever its own model detects a divergence.
+4. A node whose status leaves `confirmed` drops out of its tier queue; ranks behind it close the gap.
+5. An unranked node that receives a rank (a `changed` rank, typically a join confirmed in a block) is inserted at
+   that rank; nodes at or behind it shift back. Ranks past the tier size clamp to the back.
+6. **Unranked signal.** In `nodes.changed`, an absent `rank` means "unchanged" and `rank: null` means "not queued".
+   Outside a reconcile, `rank: null` is an exit like rule 4 (the node leaves its tier queue; ranks behind it close the
+   gap). In a `cause: reconcile` delta it is authoritative like any other rank: the node becomes unranked, without
+   shifting anyone. The server sends it whenever clients still rank a node that the true queue does not hold while
+   its status stays `confirmed` (so no status exit tells them), for example a node the upstream list stops ranking.
+
+The server keeps an exact model of what clients hold (`atlas_engine::state::queue::ClientRanks`) and diffs it
+against the true queue after every tick, so clients must apply a `nodes` delta in the same order: `removed`
+(rule 2), then status exits and `rank: null` exits (rules 4 and 6), then field changes, then entering ranks
+ascending by `(rank, id)` (rules 2 and 5; an already ranked node is taken out at its turn, a move). In a
+`cause: reconcile` delta, `changed` ranks (including `null`) are authoritative and set as is, without shifting
+anyone. Implemented in `web/src/store/network.ts`.
 Displayed ETAs are `rank × 30 s`, labelled as estimates.
 
 **Client choreographer (web).** Incoming events go into a scheduler with a visual budget (max concurrent
@@ -414,9 +478,13 @@ web/src/
   LTO thin, `codegen-units=1`) → `gcr.io/distroless/cc-debian12` runtime, non-root, volume `/data`.
   `atlas healthcheck` subcommand for Docker HEALTHCHECK.
 - `deploy/flux_app_spec.json`: Flux app spec (see legacy spec; ports/containerData [TBD research: current spec version & port rules]).
-- Config: env vars `ATLAS_BIND` (default `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`), `ATLAS_FLUX_API`,
-  `ATLAS_EXPLORER_API`, `ATLAS_GEOIP_DB` (optional .mmdb), `ATLAS_LOG`, `ATLAS_UPSTREAM_RPS`, per-job interval
-  overrides.
+- Config: env vars (each also a flag; full table in `crates/atlas-server/README.md`): `ATLAS_BIND` (default
+  `0.0.0.0:3000`), `ATLAS_DATA_DIR` (`/data`), `ATLAS_INGEST` (`1`; `0` serves stored state only),
+  `ATLAS_BACKFILL_DAYS` (7), `ATLAS_BACKFILL_RPS` (1.5), `ATLAS_DB_CACHE_MB` (32), `ATLAS_INTERVALS`
+  (`job=duration,...` per-job interval overrides), `ATLAS_FLUX_API`, `ATLAS_EXPLORER_API`, `ATLAS_STATS_API`,
+  `ATLAS_UPSTREAM_RPS`, `ATLAS_GEOIP_DB` (accepted, not used yet), `ATLAS_REPLAY_CAPACITY`, `ATLAS_TRUST_PROXY`,
+  `ATLAS_CLIENT_RPS` / `ATLAS_CLIENT_BURST`, `ATLAS_WS_MAX_CONNECTIONS` / `ATLAS_WS_MAX_PER_IP` / `ATLAS_WS_PING`,
+  `ATLAS_LOG`. The web smoke targets a running server with `ATLAS_E2E_SERVER` (+ `ATLAS_WEB_PORT`).
 - Gates. Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. Web: `tsc --noEmit`,
   `biome check`, `vitest run`, Playwright smoke. Perf: an ingest-cycle benchmark on the full raw node dump, `oha`
   load test on `/api/v1/nodes.bin` and `/bootstrap`, globe FPS via the team shot tool `--gpu --fps`.

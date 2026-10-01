@@ -110,6 +110,54 @@ impl Store {
         })
     }
 
+    /// Prunes event-like rows (B2 addition): `events` older than `events_before_ms`,
+    /// `node_events` older than `node_events_before_ms`, and `mesh_events` older than
+    /// `mesh_events_before_ms`. `app_events` are kept forever (small, and they are the app
+    /// timeline). Pass `0` to keep a table untouched. Returns the number of rows removed per
+    /// table as `(events, node_events, mesh_events)`.
+    pub fn prune_events(
+        &self,
+        events_before_ms: u64,
+        node_events_before_ms: u64,
+        mesh_events_before_ms: u64,
+    ) -> Result<(usize, usize, usize)> {
+        self.write(|txn| {
+            let mut removed = (0, 0, 0);
+            if events_before_ms > 0 {
+                let mut t = txn.open_table(tables::EVENTS)?;
+                t.retain_in(..(events_before_ms, 0u64), |_, _| {
+                    removed.0 += 1;
+                    false
+                })?;
+            }
+            if node_events_before_ms > 0 {
+                let ids: Vec<u32> = {
+                    let rev = txn.open_table(tables::NODE_IDS_REV)?;
+                    let mut v = Vec::new();
+                    for item in rev.range::<u32>(..)? {
+                        v.push(item?.0.value());
+                    }
+                    v
+                };
+                let mut t = txn.open_table(tables::NODE_EVENTS)?;
+                for n in ids {
+                    t.retain_in((n, 0u64, 0u64)..(n, node_events_before_ms, 0u64), |_, _| {
+                        removed.1 += 1;
+                        false
+                    })?;
+                }
+            }
+            if mesh_events_before_ms > 0 {
+                let mut t = txn.open_table(tables::MESH_EVENTS)?;
+                t.retain_in(..(mesh_events_before_ms, 0u64), |_, _| {
+                    removed.2 += 1;
+                    false
+                })?;
+            }
+            Ok(removed)
+        })
+    }
+
     /// Deletes pending app messages whose `expires_ms <= now_ms`. Returns the number removed.
     pub fn prune_pending(&self, now_ms: u64) -> Result<usize> {
         self.write(|txn| {
@@ -185,7 +233,7 @@ fn rollup(txn: &WriteTransaction, end_hour: u64) -> Result<usize> {
             flush(b, &mut rows)?;
         }
         bucket = Some(hour);
-        rows.push(codec::decode(v.value())?);
+        rows.push(codec::decode_metrics(v.value())?);
     }
     if let Some(b) = bucket {
         flush(b, &mut rows)?;

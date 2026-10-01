@@ -120,6 +120,13 @@ impl ContainerWriter {
         self
     }
 
+    /// Removes the sections of the given kinds (a producer that did not record a column leaves
+    /// it out rather than writing placeholder zeros).
+    pub fn drop_sections(&mut self, kinds: &[u16]) -> &mut Self {
+        self.sections.retain(|(k, _, _)| !kinds.contains(k));
+        self
+    }
+
     pub fn u8s(&mut self, kind: u16, v: &[u8]) -> &mut Self {
         self.section(kind, DType::U8, v.to_vec())
     }

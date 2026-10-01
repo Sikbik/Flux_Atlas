@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use atlas_core::NodeId;
+use atlas_engine::EngineHandle;
 
 /// Implemented by the engine. Calls must be cheap and non-blocking; the WS layer calls
 /// `set_watch` on every `sub` that carries `watch` / `watch_apps`, and `clear_watch` when a
@@ -22,6 +23,18 @@ impl<T: WatchHooks + ?Sized> WatchHooks for Arc<T> {
 
     fn clear_watch(&self, conn_id: u64) {
         (**self).clear_watch(conn_id);
+    }
+}
+
+/// The production hooks: forward to the engine, which unions every connection's watches into
+/// WatchProbe targets and hot-app polling.
+impl WatchHooks for EngineHandle {
+    fn set_watch(&self, conn_id: u64, nodes: Vec<NodeId>, apps: Vec<String>) {
+        EngineHandle::set_watch(self, conn_id, nodes, apps);
+    }
+
+    fn clear_watch(&self, conn_id: u64) {
+        EngineHandle::clear_watch(self, conn_id);
     }
 }
 

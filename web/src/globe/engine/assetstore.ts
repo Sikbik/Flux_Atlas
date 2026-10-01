@@ -111,12 +111,15 @@ export class AssetStore {
     return this.maskData[y * this.maskW + x]!;
   }
 
-  dispose(): void {
+  /** Releases everything; `gpu` false skips the GL deletes (the context is gone). */
+  dispose(gpu = true): void {
     this.disposed = true;
-    this.day.dispose();
-    this.night.dispose();
-    this.clouds.dispose();
-    this.mask.dispose();
+    if (gpu) {
+      this.day.dispose();
+      this.night.dispose();
+      this.clouds.dispose();
+      this.mask.dispose();
+    }
     this.maskData = null;
     this.dayImg = null;
     this.nightImg = null;
