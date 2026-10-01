@@ -1,21 +1,16 @@
-// The payment queue, derived from the live node table (ARCHITECTURE section 8, rank contract).
+// The payment queue, read from the live node table (ARCHITECTURE section 8, rank contract).
 //
-// Every tier is a strict rotation: each block pays the head of each tier's queue and the payee moves
-// to the back. The NetworkStore carries a `rank` column from the last snapshot (rank plus one, 0 =
-// not queued) and keeps `lastPaid` current from every block's payouts, but it does not rotate ranks
-// itself. This module derives the current order from those two columns, so it is correct whether or
-// not the store maintains the rotation:
+// Every tier is a strict rotation: each block pays the head of each tier's queue and the payee moves to
+// the back. The NetworkStore keeps the rank column exact: it rotates a payee to the back on every block,
+// closes the gap when a node leaves or drops out of `confirmed`, inserts a node that receives a rank,
+// honours the explicit unranked signal (`rank: null`, stored as 0 = not queued) and takes the server's
+// authoritative ranks from every `cause: reconcile` delta. So the order of a tier is simply its queued
+// nodes (stored rank above 0) sorted by stored rank; this module does not re-derive it from payment
+// heights, because that would second-guess the server's own queue model.
 //
-//   order = (queued nodes in stored-rank order, minus the nodes paid since that rank was valid)
-//           followed by (the nodes paid since, in payment order).
-//
-// "Paid since" means `lastPaid` is above the newest payment among the nodes at the back of the stored
-// order (the back of a valid snapshot is the most recent payee). A store that already rotates keeps
-// its payees at the back, so nothing is above that mark and the derivation is a no-op. The
-// authoritative next payee (`next_payees`) then corrects the head when the model disagrees.
-//
-// Known approximation: a node that joined after the snapshot is placed by its stored rank (the back),
-// ahead of payees paid since; the server's reconcile corrects such rare cases.
+// The authoritative next payee (`next_payees`) still corrects the head when the two disagree for a moment
+// (the announcement can land before the rank delta does). ETAs are `(position + 1) x 30 s` from the tip's
+// arrival, always labelled as estimates.
 
 import type { NextPayeesMsg } from '../../../api/generated/NextPayeesMsg';
 import { QUEUE_TIERS, type QueueTier } from '../../../app/search';
@@ -27,9 +22,6 @@ export { QUEUE_TIERS, type QueueTier };
 /** Tier codes of the `tier` column. */
 export const TIER_CODE: Record<QueueTier, number> = { cumulus: 1, nimbus: 2, stratus: 3 };
 
-/** At most this many nodes at the back of the stored order are scanned for the newest payment. */
-const BACK_SCAN = 32;
-
 export interface TierQueue {
   tier: QueueTier;
   /** Node ids in queue order: index 0 is paid in the next block. */
@@ -37,7 +29,7 @@ export interface TierQueue {
   size: number;
   /** True when the head was moved to match the authoritative next payee. */
   headCorrected: boolean;
-  /** Newest payment height the order has absorbed (best effort), 0 when none. */
+  /** Newest payment height among the queued nodes, 0 when none is known. */
   throughHeight: number;
 }
 
@@ -68,8 +60,9 @@ export function positionOf(
 }
 
 /**
- * Builds the three queues from the table. `next` (the authoritative `next_payees` for `tipHeight + 1`)
- * moves the named node to the front of its tier when the derived head disagrees.
+ * Builds the three queues from the table's stored ranks (a node with rank 0 is not queued). `next` (the
+ * authoritative `next_payees` for `tipHeight + 1`) moves the named node to the front of its tier when the
+ * head by rank disagrees.
  */
 export function buildQueues(
   t: NodeTable,
@@ -93,25 +86,8 @@ export function buildQueues(
   QUEUE_TIERS.forEach((tier, k) => {
     const rows = rowsByTier[k]!;
     rows.sort((a, b) => t.rank[a]! - t.rank[b]! || t.ids[a]! - t.ids[b]!);
-
-    // The newest payment among the back of the stored order marks where the stored ranks stop being
-    // valid; anything paid after it has moved to the back since.
-    let mark = 0;
-    const scan = Math.max(1, Math.min(BACK_SCAN, rows.length >> 2));
-    for (let j = rows.length - scan; j < rows.length; j++) mark = Math.max(mark, t.lastPaid[rows[j]!]!);
-    let ordered = rows;
-    if (mark > 0) {
-      const kept: number[] = [];
-      const paidSince: number[] = [];
-      for (const r of rows) (t.lastPaid[r]! > mark ? paidSince : kept).push(r);
-      if (paidSince.length > 0) {
-        paidSince.sort((a, b) => t.lastPaid[a]! - t.lastPaid[b]! || t.ids[a]! - t.ids[b]!);
-        ordered = kept.concat(paidSince);
-      }
-    }
-
-    const ids = new Uint32Array(ordered.length);
-    for (let j = 0; j < ordered.length; j++) ids[j] = t.ids[ordered[j]!]!;
+    const ids = new Uint32Array(rows.length);
+    for (let j = 0; j < rows.length; j++) ids[j] = t.ids[rows[j]!]!;
 
     let headCorrected = false;
     const hint = fresh?.payees.find((p) => p.tier === tier)?.node ?? null;
@@ -125,7 +101,7 @@ export function buildQueues(
     }
 
     let through = 0;
-    for (const r of ordered) through = Math.max(through, t.lastPaid[r]!);
+    for (const r of rows) through = Math.max(through, t.lastPaid[r]!);
     for (let j = 0; j < ids.length; j++) {
       position[ids[j]!] = j;
       tierOf[ids[j]!] = k + 1;
