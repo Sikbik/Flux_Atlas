@@ -80,17 +80,6 @@ const scenarios = [
     release: (page) => page.mouse.up(),
   },
   {
-    name: 'pulse-chip',
-    note: 'press a pill chip',
-    target: sel('press', 'btn-chip'),
-    pad: 14,
-    times: range(240, 20),
-    cols: 5,
-    pre: press(0.3, 0.5),
-    act: down,
-    release: (page) => page.mouse.up(),
-  },
-  {
     name: 'pulse-key',
     note: 'keyboard: focus the secondary button, press Enter (light starts at the top centre)',
     target: sel('press', 'btn-secondary'),
@@ -108,7 +97,7 @@ const scenarios = [
   {
     name: 'spark-switch',
     note: 'switch turns on: the head lands on the knob after it slides',
-    target: sel('spark', 'switch'),
+    target: `${frameSel('spark')} .ui-switch`,
     pad: 22,
     times: range(560, 40),
     cols: 5,
@@ -140,7 +129,7 @@ const scenarios = [
   {
     name: 'spark-copy',
     note: 'copy commits: the head lands on the icon',
-    target: sel('spark', 'copy'),
+    target: `${frameSel('spark')} .ui-copy`,
     pad: 18,
     times: range(480, 40),
     cols: 5,

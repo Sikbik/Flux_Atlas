@@ -9,8 +9,8 @@
 
 import { DUR, EASE, REDUCED_MS } from '../timing';
 import { drawEdge } from './current';
+import type { Tone } from './fx';
 import { clamp, type Fx, type FxHandle, num, readShape } from './fx';
-import type { Tone } from './pulse';
 
 export type Origin = { x: number; y: number } | Element | DOMRect | null | undefined;
 
@@ -48,6 +48,13 @@ export function coverRadius(ox: number, oy: number, w: number, h: number): numbe
   );
 }
 
+/**
+ * The circle runs this far past the farthest corner. A window's drop shadow sits outside its box
+ * (`--drop-window` reaches about 64 px below it), and the clip would cut it off until the animation
+ * ends and then let it pop in; with the bleed the circle has already uncovered it by then.
+ */
+const APERTURE_BLEED = 64;
+
 function canClip(el: Element): boolean {
   const cs = getComputedStyle(el);
   return cs.clipPath === 'none' && cs.maskImage === 'none' && cs.boxShadow === 'none' && cs.filter === 'none';
@@ -66,7 +73,7 @@ function measure(el: Element, opts: PowerOptions) {
     ox,
     oy,
     aperture,
-    R: coverRadius(ox, oy, rect.width, rect.height),
+    R: coverRadius(ox, oy, rect.width, rect.height) + APERTURE_BLEED,
   };
 }
 
@@ -101,7 +108,7 @@ export function powerOn(fx: Fx, el: HTMLElement, opts: PowerOptions = {}): FxHan
       },
       { opacity: 1, transform: 'scale(1)', transformOrigin: origin, offset: 1 },
     ],
-    { duration: dur, easing: EASE.settle, fill: 'backwards' },
+    { duration: dur, easing: EASE.arrive, fill: 'backwards' },
   );
   const reveal =
     m.aperture && variant === 'window'

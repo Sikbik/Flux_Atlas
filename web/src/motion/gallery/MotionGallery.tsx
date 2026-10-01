@@ -1,11 +1,14 @@
-// /dev/motion: every effect of the interaction language on realistic controls, in the three motion
-// modes. The mode switch scopes a subtree with data-fx-mode, so "Compare" shows full, reduced and off
-// side by side without touching the user's Settings. Values in the live section come from the real
-// network (useTip, useChainBlocks); "Fire a block" fakes one so the arrival can be replayed on demand.
+// /dev/motion: every effect of the interaction language on the real UI kit, in the three motion
+// modes. Nothing in the specimens opts in with a data-fx attribute except the dock launchers (custom
+// controls the kit does not have): the kit's own attributes (data-pressed, data-state, data-fresh) are
+// what the engine answers. The mode switch forces <html data-motion> for the page (the kit's tokens and
+// components follow it too) and restores it on leave; "Compare" scopes three frames with data-fx-mode
+// instead, so the effects of this folder can be seen side by side (the kit's own CSS follows the page).
+// Values in the live section come from the real network (useTip, useChainBlocks); "Fire a block" fakes
+// one so the arrival can be replayed on demand.
 
 import {
   Blocks,
-  Check,
   Copy,
   Layers,
   ListOrdered,
@@ -17,17 +20,26 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useChainBlocks, useTip } from '../../app/context';
 import { formatHeight } from '../../lib/format';
+import {
+  AnimatedNumber,
+  Button,
+  Chip,
+  CopyButton,
+  FlashOnChange,
+  IconButton,
+  Switch,
+  type TabItem,
+  Tabs,
+} from '../../ui';
 import { stats as motionStats } from '../engine';
-import { type MotionMode, useMotionMode } from '../mode';
+import { type MotionMode, ROOT_ATTR, useMotionMode } from '../mode';
 import { Current } from '../react/Current';
-import { useSpark } from '../react/hooks';
 import { useMotionEngine } from '../react/MotionRoot';
 import { PowerOn } from '../react/PowerOn';
-import { Settle } from '../react/Settle';
 import { TabIndicator } from '../react/TabIndicator';
 import './gallery.css';
 
@@ -84,67 +96,31 @@ function PressDemo() {
   return (
     <>
       <div className="fxg-row">
-        <button
-          type="button"
-          className="fxg-btn fxg-btn--primary"
-          data-fx="press charge"
-          data-fx-tone="hot"
-          data-testid="btn-primary"
-          onClick={bump}
-        >
+        <Button variant="primary" data-testid="btn-primary" onClick={bump}>
           Open explorer
-        </button>
-        <button
-          type="button"
-          className="fxg-btn"
-          data-fx="press charge"
-          data-testid="btn-secondary"
-          onClick={bump}
-        >
-          <Copy size={14} aria-hidden="true" /> Copy address
-        </button>
-        <button
-          type="button"
-          className="fxg-btn fxg-btn--ghost"
-          data-fx="press charge"
-          data-testid="btn-ghost"
-          onClick={bump}
-        >
+        </Button>
+        <Button icon={Copy} data-testid="btn-secondary" onClick={bump}>
+          Copy address
+        </Button>
+        <Button variant="ghost" data-testid="btn-ghost" onClick={bump}>
           Reset view
-        </button>
+        </Button>
+        <Button variant="danger" data-testid="btn-danger" onClick={bump}>
+          Remove node
+        </Button>
       </div>
       <div className="fxg-row">
-        <button
-          type="button"
-          className="fxg-icon"
-          aria-label="Layers"
-          data-fx="press charge"
-          data-testid="btn-icon"
-          onClick={bump}
-        >
-          <Layers size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="fxg-icon"
-          aria-label="Settings"
-          data-fx="press charge"
-          onClick={bump}
-        >
-          <Settings size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="fxg-chip"
-          data-fx="press charge"
-          data-testid="btn-chip"
-          onClick={bump}
-        >
-          Stratus
-        </button>
-        <button type="button" className="fxg-btn" disabled data-fx="press charge" style={{ opacity: 0.4 }}>
-          Disabled
-        </button>
+        <IconButton icon={Layers} label="Layers" data-testid="btn-icon" onClick={bump} />
+        <IconButton icon={Settings} label="Settings" variant="secondary" onClick={bump} />
+        <Button size="sm" onClick={bump} data-testid="btn-sm">
+          Small
+        </Button>
+        <Button disabled>Disabled</Button>
+      </div>
+      <div className="fxg-dense" data-fx-density="dense">
+        <span className="fxg-hint">A dense zone stays quiet:</span>
+        <IconButton icon={Plus} label="Add" size="sm" data-testid="btn-dense" onClick={bump} />
+        <IconButton icon={RotateCw} label="Refresh" size="sm" onClick={bump} />
       </div>
       <p className="fxg-hint">
         {n} presses. Click, or Tab to a control and press <kbd>Enter</kbd> or <kbd>Space</kbd>.
@@ -158,127 +134,84 @@ function PressDemo() {
 function SparkDemo() {
   const [peers, setPeers] = useState(false);
   const [watch, setWatch] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const icon = useRef<HTMLSpanElement>(null);
-  useSpark(icon, copied, { delay: 40 });
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1800);
-    return () => clearTimeout(t);
-  }, [copied]);
   return (
     <>
-      <label className="fxg-switch-row">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={peers}
-          aria-label="Reveal peers on the globe"
-          className="fxg-switch"
-          data-fx="toggle charge"
-          data-fx-spark="end"
-          data-fx-delay="110"
-          data-testid="switch"
-          onClick={() => setPeers((v) => !v)}
-        />
-        Reveal peers on the globe
-      </label>
       <div className="fxg-row">
-        <button
-          type="button"
-          className="fxg-btn"
-          aria-pressed={watch}
-          data-fx="toggle charge"
-          data-fx-spark="icon"
-          data-testid="watch"
-          onClick={() => setWatch((v) => !v)}
-        >
-          <Star size={14} aria-hidden="true" fill={watch ? 'currentColor' : 'none'} />{' '}
+        <Switch label="Reveal peers on the globe" checked={peers} onChange={setPeers} data-testid="switch" />
+      </div>
+      <div className="fxg-row">
+        <Chip icon={Star} selected={watch} onClick={() => setWatch((v) => !v)} data-testid="watch">
           {watch ? 'Watching' : 'Watch node'}
-        </button>
-        <button
-          type="button"
-          className="fxg-btn"
-          data-fx="charge"
-          data-testid="copy"
-          onClick={() => setCopied(true)}
-        >
-          <span ref={icon} style={{ display: 'inline-grid' }}>
-            {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-          </span>
-          {copied ? 'Copied' : 'Copy txid'}
-        </button>
+        </Chip>
+        <span className="fxg-copy">
+          <span className="fxg-hint">txid</span>
+          <span className="fxg-mono">9f3a...c01d</span>
+          <CopyButton
+            value="9f3a4b6c7d8e9f001122334455667788aabbccddeeff00112233445566c01d"
+            what="transaction id"
+            size="md"
+          />
+        </span>
       </div>
       <p className="fxg-hint">A spark only when something turns on or commits. Turning off is quiet.</p>
     </>
   );
 }
 
-// ---- Tabs: the selection travels ----------------------------------------------------------------
+// ---- Selection: the line that travels -----------------------------------------------------------
 
-const TABS = ['Blocks', 'Transactions', 'Addresses', 'Apps'];
+const KIT_TABS: TabItem[] = [
+  { id: 'blocks', label: 'Blocks' },
+  { id: 'transactions', label: 'Transactions' },
+  { id: 'addresses', label: 'Addresses' },
+  { id: 'apps', label: 'Apps' },
+];
+
+const PANES: Record<string, string> = {
+  blocks: 'Newest blocks first, with their producers and payouts.',
+  transactions: 'Mempool and confirmed transactions.',
+  addresses: 'Watch an address and every node it pays.',
+  apps: 'Deployed apps and their instances.',
+};
 
 function TabsDemo() {
-  const [tab, setTab] = useState(0);
-  const refs = useRef<(HTMLButtonElement | null)[]>([]);
-  const onKey = (e: KeyboardEvent) => {
-    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-    if (!d) return;
-    e.preventDefault();
-    const next = (tab + d + TABS.length) % TABS.length;
-    setTab(next);
-    refs.current[next]?.focus();
-  };
+  const [kit, setKit] = useState('blocks');
+  const [own, setOwn] = useState(0);
   return (
     <>
-      <div className="fxg-tabs" role="tablist" aria-label="Explorer" onKeyDown={onKey} data-testid="tabs">
-        {TABS.map((t, i) => (
+      <div data-testid="tabs-kit">
+        <Tabs aria-label="Explorer" items={KIT_TABS} value={kit} onChange={setKit} />
+      </div>
+      <div className="fxg-pane">{PANES[kit]}</div>
+      <p className="fxg-hint">The kit's tabs glide their own line. For a tab-like list that has none:</p>
+      <div className="fxg-tabs" role="tablist" aria-label="Explorer, stretching line" data-testid="tabs">
+        {KIT_TABS.map((t, i) => (
           <button
-            key={t}
-            ref={(el) => {
-              refs.current[i] = el;
-            }}
+            key={t.id}
             type="button"
             role="tab"
-            id={`fxg-tab-${i}`}
-            aria-selected={tab === i}
-            tabIndex={tab === i ? 0 : -1}
+            aria-selected={own === i}
+            tabIndex={own === i ? 0 : -1}
             className="fxg-tab"
-            data-fx="charge"
             data-testid={`tab-${i}`}
-            onClick={() => setTab(i)}
+            onClick={() => setOwn(i)}
           >
-            {t}
+            {t.label}
           </button>
         ))}
         <TabIndicator />
       </div>
-      <div className="fxg-pane" role="tabpanel" aria-labelledby={`fxg-tab-${tab}`}>
-        {
-          [
-            'Newest blocks first, with their producers and payouts.',
-            'Mempool and confirmed transactions.',
-            'Watch an address and every node it pays.',
-            'Deployed apps and their instances.',
-          ][tab]
-        }
-      </div>
-      <p className="fxg-hint">
-        Click, or focus a tab and use <kbd>Left</kbd> and <kbd>Right</kbd>. The line stretches to the new tab
-        and relaxes.
-      </p>
     </>
   );
 }
 
-// ---- Dense lists and values: settle -------------------------------------------------------------
+// ---- Lists and values: a changed value lands (the kit's flash) ---------------------------------
 
 interface Row {
   id: number;
   name: string;
   a: number;
   b: number;
-  fresh: boolean;
 }
 
 const NAMES = [
@@ -295,24 +228,17 @@ const NAMES = [
 function ListDemo() {
   const seq = useRef(5);
   const [rows, setRows] = useState<Row[]>(() =>
-    NAMES.slice(0, 5).map((name, id) => ({ id, name, a: 1000 + id * 311, b: 40 + id * 7, fresh: false })),
+    NAMES.slice(0, 5).map((name, id) => ({ id, name, a: 1000 + id * 311, b: 40 + id * 7 })),
   );
   const add = () =>
     setRows((r) => {
       const id = seq.current++;
       const name = NAMES[id % NAMES.length] ?? 'Node';
-      return [
-        { id, name, a: 900 + ((id * 137) % 700), b: 30 + ((id * 11) % 50), fresh: true },
-        ...r.map((x) => ({ ...x, fresh: false })),
-      ].slice(0, 6);
+      return [{ id, name, a: 900 + ((id * 137) % 700), b: 30 + ((id * 11) % 50) }, ...r].slice(0, 6);
     });
   const tick = () =>
     setRows((r) =>
-      r.map((x, i) =>
-        i % 2 === 0
-          ? { ...x, fresh: false, a: x.a + (i % 4 === 0 ? 17 : -9), b: x.b + 1 }
-          : { ...x, fresh: false },
-      ),
+      r.map((x, i) => (i % 2 === 0 ? { ...x, a: x.a + (i % 4 === 0 ? 17 : -9), b: x.b + 1 } : x)),
     );
   return (
     <>
@@ -323,33 +249,27 @@ function ListDemo() {
           <span className="num">Queue</span>
         </div>
         {rows.map((r) => (
-          <div key={r.id} className={r.fresh ? 'fxg-list-row fx-fresh' : 'fxg-list-row'}>
+          <FlashOnChange as="div" variant="bar" key={r.id} value={r.id} className="fxg-list-row">
             <span>{r.name}</span>
-            <Settle as="span" className="num" value={r.a} tint epsilon={0}>
+            <FlashOnChange className="num" value={r.a} tone="auto">
               {r.a.toLocaleString('en-US')}
-            </Settle>
-            <Settle as="span" className="num" value={r.b} tint>
+            </FlashOnChange>
+            <FlashOnChange className="num" value={r.b} tone="auto">
               {r.b}
-            </Settle>
-          </div>
+            </FlashOnChange>
+          </FlashOnChange>
         ))}
       </div>
       <div className="fxg-row">
-        <button type="button" className="fxg-btn" data-fx="press charge" data-testid="row-add" onClick={add}>
-          <Plus size={14} aria-hidden="true" /> New row
-        </button>
-        <button
-          type="button"
-          className="fxg-btn"
-          data-fx="press charge"
-          data-testid="row-tick"
-          onClick={tick}
-        >
-          <RotateCw size={14} aria-hidden="true" /> Update values
-        </button>
+        <Button icon={Plus} data-testid="row-add" onClick={add}>
+          New row
+        </Button>
+        <Button icon={RotateCw} data-testid="row-tick" onClick={tick}>
+          Update values
+        </Button>
       </div>
       <p className="fxg-hint">
-        Rows stay calm: no pulse, no hover light. A new row is a wash; a changed value glows once.
+        This is the kit's own flash: a wash that decays, never a second effect on top. Rows stay calm.
       </p>
     </>
   );
@@ -397,28 +317,15 @@ function WindowDemo() {
               <header className="fxg-win-title">
                 <Blocks size={16} aria-hidden="true" />
                 <span>Explorer</span>
-                <button
-                  type="button"
-                  className="fxg-icon"
-                  aria-label="Close"
-                  data-fx="press charge"
-                  onClick={() => setOpen(false)}
-                >
-                  <X size={16} aria-hidden="true" />
-                </button>
+                <IconButton icon={X} label="Close" size="sm" onClick={() => setOpen(false)} />
               </header>
               <div className="fxg-win-body">
                 <p style={{ margin: 0 }}>
                   A window opens out of the launcher it came from and closes back into it.
                 </p>
-                <button
-                  type="button"
-                  className="fxg-btn fxg-btn--primary"
-                  data-fx="press charge"
-                  data-fx-tone="hot"
-                >
+                <Button variant="primary" size="sm">
                   View block
-                </button>
+                </Button>
               </div>
             </section>
           </div>
@@ -438,16 +345,9 @@ function WindowDemo() {
         </div>
       </div>
       <div className="fxg-row">
-        <button
-          type="button"
-          className="fxg-btn"
-          ref={toastBtn}
-          data-fx="press charge"
-          data-testid="toast-btn"
-          onClick={() => setToast(true)}
-        >
+        <Button ref={toastBtn} data-testid="toast-btn" onClick={() => setToast(true)}>
           Show a toast
-        </button>
+        </Button>
         <span className="fxg-hint">
           The launcher gets no pulse of its own: the window opening is the effect.
         </span>
@@ -456,7 +356,7 @@ function WindowDemo() {
   );
 }
 
-// ---- Current and Settle: a block arrives --------------------------------------------------------
+// ---- Current: a block arrives -------------------------------------------------------------------
 
 function LiveDemo() {
   const tip = useTip();
@@ -470,9 +370,9 @@ function LiveDemo() {
   return (
     <div className="fxg-live">
       <div className="fxg-tip">
-        <Settle as="span" className="fxg-tip-value" value={height}>
-          {tip ? formatHeight(height) : 'No block yet'}
-        </Settle>
+        <FlashOnChange value={height} tone="white" className="fxg-tip-value">
+          {tip ? <AnimatedNumber value={height} /> : 'No block yet'}
+        </FlashOnChange>
         <span className="fxg-hint">chain tip, from the live network</span>
       </div>
       <div className="fxg-rail" data-testid="rail">
@@ -497,15 +397,9 @@ function LiveDemo() {
         ) : null}
       </div>
       <div className="fxg-row">
-        <button
-          type="button"
-          className="fxg-btn"
-          data-fx="charge"
-          data-testid="fire"
-          onClick={() => setExtra((v) => v + 1)}
-        >
-          <Zap size={14} aria-hidden="true" /> Fire a block
-        </button>
+        <Button icon={Zap} data-testid="fire" onClick={() => setExtra((v) => v + 1)}>
+          Fire a block
+        </Button>
         <span className="fxg-hint">
           A real block does the same: one streak along the rail, the new card circled once, the number lands.
         </span>
@@ -534,10 +428,25 @@ function Meter() {
   );
 }
 
+/** Forces <html data-motion> while a mode is picked, and puts back whatever was there when it is not. */
+function useForcedMode(pick: Pick): void {
+  useEffect(() => {
+    if (pick === 'settings') return;
+    const root = document.documentElement;
+    const before = root.getAttribute(ROOT_ATTR);
+    root.setAttribute(ROOT_ATTR, pick);
+    return () => {
+      if (before === null) root.removeAttribute(ROOT_ATTR);
+      else root.setAttribute(ROOT_ATTR, before);
+    };
+  }, [pick]);
+}
+
 export function MotionGallery() {
   useMotionEngine();
   const [pick, setPick] = useState<Pick>('settings');
   const [compare, setCompare] = useState(false);
+  useForcedMode(compare ? 'settings' : pick);
   const frames: (MotionMode | null)[] = compare ? COMPARE : [pick === 'settings' ? null : pick];
   // Portalled to <body>: the shell's stage is a stacking context below the globe's labels, and a
   // gallery that sits under them is not a fair place to judge light.
@@ -548,7 +457,7 @@ export function MotionGallery() {
           <h1 className="fxg-title">Motion language</h1>
           <p className="fxg-sub">
             Pulse, Charge, Spark, Current, Power-on, Settle. Energy and current, only on input or a real
-            event.
+            event. Specimens are the real UI kit: the engine answers its attributes.
           </p>
         </div>
         <div className="fxg-tools">

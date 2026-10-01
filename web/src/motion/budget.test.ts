@@ -41,7 +41,7 @@ describe('Budget', () => {
   it('does not call onPreempt when a holder releases normally', () => {
     const b = new Budget();
     const onPreempt = vi.fn();
-    b.acquire('settle', 'x', onPreempt)!.release();
+    b.acquire('current', 'x', onPreempt)!.release();
     expect(onPreempt).not.toHaveBeenCalled();
   });
 
@@ -52,9 +52,19 @@ describe('Budget', () => {
     expect(b.stats().dropped).toBe(2);
     const currents = Array.from({ length: 4 }, (_, i) => b.acquire('current', `c${i}`));
     expect(currents.filter(Boolean)).toHaveLength(2);
-    const settles = Array.from({ length: 12 }, (_, i) => b.acquire('settle', `s${i}`));
-    // Total cap 10 less the 3 pulses and 2 currents leaves 5 for settles.
-    expect(settles.filter(Boolean)).toHaveLength(5);
+    const powers = Array.from({ length: 4 }, (_, i) => b.acquire('power', `w${i}`));
+    expect(powers.filter(Boolean)).toHaveLength(2);
+  });
+
+  it('caps the total, and a user effect cannot exceed it when only user effects fill it', () => {
+    const b = new Budget({ flashMax: 99 });
+    const user: FxKind[] = ['pulse', 'pulse', 'pulse', 'spark', 'spark', 'spark', 'slide', 'slide', 'slide'];
+    const leases = user.map((k, i) => b.acquire(k, `u${i}`));
+    expect(leases.every(Boolean)).toBe(true);
+    expect(b.stats().active).toBe(9);
+    expect(b.acquire('power', 'w1')).not.toBeNull(); // the tenth
+    expect(b.acquire('power', 'w2')).toBeNull(); // the eleventh: no live effect to preempt
+    expect(b.stats().active).toBe(10);
   });
 
   it('limits flashes to three per rolling second, whatever the element', () => {
@@ -84,25 +94,25 @@ describe('Budget', () => {
   });
 
   it('live effects do not count against the flash rate', () => {
-    const b = new Budget();
-    for (let i = 0; i < 8; i++) expect(b.acquire('settle', `s${i}`)).not.toBeNull();
+    const b = new Budget({ caps: { current: 8 } });
+    for (let i = 0; i < 8; i++) expect(b.acquire('current', `s${i}`)).not.toBeNull();
   });
 
   it('user effects preempt the oldest live effect when the room is full', () => {
     const c = clock();
-    const b = new Budget({ now: c.now, flashMax: 99, caps: { settle: 10 } });
+    const b = new Budget({ now: c.now, flashMax: 99, caps: { current: 10 } });
     const preempts: string[] = [];
     for (let i = 0; i < 10; i++) {
       c.advance(10);
-      b.acquire('settle', `s${i}`, () => preempts.push(`s${i}`));
+      b.acquire('current', `c${i}`, () => preempts.push(`c${i}`));
     }
     expect(b.stats().active).toBe(10);
     // A live effect finds the room full and is dropped.
-    expect(b.acquire('current', 'c')).toBeNull();
+    expect(b.acquire('current', 'late')).toBeNull();
     // A user effect preempts the oldest live one.
     const p = b.acquire('pulse', 'press');
     expect(p).not.toBeNull();
-    expect(preempts).toEqual(['s0']);
+    expect(preempts).toEqual(['c0']);
     expect(b.stats().active).toBe(10);
   });
 
@@ -129,24 +139,25 @@ describe('Budget', () => {
   it('never stacks: any burst ends with at most one lease per key and the totals respected', () => {
     const c = clock();
     const b = new Budget({ now: c.now });
-    const kinds: FxKind[] = ['pulse', 'spark', 'slide', 'power', 'current', 'settle'];
+    const kinds: FxKind[] = ['pulse', 'spark', 'slide', 'power', 'current'];
     for (let i = 0; i < 400; i++) {
       c.advance(i % 7 === 0 ? 400 : 5);
       b.acquire(kinds[i % kinds.length]!, `k${i % 13}`);
       const s = b.stats();
       expect(s.active).toBeLessThanOrEqual(10);
       expect(s.byKind.pulse).toBeLessThanOrEqual(3);
+      expect(s.byKind.spark).toBeLessThanOrEqual(3);
       expect(s.byKind.current).toBeLessThanOrEqual(2);
-      expect(s.byKind.settle).toBeLessThanOrEqual(8);
+      expect(s.byKind.power).toBeLessThanOrEqual(2);
     }
   });
 
   it('disposes: every holder is told to stop and nothing stays alive', () => {
     const b = new Budget();
     const stops: number[] = [];
-    const leases = [1, 2, 3].map((n) => b.acquire('settle', `k${n}`, () => stops.push(n))!);
+    const leases = [1, 2].map((n) => b.acquire('current', `k${n}`, () => stops.push(n))!);
     b.dispose();
-    expect(stops.sort()).toEqual([1, 2, 3]);
+    expect(stops.sort()).toEqual([1, 2]);
     expect(leases.every((l) => !l.live)).toBe(true);
     expect(b.stats().active).toBe(0);
   });

@@ -29,6 +29,20 @@ export const nativeAnimate: Animate = (el, keyframes, options) =>
 
 export type CometKind = 'streak' | 'head' | 'seg';
 
+/** The colour of the light: blue-white on dark surfaces, all white on a filled Blue Wave control. */
+export type Tone = 'accent' | 'hot';
+
+/**
+ * The tone for a control: `data-fx-tone` when it says, else white on the kit's filled variants
+ * (`primary`, `danger`), else the accent blue.
+ */
+export function toneOf(el: Element): Tone {
+  const say = el.getAttribute('data-fx-tone');
+  if (say === 'hot' || say === 'accent') return say;
+  const variant = el.getAttribute('data-variant');
+  return variant === 'primary' || variant === 'danger' ? 'hot' : 'accent';
+}
+
 export interface FxHandle {
   /** Resolves when the effect has ended or been cancelled. */
   readonly done: Promise<void>;
@@ -211,11 +225,17 @@ export interface Shape {
 
 export function readShape(el: Element, rect: DOMRect): Shape {
   const cs = getComputedStyle(el);
+  let clipPath = cs.clipPath || 'none';
+  if (clipPath === 'none') {
+    // A control that draws its shape on a ::before (the kit's primary button) has none of its own.
+    const pb = getComputedStyle(el, '::before');
+    if (pb.content && pb.content !== 'none' && pb.clipPath && pb.clipPath !== 'none') clipPath = pb.clipPath;
+  }
   return {
     w: rect.width,
     h: rect.height,
     radius: cs.borderRadius || '0px',
-    clipPath: cs.clipPath || 'none',
+    clipPath,
     tl: cs.borderTopLeftRadius,
     tr: cs.borderTopRightRadius,
     br: cs.borderBottomRightRadius,

@@ -3,8 +3,8 @@
 // button's icon). Small, brief, one per commit.
 
 import { DUR, EASE, REDUCED_MS } from '../timing';
-import { type Fx, type FxHandle, num, offscreen, readShape } from './fx';
-import type { Tone } from './pulse';
+import type { Tone } from './fx';
+import { type Fx, type FxHandle, num, offscreen, readShape, toneOf } from './fx';
 
 export interface SparkOptions {
   /** Where the head lands, in client coordinates. Defaults to the centre of the element. */
@@ -26,11 +26,12 @@ export function spark(fx: Fx, el: Element, opts: SparkOptions = {}): FxHandle | 
   const run = fx.begin('spark', el);
   if (!run) return null;
   const delay = Math.max(0, opts.delay ?? 0);
+  const tone = opts.tone ?? toneOf(el);
 
   if (mode === 'reduced') {
     // No head, no travel: the control's edge lights once.
     const box = fx.box(run, rect, readShape(el, rect));
-    if (opts.tone === 'hot') box.classList.add('fx-tone-hot');
+    if (tone === 'hot') box.classList.add('fx-tone-hot');
     const flash = run.node(box, fx.doc.createElement('i'));
     flash.className = 'fx-edge-flash';
     run.play(flash, [{ opacity: 0 }, { opacity: 0.9, offset: 0.3 }, { opacity: 0 }], {
@@ -44,7 +45,7 @@ export function spark(fx: Fx, el: Element, opts: SparkOptions = {}): FxHandle | 
   const x = opts.at?.x ?? rect.left + rect.width / 2;
   const y = opts.at?.y ?? rect.top + rect.height / 2;
   const host = run.node(fx.layer, fx.doc.createElement('div'));
-  host.className = opts.tone === 'hot' ? 'fx-spark fx-tone-hot' : 'fx-spark';
+  host.className = tone === 'hot' ? 'fx-spark fx-tone-hot' : 'fx-spark';
   const land = `translate(${num(x)}px, ${num(y)}px)`;
   host.style.transform = land;
 

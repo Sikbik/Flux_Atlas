@@ -10,8 +10,9 @@ import { parsePolygon, parseRadius, polygonOutline, roundedRect } from '../geome
 import { DUR, EASE, REDUCED_MS } from '../timing';
 import { BEZ } from './bez';
 import { drawChain } from './comet';
+import type { Tone } from './fx';
 import { clamp, type Fx, type FxHandle, num, offscreen, type Run, readShape } from './fx';
-import { cornerOf, type Tone } from './pulse';
+import { cornerOf } from './pulse';
 
 export type Edge = 'top' | 'bottom' | 'left' | 'right' | 'perimeter';
 
@@ -73,7 +74,8 @@ export function drawEdge(
   const r0 = horizontal ? (edge === 'top' ? rtl : rbl) : edge === 'left' ? rtl : rtr;
   const r1 = horizontal ? (edge === 'top' ? rtr : rbr) : edge === 'left' ? rbl : rbr;
   const tail = opts.tail ?? clamp(length * 0.1, 56, 160);
-  const dur = opts.duration ?? clamp(Math.round(360 + length * 0.4), 440, 920);
+  // --fx-dur-current is the run along a 700 px edge; every 100 px more or less moves it by 40 ms.
+  const dur = opts.duration ?? clamp(Math.round(DUR.current + (length - 700) * 0.4), 440, 920);
 
   // The head runs from the clip edge at one end to past the other, so the tail leaves the edge too.
   const from = rev ? length - r1 : r0;

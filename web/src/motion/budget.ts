@@ -7,15 +7,15 @@
 //   1. Rate: pulse and spark are the "flash" class. At most `flashMax` of them start per
 //      `flashWindowMs` (3 per second, the WCAG 2.3.1 ceiling), whatever element they land on.
 //   2. Replace, never stack: a new effect on an element that already has one cancels the old one.
-//   3. Per-kind cap: pulse 3, spark 3, slide 3, current 2, settle 8, power 2 at once.
+//   3. Per-kind cap: pulse 3, spark 3, slide 3, current 2, power 2 at once.
 //   4. Total cap (10). A user-class effect (power, pulse, spark, slide) that finds the room full
-//      preempts the oldest live-class effect (current, settle); live effects never preempt anything
+//      preempts the oldest live-class effect (current); live effects never preempt anything
 //      and are simply dropped.
 //
 // Live-class effects (a block arrived, a value changed) therefore yield to the user's own input,
 // and a burst of network events can never starve or stack on top of what the user is doing.
 
-export type FxKind = 'pulse' | 'spark' | 'slide' | 'power' | 'current' | 'settle';
+export type FxKind = 'pulse' | 'spark' | 'slide' | 'power' | 'current';
 export type FxClass = 'user' | 'live';
 
 export const FX_CLASS: Readonly<Record<FxKind, FxClass>> = {
@@ -24,7 +24,6 @@ export const FX_CLASS: Readonly<Record<FxKind, FxClass>> = {
   slide: 'user',
   power: 'user',
   current: 'live',
-  settle: 'live',
 };
 
 const FLASH: ReadonlySet<FxKind> = new Set<FxKind>(['pulse', 'spark']);
@@ -43,7 +42,7 @@ export interface BudgetOptions {
 
 export const DEFAULT_BUDGET: Required<Omit<BudgetOptions, 'now'>> = {
   total: 10,
-  caps: { power: 2, pulse: 3, spark: 3, slide: 3, current: 2, settle: 8 },
+  caps: { power: 2, pulse: 3, spark: 3, slide: 3, current: 2 },
   flashMax: 3,
   flashWindowMs: 1000,
 };
@@ -150,10 +149,7 @@ export class Budget {
   }
 
   stats(): BudgetStats {
-    const byKind = { pulse: 0, spark: 0, slide: 0, power: 0, current: 0, settle: 0 } as Record<
-      FxKind,
-      number
-    >;
+    const byKind = { pulse: 0, spark: 0, slide: 0, power: 0, current: 0 } as Record<FxKind, number>;
     for (const e of this.#entries.values()) byKind[e.kind]++;
     return {
       active: this.#entries.size,

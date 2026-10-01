@@ -136,6 +136,30 @@
   font-size: var(--fs-xs);
 }
 
+.fxg-dense {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-md);
+}
+
+.fxg-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+}
+
+.fxg-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+}
+
 .fxg-hint kbd {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -145,113 +169,6 @@
   border-radius: var(--r-xs);
   background: var(--ink-2);
   color: var(--text-2);
-}
-
-/* ---- stand-in controls (kit spec, design 8.9) ----------------------------------------------- */
-
-.fxg-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  height: 32px;
-  padding: 0 var(--space-6);
-  font: inherit;
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: var(--fw-semibold);
-  color: var(--text-1);
-  background: var(--ink-2);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-md);
-  cursor: pointer;
-  user-select: none;
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-instant) var(--ease-out);
-}
-
-.fxg-btn:hover {
-  background: var(--ink-3);
-  border-color: var(--line-3);
-}
-
-.fxg-btn:active {
-  background: var(--ink-4);
-  transform: scale(0.98);
-}
-
-.fxg-btn--primary {
-  height: 36px;
-  padding-inline: var(--space-7);
-  border: 0;
-  background: linear-gradient(var(--accent-600-hover), var(--accent-600));
-  clip-path: var(--clip-chamfer-dual-sm);
-}
-
-.fxg-btn--primary:hover {
-  background: linear-gradient(var(--accent-500), var(--accent-600-hover));
-}
-
-.fxg-btn--primary:active {
-  background: linear-gradient(var(--accent-600-active), var(--accent-600-active));
-}
-
-.fxg-btn--ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-2);
-}
-
-.fxg-btn--ghost:hover {
-  background: var(--ink-2);
-  color: var(--text-1);
-}
-
-.fxg-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  color: var(--text-2);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-md);
-  cursor: pointer;
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-instant) var(--ease-out);
-}
-
-.fxg-icon:hover {
-  background: var(--ink-2);
-  color: var(--text-1);
-}
-
-.fxg-icon:active {
-  transform: scale(0.96);
-  background: var(--ink-3);
-}
-
-.fxg-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 22px;
-  padding: 0 var(--space-4);
-  font-size: 12px;
-  font-weight: var(--fw-medium);
-  color: var(--text-1);
-  background: var(--ink-2);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-pill);
-  cursor: pointer;
-}
-
-.fxg-chip:hover {
-  background: var(--ink-3);
 }
 
 .fxg-dock {
@@ -286,47 +203,6 @@
 .fxg-launch[data-open] {
   background: var(--ink-3);
   color: var(--text-1);
-}
-
-.fxg-switch {
-  position: relative;
-  flex: none;
-  width: 36px;
-  height: 20px;
-  padding: 0;
-  background: var(--ink-3);
-  border: 0;
-  border-radius: var(--r-pill);
-  cursor: pointer;
-  transition: background var(--dur-base) var(--ease-out);
-}
-
-.fxg-switch::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--text-1);
-  transition: transform var(--dur-base) var(--ease-out);
-}
-
-.fxg-switch[aria-checked="true"] {
-  background: var(--accent-600);
-}
-
-.fxg-switch[aria-checked="true"]::before {
-  transform: translateX(16px);
-}
-
-.fxg-switch-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  font-size: var(--fs-sm);
-  color: var(--text-2);
 }
 
 .fxg-tabs {

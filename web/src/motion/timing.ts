@@ -12,7 +12,6 @@ export const DUR = {
   powerOn: 420,
   surge: 480,
   powerOff: 180,
-  settle: 900,
   slide: 300,
 } as const;
 
@@ -20,7 +19,7 @@ export const EASE = {
   /** Light along a wire and the front of a surge: brisk off the mark, steady, a short settle. */
   run: 'cubic-bezier(0.33, 0.4, 0.5, 1)',
   /** Things that arrive: a window or panel scaling and fading in. */
-  settle: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+  arrive: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
   /** A burst that blooms and is gone (tokens.css --ease-out-expo). */
   burst: 'cubic-bezier(0.16, 1, 0.3, 1)',
   /** The selection indicator: the leading edge, then the trailing edge catching up. */

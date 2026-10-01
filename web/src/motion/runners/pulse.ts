@@ -9,9 +9,9 @@ import { parsePolygon, parseRadius, polygonOutline, roundedRect } from '../geome
 import { DUR, EASE, REDUCED_MS } from '../timing';
 import { BEZ } from './bez';
 import { drawChain } from './comet';
-import { clamp, type Fx, type FxHandle, num, offscreen, readShape } from './fx';
+import { clamp, type Fx, type FxHandle, num, offscreen, readShape, type Tone, toneOf } from './fx';
 
-export type Tone = 'accent' | 'hot';
+export type { Tone } from './fx';
 
 export interface PulseOptions {
   /** Client coordinates of the press. Defaults to the top centre of the element (keyboard). */
@@ -41,7 +41,7 @@ export function pulse(fx: Fx, el: HTMLElement, opts: PulseOptions = {}): FxHandl
   if (!run) return null;
 
   const shape = readShape(el, rect);
-  const tone: Tone = opts.tone ?? (el.getAttribute('data-fx-tone') === 'hot' ? 'hot' : 'accent');
+  const tone: Tone = opts.tone ?? toneOf(el);
 
   if (mode === 'reduced') {
     // No travel: the edge lights once and fades.
@@ -75,7 +75,8 @@ export function pulse(fx: Fx, el: HTMLElement, opts: PulseOptions = {}): FxHandl
   // Nudge toward the top edge on a tie: the light source is top-left, so current starts on top.
   const s0 = wire.project(px, py - 0.5).s;
   const half = wire.length / 2;
-  const dur = clamp(Math.round(DUR.pulse * 0.75 + wire.length * 0.1), 180, 260);
+  // --fx-dur-pulse is the run round a 600 px outline; every 100 px more or less moves it by 10 ms.
+  const dur = clamp(Math.round(DUR.pulse + (wire.length - 600) * 0.1), 180, 260);
   const size = Math.min(w, h);
   const tail = clamp(size * 1.15 + (Math.max(w, h) - size) * 0.12, 28, 76);
   const thickness = size >= 30 ? 3.2 : 2.6;

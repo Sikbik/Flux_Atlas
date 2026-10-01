@@ -3,11 +3,9 @@
 // value change inside an effect.
 
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { installEngine, pulse, settle, spark } from '../engine';
-import type { FxHandle, PulseOptions, SettleOptions, SparkOptions } from '../fxRunners';
+import { installEngine, pulse, spark } from '../engine';
+import type { FxHandle, PulseOptions, SparkOptions } from '../fxRunners';
 import '../motion.css';
-
-export { useMotionMode } from '../mode';
 
 function useInstall(): void {
   useEffect(() => installEngine(), []);
@@ -98,39 +96,4 @@ export function useSpark<T extends Element>(
     const h = spark(el, optsRef.current);
     return () => h?.cancel();
   }, [ref, on]);
-}
-
-export interface UseSettleOptions extends SettleOptions {
-  /** Numbers that change by no more than this are ignored, so a jittering value never glows. */
-  epsilon?: number;
-  /** Tint the landing by the direction of a numeric change (up or down). */
-  tint?: boolean;
-}
-
-/**
- * Settle when `value` changes (not on mount): the element's text lands with a short glow that
- * decays. Pass an `epsilon` to ignore jitter and `tint` to colour the landing by direction.
- */
-export function useSettle<T extends HTMLElement>(
-  ref: RefObject<T | null>,
-  value: unknown,
-  opts: UseSettleOptions = {},
-): void {
-  useInstall();
-  const prev = useRef(value);
-  const optsRef = useRef(opts);
-  optsRef.current = opts;
-  useEffect(() => {
-    const was = prev.current;
-    if (Object.is(was, value)) return;
-    prev.current = value;
-    const { epsilon = 0, tint = false, ...rest } = optsRef.current;
-    const numeric = typeof was === 'number' && typeof value === 'number';
-    if (numeric && Math.abs(value - was) <= epsilon) return;
-    const el = ref.current;
-    if (!el) return;
-    const dir = tint && numeric ? (value > was ? 'up' : 'down') : (rest.dir ?? null);
-    const h = settle(el, { ...rest, dir });
-    return () => h?.cancel();
-  }, [ref, value]);
 }
