@@ -282,7 +282,12 @@ impl Published {
             bodies: PrebuiltBodies::default(),
             tiers: tiers.into(),
             freshness: Arc::from(Vec::new()),
-            next_payees: Arc::from(Vec::new()),
+            next_payees: st
+                .next_payees
+                .iter()
+                .map(derive::block::payee_dto)
+                .collect::<Vec<_>>()
+                .into(),
             mesh_edge_count: st.mesh.edge_count() as u32,
             mempool: st.mempool_list().into(),
             attributions: geoip::attributions(st).into(),
@@ -473,6 +478,8 @@ fn restore(store: &Store) -> NetworkState {
     // The queue key is a function of the record (fluxd's order), so the restored queue is exact.
     st.queue.rebuild(st.nodes.listed().map(|e| &e.rec));
     st.apply_ranks();
+    // The restored queue heads are the next block's payees: the first bootstrap carries them.
+    st.next_payees = derive::block::next_payees(&st);
     st.apps = state::apps::AppTable::restore(
         ok("apps", store.apps()),
         ok("pending app messages", store.pending_app_messages()),

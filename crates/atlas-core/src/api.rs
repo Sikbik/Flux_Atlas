@@ -277,6 +277,13 @@ pub struct BootstrapDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub attributions: Option<Vec<DataAttribution>>,
+    /// The predicted payees of the next block (the queue heads, or `currentwinner` when it
+    /// disagreed), as the latest live `next_payees` message carried them, so a fresh page shows
+    /// them before the next block. Absent before the first block is known (and from older
+    /// servers). A live `next_payees` for the same or a newer height replaces it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_payees: Option<crate::live::NextPayeesMsg>,
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -204,6 +204,8 @@ export class NetworkStore {
   price: PriceInfo | null = null;
   tip: TipInfo | null = null;
   nextPayees: NextPayees | null = null;
+  /** Seq of the bootstrap or live message `nextPayees` came from. */
+  private nextPayeesSeq = 0;
   freshness: ReadonlyMap<string, JobFreshness> = new Map();
   server: ServerInfo | null = null;
   /** True while the server serves restored state (upstream stale). */
@@ -377,7 +379,17 @@ export class NetworkStore {
     this.apps.clear();
     for (const a of b.apps) this.apps.set(a.name, a);
     this.freshness = new Map(b.freshness.map((f) => [f.job, f]));
-    this.touch(Slice.Blocks | Slice.Apps | Slice.Summary | Slice.Price | Slice.Freshness | Slice.Tip);
+    let slices = Slice.Blocks | Slice.Apps | Slice.Summary | Slice.Price | Slice.Freshness | Slice.Tip;
+    // Seed the next payees so a fresh page shows them before the next block. A live
+    // `next_payees` held for a newer height, or for the same height from a later seq, wins.
+    const np = b.next_payees;
+    const cur = this.nextPayees;
+    if (np && (!cur || np.height > cur.height || (np.height === cur.height && b.seq >= this.nextPayeesSeq))) {
+      this.nextPayees = { height: np.height, payees: np.payees, receivedMs: b.generated_ms };
+      this.nextPayeesSeq = b.seq;
+      slices |= Slice.NextPayees;
+    }
+    this.touch(slices);
   }
 
   /** Loads the full mesh (mesh.bin). */
@@ -444,6 +456,7 @@ export class NetworkStore {
           break;
         case 'next_payees':
           this.nextPayees = { height: msg.height, payees: msg.payees, receivedMs };
+          this.nextPayeesSeq = msg.seq;
           this.touch(Slice.NextPayees);
           break;
         case 'app_pending':

@@ -868,6 +868,13 @@ async fn restart_after_downtime_replays_blocks_without_rank_corrections() {
         eng.published().network.tip.as_ref().map(|t| t.height),
         Some(start_height + 3)
     );
+    // The first publish already names the next block's payees (the restored queue heads), so
+    // the bootstrap carries them before any block arrives.
+    let p = eng.published();
+    assert_eq!(p.next_payees.len(), 3);
+    assert!(p.next_payees.iter().all(|x| x.node.is_some()));
+    let np = crate::publish::next_payees_msg(start_height + 3, &p.next_payees).unwrap();
+    assert_eq!(np.height, start_height + 4);
 
     // The registry job is usually faster than the block catch-up: the list (already at the
     // real tip) lands before the missed blocks are applied. It must wait for them.

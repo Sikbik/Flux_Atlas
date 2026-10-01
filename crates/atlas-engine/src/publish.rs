@@ -15,7 +15,7 @@ use atlas_core::api::{
 use atlas_core::chain::BlockSummary;
 use atlas_core::codec::mesh_bin::encode_mesh_bin;
 use atlas_core::codec::nodes_bin::{NodeBinInput, encode_nodes_bin};
-use atlas_core::live::NextPayeeDto;
+use atlas_core::live::{NextPayeeDto, NextPayeesMsg};
 use atlas_core::{NodeId, NodeRecord};
 
 use crate::Published;
@@ -46,6 +46,15 @@ pub struct PublishJob {
     /// Third-party data credits (bootstrap `attributions`).
     pub attributions: Vec<DataAttribution>,
     pub prev: Arc<Published>,
+}
+
+/// The bootstrap's `next_payees`: the predicted payees of the block after `tip`, or `None` before
+/// a tip or any payee is known.
+pub fn next_payees_msg(tip: u32, payees: &[NextPayeeDto]) -> Option<NextPayeesMsg> {
+    (tip > 0 && payees.iter().any(|p| p.node.is_some())).then(|| NextPayeesMsg {
+        height: tip + 1,
+        payees: payees.to_vec(),
+    })
 }
 
 /// Timing of one build (ms per body).
@@ -248,6 +257,7 @@ fn build_rest(job: &PublishJob, bodies: &mut PrebuiltBodies, t: &mut BuildTiming
         apps: job.apps.to_vec(),
         freshness: job.freshness.clone(),
         attributions: Some(job.attributions.clone()),
+        next_payees: next_payees_msg(job.tip, &job.next_payees),
     };
     match PrebuiltBody::json(&boot) {
         Ok(b) => bodies.bootstrap = Some(b),

@@ -504,6 +504,7 @@ pub fn bootstrap_dto(v: &Views) -> BootstrapDto {
         apps: p.apps.to_vec(),
         freshness: Vec::new(),
         attributions: Some(p.attributions.to_vec()),
+        next_payees: atlas_engine::publish::next_payees_msg(tip.unwrap_or(0), &p.next_payees),
     }
 }
 

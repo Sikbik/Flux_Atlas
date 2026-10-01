@@ -62,6 +62,30 @@ describe('NetworkStore snapshot', () => {
     expect(s.loaded).toBe(true);
   });
 
+  it('seeds next payees from the bootstrap; live messages for the same or a newer height replace them', () => {
+    const s = new NetworkStore();
+    const boot = {
+      ...bootstrap(100),
+      next_payees: { height: 2_996_915, payees: [{ tier: 'stratus' as const, node: 30, address: 'a' }] },
+    };
+    s.loadSnapshot({ bootstrap: boot, nodes: syntheticNodesBin(10, 100) });
+    expect(s.nextPayees?.height).toBe(2_996_915);
+    expect(s.nextPayees?.payees[0]?.node).toBe(30);
+    s.apply(
+      live('next_payees', 101, { height: 2_996_915, payees: [{ tier: 'stratus', node: 31, address: 'b' }] }),
+      1,
+    );
+    expect(s.nextPayees?.payees[0]?.node).toBe(31);
+    // A resync body older than the live value does not roll it back.
+    s.loadSnapshot({ bootstrap: { ...boot, seq: 100 }, nodes: syntheticNodesBin(10, 100) });
+    expect(s.nextPayees?.payees[0]?.node).toBe(31);
+    s.apply(
+      live('next_payees', 103, { height: 2_996_916, payees: [{ tier: 'stratus', node: 32, address: 'c' }] }),
+      2,
+    );
+    expect(s.nextPayees?.height).toBe(2_996_916);
+  });
+
   it('notifies once per batch with the slices touched', () => {
     const s = new NetworkStore();
     const seen: StoreChange[] = [];
