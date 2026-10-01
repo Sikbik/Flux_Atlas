@@ -1,8 +1,8 @@
-import type { ComponentPropsWithoutRef, CSSProperties } from 'react';
+import type { ComponentPropsWithRef, CSSProperties } from 'react';
 import { cx } from '../internal/cx';
 import './StatGrid.css';
 
-export interface StatGridProps extends ComponentPropsWithoutRef<'div'> {
+export interface StatGridProps extends ComponentPropsWithRef<'div'> {
   /** Minimum tile width in px before the grid wraps to fewer columns (default 140). */
   min?: number;
   /** Fix the column count instead of fitting as many tiles as the width allows. */

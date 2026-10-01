@@ -1,6 +1,5 @@
-/* Stat grid: columns follow the width of the window, not the viewport. Tiles arrive one after
-   another (a 45 ms stagger on transform and opacity), and a hero tile takes two columns once the
-   grid is wide enough to spare them. */
+/* Stat grid: columns follow the width of the window, not the viewport. A hero tile takes two columns
+   once the grid is wide enough to spare them. */
 
 .ui-stat-grid {
   container-type: inline-size;
@@ -18,32 +17,4 @@
   .ui-stat-grid:not([data-fixed]) > [data-hero] {
     grid-column: span 2;
   }
-}
-
-.ui-stat-grid > :nth-child(1) {
-  --ui-i: 0;
-}
-.ui-stat-grid > :nth-child(2) {
-  --ui-i: 1;
-}
-.ui-stat-grid > :nth-child(3) {
-  --ui-i: 2;
-}
-.ui-stat-grid > :nth-child(4) {
-  --ui-i: 3;
-}
-.ui-stat-grid > :nth-child(5) {
-  --ui-i: 4;
-}
-.ui-stat-grid > :nth-child(6) {
-  --ui-i: 5;
-}
-.ui-stat-grid > :nth-child(7) {
-  --ui-i: 6;
-}
-.ui-stat-grid > :nth-child(8) {
-  --ui-i: 7;
-}
-.ui-stat-grid > :nth-child(n + 9) {
-  --ui-i: 8;
 }

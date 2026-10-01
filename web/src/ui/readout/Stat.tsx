@@ -1,11 +1,15 @@
-import type { PointerEvent, ReactNode } from 'react';
+import type { ComponentPropsWithoutRef, ReactNode, Ref } from 'react';
 import { isUnknownValue, Unknown } from '../identity/Unknown';
 import { cx } from '../internal/cx';
-import { useSpotlight } from '../internal/spotlight';
+import { pressHandlers } from '../internal/press';
 import { Skeleton } from '../states/Skeleton';
 import './Stat.css';
 
-export interface StatProps {
+/**
+ * Props of a Stat: the tile's content, plus `className`, `style`, `ref` and the other `<div>` attributes.
+ * The tile reports its state as `data-state` (`loading` or `stale`) and, as a button, a press as `data-pressed`.
+ */
+export interface StatProps extends Omit<ComponentPropsWithoutRef<'div'>, 'children' | 'onClick'> {
   /** What is measured, in sentence case without a colon ("Nodes", "FLUX price"). */
   label: ReactNode;
   /** The figure, already formatted (a string, or an AnimatedNumber for a live count). Null or undefined renders Unknown, never 0. */
@@ -16,7 +20,7 @@ export interface StatProps {
   delta?: ReactNode;
   /** One line of context under the figure ("2,655 IP addresses"). */
   caption?: ReactNode;
-  /** A sparkline in the top right corner (a Sparkline; the hero tile takes a larger one at the lower right). */
+  /** A sparkline (64 by 26 px, 22 px high works best) in the top right corner; the hero tile takes a larger one at the lower right. */
   spark?: ReactNode;
   /** The view's one hero figure: large light numerals, a lit rim and the hexagon chamfer (use once per view). */
   hero?: boolean;
@@ -24,11 +28,12 @@ export interface StatProps {
   loading?: boolean;
   /** Upstream data is stale: shows "No data" and this warning line instead of a figure (never a blank or a zero). */
   stale?: ReactNode;
-  /** Makes the whole tile a button, with a light that follows the pointer. */
+  /** Makes the whole tile a button. */
   onClick?: () => void;
   /** Tier tint for the corner light (node views). */
   tier?: 'cumulus' | 'nimbus' | 'stratus';
-  className?: string;
+  /** Ref to the tile element (a `div`, or a `button` when it has `onClick`). */
+  ref?: Ref<HTMLElement>;
 }
 
 /**
@@ -49,11 +54,12 @@ export function Stat({
   onClick,
   tier,
   className,
+  ref,
+  ...rest
 }: StatProps) {
-  const follow = useSpotlight<HTMLButtonElement>();
   const unknown = !loading && !stale && isUnknownValue(value);
   const common = {
-    className: cx('ui-stat', onClick && !hero && 'ui-spot', className),
+    className: cx('ui-stat', className),
     'data-hero': hero || undefined,
     'data-spark': spark ? '' : undefined,
     'data-state': loading ? 'loading' : stale ? 'stale' : undefined,
@@ -95,16 +101,23 @@ export function Stat({
     </>
   );
   if (onClick) {
+    const own = rest as ComponentPropsWithoutRef<'button'>;
     return (
       <button
         type="button"
+        ref={ref as Ref<HTMLButtonElement>}
+        {...own}
         {...common}
         onClick={onClick}
-        onPointerMove={(e: PointerEvent<HTMLButtonElement>) => follow(e)}
+        {...pressHandlers(own)}
       >
         {body}
       </button>
     );
   }
-  return <div {...common}>{body}</div>;
+  return (
+    <div ref={ref as Ref<HTMLDivElement>} {...rest} {...common}>
+      {body}
+    </div>
+  );
 }

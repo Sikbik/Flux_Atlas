@@ -1,11 +1,12 @@
 import { Inbox, type LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { cx } from '../internal/cx';
 import './EmptyState.css';
 
 export type StateTone = 'neutral' | 'warn' | 'error';
 
-export interface EmptyStateProps {
+/** Props of an EmptyState: the content below, plus `className`, `style`, `ref` and the other `<div>` attributes. */
+export interface EmptyStateProps extends Omit<ComponentPropsWithRef<'div'>, 'title' | 'children'> {
   /** Icon in the tile (a lucide icon component; default Inbox). */
   icon?: LucideIcon;
   /** What happened, in one short sentence ("Nothing at that address"). */
@@ -24,7 +25,6 @@ export interface EmptyStateProps {
   framed?: boolean;
   /** Live-region role: `alert` for errors, `status` for loading and empty notices. */
   role?: 'alert' | 'status';
-  className?: string;
 }
 
 /** The empty state: an icon, one sentence saying what happened, one action (design 8.18). */
@@ -39,6 +39,7 @@ export function EmptyState({
   framed,
   role,
   className,
+  ...rest
 }: EmptyStateProps) {
   return (
     <div
@@ -48,6 +49,7 @@ export function EmptyState({
       data-compact={compact || undefined}
       data-pattern={pattern || undefined}
       data-framed={framed || undefined}
+      {...rest}
     >
       <span className="ui-state__icon" aria-hidden="true">
         <Icon size={20} strokeWidth={1.5} />

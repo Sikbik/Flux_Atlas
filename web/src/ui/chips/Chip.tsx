@@ -1,12 +1,15 @@
 import type { LucideIcon } from 'lucide-react';
-import type { ComponentPropsWithoutRef, MouseEventHandler, ReactNode } from 'react';
+import type { ComponentPropsWithoutRef, MouseEventHandler, ReactNode, Ref } from 'react';
 import { cx } from '../internal/cx';
+import { pressHandlers } from '../internal/press';
 import './Chip.css';
 
 export type ChipTone = 'neutral' | 'accent' | 'ghost';
 export type ChipSize = 'sm' | 'md' | 'lg';
 
 export interface ChipProps extends Omit<ComponentPropsWithoutRef<'span'>, 'onClick'> {
+  /** Ref to the rendered element: a `span`, or a `button` for a toggle chip. */
+  ref?: Ref<HTMLElement>;
   /** `neutral` (default), `accent` (filters applied, links) or `ghost` (outline only). */
   tone?: ChipTone;
   /** 20 px (`sm`, tables), 22 px (`md`, default) or 26 px (`lg`, the aim strip). */
@@ -17,7 +20,7 @@ export interface ChipProps extends Omit<ComponentPropsWithoutRef<'span'>, 'onCli
   mono?: boolean;
   /** Makes the chip a toggle button (a filter): renders a `<button>` with `aria-pressed={Boolean(selected)}`. */
   onClick?: MouseEventHandler<HTMLButtonElement>;
-  /** Pressed state for a toggle chip. */
+  /** The on state of a toggle chip (set together with `onClick`). */
   selected?: boolean;
   children?: ReactNode;
 }
@@ -37,6 +40,7 @@ export function Chip({
   selected,
   className,
   children,
+  ref,
   ...rest
 }: ChipProps) {
   const body = (
@@ -52,21 +56,25 @@ export function Chip({
     'data-mono': mono || undefined,
   };
   if (onClick) {
+    const own = rest as ComponentPropsWithoutRef<'button'>;
     return (
       <button
         type="button"
-        {...(rest as ComponentPropsWithoutRef<'button'>)}
+        ref={ref as Ref<HTMLButtonElement>}
+        {...own}
         {...common}
         aria-pressed={Boolean(selected)}
+        data-state={selected ? 'on' : 'off'}
         data-selected={selected || undefined}
         onClick={onClick}
+        {...pressHandlers(own)}
       >
         {body}
       </button>
     );
   }
   return (
-    <span {...common} {...rest}>
+    <span ref={ref as Ref<HTMLSpanElement>} {...common} {...rest}>
       {body}
     </span>
   );

@@ -21,8 +21,7 @@
   transition:
     background var(--dur-fast) var(--ease-out),
     border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-instant) var(--ease-out);
+    color var(--dur-fast) var(--ease-out);
 }
 
 /* The lit top edge on filled buttons; zero specificity so the focus ring below always wins. */
@@ -40,9 +39,10 @@
   border-color: var(--line-3);
 }
 
-.ui-button:active {
+/* Pressed (pointer or Space/Enter): a darker fill, nothing moves. `data-pressed` is also the hook
+   the Flux motion primitives attach to. */
+.ui-button:is(:active, [data-pressed]) {
   background: var(--ink-4);
-  transform: scale(0.98);
 }
 
 .ui-button[data-size="sm"] {
@@ -77,7 +77,7 @@
   color: var(--text-1);
 }
 
-.ui-button[data-variant="ghost"]:active {
+.ui-button[data-variant="ghost"]:is(:active, [data-pressed]) {
   background: var(--ink-3);
 }
 
@@ -121,18 +121,17 @@
 
 .ui-button[data-variant="primary"]:hover {
   background: none;
-  filter: drop-shadow(0 0 10px color-mix(in oklab, var(--accent-600) 60%, transparent));
 }
 
 .ui-button[data-variant="primary"]:hover::before {
   background: linear-gradient(180deg, var(--accent-500), var(--accent-600-hover));
 }
 
-.ui-button[data-variant="primary"]:active {
+.ui-button[data-variant="primary"]:is(:active, [data-pressed]) {
   background: none;
 }
 
-.ui-button[data-variant="primary"]:active::before {
+.ui-button[data-variant="primary"]:is(:active, [data-pressed])::before {
   background: var(--accent-600-active);
 }
 

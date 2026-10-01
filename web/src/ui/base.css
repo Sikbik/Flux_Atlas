@@ -80,33 +80,10 @@
   --ui-lit: inset 0 1px 0 color-mix(in oklab, var(--hot) 8%, transparent);
   /* Contact shadow under a raised surface (no outer spread, so neighbours stay clean). */
   --ui-contact: 0 12px 24px -20px color-mix(in oklab, var(--void) 92%, transparent);
-  /* Entrance travel; zero under reduced motion (opacity-only cross-fade). */
-  --ui-rise-y: 6px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) {
-    --ui-rise-y: 0px;
-  }
-}
-
-:root:is([data-motion="reduced"], [data-motion="off"]) {
-  --ui-rise-y: 0px;
-}
-
-/* One entrance for everything that arrives: a short rise and fade on transform and opacity only. */
-@keyframes ui-rise {
-  from {
-    opacity: 0;
-    transform: translateY(var(--ui-rise-y));
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
+/* The one entrance the kit uses itself: a plain fade, for content that replaces a placeholder. The
+   richer reveals (Power-on, Settle, Current) belong to the Flux motion primitives. */
 @keyframes ui-fade-in {
   from {
     opacity: 0;
@@ -115,63 +92,4 @@
   to {
     opacity: 1;
   }
-}
-
-/* Interactive light for a raised surface (Card, Stat tile): a soft light that follows the pointer
-   (`--ui-mx` / `--ui-my`, written by `useSpotlight`) and a hotter rim, both fading in on hover.
-   The surface needs `position: relative`, `isolation: isolate` and a 1 px transparent border. */
-.ui-spot::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background: radial-gradient(
-    220px circle at var(--ui-mx, 50%) var(--ui-my, 0%),
-    color-mix(in oklab, var(--accent-300) 15%, transparent),
-    transparent 70%
-  );
-  opacity: 0;
-  transition: opacity var(--dur-base) var(--ease-out);
-  pointer-events: none;
-}
-
-.ui-spot::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  z-index: -1;
-  border: 1px solid transparent;
-  border-radius: inherit;
-  background: var(--ui-rim-hot) border-box;
-  -webkit-mask:
-    linear-gradient(#000 0 0) padding-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) padding-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity var(--dur-base) var(--ease-out);
-  pointer-events: none;
-}
-
-@media (hover: hover) {
-  .ui-spot:hover::before,
-  .ui-spot:hover::after {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) .ui-spot::before,
-  :root:not([data-motion="full"]) .ui-spot::after {
-    transition: none;
-  }
-}
-
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-spot::before,
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-spot::after {
-  transition: none;
 }

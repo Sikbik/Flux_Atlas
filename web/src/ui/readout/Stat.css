@@ -1,10 +1,11 @@
 /* Stat tile (design 8.11): label, a large tabular figure, delta, caption, sparkline slot. Same material
    as a Card (a fill one step up, a rim lit at the top left); the figure scales with the tile's own
    width through container units, so one tile reads well from a 140 px grid cell to a 400 px hero.
-   The hero takes the hexagon chamfer, light numerals and a lit corner. */
+   The hero takes the hexagon chamfer and light numerals. Quiet by default: no entrance flourish and no
+   corner light unless the tile wears a tier. */
 
 .ui-stat {
-  --ui-stat-glow: 8%;
+  --ui-stat-glow: 0%;
   position: relative;
   container-type: inline-size;
   display: grid;
@@ -30,25 +31,34 @@
   font: inherit;
   text-align: left;
   isolation: isolate;
-  animation: ui-rise var(--dur-enter) var(--ease-out-expo) both;
-  animation-delay: calc(var(--ui-i, 0) * 45ms);
 }
 
+/* A tile that is a button: a veil of light on hover, deeper while pressed. Nothing moves. */
 button.ui-stat {
   cursor: pointer;
-  transition:
-    transform var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
+}
+
+button.ui-stat::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--hot) 4%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  pointer-events: none;
 }
 
 @media (hover: hover) {
-  button.ui-stat:hover {
-    transform: translateY(-1px);
+  button.ui-stat:hover::after {
+    opacity: 1;
   }
 }
 
-button.ui-stat:active {
-  transform: scale(0.995);
+button.ui-stat[data-pressed]::after {
+  opacity: 1;
+  background: color-mix(in oklab, var(--hot) 7%, transparent);
 }
 
 button.ui-stat:focus-visible {
@@ -70,17 +80,18 @@ button.ui-stat:focus-visible {
 }
 
 .ui-stat__value {
+  --ui-number-weight: var(--fw-medium);
   display: flex;
   align-items: baseline;
   gap: 4px;
   min-height: 1.12em;
   color: var(--text-1);
-  --ui-number-weight: var(--fw-medium);
   font: var(--fw-medium) clamp(20px, 15cqi, 28px) / 1.12 var(--font-display);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  animation: ui-fade-in var(--dur-slow) var(--ease-out) both;
+  /* The figure fades in when it replaces the loading bars: no pop-in. */
+  animation: ui-fade-in var(--dur-base) var(--ease-out) both;
 }
 
 .ui-stat__unit {
@@ -132,7 +143,6 @@ button.ui-stat:focus-visible {
   right: 12px;
   display: block;
   line-height: 0;
-  animation: ui-fade-in var(--dur-slower) var(--ease-out) both;
 }
 
 .ui-stat__skel-value {
@@ -141,26 +151,19 @@ button.ui-stat:focus-visible {
 }
 
 /* Hero: the view's one big figure. Chamfered at the hexagon angle; the lit rim runs along three
-   sides and a short diagonal closes the cut. Numerals go light and large, with a soft bloom. */
+   sides and a short diagonal closes the cut. Numerals go light and large. */
 .ui-stat[data-hero] {
-  --ui-stat-rim: color-mix(in oklab, var(--accent-300) 60%, transparent);
   gap: 8px;
   padding: 16px 20px 16px;
   border: 0;
   border-radius: 0;
   box-shadow: none;
   clip-path: var(--clip-chamfer-sm);
-  background:
-    radial-gradient(
-      90% 120% at 100% 0%,
-      color-mix(in oklab, var(--accent, var(--accent-500)) 26%, transparent),
-      transparent 64%
-    ),
-    linear-gradient(
-      160deg,
-      color-mix(in oklab, var(--accent, var(--accent-500)) 13%, var(--ink-1)),
-      var(--ink-1) 72%
-    );
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, var(--accent, var(--accent-500)) 11%, var(--ink-1)),
+    var(--ink-1) 70%
+  );
 }
 
 .ui-stat[data-hero]::before {
@@ -172,10 +175,10 @@ button.ui-stat:focus-visible {
   clip-path: inherit;
   background: linear-gradient(
     150deg,
-    color-mix(in oklab, var(--hot) 55%, transparent),
+    color-mix(in oklab, var(--hot) 50%, transparent),
     color-mix(in oklab, var(--accent-300) 14%, transparent) 38%,
     transparent 66%,
-    color-mix(in oklab, var(--accent-400) 28%, transparent)
+    color-mix(in oklab, var(--accent-400) 26%, transparent)
   );
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
@@ -202,6 +205,7 @@ button.ui-stat:focus-visible {
     color-mix(in oklab, var(--hot) 45%, transparent) calc(50% - 0.7px) calc(50% + 0.7px),
     transparent calc(50% + 0.7px)
   );
+  opacity: 1;
   pointer-events: none;
 }
 
@@ -213,7 +217,6 @@ button.ui-stat:focus-visible {
   --ui-number-weight: var(--fw-light);
   font: var(--fw-light) clamp(32px, 17cqi, 58px) / 1 var(--font-display);
   letter-spacing: var(--tracking-display);
-  text-shadow: 0 0 36px color-mix(in oklab, var(--accent-500) 55%, transparent);
 }
 
 .ui-stat[data-hero] .ui-stat__unit {
@@ -236,31 +239,17 @@ button.ui-stat:focus-visible {
   box-shadow: none;
 }
 
-/* Tier-tinted tiles (node views) light their corner in the tier colour. */
+/* Tier-tinted tiles (node views) light their corner in the tier colour: the tint says which tier. */
 .ui-stat[data-tier] {
-  --ui-stat-glow: 13%;
+  --ui-stat-glow: 12%;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) .ui-stat,
-  :root:not([data-motion="full"]) .ui-stat__value,
-  :root:not([data-motion="full"]) .ui-stat__spark {
+  :root:not([data-motion="full"]) .ui-stat__value {
     animation-duration: var(--dur-fast);
-    animation-delay: 0ms;
-  }
-
-  :root:not([data-motion="full"]) button.ui-stat:hover {
-    transform: none;
   }
 }
 
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-stat,
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-stat__value,
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-stat__spark {
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-stat__value {
   animation-duration: var(--dur-fast);
-  animation-delay: 0ms;
-}
-
-:root:is([data-motion="reduced"], [data-motion="off"]) button.ui-stat:hover {
-  transform: none;
 }

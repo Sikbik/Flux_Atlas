@@ -31,7 +31,7 @@
   text-decoration-color: color-mix(in oklab, var(--accent-300) 45%, transparent);
 }
 
-.ui-entity:active {
+.ui-entity:is(:active, [data-pressed]) {
   color: var(--accent-200);
 }
 

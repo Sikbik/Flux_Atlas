@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { Server } from 'lucide-react';
+import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { click, mount } from '../internal/testing';
 import { Card } from './Card';
@@ -163,16 +164,46 @@ describe('Card, Stack and Row', () => {
     m.unmount();
   });
 
-  it('only interactive cards carry the pointer light class', () => {
+  it('only interactive cards mark a press, as data-pressed, and keep the caller handlers', () => {
+    const onPointerDown = vi.fn();
     const m = mount(
       <>
         <Card>a</Card>
-        <Card interactive>b</Card>
+        <Card interactive onPointerDown={onPointerDown}>
+          b
+        </Card>
       </>,
     );
-    const cards = Array.from(m.container.querySelectorAll('.ui-card'));
-    expect(cards[0]?.classList.contains('ui-spot')).toBe(false);
-    expect(cards[1]?.classList.contains('ui-spot')).toBe(true);
+    const cards = Array.from(m.container.querySelectorAll<HTMLElement>('.ui-card'));
+    const [plain, live] = cards;
+    if (!plain || !live) throw new Error('missing cards');
+    for (const c of [plain, live]) {
+      act(() => {
+        const ev = new Event('pointerdown', { bubbles: true });
+        Object.defineProperty(ev, 'button', { value: 0 });
+        c.dispatchEvent(ev);
+      });
+    }
+    expect(plain.hasAttribute('data-pressed')).toBe(false);
+    expect(live.hasAttribute('data-pressed')).toBe(true);
+    expect(onPointerDown).toHaveBeenCalledTimes(1);
+    act(() => {
+      live.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    });
+    expect(live.hasAttribute('data-pressed')).toBe(false);
+    m.unmount();
+  });
+
+  it('forwards ref, className and style to the card element', () => {
+    const ref = { current: null as HTMLDivElement | null };
+    const m = mount(
+      <Card ref={ref} className="mine" style={{ width: 123 }}>
+        x
+      </Card>,
+    );
+    expect(ref.current).toBe(m.container.querySelector('.ui-card'));
+    expect(ref.current?.classList.contains('mine')).toBe(true);
+    expect(ref.current?.style.width).toBe('123px');
     m.unmount();
   });
 

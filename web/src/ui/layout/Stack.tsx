@@ -1,11 +1,11 @@
-import type { ComponentPropsWithoutRef, CSSProperties, ElementType } from 'react';
+import type { ComponentPropsWithRef, CSSProperties, ElementType } from 'react';
 import { cx } from '../internal/cx';
 import './Stack.css';
 
 /** A step of the 4 px space scale: 1 is 2 px, 2 is 4, 3 is 6, 4 is 8, 5 is 12, 6 is 16, 7 is 20, 8 is 24, 9 is 32. */
 export type SpaceStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
-interface LayoutProps extends ComponentPropsWithoutRef<'div'> {
+interface LayoutProps extends ComponentPropsWithRef<'div'> {
   /** Gap between children as a `--space-N` step (default 5, 12 px). */
   gap?: SpaceStep;
   /** Element to render (default `div`; `ul`, `section`, ...). */

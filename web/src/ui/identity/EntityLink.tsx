@@ -1,6 +1,6 @@
 import { useLinkProps, useRouter } from '@tanstack/react-router';
 import type { LucideIcon } from 'lucide-react';
-import type { ComponentPropsWithRef, ForwardedRef, ReactNode } from 'react';
+import type { ComponentPropsWithRef, CSSProperties, ForwardedRef, ReactNode, Ref } from 'react';
 import { CopyButton } from '../controls/CopyButton';
 import { cx } from '../internal/cx';
 import { HoverCard } from '../overlay/HoverCard';
@@ -27,6 +27,10 @@ export interface EntityLinkProps {
   /** Accessible-name override; default is "Open <noun> <text>". */
   label?: string;
   className?: string;
+  /** Inline style for the link (or, with `copy`, for the wrapper that holds the link and its copy button). */
+  style?: CSSProperties;
+  /** Ref to the `<a>` element. */
+  ref?: Ref<HTMLAnchorElement>;
 }
 
 type AnchorRest = Omit<ComponentPropsWithRef<'a'>, 'href' | 'children'>;
@@ -89,6 +93,8 @@ export function EntityLink({
   keepSearch = true,
   label,
   className,
+  style,
+  ref,
 }: EntityLinkProps) {
   const router = useRouter({ warn: false });
   if (value === null || value === undefined || value === '') return <Unknown />;
@@ -99,6 +105,8 @@ export function EntityLink({
   const accessibleName =
     label ?? (typeof text === 'string' ? `Open ${ENTITY_NOUNS[kind]} ${text}` : `Open ${ENTITY_NOUNS[kind]}`);
   const anchorProps = {
+    ref,
+    style: copy ? undefined : style,
     className: cx('ui-entity', !copy && className),
     'data-kind': kind,
     'data-mono': mono || undefined,
@@ -129,7 +137,11 @@ export function EntityLink({
   );
   if (!copy) return withPreview;
   return (
-    <span className={cx('ui-entity-wrap', className)} data-copy={copy === 'always' ? 'always' : 'hover'}>
+    <span
+      className={cx('ui-entity-wrap', className)}
+      style={style}
+      data-copy={copy === 'always' ? 'always' : 'hover'}
+    >
       {withPreview}
       <CopyButton value={key} what={ENTITY_NOUNS[kind]} className="ui-entity__copy" />
     </span>

@@ -60,8 +60,7 @@ button.ui-chip {
   transition:
     background var(--dur-fast) var(--ease-out),
     border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-instant) var(--ease-out);
+    color var(--dur-fast) var(--ease-out);
 }
 
 button.ui-chip[data-mono] {
@@ -74,8 +73,8 @@ button.ui-chip:hover {
   color: var(--text-1);
 }
 
-button.ui-chip:active {
-  transform: scale(0.98);
+button.ui-chip:is(:active, [data-pressed]) {
+  background: var(--ink-4);
 }
 
 button.ui-chip[data-selected] {

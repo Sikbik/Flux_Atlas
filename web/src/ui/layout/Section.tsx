@@ -1,10 +1,10 @@
 import { ChevronDown, type LucideIcon } from 'lucide-react';
-import { type ComponentPropsWithoutRef, type ReactNode, useId } from 'react';
+import { type ComponentPropsWithRef, type ReactNode, useId } from 'react';
 import { cx } from '../internal/cx';
 import { useControllableState } from '../internal/useControllable';
 import './Section.css';
 
-export interface SectionProps extends Omit<ComponentPropsWithoutRef<'section'>, 'title'> {
+export interface SectionProps extends Omit<ComponentPropsWithRef<'section'>, 'title'> {
   /** The section heading (Montserrat 600 15 px). Omit for an untitled block that only gets the divider. */
   title?: ReactNode;
   /** A glyph before the title (a lucide icon component). */
@@ -69,6 +69,7 @@ export function Section({
       className={cx('ui-section', className)}
       data-collapsible={collapsible || undefined}
       data-open={expanded}
+      data-state={expanded ? 'open' : 'closed'}
       data-flush={flush || undefined}
       {...rest}
     >

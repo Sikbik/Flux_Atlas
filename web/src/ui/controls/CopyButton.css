@@ -37,8 +37,8 @@
   color: var(--text-1);
 }
 
-.ui-copy:active {
-  transform: scale(0.94);
+.ui-copy:is(:active, [data-pressed]) {
+  background: var(--ink-4);
 }
 
 .ui-copy:focus-visible {

@@ -4,7 +4,7 @@
    element and nothing is clipped. */
 
 .ui-card {
-  --ui-card-glow: 9%;
+  --ui-card-glow: 0%;
   position: relative;
   min-width: 0;
   border: 1px solid transparent;
@@ -23,7 +23,7 @@
 }
 
 .ui-card[data-glow] {
-  --ui-card-glow: 17%;
+  --ui-card-glow: 12%;
 }
 
 /* Flat: no fill and no light, a quiet hairline only. */
@@ -45,43 +45,35 @@
   padding: var(--space-7) var(--space-8);
 }
 
-/* Interactive: the card rises a pixel (the rim and pointer light come from `ui-spot`). */
+/* Interactive: a veil of light fades in on hover and deepens while pressed. Nothing moves. */
 .ui-card[data-interactive] {
   cursor: pointer;
-  transition:
-    transform var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.ui-card[data-interactive]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--hot) 4%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  pointer-events: none;
 }
 
 @media (hover: hover) {
-  .ui-card[data-interactive]:hover {
-    transform: translateY(-1px);
+  .ui-card[data-interactive]:hover::after {
+    opacity: 1;
   }
 }
 
-.ui-card[data-interactive]:active {
-  transform: scale(0.995);
+.ui-card[data-interactive][data-pressed]::after {
+  opacity: 1;
+  background: color-mix(in oklab, var(--hot) 7%, transparent);
 }
 
 .ui-card[data-interactive]:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) .ui-card[data-interactive] {
-    transition: none;
-  }
-
-  :root:not([data-motion="full"]) .ui-card[data-interactive]:hover {
-    transform: none;
-  }
-}
-
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-card[data-interactive] {
-  transition: none;
-}
-
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-card[data-interactive]:hover {
-  transform: none;
 }

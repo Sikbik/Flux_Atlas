@@ -1,8 +1,8 @@
-import type { ComponentPropsWithoutRef, CSSProperties } from 'react';
+import type { ComponentPropsWithRef, CSSProperties } from 'react';
 import { cx } from '../internal/cx';
 import './Skeleton.css';
 
-export interface SkeletonProps extends Omit<ComponentPropsWithoutRef<'span'>, 'children'> {
+export interface SkeletonProps extends Omit<ComponentPropsWithRef<'span'>, 'children'> {
   /** Width: px number or any CSS length (default 100%). */
   w?: number | string;
   /** Height: px number or any CSS length (default 12px). */

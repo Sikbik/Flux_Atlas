@@ -1,10 +1,12 @@
+import type { ComponentPropsWithRef } from 'react';
 import { formatFlux, formatSats, parseFlux } from '../../lib/format';
 import { cx } from '../internal/cx';
 import { splitTrailingZeros } from './hashParts';
 import { Unknown } from './Unknown';
 import './identity.css';
 
-export interface AmountProps {
+/** Props of an Amount: the options below, plus `className`, `style`, `ref` and the other `<span>` attributes. */
+export interface AmountProps extends Omit<ComponentPropsWithRef<'span'>, 'children'> {
   /** A FLUX amount: the wire decimal string (`"9.00000000"`), a number, or base units as a bigint. */
   value: string | number | bigint | null | undefined;
   /** Fraction digits: 2 in summaries (default). */
@@ -17,7 +19,6 @@ export interface AmountProps {
   sign?: 'auto' | 'always';
   /** `signed` tints gains and losses (blue and coral, with the sign as the second cue); `hot` is white. */
   tone?: 'default' | 'signed' | 'hot';
-  className?: string;
 }
 
 /** Formats an amount to text without the unit; null when the value is unknown. Exported for tests and tables. */
@@ -41,6 +42,7 @@ export function Amount({
   sign,
   tone = 'default',
   className,
+  ...rest
 }: AmountProps) {
   const text = formatAmountText(value, { decimals: exact ? 8 : decimals, sign });
   if (text === null) return <Unknown />;
@@ -54,6 +56,7 @@ export function Amount({
       className={cx('ui-amount ui-mono', className)}
       data-tone={tone === 'hot' ? 'hot' : undefined}
       data-dir={dir}
+      {...rest}
     >
       <span className="ui-amount__figure">
         {main}

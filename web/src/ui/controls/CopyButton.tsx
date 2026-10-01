@@ -1,7 +1,8 @@
 import { Check, Copy, TriangleAlert } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type Ref, useEffect, useRef, useState } from 'react';
 import { copyText } from '../internal/clipboard';
 import { cx } from '../internal/cx';
+import { pressHandlers } from '../internal/press';
 import { Tooltip } from '../overlay/Tooltip';
 import './CopyButton.css';
 
@@ -15,12 +16,15 @@ export interface CopyButtonProps {
   /** Called after a successful copy. */
   onCopied?: () => void;
   className?: string;
+  style?: CSSProperties;
+  /** Ref to the button element. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 type CopyState = 'idle' | 'copied' | 'failed';
 
 /** An icon button that copies `value` and confirms with a check mark and a polite announcement. */
-export function CopyButton({ value, what, size = 'sm', onCopied, className }: CopyButtonProps) {
+export function CopyButton({ value, what, size = 'sm', onCopied, className, style, ref }: CopyButtonProps) {
   const [state, setState] = useState<CopyState>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -41,11 +45,14 @@ export function CopyButton({ value, what, size = 'sm', onCopied, className }: Co
       <Tooltip content={tip} placement="top">
         <button
           type="button"
+          ref={ref}
           className={cx('ui-copy', className)}
+          style={style}
           data-size={size}
           data-state={state}
           aria-label={label}
           onClick={onClick}
+          {...pressHandlers<HTMLButtonElement>()}
         >
           <Icon size={size === 'sm' ? 13 : 15} strokeWidth={1.75} aria-hidden="true" />
         </button>

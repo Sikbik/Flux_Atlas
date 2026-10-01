@@ -1,9 +1,9 @@
-import type { ComponentPropsWithoutRef } from 'react';
+import type { ComponentPropsWithRef } from 'react';
 import { cx } from '../internal/cx';
 import type { StatusTone } from '../internal/status';
 import './Chip.css';
 
-export interface BadgeProps extends ComponentPropsWithoutRef<'span'> {
+export interface BadgeProps extends ComponentPropsWithRef<'span'> {
   /** A status role (soft fill, 40% border) or `accent` / `neutral`. */
   tone?: StatusTone | 'accent' | 'neutral';
 }

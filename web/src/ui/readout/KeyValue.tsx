@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { formatInt } from '../../lib/format';
 import { CopyButton } from '../controls/CopyButton';
 import { isUnknownValue, Unknown } from '../identity/Unknown';
@@ -25,7 +25,8 @@ export interface KeyValueItem {
   note?: ReactNode;
 }
 
-export interface KeyValueProps {
+/** Props of a KeyValue: the rows and options below, plus `className`, `style`, `ref` and the other `<dl>` attributes. */
+export interface KeyValueProps extends Omit<ComponentPropsWithRef<'dl'>, 'children'> {
   /** The rows, as data. Alternatively compose `KeyValueRow` children. */
   items?: readonly KeyValueItem[];
   /** `end` right-aligns values against the label column (inspectors, the default); `start` left-aligns them (wide explorer panes). */
@@ -34,9 +35,6 @@ export interface KeyValueProps {
   ruled?: boolean;
   /** Fixed label column width in px (default: as wide as the widest label, at least 96 px). */
   labelWidth?: number;
-  /** Accessible name of the list. */
-  'aria-label'?: string;
-  className?: string;
   children?: ReactNode;
 }
 
@@ -104,16 +102,17 @@ export function KeyValue({
   ruled,
   labelWidth,
   className,
+  style,
   children,
-  'aria-label': ariaLabel,
+  ...rest
 }: KeyValueProps) {
   return (
     <dl
       className={cx('ui-kv', className)}
       data-align={align}
       data-ruled={ruled || undefined}
-      aria-label={ariaLabel}
-      style={labelWidth ? ({ '--ui-kv-label': `${labelWidth}px` } as React.CSSProperties) : undefined}
+      style={labelWidth ? ({ ...style, '--ui-kv-label': `${labelWidth}px` } as React.CSSProperties) : style}
+      {...rest}
     >
       {items?.map((item, i) => (
         <KeyValueRow key={item.id ?? (typeof item.label === 'string' ? item.label : i)} {...item} />

@@ -1,10 +1,8 @@
-/* Tooltips and hover cards (design 8.17): glass, a hairline rim lit from the top (the sun side), a
-   deep pop shadow. They float above everything (--z-tooltip) and never move the layout. */
+/* Tooltips and hover cards (design 8.17): glass, a hairline rim, a deep pop shadow. They float above
+   everything (--z-tooltip), never move the layout, and appear with a plain fast fade. */
 
 .ui-tooltip,
 .ui-hovercard {
-  --ui-pop-dx: 0px;
-  --ui-pop-dy: 4px;
   z-index: var(--z-tooltip);
   border: 1px solid var(--glass-border);
   background: var(--glass-bg-strong);
@@ -12,24 +10,7 @@
   backdrop-filter: var(--glass-filter);
   box-shadow: var(--shadow-pop), var(--shadow-inset-hi);
   color: var(--text-1);
-  animation: ui-pop-in var(--dur-fast) var(--ease-out) both;
-}
-
-.ui-tooltip[data-side="bottom"],
-.ui-hovercard[data-side="bottom"] {
-  --ui-pop-dy: -4px;
-}
-
-.ui-tooltip[data-side="left"],
-.ui-hovercard[data-side="left"] {
-  --ui-pop-dx: 4px;
-  --ui-pop-dy: 0px;
-}
-
-.ui-tooltip[data-side="right"],
-.ui-hovercard[data-side="right"] {
-  --ui-pop-dx: -4px;
-  --ui-pop-dy: 0px;
+  animation: ui-overlay-fade var(--dur-fast) var(--ease-out) both;
 }
 
 .ui-tooltip {
@@ -48,27 +29,8 @@
   font: var(--fw-regular) var(--fs-xs) / var(--lh-normal) var(--font-sans);
 }
 
-@keyframes ui-pop-in {
-  from {
-    opacity: 0;
-    transform: translate(var(--ui-pop-dx), var(--ui-pop-dy));
-  }
-}
-
-@keyframes ui-fade-in {
+@keyframes ui-overlay-fade {
   from {
     opacity: 0;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) .ui-tooltip,
-  :root:not([data-motion="full"]) .ui-hovercard {
-    animation-name: ui-fade-in;
-  }
-}
-
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-tooltip,
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-hovercard {
-  animation-name: ui-fade-in;
 }
