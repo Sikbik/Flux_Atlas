@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MetricsSeriesDto } from '../../../api/generated/MetricsSeriesDto';
 import {
+  bridgeGaps,
   differences,
   frameFromDto,
   knownCount,
@@ -92,6 +93,34 @@ describe('trimEmpty and withLiveTail', () => {
     expect(live.v.node_count!.at(-1)).toBe(6540);
     expect(live.v.host_count!.at(-1)).toBeNull();
     expect(withLiveTail(t, 3 * HOUR, { node_count: 1 })).toBe(t);
+  });
+});
+
+describe('bridgeGaps', () => {
+  const frame = (vals: (number | null)[]) => ({
+    t: vals.map((_, i) => i * HOUR),
+    v: { node_count: vals },
+  });
+
+  it('removes one or two missing buckets between known ones', () => {
+    const g = bridgeGaps(frame([10, null, 12, null, null, 15]), ['node_count']);
+    expect(g.t).toEqual([0, 2 * HOUR, 5 * HOUR]);
+    expect(g.v.node_count).toEqual([10, 12, 15]);
+  });
+
+  it('keeps a longer outage as a gap', () => {
+    const f = frame([10, null, null, null, 14]);
+    expect(bridgeGaps(f, ['node_count'])).toBe(f);
+  });
+
+  it('never touches the edges (the open bucket and a late start are not gaps)', () => {
+    const f = frame([null, 10, 11, null]);
+    expect(bridgeGaps(f, ['node_count'])).toBe(f);
+  });
+
+  it('treats a bucket as known when any listed series has a value', () => {
+    const f = { t: [0, HOUR, 2 * HOUR], v: { a: [1, null, 3], b: [1, 2, 3] } };
+    expect(bridgeGaps(f, ['a', 'b'])).toBe(f);
   });
 });
 

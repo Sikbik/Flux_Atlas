@@ -593,6 +593,29 @@
   box-shadow: 0 0 8px var(--hot-glow);
 }
 
+/* Signed change bars: up in the blue pole, down in the warm pole, a hairline at zero. */
+.vz-delta {
+  fill: var(--div-pos);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.vz-delta[data-sign="down"] {
+  fill: var(--div-neg);
+}
+
+.vz-delta[data-hot] {
+  filter: brightness(1.25);
+}
+
+.vz-svg:has(.vz-delta[data-hot]) .vz-delta:not([data-hot]) {
+  opacity: 0.5;
+}
+
+.vz-zero {
+  stroke: var(--viz-axis);
+  stroke-width: 1;
+}
+
 .vz-hist-bar {
   fill: var(--viz-1);
   transition: opacity var(--dur-base) var(--ease-out);

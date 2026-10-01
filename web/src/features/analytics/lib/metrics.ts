@@ -63,6 +63,34 @@ export function trimEmpty(frame: MetricFrame, names: readonly string[]): MetricF
 }
 
 /**
+ * Removes short runs of missing buckets between two known ones (a skipped sample or two), so a chart
+ * draws one continuous line across them instead of breaking. Longer runs stay: an hour of silence is
+ * a missed sample, six hours is an outage and should show as one. `maxMissing` is in buckets.
+ */
+export function bridgeGaps(frame: MetricFrame, names: readonly string[], maxMissing = 2): MetricFrame {
+  const n = frame.t.length;
+  const known = (i: number) => names.some((k) => frame.v[k]?.[i] != null);
+  const drop = new Array<boolean>(n).fill(false);
+  let i = 0;
+  while (i < n) {
+    if (known(i)) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < n && !known(j)) j++;
+    // A run of missing buckets i..j-1, bridged only when known on both sides and short.
+    if (i > 0 && j < n && j - i <= maxMissing) for (let k = i; k < j; k++) drop[k] = true;
+    i = j;
+  }
+  if (!drop.includes(true)) return frame;
+  const keep = (_: unknown, idx: number) => !drop[idx];
+  const v: Record<string, (number | null)[]> = {};
+  for (const [k, col] of Object.entries(frame.v)) v[k] = col.filter(keep);
+  return { t: frame.t.filter(keep), v };
+}
+
+/**
  * Appends a live point (right now) to named series, so a chart's right edge follows the stream between
  * server samples. A point at or before the last bucket replaces nothing: it is only added when newer.
  */
