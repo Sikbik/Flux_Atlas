@@ -64,8 +64,10 @@ void main() {
   vec3 E = normalize(vec3(B.z, 0.0, -B.x) + vec3(1e-6, 0.0, 0.0));
   vec3 N = cross(B, E);
   // Up close the lens (lens.ts) is on: a block of ground fills the screen, so the small lift that keeps a
-  // ring off the surface from afar would float it a whole marker away from its node. It rides at the node's own height.
+  // ring off the surface from afar (the 0.0006 added to pr below) would float it a whole marker away from
+  // its node. The lift is taken back out of pr, so the ring rides at the node's own height.
   float lz = lensZoom(length(P - cameraPosition), uProjScale / max(uPxScale, 1e-4));
+  pr -= 0.0006 * lz;
 
   float e;
   float env = 1.0;
@@ -91,7 +93,7 @@ void main() {
     env = 1.0 - smoothstep(0.35, 1.0, u);
   }
   // Up close the co-host ring is a quiet outline: the selected marker stays the brightest thing on screen.
-  if (kind > 9.5) env *= mix(1.0, 0.72, lz);
+  if (kind > 9.5 && kind < 10.5) env *= mix(1.0, 0.72, lz);
   vec4 cc = projectionMatrix * viewMatrix * vec4(P, 1.0);
   float w = max(cc.w, 1e-3);
   float R;
@@ -108,7 +110,7 @@ void main() {
     }
     Rpx = ((kind > 8.5 && kind < 9.5) ? pxr : mix(aKind.y, pxr, e)) * uPxScale * breath;
     // The co-host ring clears a marker that has grown up close.
-    if (kind > 9.5) Rpx *= mix(1.0, 2.2, lz);
+    if (kind > 9.5 && kind < 10.5) Rpx *= mix(1.0, 2.2, lz);
     Rpx = max(Rpx, 1.5 * uPxScale);
     R = Rpx * w / uProjScale;
   } else {
@@ -119,7 +121,7 @@ void main() {
     if (Rpx < minPx) { R *= minPx / max(Rpx, 1e-3); Rpx = minPx; }
   }
   float ext = (kind > 8.5 && kind < 9.5) ? 1.0 : 1.32;
-  vec3 Q = normalize(B + (E * position.x + N * position.y) * R * ext) * (pr + 0.0006 * (1.0 - lz));
+  vec3 Q = normalize(B + (E * position.x + N * position.y) * R * ext) * (pr + 0.0006);
   gl_Position = projectionMatrix * viewMatrix * vec4(Q, 1.0);
   vUv = position.xy * ext;
   float thick = clamp(3.0 * uPxScale / Rpx, 0.03, 0.45);
