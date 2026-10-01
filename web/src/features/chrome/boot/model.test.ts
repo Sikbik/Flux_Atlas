@@ -12,9 +12,11 @@ import {
   driftShare,
   LIFT_MS,
   MIN_MS,
+  SETTLE_MS,
   STAGES,
   STALL_MS,
   type StageId,
+  settleFlight,
   stageOf,
 } from './model';
 
@@ -257,5 +259,23 @@ describe('the planet scale while the boot runs', () => {
     expect(bootScale(0.9, 290, 0)).toBe(0.9);
     expect(bootScale(0.9, 0, 300)).toBe(0.9);
     expect(bootScale(0.9, 290, Number.NaN)).toBe(0.9);
+  });
+});
+
+describe('the camera at the end of the boot', () => {
+  it('goes home over the settle with no zoom-out when the reveal turned it', () => {
+    expect(settleFlight(true, false)).toEqual({ arc: 0, duration: SETTLE_MS / 1000 });
+  });
+
+  it('stays where it is when the boot never turned it (a reduced boot)', () => {
+    expect(settleFlight(false, false)).toBeNull();
+    expect(settleFlight(false, true)).toBeNull();
+  });
+
+  it('lands at once on a skip, still with no zoom-out', () => {
+    const f = settleFlight(true, true);
+    expect(f?.arc).toBe(0);
+    expect(f?.duration).toBeGreaterThan(0);
+    expect(f?.duration).toBeLessThan(0.05);
   });
 });

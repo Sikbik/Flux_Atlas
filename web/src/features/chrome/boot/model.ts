@@ -133,6 +133,30 @@ export function bootScale(share: number, shellR: number, nowR: number): number {
   return Math.min(1, share * (shellR / nowR));
 }
 
+/** The settle after the boot ends: the globe's scale eases from the drift's end to 1 while the chrome assembles. */
+export const SETTLE_MS = 1500;
+/** A skip lands at once; a flight needs a duration, and this is one frame of it. */
+const INSTANT_FLIGHT_S = 0.001;
+
+/** The options of the camera's last move of the boot (`GlobeTarget.flyTo`). */
+export interface SettleFlight {
+  /** No zoom-out on the way: the planet only turns, at the zoom it ends at. */
+  arc: 0;
+  /** Seconds. */
+  duration: number;
+}
+
+/**
+ * The camera's last move of the boot: home, over the settle, with no zoom-out arc. The reveal opens from the newest
+ * producer (the camera turns to face it first), and the shell's compact orbit is fitted to the home pose, so the boot
+ * hands the camera back there: left facing the producer, the lap would pass under the rail. Null when the camera
+ * never left home (a reduced boot does not turn it). A skip lands at once.
+ */
+export function settleFlight(turned: boolean, instant: boolean): SettleFlight | null {
+  if (!turned) return null;
+  return { arc: 0, duration: instant ? INSTANT_FLIGHT_S : SETTLE_MS / 1000 };
+}
+
 export class BootTimeline {
   private progress = 0;
   private arrivals: [number, number, number, number] = [0, 0, 0, 0];
