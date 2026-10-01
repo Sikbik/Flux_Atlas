@@ -1,7 +1,8 @@
 //! T3 TopologySweep: one `/flux/topology` call about every 12 s on a rotating reachable node
 //! (through the SSRF guard). Each call returns the peer lists about 60 reporters sent to that
 //! node and streams out as one mesh delta, so the whole overlay refreshes about every 30 min
-//! without a batch.
+//! without a batch. A host whose last call the mesh outlier rule discarded is skipped for
+//! [`crate::OUTLIER_HOST_SKIP_MS`] (every port of it), so its calls go to other hosts.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -47,6 +48,7 @@ pub async fn run(ctx: JobCtx) {
                 if recent(&covered, COVERED_MS)
                     || recent(&tried, RETRY_MS)
                     || recent(&failed, FAILED_MS)
+                    || ctx.handle.topology_host_skipped(&ep.ip, now)
                 {
                     continue;
                 }

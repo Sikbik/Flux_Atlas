@@ -1005,7 +1005,37 @@ impl Reducer {
             (Some(x), Some(y)) => !x.is_empty() && !y.is_empty() && x != y,
             _ => false,
         };
-        let diff = self.st.mesh.merge(batch, &cross);
+        let reporters = batch.len() as u32;
+        let (verdict, diff) = self.st.mesh.merge_screened(batch, &cross);
+        let outlier = matches!(verdict, crate::state::mesh::Verdict::Reject { .. });
+        if reporters > 0 {
+            self.handle.note_topology_host(queried.ip, outlier, now);
+        }
+        if let crate::state::mesh::Verdict::Reject { added, rate, limit } = verdict {
+            tracing::info!(
+                host = %queried,
+                reporters,
+                added,
+                rate = format_args!("{rate:.1}"),
+                limit = format_args!("{limit:.1}"),
+                "topology call discarded as an outlier"
+            );
+            self.stats().with(|s| {
+                s.mesh_calls_rejected += 1;
+                s.mesh_links_rejected += added as u64;
+            });
+            tick.event(
+                Event::TopologySwept {
+                    reporter: queried,
+                    reporters,
+                    edges_added: 0,
+                    edges_removed: 0,
+                },
+                None,
+            );
+            self.fresh().ok("topology_sweep");
+            return;
+        }
         for r in &diff.reporters {
             if let Some((o, i)) = self.st.mesh.peer_counts(*r)
                 && let Some(e) = self.st.nodes.get_mut(*r)

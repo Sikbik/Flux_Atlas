@@ -1086,6 +1086,88 @@ fn mesh_diff() {
 }
 
 #[test]
+fn mesh_outlier_calls_are_discarded() {
+    use atlas_engine::state::mesh::{
+        CallScreen, OUTLIER_MIN_ADDED, OUTLIER_WARMUP, OUTLIER_WINDOW, Verdict,
+    };
+    // Judgement is relative to the median of recent calls, per reporter.
+    let mut s = CallScreen::default();
+    // Cold: nothing is judged before the window is warm, however large.
+    for _ in 0..OUTLIER_WARMUP {
+        assert_eq!(s.judge(3_000, 60), Verdict::Accept);
+    }
+    let mut s = CallScreen::default();
+    for i in 0..OUTLIER_WARMUP {
+        assert_eq!(s.judge(240 + i, 60), Verdict::Accept);
+    }
+    // About 4 links per reporter: 3,000 from 60 reporters is far over 4x; rejected.
+    assert!(matches!(
+        s.judge(3_000, 60),
+        Verdict::Reject { added: 3_000, .. }
+    ));
+    // A call that adds a lot from many reporters is not an outlier per reporter.
+    assert_eq!(s.judge(1_200, 300), Verdict::Accept);
+    // Below the absolute floor nothing is rejected, even at a high rate.
+    assert_eq!(s.judge(OUTLIER_MIN_ADDED - 1, 10), Verdict::Accept);
+    assert_eq!((s.rejected_calls, s.rejected_links), (1, 3_000));
+    // A lasting change of regime (every call large) moves the median within half a window.
+    let mut accepted_after = None;
+    for i in 0..OUTLIER_WINDOW {
+        if s.judge(3_000, 60) == Verdict::Accept {
+            accepted_after = Some(i);
+            break;
+        }
+    }
+    assert!(accepted_after.is_some_and(|i| i <= OUTLIER_WINDOW / 2 + 1));
+
+    // In the mesh: an outlier call changes nothing, a normal one merges.
+    let set = |v: std::ops::Range<u32>| v.map(NodeId).collect::<BTreeSet<_>>();
+    let cross = |_: NodeId, _: NodeId| false;
+    let mut m = Mesh::default();
+    for i in 0..OUTLIER_WARMUP as u32 {
+        // Each warm-up call: 10 reporters with 2 new links each.
+        let batch: Vec<(NodeId, Report)> = (0..10)
+            .map(|r| {
+                let id = NodeId(10_000 + i * 10 + r);
+                let base = 20_000 + (i * 10 + r) * 2;
+                (
+                    id,
+                    Report {
+                        outbound: set(base..base + 2),
+                        inbound: BTreeSet::new(),
+                        at_ms: u64::from(i),
+                    },
+                )
+            })
+            .collect();
+        let (v, d) = m.merge_screened(batch, &cross);
+        assert_eq!(v, Verdict::Accept);
+        assert_eq!(d.added.len(), 20);
+    }
+    let before = m.edge_count();
+    let huge: Vec<(NodeId, Report)> = (0..10)
+        .map(|r| {
+            let base = 50_000 + r * 100;
+            (
+                NodeId(10_000 + r),
+                Report {
+                    outbound: set(base..base + 100),
+                    inbound: BTreeSet::new(),
+                    at_ms: 99,
+                },
+            )
+        })
+        .collect();
+    assert_eq!(m.preview_added(&huge), 1_000);
+    let (v, d) = m.merge_screened(huge, &cross);
+    assert!(matches!(v, Verdict::Reject { added: 1_000, .. }), "{v:?}");
+    assert!(d.is_empty() && d.reporters.is_empty());
+    assert_eq!(m.edge_count(), before);
+    // The rejected copy did not replace the reporter's list: its links are all still there.
+    assert_eq!(m.reported_at(NodeId(10_000)), Some(0));
+}
+
+#[test]
 fn full_dump_queue_has_zero_inversions() {
     // Optional: the untrimmed 6,724-node dump from the research phase.
     let Some(raw) = common::raw_dump("daemon_viewdeterministicfluxnodelist.json") else {

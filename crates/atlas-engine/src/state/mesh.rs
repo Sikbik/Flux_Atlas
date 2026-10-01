@@ -12,8 +12,18 @@
 //! after any reconnect, so a single omission was mostly noise (measured on 3106: about a third
 //! of the removed links came back within 10 minutes). It is bidirectional when both latest
 //! reports list each other. Reports expire after [`REPORT_TTL_MS`], about two full sweep cycles.
+//!
+//! **Outlier calls.** Upstream reports carry no timestamp, and some queried hosts hold copies of
+//! the reporters' lists with far more links than any other host's copies (measured: 2,400 to
+//! 3,900 new links from one call where a typical call adds about 250, removed again by the next
+//! covering reports). Before a call is merged, [`CallScreen`] counts the links it would add per
+//! reporter and compares that rate with the median rate of the recent calls: a call above
+//! [`OUTLIER_FACTOR`] times the median that would also add at least [`OUTLIER_MIN_ADDED`] links
+//! is discarded whole (no report replaced, no link added or removed). Every call, discarded or
+//! not, enters the rolling window, so a real network-wide change moves the median within half a
+//! window instead of being rejected forever.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use atlas_core::NodeId;
 use atlas_core::codec::mesh_bin::flags;
@@ -23,6 +33,80 @@ pub const REPORT_TTL_MS: u64 = 3_600_000;
 
 /// Consecutive covering reports without the edge that remove it.
 pub const MISSES_TO_REMOVE: u8 = 2;
+
+/// A call adding links at more than this multiple of the recent median rate is an outlier.
+pub const OUTLIER_FACTOR: f64 = 4.0;
+/// A call adding fewer links than this is never an outlier, whatever the median.
+pub const OUTLIER_MIN_ADDED: usize = 500;
+/// Calls in the rolling window.
+pub const OUTLIER_WINDOW: usize = 64;
+/// Calls needed in the window before any call is judged.
+pub const OUTLIER_WARMUP: usize = 16;
+
+/// What [`CallScreen::judge`] decided about one call.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Verdict {
+    Accept,
+    /// Discard the call: it would add `added` links at `rate` per reporter, over `limit`.
+    Reject {
+        added: usize,
+        rate: f64,
+        limit: f64,
+    },
+}
+
+/// Rolling per-call statistics for the outlier rule (see the module docs).
+#[derive(Debug, Default, Clone)]
+pub struct CallScreen {
+    /// Links added per reporter of the recent calls, oldest first.
+    rates: VecDeque<f64>,
+    /// Calls discarded and the links they would have added (lifetime counters).
+    pub rejected_calls: u64,
+    pub rejected_links: u64,
+}
+
+impl CallScreen {
+    /// Median of the window, once warm.
+    pub fn median(&self) -> Option<f64> {
+        if self.rates.len() < OUTLIER_WARMUP {
+            return None;
+        }
+        let mut v: Vec<f64> = self.rates.iter().copied().collect();
+        v.sort_by(f64::total_cmp);
+        let m = v.len() / 2;
+        Some(if v.len().is_multiple_of(2) {
+            f64::midpoint(v[m - 1], v[m])
+        } else {
+            v[m]
+        })
+    }
+
+    /// Judges a call that would add `added` links from `reporters` reports, and records it.
+    pub fn judge(&mut self, added: usize, reporters: usize) -> Verdict {
+        let rate = added as f64 / reporters.max(1) as f64;
+        let verdict = match self.median() {
+            Some(m) if added >= OUTLIER_MIN_ADDED && rate > OUTLIER_FACTOR * m.max(0.5) => {
+                Verdict::Reject {
+                    added,
+                    rate,
+                    limit: OUTLIER_FACTOR * m.max(0.5),
+                }
+            }
+            _ => Verdict::Accept,
+        };
+        if reporters > 0 {
+            self.rates.push_back(rate);
+            while self.rates.len() > OUTLIER_WINDOW {
+                self.rates.pop_front();
+            }
+        }
+        if let Verdict::Reject { added, .. } = verdict {
+            self.rejected_calls += 1;
+            self.rejected_links += added as u64;
+        }
+        verdict
+    }
+}
 
 /// One reporter's latest peer list.
 #[derive(Debug, Clone, Default)]
@@ -72,6 +156,8 @@ pub struct Mesh {
     misses: HashMap<(NodeId, NodeId), u8>,
     /// Edges by endpoint.
     adj: HashMap<NodeId, BTreeSet<NodeId>>,
+    /// Per-call outlier statistics.
+    pub screen: CallScreen,
     pub dirty: bool,
 }
 
@@ -167,6 +253,35 @@ impl Mesh {
             f |= flags::CROSS_CONTINENT;
         }
         f
+    }
+
+    /// Distinct links a batch of reports would add (read-only).
+    pub fn preview_added(&self, reports: &[(NodeId, Report)]) -> usize {
+        let mut new: HashSet<(NodeId, NodeId)> = HashSet::new();
+        for (r, rep) in reports {
+            for p in rep.peers().filter(|p| p != r) {
+                let k = ordered(*r, p);
+                if !self.edges.contains_key(&k) {
+                    new.insert(k);
+                }
+            }
+        }
+        new.len()
+    }
+
+    /// Screens one call's reports with the outlier rule, then merges them unless the call is an
+    /// outlier. Returns the verdict and the diff (empty when rejected).
+    pub fn merge_screened(
+        &mut self,
+        reports: Vec<(NodeId, Report)>,
+        cross: &dyn Fn(NodeId, NodeId) -> bool,
+    ) -> (Verdict, MeshDiff) {
+        let added = self.preview_added(&reports);
+        let verdict = self.screen.judge(added, reports.len());
+        match verdict {
+            Verdict::Accept => (verdict, self.merge(reports, cross)),
+            Verdict::Reject { .. } => (verdict, MeshDiff::default()),
+        }
     }
 
     /// Merges a batch of reports. `cross` tells whether two nodes are on different continents.
