@@ -633,7 +633,8 @@ pub struct TxLite {
     /// Sum of outputs.
     pub value: Amount,
     pub kind: TxKind,
-    pub size: u32,
+    /// Serialized size in bytes; `null` when unknown (never 0).
+    pub size: Option<u32>,
 }
 
 /// `GET /blocks/{height|hash}`.
@@ -778,8 +779,11 @@ pub struct AddressNodesDto {
 /// `GET /mempool`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct MempoolDto {
+    /// Newest first.
     pub txs: Vec<TxLite>,
+    /// Number of transactions.
     pub size: u32,
+    /// Sum of the known `TxLite.size` values.
     pub bytes: u64,
     pub updated_ms: u64,
 }

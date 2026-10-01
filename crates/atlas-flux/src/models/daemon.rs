@@ -91,6 +91,17 @@ pub struct DaemonVin {
     pub value_sat: Option<i64>,
     #[serde(deserialize_with = "lenient::opt_string")]
     pub address: Option<String>,
+    /// `scriptSig` of a regular input (absent on coinbase inputs).
+    #[serde(rename = "scriptSig", deserialize_with = "lenient::opt_lenient")]
+    pub script_sig: Option<ScriptSig>,
+}
+
+/// `scriptSig` of an input.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ScriptSig {
+    #[serde(deserialize_with = "lenient::string")]
+    pub hex: String,
 }
 
 /// A decoded transaction from `getblock` verbosity 2 or `getrawtransaction/<txid>/1`.
@@ -142,6 +153,22 @@ pub struct DaemonTx {
     pub fluxnode_upgraded_tx_version: Option<u32>,
     #[serde(deserialize_with = "lenient::opt_bool")]
     pub using_delegates: Option<bool>,
+    /// Fluxnode signature (base64).
+    #[serde(deserialize_with = "lenient::opt_string")]
+    pub sig: Option<String>,
+    /// Fluxnode benchmark signature (base64, confirms).
+    #[serde(deserialize_with = "lenient::opt_string")]
+    pub benchmark_sig: Option<String>,
+    /// Sapling spend / output and JoinSplit counts (v4); the descriptions themselves are not kept.
+    #[serde(rename = "vShieldedSpend", deserialize_with = "lenient::opt_array_len")]
+    pub shielded_spends: Option<usize>,
+    #[serde(
+        rename = "vShieldedOutput",
+        deserialize_with = "lenient::opt_array_len"
+    )]
+    pub shielded_outputs: Option<usize>,
+    #[serde(rename = "vJoinSplit", deserialize_with = "lenient::opt_array_len")]
+    pub joinsplits: Option<usize>,
     // getrawtransaction extras
     #[serde(deserialize_with = "lenient::opt_string")]
     pub blockhash: Option<String>,

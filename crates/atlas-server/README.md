@@ -53,7 +53,7 @@ Every `serve` flag has an environment variable. Flags win over the environment.
 | `reconcile_min_spacing` | 2 min | Minimum spacing of triggered reconciles (count mismatch, reorg). |
 | `node_count` (`count`) | 60 s | `getfluxnodecount`. |
 | `start_dos_lists` (`lists`) | 60 s | `getstartlist` / `getdoslist` cross-checks. |
-| `mempool_reconcile` (`mempool`) | 60 s | Mempool set reconcile. |
+| `mempool_reconcile` (`mempool`) | 20 s | Mempool set reconcile. |
 | `price` | 60 s | Market info. |
 | `supply` | 10 min | `gettxoutsetinfo`. |
 | `stats_round` (`round_check`) | 5 min | Stats `roundTime` check (a new round is fetched when it moves). |

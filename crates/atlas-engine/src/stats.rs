@@ -39,6 +39,43 @@ pub struct CallCount {
     pub err: u64,
 }
 
+/// Bucket bounds (seconds) of upstream call durations.
+pub const UPSTREAM_BUCKETS: &[f64] = &[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0];
+/// Bucket bounds (seconds) of store commits and body publishes.
+pub const LOCAL_BUCKETS: &[f64] = &[0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 1.0, 5.0];
+
+/// A fixed-bucket histogram (Prometheus style; `counts[i]` holds the observations in bucket
+/// `i` only, the exposition accumulates them). Bounds are set by the first observation.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Histogram {
+    pub bounds: &'static [f64],
+    pub counts: Vec<u64>,
+    pub sum: f64,
+    pub count: u64,
+}
+
+impl Histogram {
+    pub fn observe(&mut self, bounds: &'static [f64], secs: f64) {
+        if self.counts.is_empty() {
+            self.bounds = bounds;
+            self.counts = vec![0; bounds.len()];
+        }
+        if let Some(i) = self.bounds.iter().position(|b| secs <= *b) {
+            self.counts[i] += 1;
+        }
+        self.sum += secs;
+        self.count += 1;
+    }
+}
+
+/// Upstream work of one ingest job (task): calls, failures and time spent waiting.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct JobTiming {
+    pub calls: u64,
+    pub errors: u64,
+    pub seconds: f64,
+}
+
 /// Snapshot of the engine counters.
 #[derive(Debug, Clone, Default)]
 pub struct EngineStats {
@@ -86,6 +123,14 @@ pub struct EngineStats {
     pub publish_last_ms: u64,
     /// Errors that jobs logged (upstream failures are expected and counted separately).
     pub job_errors: BTreeMap<&'static str, u64>,
+    /// Upstream call durations by host label.
+    pub upstream_seconds: BTreeMap<&'static str, Histogram>,
+    /// Upstream work by ingest job (task label, see `jobs::spawn_all`).
+    pub job_upstream: BTreeMap<&'static str, JobTiming>,
+    /// Store commit durations (encode, write, commit).
+    pub commit_seconds: Histogram,
+    /// Body rebuild (publish) durations.
+    pub publish_seconds: Histogram,
     /// Unexpected internal errors (should stay 0).
     pub internal_errors: u64,
 }
@@ -109,6 +154,31 @@ impl StatsCell {
 
     pub fn snapshot(&self) -> EngineStats {
         self.with(|s| s.clone())
+    }
+
+    /// Records an upstream call made by `job` that took `elapsed`.
+    pub fn call_timed(
+        &self,
+        job: &'static str,
+        up: Upstream,
+        what: &str,
+        ok: bool,
+        elapsed: std::time::Duration,
+    ) {
+        let secs = elapsed.as_secs_f64();
+        self.call(up, what, ok);
+        self.with(|s| {
+            s.upstream_seconds
+                .entry(up.host())
+                .or_default()
+                .observe(UPSTREAM_BUCKETS, secs);
+            let j = s.job_upstream.entry(job).or_default();
+            j.calls += 1;
+            if !ok {
+                j.errors += 1;
+            }
+            j.seconds += secs;
+        });
     }
 
     pub fn call(&self, up: Upstream, what: &str, ok: bool) {

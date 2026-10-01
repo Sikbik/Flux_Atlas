@@ -283,7 +283,8 @@ fn blank(id: NodeId, op: Outpoint, now_ms: u64) -> NodeRecord {
 pub struct MempoolEntry {
     pub kind: TxKind,
     pub value: Amount,
-    pub size: u32,
+    /// Serialized size; `None` until the transaction was fetched (the socket does not say).
+    pub size: Option<u32>,
     pub first_seen_ms: u64,
 }
 
@@ -312,6 +313,8 @@ pub struct NetworkState {
     pub recent: VecDeque<BlockSummary>,
     pub tip: Option<TipInfo>,
     pub mempool: HashMap<Txid, MempoolEntry>,
+    /// Txids of the last `getrawmempool` reconcile.
+    pub mempool_set: HashSet<Txid>,
     pub price: Option<PriceInfo>,
     pub supply: Option<SupplyInfo>,
     /// Exact payees of a coming block from `fluxnodecurrentwinner`: height -> (tier, node, address).
@@ -341,6 +344,17 @@ pub const RECENT_BLOCKS: usize = 64;
 impl NetworkState {
     pub fn tip_height(&self) -> u32 {
         self.tip.as_ref().map_or(0, |t| t.height)
+    }
+
+    /// The mempool as `(tx, first_seen_ms)`, newest first.
+    pub fn mempool_list(&self) -> Vec<(TxLite, u64)> {
+        let mut v: Vec<(TxLite, u64)> = self
+            .mempool
+            .iter()
+            .map(|(id, e)| (tx_lite(*id, e.value, e.kind, e.size), e.first_seen_ms))
+            .collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.txid.cmp(&b.0.txid)));
+        v
     }
 
     /// Recomputes `rank` on every queued record (and clears it elsewhere). Returns the nodes
@@ -438,7 +452,8 @@ pub fn node_change(r: &NodeRecord, m: u16, tip: u32, now_ms: u64) -> NodeChange 
         c.org = Some(b.org).filter(|s| !s.is_empty());
     }
     if m & mask::RANK != 0 {
-        c.rank = r.rank;
+        // `null` when the node is not queued: the explicit unranked signal.
+        c.rank = Some(r.rank);
     }
     if m & mask::PAID != 0 {
         c.last_paid_height = r.last_paid_height;
@@ -677,11 +692,12 @@ pub fn rank_corrections(
             cr.remove(*id);
         }
         for (id, m) in &b.changed {
-            if m & mask::STATUS != 0
-                && nodes
-                    .rec(*id)
-                    .is_some_and(|r| r.status != NodeStatus::Confirmed)
-            {
+            let exits = nodes.rec(*id).is_some_and(|r| {
+                // Rule 4 (status leaves confirmed), or an explicit `rank: null` (unranked).
+                (m & mask::STATUS != 0 && r.status != NodeStatus::Confirmed)
+                    || (m & mask::RANK != 0 && r.rank.is_none())
+            });
+            if exits {
                 cr.remove(*id);
             }
         }
@@ -731,7 +747,7 @@ pub fn nodes_body(
 }
 
 /// `TxLite` for a mempool/transfer row.
-pub fn tx_lite(txid: Txid, value: Amount, kind: TxKind, size: u32) -> TxLite {
+pub fn tx_lite(txid: Txid, value: Amount, kind: TxKind, size: Option<u32>) -> TxLite {
     TxLite {
         txid,
         value,

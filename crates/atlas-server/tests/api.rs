@@ -710,6 +710,32 @@ async fn timeline_and_state_at() {
     assert!((bin.lat[located] - g.lat).abs() < 1e-4);
     assert!((bin.lon[located] - g.lon).abs() < 1e-4);
     assert_eq!(bin.tier[located], listed[located].tier as u8);
+    // Ranks are not recorded by keyframes: the column is absent, not zero-filled. The rest of
+    // the format-2 keyframe columns are there, with the recorded values.
+    use atlas_core::codec::nodes_bin::kind;
+    assert!(!bin.has(kind::RANK));
+    for k in [
+        kind::VERSION,
+        kind::CORES,
+        kind::LAST_PAID,
+        kind::APP_COUNT,
+        kind::FLAGS,
+    ] {
+        assert!(bin.has(k), "column {k}");
+    }
+    let with_hw = listed.iter().position(|n| n.hw.is_some()).unwrap();
+    assert_eq!(
+        bin.cores[with_hw],
+        listed[with_hw].hw.as_ref().unwrap().cores
+    );
+    let with_version = listed
+        .iter()
+        .position(|n| n.versions.flux_os.is_some())
+        .unwrap();
+    assert_eq!(
+        bin.versions[bin.version_idx[with_version] as usize],
+        listed[with_version].versions.flux_os.as_deref().unwrap()
+    );
 
     // Same t: served from cache with the same ETag; If-None-Match gives 304.
     let again = get(&e.app, &format!("/api/v1/timeline/state?t={at}")).await;
@@ -774,9 +800,31 @@ async fn ops_endpoints() {
         "atlas_ws_messages_sent_total",
         "atlas_ws_messages_dropped_total",
         "atlas_proxy_cache_requests_total{cache=\"tx\",result=\"hit\"}",
+        // Engine families.
+        "atlas_ingest_job_runs_total{job=\"stats_round\"}",
+        "atlas_ingest_job_errors_total{job=\"node_registry\"} 0",
+        "atlas_ingest_job_stale{job=\"block_decoder\"}",
+        "# TYPE atlas_upstream_request_duration_seconds histogram",
+        "# TYPE atlas_ingest_job_upstream_seconds_total counter",
+        "atlas_store_commit_duration_seconds_bucket{le=\"+Inf\"}",
+        "atlas_publish_duration_seconds_count",
+        "atlas_replay_ring_messages{ring=\"hub\"}",
+        "atlas_replay_ring_capacity{ring=\"engine\"}",
+        "atlas_engine_internal_errors_total 0",
     ] {
         assert!(text.contains(needle), "missing {needle}\n{text}");
     }
+    // Low cardinality: every family stays small (bounded label sets).
+    let mut per_family = std::collections::BTreeMap::<&str, usize>::new();
+    for line in text.lines().filter(|l| !l.starts_with('#')) {
+        let name = line.split(['{', ' ']).next().unwrap();
+        *per_family.entry(name).or_default() += 1;
+    }
+    for (name, n) in &per_family {
+        assert!(*n <= 200, "{name} has {n} series");
+    }
+    // Unknown is absent, not 0: no job has succeeded in a stale-free fixture without ingest.
+    assert!(!text.contains("atlas_ingest_job_last_success_age_seconds{job=\"stats_round\"}"));
 
     // A stale engine is alive but not ready.
     let dir = tempfile::tempdir().unwrap();

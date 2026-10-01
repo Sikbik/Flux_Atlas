@@ -12,7 +12,6 @@ use axum::response::Response;
 use serde::Deserialize;
 
 use crate::body::{CachedBody, cache};
-use crate::config::parse_duration;
 use crate::error::{ApiError, ApiResult};
 use crate::extract::Q;
 use crate::state::AppState;
@@ -95,17 +94,18 @@ pub async fn decentralization(State(s): State<AppState>, headers: HeaderMap) -> 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Agg {
-    /// Gauge: last sample in the bucket.
+    /// Gauge: last known sample in the bucket.
     Last,
-    /// Counter: sum over the bucket.
+    /// Counter: sum of the known samples in the bucket.
     Sum,
-    /// Average: mean over samples that carry a value.
+    /// Average: mean over the samples that carry a value.
     Mean,
 }
 
-type Getter = fn(&MetricsRow) -> f64;
+/// Projects one series out of a row; `None` = not recorded (served as `null`, never 0).
+type Getter = fn(&MetricsRow) -> Option<f64>;
 
-/// Series names accepted by `/metrics`, with their aggregation.
+/// Series names accepted by `/metrics`, with their aggregation (0 gauge, 1 counter, 2 mean).
 pub const SERIES: &[(&str, u8)] = &[
     ("tip_height", 0),
     ("node_count", 0),
@@ -114,14 +114,22 @@ pub const SERIES: &[(&str, u8)] = &[
     ("stratus", 0),
     ("host_count", 0),
     ("country_count", 0),
+    ("provider_count", 0),
     ("arcane_count", 0),
     ("unreachable_count", 0),
+    ("at_risk_count", 0),
+    ("started_count", 0),
+    ("dos_count", 0),
     ("app_count", 0),
     ("instance_count", 0),
     ("pending_app_count", 0),
     ("total_cores", 0),
     ("total_ram_gb", 0),
     ("total_storage_gb", 0),
+    ("total_ssd_gb", 0),
+    ("locked_cores", 0),
+    ("locked_ram_gb", 0),
+    ("locked_storage_gb", 0),
     ("supply_flux_f64", 0),
     ("price_usd", 0),
     ("mempool_size", 0),
@@ -134,33 +142,45 @@ pub const SERIES: &[(&str, u8)] = &[
     ("avg_block_time_ms", 2),
 ];
 
+fn u(v: Option<u32>) -> Option<f64> {
+    v.map(f64::from)
+}
+
 fn getter(name: &str) -> Option<(Agg, Getter)> {
     let g: Getter = match name {
-        "tip_height" => |r| f64::from(r.tip_height),
-        "node_count" => |r| f64::from(r.node_count),
-        "cumulus" => |r| f64::from(r.tier_counts[0]),
-        "nimbus" => |r| f64::from(r.tier_counts[1]),
-        "stratus" => |r| f64::from(r.tier_counts[2]),
-        "host_count" => |r| f64::from(r.host_count),
-        "country_count" => |r| f64::from(r.country_count),
-        "arcane_count" => |r| f64::from(r.arcane_count),
-        "unreachable_count" => |r| f64::from(r.unreachable_count),
-        "app_count" => |r| f64::from(r.app_count),
-        "instance_count" => |r| f64::from(r.instance_count),
-        "pending_app_count" => |r| f64::from(r.pending_app_count),
-        "total_cores" => |r| f64::from(r.total_cores),
-        "total_ram_gb" => |r| r.total_ram_gb as f64,
-        "total_storage_gb" => |r| r.total_storage_gb as f64,
-        "supply_flux_f64" => |r| r.supply.to_flux_f64(),
+        "tip_height" => |r| u(r.tip_height),
+        "node_count" => |r| u(r.node_count),
+        "cumulus" => |r| r.tier_counts.map(|c| f64::from(c[0])),
+        "nimbus" => |r| r.tier_counts.map(|c| f64::from(c[1])),
+        "stratus" => |r| r.tier_counts.map(|c| f64::from(c[2])),
+        "host_count" => |r| u(r.host_count),
+        "country_count" => |r| u(r.country_count),
+        "provider_count" => |r| u(r.provider_count),
+        "arcane_count" => |r| u(r.arcane_count),
+        "unreachable_count" => |r| u(r.unreachable_count),
+        "at_risk_count" => |r| u(r.at_risk_count),
+        "started_count" => |r| u(r.started_count),
+        "dos_count" => |r| u(r.dos_count),
+        "app_count" => |r| u(r.app_count),
+        "instance_count" => |r| u(r.instance_count),
+        "pending_app_count" => |r| u(r.pending_app_count),
+        "total_cores" => |r| u(r.total_cores),
+        "total_ram_gb" => |r| r.total_ram_gb.map(|v| v as f64),
+        "total_storage_gb" => |r| r.total_storage_gb.map(|v| v as f64),
+        "total_ssd_gb" => |r| r.total_ssd_gb.map(|v| v as f64),
+        "locked_cores" => |r| r.locked_cores,
+        "locked_ram_gb" => |r| r.locked_ram_gb,
+        "locked_storage_gb" => |r| r.locked_storage_gb,
+        "supply_flux_f64" => |r| r.supply.map(atlas_core::Amount::to_flux_f64),
         "price_usd" => |r| r.price_usd,
-        "mempool_size" => |r| f64::from(r.mempool_size),
-        "mesh_edge_count" => |r| f64::from(r.mesh_edge_count),
-        "block_count" => |r| f64::from(r.block_count),
-        "tx_count" => |r| f64::from(r.tx_count),
-        "node_tx_count" => |r| f64::from(r.node_tx_count),
-        "fees_flux_f64" => |r| r.fees.to_flux_f64(),
-        "payouts_flux_f64" => |r| r.payouts.to_flux_f64(),
-        "avg_block_time_ms" => |r| f64::from(r.avg_block_time_ms),
+        "mempool_size" => |r| u(r.mempool_size),
+        "mesh_edge_count" => |r| u(r.mesh_edge_count),
+        "block_count" => |r| u(r.block_count),
+        "tx_count" => |r| u(r.tx_count),
+        "node_tx_count" => |r| u(r.node_tx_count),
+        "fees_flux_f64" => |r| r.fees.map(atlas_core::Amount::to_flux_f64),
+        "payouts_flux_f64" => |r| r.payouts.map(atlas_core::Amount::to_flux_f64),
+        "avg_block_time_ms" => |r| u(r.avg_block_time_ms),
         _ => return None,
     };
     let agg = match SERIES.iter().find(|(n, _)| *n == name).map(|(_, a)| *a) {
@@ -183,20 +203,46 @@ const MAX_POINTS: u64 = 5000;
 const MAX_SPAN_MS: u64 = 400 * 24 * HOUR_MS;
 const MINUTE_RETENTION_MS: u64 = 30 * 24 * HOUR_MS;
 
+/// Named steps accepted by `/metrics` (ARCHITECTURE section 6). `1d` and `24h` are the same.
+pub const STEPS: &[(&str, u64)] = &[
+    ("1m", MINUTE_MS),
+    ("5m", 5 * MINUTE_MS),
+    ("15m", 15 * MINUTE_MS),
+    ("30m", 30 * MINUTE_MS),
+    ("1h", HOUR_MS),
+    ("3h", 3 * HOUR_MS),
+    ("6h", 6 * HOUR_MS),
+    ("12h", 12 * HOUR_MS),
+    ("1d", 24 * HOUR_MS),
+    ("24h", 24 * HOUR_MS),
+    ("7d", 7 * 24 * HOUR_MS),
+    ("1w", 7 * 24 * HOUR_MS),
+];
+
+/// Parses `step`: one of [`STEPS`] (case-insensitive), or a whole number of milliseconds that
+/// is a positive multiple of one minute.
 fn parse_step(s: &str) -> Result<u64, ApiError> {
     let s = s.trim();
-    let ms = if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
-        s.parse::<u64>()
-            .map_err(|_| ApiError::bad_request("invalid step"))?
-    } else {
-        parse_duration(s)
-            .map_err(ApiError::bad_request)?
-            .as_millis() as u64
+    let unsupported = || {
+        let names: Vec<&str> = STEPS.iter().map(|(n, _)| *n).collect();
+        ApiError::bad_request(format!(
+            "unsupported step {s:?}: use one of {}, or a whole number of milliseconds that is a \
+             multiple of 60000",
+            names.join(", ")
+        ))
     };
-    if ms < MINUTE_MS {
-        return Err(ApiError::bad_request("step must be at least 60000 ms"));
+    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
+        let ms = s.parse::<u64>().map_err(|_| unsupported())?;
+        if ms == 0 || ms % MINUTE_MS != 0 {
+            return Err(unsupported());
+        }
+        return Ok(ms);
     }
-    Ok(ms - ms % MINUTE_MS)
+    STEPS
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(s))
+        .map(|(_, ms)| *ms)
+        .ok_or_else(unsupported)
 }
 
 /// A validated metrics request.
@@ -284,10 +330,8 @@ pub fn bucket(req: &SeriesRequest, rows: &[MetricsRow]) -> MetricsSeriesDto {
             if i >= n {
                 continue;
             }
-            let x = get(r);
-            if agg == Agg::Mean && x == 0.0 {
-                continue;
-            }
+            // Unknown values are skipped: a bucket with no known sample stays null.
+            let Some(x) = get(r) else { continue };
             counts[i] += 1;
             vals[i] = Some(match (agg, vals[i]) {
                 (Agg::Last, _) | (_, None) => x,
@@ -391,24 +435,84 @@ mod tests {
             to: 4 * MINUTE_MS,
             step: 2 * MINUTE_MS,
         };
-        let row = |m: u64, nodes: u32, blocks: u32, avg: u32| MetricsRow {
+        let row = |m: u64, nodes: u32, blocks: u32, avg: Option<u32>| MetricsRow {
             ts_ms: m * MINUTE_MS,
-            node_count: nodes,
-            block_count: blocks,
+            node_count: Some(nodes),
+            block_count: Some(blocks),
             avg_block_time_ms: avg,
             ..MetricsRow::default()
         };
         let d = bucket(
             &req,
             &[
-                row(0, 10, 2, 30_000),
-                row(1, 11, 2, 20_000),
-                row(3, 12, 1, 0),
+                row(0, 10, 2, Some(30_000)),
+                row(1, 11, 2, Some(20_000)),
+                row(3, 12, 1, None),
             ],
         );
         assert_eq!(d.t, vec![0, 2 * MINUTE_MS]);
         assert_eq!(d.series["node_count"], vec![Some(11.0), Some(12.0)]);
         assert_eq!(d.series["block_count"], vec![Some(4.0), Some(1.0)]);
         assert_eq!(d.series["avg_block_time_ms"], vec![Some(25_000.0), None]);
+    }
+
+    #[test]
+    fn unknown_is_null_not_zero() {
+        let req = SeriesRequest {
+            names: vec!["node_count".into(), "price_usd".into(), "tip_height".into()],
+            from: 0,
+            to: 2 * MINUTE_MS,
+            step: MINUTE_MS,
+        };
+        // A backfilled row knows only the node count; a live row knows everything.
+        let backfilled = MetricsRow {
+            ts_ms: 0,
+            node_count: Some(6_700),
+            ..MetricsRow::default()
+        };
+        let live = MetricsRow {
+            ts_ms: MINUTE_MS,
+            node_count: Some(6_701),
+            price_usd: Some(0.0),
+            tip_height: Some(3_000_000),
+            ..MetricsRow::default()
+        };
+        let d = bucket(&req, &[backfilled, live]);
+        assert_eq!(d.series["node_count"], vec![Some(6_700.0), Some(6_701.0)]);
+        assert_eq!(d.series["tip_height"], vec![None, Some(3_000_000.0)]);
+        assert_eq!(
+            d.series["price_usd"],
+            vec![None, Some(0.0)],
+            "a known 0 stays 0"
+        );
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains("\"tip_height\":[null,3000000.0]"), "{json}");
+    }
+
+    #[test]
+    fn steps() {
+        let now = 1_000 * HOUR_MS;
+        let step = |s: &str| {
+            SeriesRequest::parse(
+                &q(
+                    "node_count",
+                    Some(now - 30 * 24 * HOUR_MS),
+                    Some(now),
+                    Some(s),
+                ),
+                now,
+            )
+            .map(|r| r.step)
+        };
+        assert_eq!(step("1d").unwrap(), 24 * HOUR_MS);
+        assert_eq!(step("24h").unwrap(), 24 * HOUR_MS);
+        assert_eq!(step("1D").unwrap(), 24 * HOUR_MS);
+        assert_eq!(step("6h").unwrap(), 6 * HOUR_MS);
+        assert_eq!(step("1w").unwrap(), 7 * 24 * HOUR_MS);
+        assert_eq!(step("3600000").unwrap(), HOUR_MS);
+        for bad in ["2w", "90s", "1.5h", "0", "61000", "", "1y", "-1h"] {
+            let e = step(bad).unwrap_err();
+            assert_eq!(e.status, axum::http::StatusCode::BAD_REQUEST, "{bad}");
+        }
     }
 }

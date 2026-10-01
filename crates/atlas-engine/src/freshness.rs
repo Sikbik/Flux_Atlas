@@ -39,6 +39,22 @@ struct Entry {
     last_error: Option<String>,
     last_error_ms: Option<u64>,
     next_run_ms: Option<u64>,
+    ok_total: u64,
+    err_total: u64,
+}
+
+/// Run counters and freshness of one job, for the metrics exposition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JobCounters {
+    pub job: &'static str,
+    /// Successful runs (updates the job delivered).
+    pub ok_total: u64,
+    /// Failed attempts.
+    pub err_total: u64,
+    /// Age of the last success, seconds; `None` before the first one.
+    pub age_s: Option<f64>,
+    /// Same rule as [`JobFreshness::stale`].
+    pub stale: bool,
 }
 
 /// Shared freshness registry.
@@ -68,7 +84,11 @@ impl Freshness {
 
     pub fn ok(&self, job: &'static str) {
         let now = now_ms();
-        self.with(|m| m.entry(job).or_default().last_ok_ms = Some(now));
+        self.with(|m| {
+            let e = m.entry(job).or_default();
+            e.last_ok_ms = Some(now);
+            e.ok_total += 1;
+        });
     }
 
     pub fn err(&self, job: &'static str, error: impl std::fmt::Display) {
@@ -79,11 +99,37 @@ impl Freshness {
             let e = m.entry(job).or_default();
             e.last_error = Some(msg);
             e.last_error_ms = Some(now);
+            e.err_total += 1;
         });
+    }
+
+    /// True once `job` succeeded at least once since startup.
+    pub fn has_succeeded(&self, job: &str) -> bool {
+        self.with(|m| m.get(job).is_some_and(|e| e.last_ok_ms.is_some()))
     }
 
     pub fn next(&self, job: &'static str, at_ms: u64) {
         self.with(|m| m.entry(job).or_default().next_run_ms = Some(at_ms));
+    }
+
+    /// Run counters and freshness of every known job, in [`JOBS`] order.
+    pub fn counters(&self) -> Vec<JobCounters> {
+        let now = now_ms();
+        self.with(|m| {
+            JOBS.iter()
+                .map(|(job, max_age)| {
+                    let e = m.get(job).cloned().unwrap_or_default();
+                    let since = e.last_ok_ms.unwrap_or(self.started_ms);
+                    JobCounters {
+                        job,
+                        ok_total: e.ok_total,
+                        err_total: e.err_total,
+                        age_s: e.last_ok_ms.map(|t| now.saturating_sub(t) as f64 / 1000.0),
+                        stale: *max_age != u64::MAX && now.saturating_sub(since) > *max_age,
+                    }
+                })
+                .collect()
+        })
     }
 
     /// Current freshness of every known job, in [`JOBS`] order.

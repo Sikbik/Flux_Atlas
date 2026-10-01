@@ -397,7 +397,8 @@ export class NodeTable {
       f |= NodeField.Flags;
     }
     if (c.rank !== undefined) {
-      this.rank[i] = c.rank + 1;
+      // `null` is the explicit unranked signal (stored 0 = not queued).
+      this.rank[i] = c.rank === null ? 0 : c.rank + 1;
       f |= NodeField.Rank;
     }
     if (c.last_paid_height !== undefined) {

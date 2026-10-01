@@ -16,9 +16,13 @@ use crate::error::Result;
 use crate::records::{MeshChangeRecord, MeshEdgeRecord, MetricsRow, Resolution};
 
 /// Format version byte of snapshot blobs. The snapshot type itself is chosen by the engine; if
-/// its shape changes incompatibly, bump this constant (older snapshots then fail to decode with
-/// a version mismatch and can be pruned).
-pub const SNAPSHOT_FORMAT_VERSION: u8 = 1;
+/// its shape changes incompatibly, bump this constant. [`crate::Store::snapshot_at_or_before`]
+/// only decodes the current version; [`crate::Store::snapshot_blob_at_or_before`] hands older
+/// versions to the engine, which reads its legacy shapes.
+///
+/// Version 2 (B4): time-machine keyframes also record city, FluxOS version, hardware, last
+/// payment, app count, ArcaneOS and first-seen time per node.
+pub const SNAPSHOT_FORMAT_VERSION: u8 = 2;
 
 /// One queued write. Applied in push order.
 #[derive(Debug)]

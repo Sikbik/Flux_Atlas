@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use atlas_core::api::{
     AppIndexEntry, AppsIndexDto, BlockLite, BootstrapDto, JobFreshness, NetworkSummary, PayoutDto,
-    ServerInfo, TierStats,
+    ServerInfo, TierStats, TxLite,
 };
 use atlas_core::chain::BlockSummary;
 use atlas_core::codec::mesh_bin::encode_mesh_bin;
@@ -42,6 +42,7 @@ pub struct PublishJob {
     pub mesh_edge_count: u32,
     pub freshness: Vec<JobFreshness>,
     pub next_payees: Vec<NextPayeeDto>,
+    pub mempool: Vec<(TxLite, u64)>,
     pub prev: Arc<Published>,
 }
 
@@ -198,6 +199,7 @@ pub fn build_with(mut job: PublishJob, mesh: Option<&MeshWorker>) -> (Published,
         freshness: job.freshness.into(),
         next_payees: job.next_payees.into(),
         mesh_edge_count: job.mesh_edge_count,
+        mempool: job.mempool.into(),
     };
     (published, t)
 }

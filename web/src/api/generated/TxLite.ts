@@ -10,4 +10,8 @@ export type TxLite = { txid: Hash32,
 /**
  * Sum of outputs.
  */
-value: Amount, kind: TxKind, size: number, };
+value: Amount, kind: TxKind, 
+/**
+ * Serialized size in bytes; `null` when unknown (never 0).
+ */
+size: number | null, };

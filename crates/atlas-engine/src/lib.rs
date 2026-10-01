@@ -34,7 +34,7 @@ use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use atlas_core::api::{
-    AppIndexEntry, BlockLite, JobFreshness, NetworkSummary, ServerInfo, TierStats,
+    AppIndexEntry, BlockLite, JobFreshness, NetworkSummary, ServerInfo, TierStats, TxLite,
 };
 use atlas_core::live::{LiveBody, LiveMsg, NextPayeeDto};
 use atlas_core::{Amount, NodeId, NodeRecord, now_ms};
@@ -168,7 +168,7 @@ impl Default for IngestConfig {
             reconcile_min_spacing: Duration::from_secs(120),
             count_interval: Duration::from_secs(60),
             lists_interval: Duration::from_secs(60),
-            mempool_reconcile_interval: Duration::from_secs(60),
+            mempool_reconcile_interval: Duration::from_secs(20),
             price_interval: Duration::from_secs(60),
             supply_interval: Duration::from_secs(600),
             round_check_interval: Duration::from_secs(300),
@@ -243,6 +243,8 @@ pub struct Published {
     /// Predicted payees of the next block.
     pub next_payees: Arc<[NextPayeeDto]>,
     pub mesh_edge_count: u32,
+    /// The engine mempool, classified, as `(tx, first_seen_ms)`, newest first.
+    pub mempool: Arc<[(TxLite, u64)]>,
 }
 
 impl Published {
@@ -270,6 +272,7 @@ impl Published {
             freshness: Arc::from(Vec::new()),
             next_payees: Arc::from(Vec::new()),
             mesh_edge_count: st.mesh.edge_count() as u32,
+            mempool: st.mempool_list().into(),
         }
     }
 }
@@ -658,6 +661,20 @@ impl EngineHandle {
     /// Current freshness of every ingest job.
     pub fn freshness(&self) -> Vec<JobFreshness> {
         self.inner.freshness.snapshot()
+    }
+
+    /// Run counters and freshness of every ingest job (metrics).
+    pub fn job_counters(&self) -> Vec<freshness::JobCounters> {
+        self.inner.freshness.counters()
+    }
+
+    /// Messages held by the engine's replay ring, and its capacity.
+    pub fn replay_ring(&self) -> (usize, usize) {
+        self.inner
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len_cap()
     }
 
     /// Stops the ingest jobs, flushes the store durably, then stops the reducer. The handle
