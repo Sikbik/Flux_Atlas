@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { AddressDto } from '../../../../api/generated/AddressDto';
 import { queries } from '../../../../api/queries';
 import { useRuntime } from '../../../../app/context';
-import { formatCompact, formatInt, formatSats, parseFlux } from '../../../../lib/format';
+import { formatInt, formatSats, parseFlux } from '../../../../lib/format';
 import { useNow } from '../../../../lib/useClock';
 import {
   Amount,
@@ -26,6 +26,7 @@ import { useCollateral } from '../../hooks/useCollateral';
 import { useVisible } from '../../hooks/useDom';
 import { useAddressNodes, useAddressTxsLive } from '../../hooks/useExplorerData';
 import { balanceSeries, holdSeries, payoutEvents } from '../../lib/addressTxs';
+import { axisFormat } from '../../lib/axis';
 import { AddressNodesList, NodesMap } from './AddressNodes';
 import { PayoutStrip } from './PayoutStrip';
 import './address.css';
@@ -53,6 +54,7 @@ function BalanceSection({ addr, balance, txCount }: { addr: string; balance: big
   const { clock } = useRuntime();
   const now = useNow(clock);
   const chart = useMemo(() => holdSeries(series, now, SAMPLES), [series, now]);
+  const axis = useMemo(() => axisFormat(chart.v), [chart.v]);
   const span = complete
     ? `all ${formatInt(q.items.length)} transactions`
     : `the last ${formatInt(q.items.length)} of ${formatInt(txCount)} transactions`;
@@ -76,7 +78,7 @@ function BalanceSection({ addr, balance, txCount }: { addr: string; balance: big
             { key: 'balance', label: 'Balance', values: chart.v, format: (v) => `${fluxText(v)} FLUX` },
           ]}
           height={220}
-          yFormat={(v) => formatCompact(v)}
+          yFormat={axis}
           loading={q.isPending}
           emptyText="This address has no confirmed history to draw yet."
         />
