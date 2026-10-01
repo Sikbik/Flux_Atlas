@@ -2554,6 +2554,7 @@ export class GlobeEngine {
       mv.planetR = this.rig.projScale / Math.sqrt(dd * dd - 1);
       mv.surf = Math.max(0.0005, this.rig.distance - 1);
       mv.inset = this.insetNow;
+      mv.insetGoal = this.insetTo;
       moon.update(dt, this.time, mv, {
         rate: this.sunRate,
         free: this.rig.isFree,

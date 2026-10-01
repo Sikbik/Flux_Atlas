@@ -186,8 +186,8 @@ const ROLLS = [11, 20, 30, 40, 50, 60, 70, 80, 90].map((d) => d * DEG);
 /**
  * The shell's chrome with nothing open, by layout: the dock at the left, the top bar, and the block rail
  * and status bar below (desktop); the header over the globe and the tab bar under it (phone, under 720
- * px wide). The compact orbit is sized to what these leave free. Windows opening later do not resize it:
- * the globe slides in the free area and the moon goes with it, as one system.
+ * px wide). The compact orbit is sized to what these leave free; the engine passes the live insets (docked
+ * windows included) when it has them, and the ring glides to the fit as the globe slides in the free area.
  */
 export const CHROME = {
   desktop: { left: 80, right: 0, top: 52, bottom: 154 },
@@ -359,14 +359,14 @@ export function fitRadius(w: number, h: number, shape: OrbitShape, inset: Inset,
 
 /**
  * The compact orbit for a viewport. The ring is rolled and sized so the whole lap fits what the shell's
- * chrome leaves free at the default zoom: the design's landscape ring wherever it fits at full size,
- * and otherwise the smallest turn (up to upright) that lets the ring keep the most radius. A phone gets
- * a tall ring, a squarer window a leaning one. Writes `out`.
+ * chrome (or `inset`, the free area's insets with docked windows) leaves free at the default zoom: the
+ * design's landscape ring wherever it fits at full size, and otherwise the smallest turn (up to upright)
+ * that lets the ring keep the most radius. A phone gets a tall ring, a squarer window a leaning one, and
+ * a docked inspector on a small screen stands it up so the moon never rides under the window. Writes `out`.
  */
-export function compactOrbit(w: number, h: number, out: OrbitShape): OrbitShape {
+export function compactOrbit(w: number, h: number, out: OrbitShape, inset: Inset = chromeFor(w)): OrbitShape {
   const p = portraitness(w / Math.max(1, h));
   const open = lerp(SHELL_OPEN.landscape, SHELL_OPEN.portrait, p);
-  const inset = chromeFor(w);
   out.size = lerp(SHELL_SIZE.landscape, SHELL_SIZE.portrait, p);
   out.radius = SHELL_RADIUS;
   let bestRoll = ROLLS[0]!;

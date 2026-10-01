@@ -421,6 +421,34 @@ describe('the shell orbit at the default zoom', () => {
     expect(tablet.radius).toBeGreaterThan(1.1);
   });
 
+  it('keeps the moon out from under docked windows: the ring is refitted to the free area they leave', () => {
+    // [width, height, insets, whether the ring made for the bare chrome would run under the windows]
+    const cases: [number, number, Inset, boolean][] = [
+      // The About window or an inspector docked at the right.
+      [1024, 768, { left: 80, right: 488, top: 52, bottom: 154 }, true],
+      [1280, 720, { left: 80, right: 488, top: 52, bottom: 154 }, false],
+      [1366, 768, { left: 80, right: 488, top: 52, bottom: 154 }, false],
+      [1600, 900, { left: 80, right: 488, top: 52, bottom: 154 }, false],
+      // An explorer floating at the left and an inspector at the right.
+      [1600, 900, { left: 520, right: 488, top: 52, bottom: 154 }, true],
+      // A phone with its sheet half open.
+      [390, 844, { left: 0, right: 0, top: 96, bottom: 420 }, true],
+    ];
+    for (const [w, h, inset, bareRuns] of cases) {
+      const s: Screen = { w, h, inset };
+      const name = `${w} x ${h} with ${JSON.stringify(inset)}`;
+      const shape = compactOrbit(w, h, { radius: 0, inclination: 0, node: 0, size: 0 }, inset);
+      expect(shape.radius).toBeGreaterThanOrEqual(1.06);
+      expect(shape.radius).toBeLessThanOrEqual(SHELL_RADIUS + 1e-9);
+      // Checked on a real camera, framed in the free area like the engine does.
+      expect(lapOnScreen(homeRig(s), s, shape, 6).overflow, name).toBe(0);
+      // The ring made for the bare chrome would run under the windows on the tighter screens.
+      const bare = compactOrbit(w, h, { radius: 0, inclination: 0, node: 0, size: 0 });
+      const o = lapOnScreen(homeRig(s), s, bare, 6).overflow;
+      if (bareRuns) expect(o, name).toBeGreaterThan(0);
+    }
+  });
+
   it('shows the moon larger in front of the planet than behind it (perspective)', () => {
     const s = landscape[0]![1];
     const r = lapOnScreen(homeRig(s), s, shellShapeFor(s.w, s.h));

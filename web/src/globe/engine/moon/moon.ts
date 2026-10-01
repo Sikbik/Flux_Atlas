@@ -42,6 +42,7 @@ import {
   blendShape,
   compactOrbit,
   copyShape,
+  type Inset,
   MIN_MOON_PX,
   ORBIT_PERIOD_S,
   type OrbitShape,
@@ -121,7 +122,10 @@ export interface MoonView {
   planetR: number;
   /** Camera distance to the planet's surface in globe radii. */
   surf: number;
-  inset: { left: number; right: number; top: number; bottom: number };
+  /** The free area's insets this frame (eased by the engine when docked windows come and go). */
+  inset: Inset;
+  /** Where the inset is heading; the shell ring is fitted to this and glides there. `inset` when omitted. */
+  insetGoal?: Inset;
 }
 
 /** What the engine tells the moon each frame besides the view. */
@@ -1084,12 +1088,12 @@ export class Moon {
    * is cached by size and asked for at most every 100 ms during a live resize; the ring glides to it
    * (about 0.2 s), so a resized window or a turned phone never makes the moon jump.
    */
-  private fitShell(w: number, h: number, dt: number, time: number): void {
-    const key = `${Math.round(w)}x${Math.round(h)}`;
+  private fitShell(w: number, h: number, ins: Inset, dt: number, time: number): void {
+    const key = `${Math.round(w)}x${Math.round(h)}:${Math.round(ins.left)},${Math.round(ins.right)},${Math.round(ins.top)},${Math.round(ins.bottom)}`;
     if (key !== this.shellKey && w >= 64 && h >= 64 && (!this.placed || time - this.shellAt > 0.1)) {
       this.shellKey = key;
       this.shellAt = time;
-      compactOrbit(w, h, this.shellGoal);
+      compactOrbit(w, h, this.shellGoal, ins);
     }
     const s = this.shell;
     const g = this.shellGoal;
@@ -1191,7 +1195,7 @@ export class Moon {
     if (Math.abs(this.mixW - target) < 0.0005) this.mixW = target;
     const e = smoother(clamp(this.mixW, 0, 1));
 
-    this.fitShell(view.cssW, view.cssH, dt, time);
+    this.fitShell(view.cssW, view.cssH, view.insetGoal ?? view.inset, dt, time);
     this.skyShape.radius = o.orbit;
     this.skyShape.inclination = o.inclination * DEG;
     this.skyShape.node = o.node * DEG;
