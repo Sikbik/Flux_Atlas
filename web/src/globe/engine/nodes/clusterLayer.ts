@@ -4,6 +4,7 @@
 // off first) while the pad widens to hold the fanned-out nodes.
 
 import * as THREE from 'three';
+import { GLSL_LENS } from '../lens';
 import { GLSL_CONSTANTS, GLSL_REVEAL, GLSL_WAVES } from '../shaders/chunks';
 import type { SharedUniforms } from '../uniforms';
 import type { NodeStore } from './store';
@@ -12,6 +13,7 @@ const VERT = /* glsl */ `
 ${GLSL_CONSTANTS}
 ${GLSL_WAVES}
 ${GLSL_REVEAL}
+${GLSL_LENS}
 uniform vec2 uViewport;
 uniform float uPxScale;
 uniform float uProjScale;
@@ -90,6 +92,9 @@ void main() {
     gl_Position = clip;
     vUv = position.xy;
     float padAmt = mix(0.8, 0.2, smoothstep(0.0, 0.8, fanK));
+    // Up close the pad is a pool of light the markers would sit in: the lens (lens.ts) draws it back
+    // to a hint, so a big hub does not wash the screen.
+    padAmt *= 1.0 - 0.88 * lensZoom(length(P - cameraPosition), uProjScale / max(uPxScale, 1e-4));
     vColor = vec4(tint * vis * padAmt * (1.0 + 0.8 * sel), 1.0);
     vP = vec4(1.0, 0.0, 0.0, seed);
     vSeg = vec4(0.0);

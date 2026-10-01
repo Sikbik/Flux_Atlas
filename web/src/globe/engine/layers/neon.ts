@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import type { AssetStore } from '../assetstore';
+import { GLSL_LENS } from '../lens';
 import { DEG } from '../math';
 import {
   GLSL_CONSTANTS,
@@ -33,7 +34,10 @@ ${GLSL_GEO}
 ${GLSL_WAVES}
 ${GLSL_WAVE_GLOW}
 ${GLSL_REVEAL}
+${GLSL_LENS}
 uniform sampler2D uMask;
+uniform float uProjScale;
+uniform float uPxScale;
 uniform vec3 uOcean;
 uniform vec3 uGrat;
 uniform vec3 uLand;
@@ -60,18 +64,20 @@ void main() {
   float fres = pow(1.0 - max(dot(n, V), 0.0), 2.4);
   float night = 1.0 - smoothstep(-0.05, 0.12, mu);
 
+  // Up close the vector backdrop (hatch, graticule) steps back so it never crosses a marker (lens.ts).
+  float L = lensZoom(length(cameraPosition - vWorld), uProjScale / max(uPxScale, 1e-4));
   vec3 col = uOcean;
   // Hatched land fill: diagonal scan lines in screen-stable spherical coordinates. Beyond the boot
   // reveal's front there is no land yet.
   float lat = asin(clamp(n.y, -1.0, 1.0)) * 57.29578;
   float lon = atan(n.x, n.z) * 57.29578;
   float hatch = gridAA(lat * 0.7 + lon * 0.7, 2.2);
-  col += uLand * land * (0.035 + 0.05 * hatch) * (0.7 + 0.6 * night) * revealMask(n);
+  col += uLand * land * (0.035 + 0.05 * hatch) * (0.7 + 0.6 * night) * revealMask(n) * (1.0 - 0.6 * L);
   // Graticule
   float poleFade = smoothstep(0.0, 0.3, cos(lat * 0.01745));
   float g = gridAA(lat, 15.0) + gridAA(lon, 15.0) * poleFade;
-  col += uGrat * g * (0.35 + 0.35 * night);
-  col += uGrat * gridAA(lat, 90.0) * 0.5;
+  col += uGrat * g * (0.35 + 0.35 * night) * (1.0 - 0.6 * L);
+  col += uGrat * gridAA(lat, 90.0) * 0.5 * (1.0 - 0.6 * L);
   // Terminator seam
   float seam = exp(-pow(mu / 0.012, 2.0)) * uTerminator;
   col += uTermCol * seam * 1.2;
@@ -89,8 +95,10 @@ ${GLSL_HASH}
 ${GLSL_WAVES}
 ${GLSL_WAVE_GLOW}
 ${GLSL_REVEAL}
+${GLSL_LENS}
 uniform vec2 uViewport;
 uniform float uPxScale;
+uniform float uProjScale;
 uniform vec3 uSunDir;
 uniform float uTerminator;
 uniform vec3 uCoast;
@@ -128,7 +136,10 @@ void main() {
   float night = 1.0 - smoothstep(-0.05, 0.15, mu);
   vec3 base = aKind < 0.5 ? uCoast : uBorder;
   float tw = 0.85 + 0.15 * sin(uTime * 1.3 + dot(mid, vec3(31.7, 17.3, 53.1)));
-  vCol = base * mix(0.55, 1.35, night) * tw + waveGlow(mid) * 1.6;
+  // Coastlines and borders keep their line but give way to the markers as the camera comes down (a
+  // cyan coastline is the very colour of a Cumulus marker), most of all at the focus point.
+  float L = lensZoom(length(cameraPosition - mid), uProjScale / max(uPxScale, 1e-4));
+  vCol = base * mix(0.55, 1.35, night) * tw * (1.0 - 0.6 * L) + waveGlow(mid) * 1.6;
 }`;
 
 const LINE_FRAG = /* glsl */ `
@@ -173,6 +184,8 @@ export class NeonBody implements GlobeBody {
         uReveal: u.uReveal,
         uRevealPx: u.uRevealPx,
         uTerminator: u.uTerminator,
+        uProjScale: u.uProjScale,
+        uPxScale: u.uPxScale,
       },
       depthWrite: true,
     });
@@ -195,6 +208,7 @@ export class NeonBody implements GlobeBody {
         uTerminator: u.uTerminator,
         uCoast: { value: new THREE.Color() },
         uBorder: { value: new THREE.Color() },
+        uProjScale: u.uProjScale,
         uShock: u.uShock,
         uShockHot: u.uShockHot,
         uWave: u.uWave,

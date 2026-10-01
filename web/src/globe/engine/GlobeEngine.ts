@@ -23,6 +23,7 @@ import { RayLayer } from './layers/rays';
 import { RibbonLayer, RibbonStyle } from './layers/ribbons';
 import { RingKind, RingLayer } from './layers/rings';
 import { Sky } from './layers/sky';
+import { lensAtDistance } from './lens';
 import { angleBetween, arcLift, clamp, DEG, damp, hash01, RAD, smoothstep } from './math';
 import {
   Moon,
@@ -298,6 +299,8 @@ export class GlobeEngine {
   private layoutFan = -1;
   private layoutSpacing = 0;
   private layoutAnimating = true;
+  /** The lens (lens.ts) at the camera's own distance to the surface: 0 at the global view, 1 up close. */
+  private lensNow = 0;
   private reapT = 0;
   private hubsCache: HubInfo[] = [];
   private hubsDirty = true;
@@ -1398,8 +1401,8 @@ export class GlobeEngine {
       this.beaconPillar = pillar;
       this.beaconPillarStart = t;
     }
-    const ring = this.fx.ringPx(slot, RingKind.Select, c, 10, 26, 1e9, 0.95);
-    if (ring >= 0) this.beaconRings.push(ring, t);
+    // The lock ring and its pulse are drawn by the node layer itself (nodes/nodeShaders.ts), in the
+    // marker's own pass, so they can sit on a dark stage and stay legible over any background.
     const host = s.host[slot];
     const cl = s.cluster[slot];
     if (host === 0 || cl === NO_CLUSTER) return;
@@ -1415,9 +1418,15 @@ export class GlobeEngine {
     }
   }
 
-  /** The pillar is 0.22R tall, but never more than a third of the camera range so it stays in frame up close. */
+  /**
+   * The pillar is 0.22R tall, but never more than a third of the camera range so it stays in frame up
+   * close, where it shrinks away as the lens closes: the lock ring does its job there, and a stick
+   * through the field is the kind of line the view is better without.
+   */
   private pillarLift(): number {
-    return Math.min(0.22, 0.3 * Math.max(0.05, this.rig.distance - 1));
+    const range = Math.max(0.004, this.rig.distance - 1);
+    const lens = lensAtDistance(this.rig.projScale, range);
+    return Math.min(0.22, 0.3 * range * (1 - 0.85 * lens));
   }
 
   private endBeacon(): void {
@@ -2634,6 +2643,9 @@ export class GlobeEngine {
       s.posDirty = true;
     }
     u.uFan.value = fan;
+    this.lensNow = lensAtDistance(this.rig.projScale, Math.max(0.004, this.rig.distance - 1));
+    // The markers' dark halo has nothing to do until the lens opens: no draw at the global view.
+    this.nodeLayer.knock.visible = this.lensNow > 0.002;
     u.uZoomGain.value = 0.55 + 0.45 * smoothstep(2.9, 1.0, range);
     this.nodeWorld.value = 0.3 * spacing;
     this.nodeLayer.nodeWorld.value = this.nodeWorld.value;
@@ -2717,7 +2729,8 @@ export class GlobeEngine {
   private render(): void {
     const p: PostParams = {
       exposure: this.tokens.exposure,
-      bloom: this.tokens.bloom * this.ambientBoost.bloom,
+      // Up close the bloom pulls in: crisp markers over a dim ground, not a glow that fills the field.
+      bloom: this.tokens.bloom * this.ambientBoost.bloom * (1 - 0.35 * this.lensNow),
       chroma: this.effects.chromatic && this.profile.chroma && !this.reducedMotion ? this.tokens.chroma : 0,
       grain: this.effects.grain && this.profile.grain && !this.reducedMotion ? this.tokens.grain : 0,
       vignette: this.effects.vignette ? 0.55 : 0,

@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import type { AssetStore } from '../assetstore';
+import { GLSL_LENS } from '../lens';
 import { GLSL_CONSTANTS, GLSL_GEO, GLSL_REVEAL, GLSL_WAVE_GLOW, GLSL_WAVES } from '../shaders/chunks';
 import type { GlobeTokens } from '../tokens';
 import type { SharedUniforms } from '../uniforms';
@@ -25,6 +26,7 @@ ${GLSL_GEO}
 ${GLSL_WAVES}
 ${GLSL_WAVE_GLOW}
 ${GLSL_REVEAL}
+${GLSL_LENS}
 uniform sampler2D uDay;
 uniform sampler2D uNight;
 uniform sampler2D uClouds;
@@ -40,6 +42,10 @@ uniform float uNightLights;
 uniform float uCloudAmt;
 uniform float uTerminator;
 uniform float uHasClouds;
+uniform float uProjScale;
+uniform float uPxScale;
+uniform vec2 uViewport;
+uniform vec2 uViewShift;
 in vec3 vN;
 in vec3 vWorld;
 
@@ -58,6 +64,14 @@ void main() {
   vec3 sun = uTerminator > 0.5 ? uSunDir : normalize(cameraPosition);
   float mu = dot(n, sun);
 
+  // The lens (lens.ts): up close the planet's own light (a magnified city-lights texture, the day
+  // side's haze and cloud, the sun's glint) is brighter and bigger than the nodes it sits under, so it
+  // gives way, most of all around the focus point (a soft vignette, never a mask).
+  vec2 focusNdc = gl_FragCoord.xy / uViewport * 2.0 - 1.0 - uViewShift;
+  float lz = lensZoom(length(cameraPosition - vWorld), uProjScale / max(uPxScale, 1e-4));
+  float edgeK = 1.0 - lensVignette(focusNdc, uViewport.x / uViewport.y, 0.0);   // 0 at the focus, 1 in the corners
+  float L = lz * (1.0 - 0.25 * edgeK);
+
   // Grade the day map into a darker, cooler planet so the data layer owns the brightness. The photo
   // is blended with a duotone painted from the design's navy ramp (ocean, ocean-lit, land), so the
   // planet belongs to the same palette as the interface around it.
@@ -74,6 +88,10 @@ void main() {
   float diff = smoothstep(-0.03, 0.5, mu);
   float wrap = 0.12 + 0.88 * pow(max(mu, 0.0), 0.72);
   vec3 dayCol = g * 0.46 * mix(1.0, wrap, 0.85) * diff;
+  // Up close the day side keeps its daylight as a dim, desaturated stage: the brightest haze is compressed
+  // to about 0.11, far under a marker's body, so the tier colours read on it.
+  dayCol = mix(vec3(luma(dayCol)), dayCol, 1.0 - 0.5 * L);
+  dayCol = dayCol / (1.0 + dayCol * (8.0 * L * L * L)) * (1.0 - 0.1 * L);
 
   // Earthshine keeps the geography readable on the night side.
   vec3 shine = g * vec3(0.05, 0.075, 0.15) * 0.42;
@@ -81,11 +99,16 @@ void main() {
   float lights = smoothstep(0.10, 0.55, luma(nt));
   vec3 cityCol = nt * (0.35 + 2.3 * lights) * uLights * 1.05;
   cityCol *= (1.0 - cl * 0.75);
+  // City lights: from a blinding wall to a cool, quiet glow. The brightest texel is compressed hardest
+  // (a soft ceiling that drops from unbounded to about 0.03 as L rises, so a metropolis cannot swallow
+  // the markers whatever its texel value), the rest eases down in step, and the colour goes cool grey.
+  cityCol = mix(cityCol, vec3(luma(cityCol)) * vec3(0.78, 0.9, 1.0), 0.6 * L);
+  cityCol = cityCol / (1.0 + cityCol * (20.0 * L * L * L)) * (1.0 - 0.5 * L);
   vec3 col = dayCol + shine * (1.0 - diff * 0.6);
   col += cityCol * nightF * uNightLights * 1.15 * (uLightsAlpha / 0.3);
 
   // Clouds: lit from the sun, nearly invisible at night.
-  float cloud = smoothstep(0.28, 0.95, cl);
+  float cloud = smoothstep(0.28, 0.95, cl) * (1.0 - 0.7 * L);
   vec3 cloudLit = vec3(0.74, 0.84, 1.0) * (0.03 + 0.62 * diff);
   col = mix(col, cloudLit * 0.85 + shine * 0.3, cloud * 0.42);
 
@@ -94,8 +117,8 @@ void main() {
   vec3 H = normalize(sun + V);
   float nh = max(dot(n, H), 0.0);
   // A broad, soft lobe (real sun glint is a wide patch, not a dot): it should read as light on water.
-  float spec = pow(nh, 420.0) * (1.0 - land) * diff * (1.0 - cloud * 0.9);
-  float sheen = pow(nh, 70.0) * (1.0 - land) * diff * 0.03;
+  float spec = pow(nh, 420.0) * (1.0 - land) * diff * (1.0 - cloud * 0.9) * (1.0 - 0.85 * L);
+  float sheen = pow(nh, 70.0) * (1.0 - land) * diff * 0.03 * (1.0 - 0.85 * L);
   col += vec3(0.65, 0.82, 1.0) * (spec * 0.14 + sheen);
 
   // Terminator glow: a thin warm band on the ground where the sun grazes.
@@ -151,6 +174,10 @@ export class MarbleBody implements GlobeBody {
         uCloudAmt: u.uClouds,
         uTerminator: u.uTerminator,
         uHasClouds: { value: 0 },
+        uProjScale: u.uProjScale,
+        uPxScale: u.uPxScale,
+        uViewport: u.uViewport,
+        uViewShift: u.uViewShift,
       },
       depthWrite: true,
       depthTest: true,

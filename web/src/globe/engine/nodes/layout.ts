@@ -54,7 +54,7 @@ export function stackDim(n: number): number {
  */
 export function computeLayout(store: NodeStore, p: LayoutParams): boolean {
   let animating = false;
-  const { pos, dir, cluster, rank, alive } = store;
+  const { pos, dir, cluster, rank, fanRank, alive, cFan, cFanNext, cDir } = store;
 
   // Ease spire heights toward their targets (live node count, filtered).
   const k = 1 - Math.exp(-6 * p.dt);
@@ -92,7 +92,10 @@ export function computeLayout(store: NodeStore, p: LayoutParams): boolean {
     const n = Math.max(1, store.cLive[c]!);
     const span = Math.max(1, store.cNext[c]!);
     const kr = rank[s]!;
-    if (n === 1 && span === 1) {
+    // The fan is shared by every cluster of the site (see FAN_GROUP_ARC): one spiral, one centre.
+    const g = cFan[c]!;
+    const fanSpan = Math.max(1, cFanNext[g]!);
+    if (n === 1 && span === 1 && fanSpan === 1) {
       const r = 1 + SURFACE;
       pos[o] = bx * r;
       pos[o + 1] = by * r;
@@ -112,17 +115,21 @@ export function computeLayout(store: NodeStore, p: LayoutParams): boolean {
       pos[o + 3] = sd;
       continue;
     }
-    // Fan: geodesic offset on the surface along a golden-angle spiral.
-    const sp = Math.min(p.spacing, MAX_DISC / Math.sqrt(span));
-    const rad = Math.sqrt(kr + 0.5) * sp;
-    const th = kr * GOLDEN_ANGLE;
+    // Fan: geodesic offset on the surface along a golden-angle spiral, centred on the site's first cluster.
+    const kf = fanRank[s]!;
+    const sp = Math.min(p.spacing, MAX_DISC / Math.sqrt(fanSpan));
+    const rad = Math.sqrt(kf + 0.5) * sp;
+    const th = kf * GOLDEN_ANGLE;
+    const ax = g === c ? bx : cDir[g * 3]!;
+    const ay = g === c ? by : cDir[g * 3 + 1]!;
+    const az = g === c ? bz : cDir[g * 3 + 2]!;
     // A big hub squeezed into its disc overlaps its own nodes; dim them so the disc reads as a
     // field of points instead of a white blob (full brightness once neighbours are 6 px apart).
     const spPx = sp * p.pxPerRad;
     const dense = clamp(spPx / 6.0, 0.22, 1);
-    // Tangent basis at B: E = (bz, 0, -bx)/|..|, Nn = B x E
-    let ex = bz;
-    let ez = -bx;
+    // Tangent basis at A: E = (az, 0, -ax)/|..|, Nn = A x E
+    let ex = az;
+    let ez = -ax;
     const el = Math.hypot(ex, ez);
     if (el < 1e-6) {
       ex = 1;
@@ -131,9 +138,9 @@ export function computeLayout(store: NodeStore, p: LayoutParams): boolean {
       ex /= el;
       ez /= el;
     }
-    const nx = by * ez;
-    const ny = bz * ex - bx * ez;
-    const nz = -by * ex;
+    const nx = ay * ez;
+    const ny = az * ex - ax * ez;
+    const nz = -ay * ex;
     const ct = Math.cos(th);
     const st = Math.sin(th);
     const tx = ex * ct + nx * st;
@@ -141,9 +148,9 @@ export function computeLayout(store: NodeStore, p: LayoutParams): boolean {
     const tz = ez * ct + nz * st;
     const cr = Math.cos(rad);
     const sr = Math.sin(rad);
-    const fx = bx * cr + tx * sr;
-    const fy = by * cr + ty * sr;
-    const fz = bz * cr + tz * sr;
+    const fx = ax * cr + tx * sr;
+    const fy = ay * cr + ty * sr;
+    const fz = az * cr + tz * sr;
     // Blend stack and fan positions (direction and radius separately).
     let dx = bx + (fx - bx) * f;
     let dy = by + (fy - by) * f;
@@ -174,13 +181,17 @@ export function fanPosition(store: NodeStore, slot: number, spacing: number, out
     out[2] = bz;
     return;
   }
-  const span = Math.max(1, store.cNext[c]!);
-  const kr = store.rank[slot]!;
-  const sp = Math.min(spacing, MAX_DISC / Math.sqrt(span));
-  const rad = Math.sqrt(kr + 0.5) * sp;
-  const th = kr * GOLDEN_ANGLE;
-  let ex = bz;
-  let ez = -bx;
+  const g = store.cFan[c]!;
+  const fanSpan = Math.max(1, store.cFanNext[g]!);
+  const kf = store.fanRank[slot]!;
+  const sp = Math.min(spacing, MAX_DISC / Math.sqrt(fanSpan));
+  const rad = Math.sqrt(kf + 0.5) * sp;
+  const th = kf * GOLDEN_ANGLE;
+  const ax = g === c ? bx : store.cDir[g * 3]!;
+  const ay = g === c ? by : store.cDir[g * 3 + 1]!;
+  const az = g === c ? bz : store.cDir[g * 3 + 2]!;
+  let ex = az;
+  let ez = -ax;
   const el = Math.hypot(ex, ez);
   if (el < 1e-6) {
     ex = 1;
@@ -189,14 +200,14 @@ export function fanPosition(store: NodeStore, slot: number, spacing: number, out
     ex /= el;
     ez /= el;
   }
-  const nx = by * ez;
-  const ny = bz * ex - bx * ez;
-  const nz = -by * ex;
+  const nx = ay * ez;
+  const ny = az * ex - ax * ez;
+  const nz = -ay * ex;
   const ct = Math.cos(th);
   const st = Math.sin(th);
   const cr = Math.cos(rad);
   const sr = Math.sin(rad);
-  out[0] = bx * cr + (ex * ct + nx * st) * sr;
-  out[1] = by * cr + ny * st * sr;
-  out[2] = bz * cr + (ez * ct + nz * st) * sr;
+  out[0] = ax * cr + (ex * ct + nx * st) * sr;
+  out[1] = ay * cr + ny * st * sr;
+  out[2] = az * cr + (ez * ct + nz * st) * sr;
 }
