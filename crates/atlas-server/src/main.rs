@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use atlas_server::config::{
-    DEFAULT_DB_CACHE_MB, EngineOverrides, ServeConfig, apply_upstream_rps, parse_duration,
-    parse_intervals, parse_switch, socket_url_for,
+    DEFAULT_BIND, DEFAULT_DB_CACHE_MB, DEFAULT_HEALTHCHECK_ADDR, EngineOverrides, ServeConfig,
+    apply_upstream_rps, parse_duration, parse_intervals, parse_switch, socket_url_for,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -31,7 +31,7 @@ enum Cmd {
     Serve(Box<ServeArgs>),
     /// Probe a running server's `/healthz`; exit status 0 when healthy (container HEALTHCHECK).
     Healthcheck {
-        #[arg(long, env = "ATLAS_HEALTHCHECK_ADDR", default_value = "127.0.0.1:3000")]
+        #[arg(long, env = "ATLAS_HEALTHCHECK_ADDR", default_value = DEFAULT_HEALTHCHECK_ADDR)]
         addr: SocketAddr,
         #[arg(long, default_value_t = 3)]
         timeout_s: u64,
@@ -46,7 +46,7 @@ enum Cmd {
 #[derive(Args, Debug)]
 struct ServeArgs {
     /// Listen address.
-    #[arg(long, env = "ATLAS_BIND", default_value = "0.0.0.0:3000")]
+    #[arg(long, env = "ATLAS_BIND", default_value = DEFAULT_BIND)]
     bind: SocketAddr,
     /// Directory holding the database.
     #[arg(long, env = "ATLAS_DATA_DIR", default_value = "/data")]
@@ -201,6 +201,49 @@ fn main() -> ExitCode {
         Err(e) => {
             eprintln!("atlas: {e:#}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use clap::CommandFactory as _;
+
+    use super::*;
+
+    #[test]
+    fn cli_is_well_formed() {
+        Cli::command().debug_assert();
+    }
+
+    /// One process, one port: the server listens on 0.0.0.0:3000 unless told otherwise, and
+    /// the container health probe targets that same port on loopback.
+    #[test]
+    fn default_port_is_3000() {
+        assert_eq!(DEFAULT_BIND, "0.0.0.0:3000");
+        assert_eq!(DEFAULT_HEALTHCHECK_ADDR, "127.0.0.1:3000");
+        let bind: SocketAddr = DEFAULT_BIND.parse().unwrap();
+        let probe: SocketAddr = DEFAULT_HEALTHCHECK_ADDR.parse().unwrap();
+        assert_eq!(bind.port(), probe.port());
+        assert!(bind.ip().is_unspecified());
+        assert!(probe.ip().is_loopback());
+
+        // The parsed CLI defaults (skipped when the environment overrides them).
+        if std::env::var_os("ATLAS_BIND").is_none() {
+            let Cmd::Serve(a) = Cli::try_parse_from(["atlas", "serve"]).unwrap().cmd else {
+                panic!("expected serve");
+            };
+            assert_eq!(a.bind, bind);
+            assert_eq!(serve_config(*a).bind, bind);
+        }
+        if std::env::var_os("ATLAS_HEALTHCHECK_ADDR").is_none() {
+            let Cmd::Healthcheck { addr, .. } =
+                Cli::try_parse_from(["atlas", "healthcheck"]).unwrap().cmd
+            else {
+                panic!("expected healthcheck");
+            };
+            assert_eq!(addr, probe);
         }
     }
 }

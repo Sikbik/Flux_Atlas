@@ -42,7 +42,25 @@ pub use watch::WatchHooks;
 
 /// Opens the store, starts the engine and serves until SIGINT or SIGTERM. Shutdown closes live
 /// connections with 1001 before the engine and store stop.
+///
+/// The process opens exactly one listening socket, `cfg.bind` (TCP; default `0.0.0.0:3000`),
+/// and serves everything on it: the web app, `/api/v1/*`, `/ws`, `/healthz`, `/readyz` and
+/// `/metrics/prometheus`. Upstream traffic (FluxOS API, Insight sockets, stats) is outbound
+/// only. See ARCHITECTURE section 11.
 pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
+    let listener = tokio::net::TcpListener::bind(cfg.bind)
+        .await
+        .with_context(|| format!("binding {}", cfg.bind))?;
+    serve_on(cfg, listener, shutdown_signal()).await
+}
+
+/// [`serve`] on an already bound listener, until `shutdown` resolves (tests bind an ephemeral
+/// port and pass their own shutdown future). `cfg.bind` is ignored.
+pub async fn serve_on(
+    cfg: ServeConfig,
+    listener: tokio::net::TcpListener,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> anyhow::Result<()> {
     std::fs::create_dir_all(&cfg.data_dir)
         .with_context(|| format!("creating data dir {}", cfg.data_dir.display()))?;
     let db = cfg.data_dir.join("atlas.redb");
@@ -74,17 +92,15 @@ pub async fn serve(cfg: ServeConfig) -> anyhow::Result<()> {
     let engine = Engine::start(engine_cfg, store.clone(), clients);
     let state = AppState::new(engine.clone(), cfg.server.clone());
     let app = router(state.clone());
-    let listener = tokio::net::TcpListener::bind(cfg.bind)
-        .await
-        .with_context(|| format!("binding {}", cfg.bind))?;
-    tracing::info!(addr = %cfg.bind, data = %cfg.data_dir.display(), "listening");
+    let addr = listener.local_addr().context("listener address")?;
+    tracing::info!(%addr, data = %cfg.data_dir.display(), "listening");
     let st = state.clone();
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
-        shutdown_signal().await;
+        shutdown.await;
         st.begin_shutdown();
     })
     .await?;

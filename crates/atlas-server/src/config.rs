@@ -27,6 +27,14 @@ pub struct ServeConfig {
 /// Default redb page cache (MiB).
 pub const DEFAULT_DB_CACHE_MB: usize = 32;
 
+/// Default listen address (`ATLAS_BIND`). The only port the process opens: the Flux app spec
+/// maps its public port to container port 3000.
+pub const DEFAULT_BIND: &str = "0.0.0.0:3000";
+
+/// Default address `atlas healthcheck` probes (`ATLAS_HEALTHCHECK_ADDR`): the server's port
+/// on loopback, from inside the container.
+pub const DEFAULT_HEALTHCHECK_ADDR: &str = "127.0.0.1:3000";
+
 impl ServeConfig {
     /// Defaults for a bind address and data directory.
     pub fn new(bind: SocketAddr, data_dir: PathBuf) -> Self {
