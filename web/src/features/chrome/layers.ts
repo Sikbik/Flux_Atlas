@@ -7,6 +7,7 @@
 
 import { useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
+import type { GlobeTarget } from '../../globe';
 import { meshModeFor } from '../../globe/bindings';
 import { useGlobeEngine } from '../../globe/context';
 
@@ -69,23 +70,20 @@ const ENGINE_EFFECT = {
   towers: 'spires',
 } as const;
 
-interface EffectsEngine {
-  setEffects?(partial: Partial<Record<'terminator' | 'nightLights' | 'clouds' | 'spires', boolean>>): void;
-}
+type Effects = Parameters<GlobeTarget['setEffects']>[0];
 
 /** Applies the layers the URL mentions to the engine whenever it (re)loads or they change. */
 export function useApplyLayers(): void {
   const engine = useGlobeEngine();
   const l = useLayerParam();
   useEffect(() => {
-    const e = engine as unknown as EffectsEngine | null;
-    if (!e || typeof e.setEffects !== 'function') return;
+    if (!engine) return;
     const states = layerStates(l);
-    const partial: Partial<Record<'terminator' | 'nightLights' | 'clouds' | 'spires', boolean>> = {};
+    const partial: Effects = {};
     for (const k of Object.keys(ENGINE_EFFECT) as (keyof typeof ENGINE_EFFECT)[]) {
       const v = states[k];
       if (v !== undefined) partial[ENGINE_EFFECT[k]] = v;
     }
-    if (Object.keys(partial).length > 0) e.setEffects(partial);
+    if (Object.keys(partial).length > 0) engine.setEffects(partial);
   }, [engine, l]);
 }

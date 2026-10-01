@@ -1,16 +1,8 @@
 // Hover cards over the globe, as pure logic (the React layer is globe/overlays.tsx).
 //
-// Which thing a card is about, how long the pointer rests before the card shows, and which side of its
-// point the card opens on so it never leaves the screen or runs under the top chrome.
-
-import type { GlobeHover } from '../../globe/bindings';
-
-/** What a card is about: the same string for as long as the pointer stays on the same node, site or moon. */
-export function hoverKey(h: GlobeHover | null): string {
-  if (!h) return '';
-  if (h.kind === 'moon') return 'moon';
-  return h.info.isCluster ? `site:${h.info.loc}` : `node:${h.id}`;
-}
+// How long the pointer rests before a card shows, and which side of its point the card opens on so it never
+// leaves the screen or runs under the top chrome. (Which thing a card is about is the engine's to say now: it
+// emits a hover only when the node, site or moon under the pointer changes.)
 
 /** How long the pointer rests on a node or site before its card shows (the moon's card shows at once). */
 export const TIP_DELAY_MS = 180;
