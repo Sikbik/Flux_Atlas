@@ -282,6 +282,9 @@ uniform float uGlow;
 uniform float uEdge;
 uniform float uHover;
 uniform float uFlare[4];
+uniform float uFlareU[4];    // how far through its flare each piece is, 0..1 (negative: idle)
+uniform vec3 uArtW;          // weights of the three finishes: Marble (frosted glass), Holo (dot matrix), Neon (tube)
+uniform float uMotion;       // 0 under reduced motion: nothing animates
 uniform vec4 uSeal;          // x = seconds since the seal (negative: none), y = strength, zw = origin (local xy)
 uniform vec3 uOff[4];
 uniform vec4 uPieceA[4];     // centroid xy, radius, front z
@@ -367,11 +370,165 @@ vec3 srgbToLin(vec3 c) {
   return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
 }
 
-// ---- sky look: dark glass with Flux blue light inside ----------------------------------------
+// ---- world mode: one glass, three finishes -----------------------------------------------------
+// The sculpture in the sky is the same four blocks of glass lit by the same sun, finished three ways to
+// match the art direction: Marble is frosted glass with a rim light, Holo is a dot-matrix hologram, Neon is
+// a tube of light. Every term is a smooth function of object-space position, the sun and (slowly) time, so
+// nothing flickers; thin lines keep a minimum width in pixels, so nothing shimmers either.
+float g_inner;     // distance to the piece's outline, symbol units
+vec2 g_fromC;      // offset from the piece's centroid, in piece radii
+float g_pool;
+float g_edgeLit;
+float g_rimLine;
+float g_rimPool;
+float g_nh;
+float g_nl;
+float g_sunLit;
+float g_fres;
+float g_fl;        // the piece's flare, 0..1
+float g_fu;        // how far through the flare, 0..1 (negative: idle)
+float g_ring;      // the seal's ring of light
+float g_T;         // time, held still under reduced motion
+float g_fw;        // symbol units per pixel
+int g_pc;
+vec3 g_tone;
+vec3 g_Nl;          // the dome's normal in the moon's own frame
+vec3 g_Vl;          // toward the camera in the moon's own frame
+// A studio key light, up and to the left of the camera: the sculpture is well lit on the night side too.
+const vec3 KEY = vec3(-0.4, 0.62, 0.67);
+const vec2 KDIR = vec2(-0.542, 0.840);       // the key's direction across a face (up and to the left)
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+// The flare of a piece, crisp: its edge ignites white-hot, a band of light sweeps across the face, the face lifts a little.
+vec3 flareFront() {
+  vec3 white = vec3(1.0);
+  float e = exp(-g_inner / max(1.5, 1.3 * g_fw));
+  float soft = exp(-g_inner / 8.0);
+  vec3 c = white * (e * 3.4 + soft * 0.5) * g_fl;
+  float ph = dot(g_fromC, normalize(vec2(0.62, 0.78)));               // -1..1 across the piece
+  float at = g_fu >= 0.0 ? g_fu * 2.6 - 1.3 : -9.0;
+  c += mix(g_tone, white, 0.75) * exp(-pow((ph - at) / 0.13, 2.0)) * g_fl * 1.1;
+  c += mix(g_tone, white, 0.55) * g_fl * 0.1 * (0.4 + 0.6 * g_pool);
+  return c;
+}
+
+// Marble: frosted glass. A milky Flux-blue volume that glows where the glass is thin, soft clouds of scattered
+// light, a satin sheen of the sun, etched hexagons under the frost that wake up with the seal, and a crisp rim light.
+vec3 marbleFront(vec3 Vl, float zz) {
+  vec3 white = vec3(1.0);
+  vec3 body = mix(uBlue, g_tone, 0.45);
+  float thin = 1.0 - smoothstep(0.0, 46.0, g_inner);
+  float cloud = 0.6 * vnoise(vL.xy * 0.021 + float(g_pc) * 7.3) + 0.4 * vnoise(vL.xy * 0.047 + 11.0);
+  // Across the face: 1 at the corner nearest the key light, 0 at the far corner.
+  float gk = clamp(0.5 + 0.45 * dot(g_fromC, KDIR), 0.0, 1.0);
+  float key = clamp(dot(g_Nl, KEY), 0.0, 1.0);
+  // A milky volume: deep Flux blue in the shade, scattering the key's light toward the corner it comes from,
+  // glowing where the glass is thin.
+  vec3 f = body * (0.11 + 0.2 * g_pool + 0.52 * gk * gk) * uGlow;
+  f += mix(g_tone, white, 0.3) * thin * (0.1 + 0.24 * gk) * uGlow;
+  f += mix(g_tone, white, 0.55) * pow(key, 2.0) * 0.16 * uGlow;
+  f += mix(g_tone, white, 0.5) * (cloud - 0.5) * 0.1 * uGlow * (0.4 + 0.6 * g_pool);
+  f += white * (pow(g_nh, 12.0) * 0.03 + pow(g_nh, 60.0) * 0.12) * g_sunLit;
+  // The soft-box reflection of the key light across the dome, and a thin streak of it near the edge.
+  vec3 Rk = reflect(-g_Vl, g_Nl);
+  f += white * pow(clamp(dot(Rk, KEY), 0.0, 1.0), 16.0) * 0.55 * uGlow;
+  f += white * pow(clamp(dot(Rk, KEY), 0.0, 1.0), 90.0) * 0.9;
+  float latMask = smoothstep(3.0, 16.0, g_inner);
+  vec3 l0 = hexLayer(vL.xy - Vl.xy / zz * 12.0, 15.5, g_T);
+  vec3 l1 = hexLayer(vL.xy - Vl.xy / zz * 40.0 + vec2(7.0, 4.0), 26.0, g_T * 0.7 + 3.0);
+  float wv = 0.55 + 0.45 * pow(0.5 + 0.5 * sin(dot(vL.xy, vec2(0.021, 0.013)) - g_T * 0.9 + float(g_pc) * 1.7), 3.0);
+  f += g_tone * (l0.x * 0.1 * wv + l1.x * 0.04) * latMask * uGlow * (1.0 + g_ring * 9.0 + g_fl * 5.0);
+  f += mix(g_tone, white, 0.5) * l0.y * l0.x * 0.9 * latMask;             // a cell that lights its borders
+  // The rim light: a crisp line of light along the edge, strongest on the sun side, never dark.
+  // Glass is darker just inside its bright edge: a thin shadow that makes the rim light read crisp.
+  f *= 1.0 - 0.3 * exp(-pow((g_inner - 7.0) / 4.5, 2.0));
+  f += mix(g_tone, white, 0.88) * g_rimLine * (0.42 + 1.5 * g_edgeLit + 0.45 * uHover) * uEdge;
+  f += g_tone * g_rimPool * (0.22 + 0.7 * g_edgeLit) * 0.75 * uGlow;
+  f += white * g_ring * 0.5 * (0.3 + 0.7 * latMask);
+  // A slow reflection that sweeps the glass now and then.
+  float sw = dot(vL.xy, normalize(vec2(0.62, 0.78))) - (mod(g_T * 34.0, 900.0) - 330.0);
+  f += mix(g_tone, white, 0.6) * exp(-sw * sw / 520.0) * 0.12;
+  return f;
+}
+
+// Holo: a dot-matrix hologram. The surface is a hexagonal lattice of round dots anchored to the object (they
+// never swim), the dots grow brighter and larger toward the edge and under a slow band of light that crosses the
+// symbol, and each breathes a little on its own phase. Two lattices a factor of two apart are blended by pixel
+// size, so the pitch stays near 4.5 px at any distance without ever popping.
+vec2 dotLevel(float level, float lum) {
+  float P = 7.0 * exp2(level);
+  vec4 h = hexCoords(vL.xy / P);
+  float dd = length(h.xy);
+  float ph = hash12(h.zw + level * 17.0);
+  float breath = 0.5 + 0.5 * sin(g_T * 0.75 + ph * 6.2831853);
+  float L = clamp(lum * (0.9 + 0.2 * breath), 0.0, 1.7);
+  float rd = mix(0.1, 0.35, clamp(L, 0.0, 1.0));
+  float aa = g_fw / P * 0.9 + 0.012;
+  // The dot, and a soft glow around it that fills the gaps a little where the light is strong.
+  float dot_ = 1.0 - smoothstep(rd - aa, rd + aa, dd);
+  float glow = exp(-dd * dd * 14.0) * 0.28 * clamp(L - 0.35, 0.0, 1.0);
+  return vec2(min(dot_ + glow, 1.2), L);
+}
+vec3 holoFront() {
+  vec3 white = vec3(1.0);
+  float want = max(log2(max(g_fw * 4.4 / 7.0, 1e-4)), 0.0);
+  float l0 = floor(want);
+  float lf = want - l0;
+  float rim = exp(-g_inner / 15.0);
+  float lum = 0.3 + 0.42 * rim + 0.22 * g_nl + 0.1 * g_pool + 0.28 * pow(clamp(dot(g_Nl, KEY), 0.0, 1.0), 1.5);
+  // A broad band of light crosses the symbol every few seconds: smooth in space and in time.
+  float bp = dot(vL.xy, normalize(vec2(0.55, 0.84))) / 190.0;
+  float band = fract(g_T * 0.115 + 0.15) * 2.8 - 0.9;
+  lum += 0.62 * exp(-pow((bp - band) / 0.13, 2.0));
+  // A soft band of light climbs the symbol now and then (wide and low: never a hard line to crawl or alias).
+  float ys = mod(g_T * 38.0, 560.0) - 220.0;
+  lum += 0.3 * exp(-pow((vL.y - ys) / 26.0, 2.0));
+  lum += 0.4 * g_ring + 0.5 * g_fl;
+  vec2 a = dotLevel(l0, lum);
+  vec2 b = dotLevel(l0 + 1.0, lum);
+  float cov = mix(a.x, b.x, lf);
+  float L = mix(a.y, b.y, lf);
+  vec3 dc = mix(g_tone * 1.25, white, clamp(L * 0.85 - 0.12, 0.0, 1.0));
+  vec3 f = dc * cov * (0.3 + 0.95 * L) * uGlow;
+  f += g_tone * (0.018 + 0.03 * g_pool) * uGlow;
+  f += mix(g_tone, white, 0.85) * g_rimLine * (0.5 + 0.9 * g_edgeLit) * uEdge;
+  return f;
+}
+
+// Neon: a tube of light along every edge, white-hot at its core and Flux blue in its halo, over dark glass with
+// a faint inner light. The core is never narrower than about a pixel; the halo feeds the bloom.
+vec3 neonFront() {
+  vec3 white = vec3(1.0);
+  float breath = 1.0 + 0.07 * uMotion * sin(g_T * 0.55 + float(g_pc) * 1.9);
+  float wc = max(1.4, 1.1 * g_fw);
+  float core = exp(-pow(g_inner / wc, 2.0)) * min(1.0, 1.6 / wc);
+  float halo1 = exp(-g_inner / max(9.0, 3.0 * g_fw));
+  float halo2 = exp(-g_inner / 30.0);
+  vec3 f = g_tone * (0.02 + 0.06 * g_pool) * uGlow;
+  f += white * core * 4.2;
+  f += mix(uBlue, g_tone, 0.5) * halo1 * 2.0 + uBlue * halo2 * 0.55;
+  // A second, thinner tube inside the first, where the block is wide enough for it.
+  float i2 = abs(g_inner - 15.0);
+  f += mix(g_tone, white, 0.55) * exp(-pow(i2 / max(1.0, g_fw), 2.0)) * 0.75 * smoothstep(9.0, 19.0, g_inner);
+  f *= breath * uGlow;
+  f += white * g_ring * 0.4 * (0.3 + 0.7 * smoothstep(3.0, 16.0, g_inner));
+  f += mix(g_tone, white, 0.8) * g_rimLine * g_edgeLit * 0.4 * uEdge;
+  return f;
+}
+
 vec3 glass(int pc, int ps, int pn, float front, float back, float sideK, float bevK) {
   vec4 pa = uPieceA[pc];
   vec3 tone = pc == 1 ? uBlueLight : (pc == 2 ? uBlueMid : uBlue);
   vec3 white = vec3(1.0);
+  float wM = uArtW.x;
+  float wH = uArtW.y;
+  float wN = uArtW.z;
 
   vec3 S = normalize(uSunDir);
   vec3 V = normalize(uCamPos - vW);
@@ -379,7 +536,7 @@ vec3 glass(int pc, int ps, int pn, float front, float back, float sideK, float b
 
   // A domed front face, so highlights sweep across it instead of flashing on and off.
   vec2 fromC = (vL.xy - pa.xy) / max(pa.z, 1.0);
-  vec3 Nl = normalize(vNL + vec3(fromC * 0.34 * front, 0.0));
+  vec3 Nl = normalize(vNL + vec3(fromC * 0.46 * front, 0.0));
   vec3 N = normalize(uRot * Nl);
   float ndv = max(dot(N, V), 0.0);
   float fres = pow(1.0 - ndv, 4.0);
@@ -399,6 +556,21 @@ vec3 glass(int pc, int ps, int pn, float front, float back, float sideK, float b
     ring = exp(-pow((dist - uSeal.x * 520.0) / 30.0, 2.0)) * uSeal.y * (1.0 - smoothstep(0.35, 1.3, uSeal.x));
   }
 
+  g_pc = pc;
+  g_tone = tone;
+  g_Nl = Nl;
+  g_Vl = normalize(uCamLocal - (vL + uOff[pc]));
+  g_fromC = fromC;
+  g_pool = exp(-dot(fromC, fromC) * 2.6);
+  g_nh = nh;
+  g_nl = nl;
+  g_sunLit = sunLit;
+  g_fres = fres;
+  g_fl = fl;
+  g_fu = uFlareU[pc];
+  g_ring = ring;
+  g_T = uTime * uMotion;
+
   if (front > 0.001) {
     vec3 ei = edgeInfo(vL.xy, ps, pn);
     float inner = ei.x;
@@ -406,47 +578,51 @@ vec3 glass(int pc, int ps, int pn, float front, float back, float sideK, float b
     vec2 Ls = normalize(uSunLocal.xy + vec2(1e-4, 0.0));
     float facing = pow(clamp(dot(ei.yz, Ls) * 0.5 + 0.5, 0.0, 1.0), 2.6);
     float along = smoothstep(-1.1, 1.1, dot(fromC, Ls));
-    float edgeLit = (0.05 + 0.95 * facing) * (0.35 + 0.65 * along) * (0.45 + 0.55 * sunLit);
-    float rimLine = exp(-inner / 1.15);
-    float rimPool = exp(-inner / 9.0);
-
-    // Dark glass with a blue light deep inside: parallax lattice on two planes below the surface.
+    g_inner = inner;
+    float keyFacing = pow(clamp(dot(ei.yz, normalize(KEY.xy)) * 0.5 + 0.5, 0.0, 1.0), 2.2);
+    float keyAlong = smoothstep(-1.1, 1.1, dot(fromC, normalize(KEY.xy)));
+    g_edgeLit = max((0.05 + 0.95 * facing) * (0.35 + 0.65 * along) * (0.45 + 0.55 * sunLit), (0.1 + 0.9 * keyFacing) * (0.35 + 0.65 * keyAlong) * 0.8);
+    g_rimLine = exp(-inner / max(1.15, 1.3 * g_fw));
+    g_rimPool = exp(-inner / 9.0);
     vec3 Vl = normalize(uCamLocal - (vL + uOff[pc]));
     float zz = max(Vl.z, 0.3);
-    vec3 l0 = hexLayer(vL.xy - Vl.xy / zz * 12.0, 15.5, uTime);
-    vec3 l1 = hexLayer(vL.xy - Vl.xy / zz * 40.0 + vec2(7.0, 4.0), 26.0, uTime * 0.7 + 3.0);
-    float latMask = smoothstep(3.0, 16.0, inner);
-    // A soft glow pooled under the glass, strongest toward the middle of each block.
-    float pool = exp(-dot(fromC, fromC) * 2.6);
-    vec3 f = tone * (0.05 + 0.13 * pool) * uGlow;
-    float wv = 0.55 + 0.45 * pow(0.5 + 0.5 * sin(dot(vL.xy, vec2(0.021, 0.013)) - uTime * 0.9 + float(pc) * 1.7), 3.0);
-    f += tone * (l0.x * 0.3 * wv + l1.x * 0.1) * latMask * uGlow * (1.0 + ring * 8.0);
-    f += mix(tone, white, 0.5) * l0.y * l0.x * 1.4 * latMask;      // a cell that lights its borders
-    f += tone * l0.y * smoothstep(0.0, 0.3, l0.z) * 0.22 * latMask; // and a faint fill
-    f += tone * rimPool * (0.35 + 0.65 * edgeLit) * 0.85 * uGlow;
-    f += mix(tone, white, 0.82) * rimLine * (0.22 + 1.5 * edgeLit + 0.45 * uHover) * uEdge;
-    f += white * ring * 0.55 * (0.3 + 0.7 * latMask);
-    f *= 1.0 + 2.2 * fl;
-    f += mix(tone, white, 0.6) * fl * (0.16 + 0.5 * latMask * (l0.x + 0.4));
-    // A slow reflection that sweeps the glass now and then.
-    float sw = dot(vL.xy, normalize(vec2(0.62, 0.78))) - (mod(uTime * 34.0, 900.0) - 330.0);
-    f += mix(tone, white, 0.6) * exp(-sw * sw / 520.0) * 0.16;
-    // Sheen of the sun on the dome.
-    f += white * pow(nh, 70.0) * 0.1 * sunLit;
-    f += white * pow(nh, 14.0) * 0.015 * sunLit;
+    vec3 f = vec3(0.0);
+    if (wM > 0.001) f += marbleFront(Vl, zz) * wM;
+    if (wH > 0.001) f += holoFront() * wH;
+    if (wN > 0.001) f += neonFront() * wN;
+    f += flareFront();
     col += f * front;
   }
   if (bevK > 0.001) {
-    vec3 b = mix(tone, white, 0.7) * (0.05 + 1.5 * nl + 0.3 * fres + 0.3 * uHover) * uEdge;
-    b += white * pow(nh, 40.0) * 1.8 * sunLit;
-    b *= 1.0 + 2.4 * fl;
+    // The bevel catches the light: a bright edge in every finish; the tube's own wall in Neon.
+    // The chamfer is lit like a polished edge: bright where it faces the key light, deep blue on the far side.
+    float keyB = pow(clamp(dot(Nl, KEY), 0.0, 1.0), 1.5);
+    vec3 b = mix(tone, white, 0.8) * (0.035 + 0.14 * fres + 1.05 * keyB + 1.5 * nl + 0.3 * uHover) * uEdge * wM;
+    b += tone * 0.1 * wM;
+    b += white * pow(nh, 40.0) * 1.8 * sunLit * wM * smoothstep(0.0, 0.15, ndv);
+    b += mix(tone, white, 0.8) * (0.06 + 0.14 * fres + 0.5 * keyB + 0.5 * nl) * uEdge * wH;
+    b += mix(tone, white, 0.78) * (1.1 + 0.6 * nl) * uEdge * wN * (1.0 + 0.07 * uMotion * sin(g_T * 0.55 + float(pc) * 1.9));
+    b *= 1.0 + 3.0 * fl;
     col += b * bevK;
   }
   if (sideK > 0.001) {
     // Walls of the glass: obsidian, with the blue light leaking out along the edge and a sun glint.
-    vec3 s = tone * (0.012 + 0.16 * fres) * uGlow;
-    s += white * pow(nh, 60.0) * 0.8 * sunLit;
-    s += mix(tone, white, 0.5) * fl * 0.35;
+    // Holo draws the front and back lips as thin lines of light (a wireframe), Neon as tubes.
+    float dF = vT * 2.0 * pa.w;
+    float dB = (1.0 - vT) * 2.0 * pa.w;
+    float lw = max(2.0, 1.3 * g_fw);
+    float lipF = exp(-dF / lw);
+    float lipB = exp(-dB / lw);
+    // A wall seen edge-on collapses to a sliver a pixel or less wide: its lines of light fade out before they can sparkle.
+    float graze = smoothstep(0.03, 0.26, ndv);
+    vec3 s = tone * (0.012 + 0.16 * fres) * uGlow * wM;
+    s += white * pow(nh, 60.0) * 0.8 * sunLit * wM * graze;
+    s += tone * (0.025 + 0.12 * fres) * uGlow * wH;
+    s += mix(tone, white, 0.8) * (lipF * 0.85 + lipB * 0.45) * uEdge * wH * graze;
+    s += tone * (0.03 + 0.1 * fres) * uGlow * wN;
+    s += mix(tone, white, 0.75) * (lipF * 2.2 + lipB * 1.2) * uEdge * wN * graze;
+    s += tone * exp(-dF / 10.0) * 0.5 * uGlow * wN * graze;
+    s += mix(tone, white, 0.6) * fl * 0.55 * (0.25 + 0.75 * exp(-dF / 14.0)) * graze;
     col += s * sideK;
   }
   if (back > 0.001) col += tone * (0.03 + 0.2 * fres) * back;
@@ -454,8 +630,8 @@ vec3 glass(int pc, int ps, int pn, float front, float back, float sideK, float b
   // Reflected glow of the planet (blue) and a hint of earthshine on the side that faces it.
   vec3 R = reflect(-V, N);
   float earth = max(dot(R, toPlanet), 0.0);
-  col += vec3(0.16, 0.3, 0.75) * pow(earth, 5.0) * (0.25 + 0.75 * dayFace) * (0.06 + 0.55 * fres) * 0.5;
-  col += tone * 0.04 * max(dot(N, toPlanet), 0.0) * dayFace;
+  col += vec3(0.16, 0.3, 0.75) * pow(earth, 5.0) * (0.25 + 0.75 * dayFace) * (0.06 + 0.55 * fres) * 0.5 * (wM + 0.4 * (wH + wN));
+  col += tone * 0.04 * max(dot(N, toPlanet), 0.0) * dayFace * wM;
 
   col *= 1.0 + 0.2 * uHover;
   return col;
@@ -526,6 +702,8 @@ vec3 tonal(int pc, int ps, int pn, float front, float bevK, float sideK) {
 }
 
 void main() {
+  // Symbol units per pixel, taken before anything can discard (derivatives want every invocation).
+  g_fw = max(max(fwidth(vL.x), fwidth(vL.y)), 1e-4);
   float cv = coverage();
   if (cv < 0.003) discard;
   int pc = int(vPiece + 0.5);
@@ -599,6 +777,11 @@ const _m3 = new THREE.Matrix3();
 const AX = new THREE.Vector3(1, 0, 0);
 const AY = new THREE.Vector3(0, 1, 0);
 const smoother = (x: number): number => x * x * x * (x * (x * 6 - 15) + 10);
+/** The share of a flare's run that is its ignition: about 85 ms whatever the run's length (five frames at 60 fps). */
+export const flareAttack = (dur: number): number => clamp(0.085 / Math.max(dur, 0.05), 0.1, 0.35);
+/** A flare's level over its run, 0..1: it ignites with an ease-out (never a pop), then dies away slowly. */
+export const flareShape = (u: number, a: number): number =>
+  u < a ? 1 - (1 - u / a) * (1 - u / a) : (1 - (u - a) / (1 - a)) ** 2.2;
 
 /** Where each piece arrives from (symbol units, y up), in the design's order: bar, cap, big hexagon, small hexagon. */
 const BOOT_FROM = [
@@ -683,11 +866,19 @@ export class Moon {
   private readonly haloMat: THREE.ShaderMaterial;
   private readonly off: THREE.Vector3[] = [0, 1, 2, 3].map(() => new THREE.Vector3());
   private readonly flareV = new Float32Array(4);
+  /** How far through its flare each piece is (0..1), negative when idle: the sweep of light follows it. */
+  private readonly flareU = new Float32Array(4).fill(-1);
   private readonly flareT0 = new Float32Array(4).fill(-1e9);
   private readonly flareDur = new Float32Array(4).fill(0.34);
   private readonly flareAmp = new Float32Array(4);
+  private readonly flareAtk = new Float32Array(4).fill(0.25);
+  /** Weights of the three finishes (Marble, Holo, Neon), eased toward the art direction's. */
+  private readonly artW = new THREE.Vector3(1, 0, 0);
+  private readonly artT = new THREE.Vector3(1, 0, 0);
   private readonly vis = new Float32Array(4).fill(1);
   private readonly kick = new Float32Array(4);
+  /** The kick as drawn: it follows `kick` with a quick attack, so a piece is pushed out over a few frames, never teleported. */
+  private readonly kickS = new Float32Array(4);
   private readonly dir: THREE.Vector3[] = [];
   private readonly amp = [40, 34, 18, 28];
   private readonly zdir = [1, 0.6, -0.5, 0.15];
@@ -815,6 +1006,9 @@ export class Moon {
         uEdge: { value: 1 },
         uHover: { value: 0 },
         uFlare: { value: this.flareV },
+        uFlareU: { value: this.flareU },
+        uArtW: { value: this.artW },
+        uMotion: { value: 1 },
         uSeal: { value: new THREE.Vector4(-1, 0, 0, 0) },
         uPieceB: { value: pieceB },
         uPoly: { value: polyV },
@@ -962,6 +1156,15 @@ export class Moon {
     this.hud.setTokens(t);
   }
 
+  /**
+   * The art direction the sky moon is finished in: Marble is frosted glass with a rim light, Holo a dot-matrix
+   * hologram, Neon a tube of light. The change eases over about a second (`snap` sets it at once).
+   */
+  setArt(art: 'marble' | 'dotmatrix' | 'neon', snap = false): void {
+    this.artT.set(art === 'marble' ? 1 : 0, art === 'dotmatrix' ? 1 : 0, art === 'neon' ? 1 : 0);
+    if (snap) this.artW.copy(this.artT);
+  }
+
   /** The pointer went down on the moon: it dips to 0.96 for 80 ms. */
   press(): void {
     this.pressT = 0.08;
@@ -1013,11 +1216,16 @@ export class Moon {
   /** Light one piece white. `strength` 1 is a full flash; `dur` is the envelope in seconds (design: 0.34). */
   flare(piece: number, strength = 1, dur = 0.34): void {
     if (piece < 0 || piece > 3) return;
-    const d = lerp(dur, Math.max(dur, 0.7), this.mixW);
+    const d = lerp(dur, Math.max(dur, 0.5), this.mixW);
     const u = (this.now - this.flareT0[piece]!) / this.flareDur[piece]!;
-    const cur = u >= 0 && u <= 1 ? this.flareAmp[piece]! * Math.sin(Math.PI * u) : 0;
+    const cur = u >= 0 && u <= 1 ? this.flareAmp[piece]! * flareShape(u, this.flareAtk[piece]!) : 0;
     if (strength < cur && u < 0.6) return;
-    this.flareT0[piece] = this.now;
+    // The new envelope starts from the light that is already there, so overlapping flares build on each
+    // other instead of dipping to dark first.
+    const a = flareAttack(d);
+    const r = clamp(cur / Math.max(strength, 1e-4), 0, 0.999);
+    this.flareT0[piece] = this.now - a * (1 - Math.sqrt(1 - r)) * d;
+    this.flareAtk[piece] = a;
     this.flareDur[piece] = d;
     this.flareAmp[piece] = strength;
     this.kick[piece] = Math.max(this.kick[piece]!, strength * 0.7 * this.mixW);
@@ -1332,6 +1540,13 @@ export class Moon {
     const T = 15;
     let sAvg = 0;
     const hovSep = this.hover * e;
+    // A seal or a piece's own flare kicks the piece out and it settles back (`kick` decays below). The push arrives
+    // over about three frames (time constant 25 ms): a one-frame jump of ten pixels is not motion, and on the
+    // Holo dot lattice it is a flicker. The gain of 1.25 keeps the peak the instant version had; the hologram
+    // recoils half as much (a projection is not a body, and a dot lattice shows every pixel of a push);
+    // reduced motion has no recoil at all.
+    const kickAtk = 1 - Math.exp(-dt / 0.025);
+    const kickK = 1.25 * (1 - 0.5 * this.artW.y);
     for (let k = 0; k < 4; k++) {
       const u = ((((time + this.lag[k]! * T) / T) % 1) + 1) % 1;
       let s = 0;
@@ -1340,9 +1555,11 @@ export class Moon {
       else if (u >= 0.88) s = 1 - easeOutCubic((u - 0.88) / 0.12);
       s = Math.max(s * breath, hovSep * 0.55);
       sAvg += s / 4;
-      const a = this.amp[k]! * s + this.kick[k]! * 9;
+      this.kickS[k]! += (this.kick[k]! - this.kickS[k]!) * kickAtk;
+      const kv = reduced ? 0 : this.kickS[k]! * kickK;
+      const a = this.amp[k]! * s + kv * 9;
       this.off[k]!.copy(this.dir[k]!).multiplyScalar(a);
-      this.off[k]!.z = this.zdir[k]! * 14 * s + this.kick[k]! * 4 * this.zdir[k]!;
+      this.off[k]!.z = this.zdir[k]! * 14 * s + kv * 4 * this.zdir[k]!;
       this.vis[k] = 1;
       this.outlineBuf[k] = 0;
       if (boot) {
@@ -1368,7 +1585,9 @@ export class Moon {
     const kk = Math.exp(-dt / 0.22);
     for (let k = 0; k < 4; k++) {
       const u = (time - this.flareT0[k]!) / this.flareDur[k]!;
-      const v = u >= 0 && u <= 1 ? this.flareAmp[k]! * Math.sin(Math.PI * u) : 0;
+      const on = u >= 0 && u <= 1;
+      const v = on ? this.flareAmp[k]! * flareShape(u, this.flareAtk[k]!) : 0;
+      this.flareU[k] = on ? u : -1;
       this.flareV[k] = v;
       this.kick[k]! *= kk;
       lt += v;
@@ -1414,6 +1633,9 @@ export class Moon {
     const lit = 1 - 0.88 * this.dim;
     bu.uGlow!.value = o.glow * lit * (0.92 + 0.08 * Math.sin(time * 0.7));
     bu.uEdge!.value = 1 + 0.12 * Math.sin(time * 0.43 + 1.0);
+    // The finish eases with the art direction (a switch glides over about a second); reduced motion freezes every time term.
+    bu.uMotion!.value = reduced ? 0 : 1;
+    this.artW.lerp(this.artT, reduced ? 1 : 1 - Math.exp(-dt / 0.3));
     bu.uHover!.value = this.hover * e;
     const seal = bu.uSeal!.value as THREE.Vector4;
     const big0 = this.model.pieces[Piece.Parallelogram]!;
@@ -1443,6 +1665,15 @@ export class Moon {
       this.piecePx[k * 2 + 1] = -(p.cy + this.off[k]!.y) * this.markPx;
     }
     anchors[4]!.set(this.pos.x, this.pos.y, this.pos.z, 1);
+    // Anchor 5: where the dev fund's pulse drifts to, out past the moon and away from the planet in the picture plane.
+    _a.set(0, 0, -1).applyQuaternion(cam.quaternion);
+    _v.copy(this.pos);
+    _v.addScaledVector(_a, -_v.dot(_a));
+    if (_v.lengthSq() < 1e-8) _v.set(0, 1, 0).applyQuaternion(cam.quaternion);
+    _v.normalize()
+      .multiplyScalar(this.radius * 2.6)
+      .add(this.pos);
+    anchors[5]!.set(_v.x, _v.y, _v.z, 1);
 
     // ---- the glow, the block clock and the rings ----
     const late = this.status === 'late' || this.status === 'offline';
@@ -1486,8 +1717,11 @@ export class Moon {
       const hu = this.haloMat.uniforms;
       (hu.uCenter!.value as THREE.Vector3).copy(this.pos);
       hu.uRadius!.value = this.radius * 2.3;
+      // The halo is scaled to the finish: Neon's tubes want a strong blue bloom, the hologram a light one.
+      const haloK = this.artW.x + 0.75 * this.artW.y + 1.4 * this.artW.z;
       hu.uIntensity!.value =
         (0.11 + 0.55 * Math.min(1.5, lt * 0.5) + 0.12 * this.spread + 0.1 * this.hover) *
+        haloK *
         o.glow *
         (1 - 0.8 * this.dim) *
         e *
@@ -1521,9 +1755,10 @@ export class Moon {
       shape.radius,
       th,
       this.unit * SYM_H,
-      (1 + 0.8 * this.flash) * (o.lite ? 0 : 1),
+      (1 + 0.5 * this.flash) * (o.lite ? 0 : 1),
       trailA,
-      clamp(bs / 65, 0.6, 1.8),
+      this.sealT,
+      reduced ? 0 : 1,
     );
 
     // ---- where it is on screen, for the pointer, the proxy and the tethers ----

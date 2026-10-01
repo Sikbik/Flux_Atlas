@@ -22,6 +22,8 @@ export const RingKind = {
   Select: 9,
   /** Co-host marker: a steady 1 px ring (radius set by the start pixel size) held while a node is selected. */
   Host: 10,
+  /** A six-point star burst that faces the camera (the landing spark). */
+  Spark: 11,
 } as const;
 
 // A positive max radius is in globe radii; a negative one is in CSS pixels, constant at any zoom
@@ -34,6 +36,8 @@ uniform float uPxScale;
 uniform float uProjScale;
 uniform float uTime;
 uniform float uReduced;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
 in vec4 aRing;   // slot (negative = free), start, duration, max radius (rad, or -px)
 in vec4 aColor;  // rgb, intensity
 in vec4 aKind;   // kind, start radius px, seed, unused
@@ -66,7 +70,11 @@ void main() {
   float env = 1.0;
   float remaining = dur - age;
   float fastAim = (kind > 5.5 && kind < 6.5 && remaining < 5.0) ? 1.0 : 0.0;
-  if (kind > 5.5 && kind < 6.5) {
+  if (kind > 10.5) {
+    // A spark: opens fast and thins out, with a short ramp in so it never pops.
+    e = 1.0 - pow(1.0 - u, 2.4);
+    env = smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(0.15, 1.0, u));
+  } else if (kind > 5.5 && kind < 6.5) {
     // Reticle: fades in over 400 ms, holds, fades out at the end (when the beams land it collapses).
     e = 1.0;
     env = smoothstep(0.0, 0.4, age) * (1.0 - smoothstep(dur - 0.45, dur, age)) * (1.0 + 0.15 * fastAim);
@@ -109,8 +117,10 @@ void main() {
     float minPx = 6.0 * uPxScale;
     if (Rpx < minPx) { R *= minPx / max(Rpx, 1e-3); Rpx = minPx; }
   }
-  float ext = (kind > 8.5 && kind < 9.5) ? 1.0 : 1.32;
+  float ext = ((kind > 8.5 && kind < 9.5) || kind > 10.5) ? 1.0 : 1.32;
   vec3 Q = normalize(B + (E * position.x + N * position.y) * R * ext) * (pr + 0.0006);
+  // A spark is a star in the picture plane, not a mark on the surface.
+  if (kind > 10.5) Q = P + (uCamRight * position.x + uCamUp * position.y) * R;
   gl_Position = projectionMatrix * viewMatrix * vec4(Q, 1.0);
   vUv = position.xy * ext;
   float thick = clamp(3.0 * uPxScale / Rpx, 0.03, 0.45);
@@ -139,13 +149,19 @@ float ringAt(float q, float radius, float width) {
 void main() {
   float q = length(vUv);
   float k = vKind;
-  float lim = (k > 8.5 && k < 9.5) ? 1.0 : 1.32;
+  float lim = ((k > 8.5 && k < 9.5) || k > 10.5) ? 1.0 : 1.32;
   if (q > lim) discard;
   vec3 c = vColor.rgb;
   float th = vP.y;
   float u = vP.x;
   float s = 0.0;
-  if (k < 0.5) {                      // pulse
+  if (k > 10.5) {                     // spark: a six-point star with a hot heart
+    float ang = atan(vUv.y + 1e-5, vUv.x + 1e-5);
+    float spokes = pow(abs(cos(ang * 3.0 + 0.5236)), 28.0);
+    float arm = spokes * exp(-q * 3.2) * (1.0 - smoothstep(0.7, 1.0, q));
+    float fine = pow(abs(cos(ang * 3.0)), 70.0) * exp(-q * 5.0) * 0.45;
+    s = arm * 1.4 + fine + exp(-q * q * 26.0) * 1.3;
+  } else if (k < 0.5) {               // pulse
     s = ringAt(q, 1.0, th) * 1.4 + exp(-q * q * 5.0) * 0.12 * (1.0 - u);
   } else if (k < 1.5) {               // ignite: flash then ring
     float fl = exp(-q * q * 9.0) * exp(-u * 4.5) * 2.2;
@@ -242,6 +258,8 @@ export class RingLayer {
         uProjScale: u.uProjScale,
         uTime: u.uTime,
         uReduced: u.uReduced,
+        uCamRight: u.uCamRight,
+        uCamUp: u.uCamUp,
       },
       transparent: true,
       blending: THREE.CustomBlending,

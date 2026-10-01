@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DEG, TAU } from '../math';
 import { createSharedUniforms } from '../uniforms';
-import { Moon, type MoonFrame, type MoonView } from './moon';
+import { flareAttack, flareShape, Moon, type MoonFrame, type MoonView } from './moon';
 import {
   angleAtUtc,
   compactOrbit,
@@ -415,6 +415,109 @@ describe('nothing about the moon pops', () => {
       last = w;
     }
     expect(last).toBe(0);
+  });
+});
+
+describe('a piece flare is crisp, and overlapping flares build on each other', () => {
+  it('ignites in about five frames and then dies away, whatever its length', () => {
+    for (const dur of [0.34, 0.5, 0.7, 0.9]) {
+      const a = flareAttack(dur);
+      expect(a).toBeGreaterThanOrEqual(0.1);
+      expect(a).toBeLessThanOrEqual(0.35);
+      // About 85 ms of ignition (clamped for the very short and very long runs).
+      if (dur >= 0.25 && dur <= 0.85) expect(a * dur).toBeCloseTo(0.085, 3);
+      expect(flareShape(0, a)).toBe(0);
+      expect(flareShape(a, a)).toBeCloseTo(1, 12);
+      expect(flareShape(1, a)).toBeCloseTo(0, 12);
+      // Continuous across the peak and monotonic on both sides.
+      expect(flareShape(a - 1e-6, a)).toBeCloseTo(flareShape(a + 1e-6, a), 4);
+      let prev = 0;
+      for (let u = 0.01; u <= a; u += 0.01) {
+        expect(flareShape(Math.min(u, a), a)).toBeGreaterThanOrEqual(prev - 1e-12);
+        prev = flareShape(Math.min(u, a), a);
+      }
+      for (let u = a + 0.01; u <= 1; u += 0.01) {
+        expect(flareShape(u, a)).toBeLessThanOrEqual(prev + 1e-12);
+        prev = flareShape(u, a);
+      }
+    }
+  });
+
+  it('ramps its light over several frames instead of jumping, and never dips when it is retriggered', () => {
+    const m = fresh({ phase: 40 });
+    const cam = camera(HOME_DIR);
+    step(m, cam, T0, 0, 0);
+    const light: number[] = [];
+    let t = 0;
+    const frame = (): void => {
+      t += 1 / 60;
+      step(m, cam, T0, 1 / 60, t);
+      light.push(m.light);
+    };
+    m.flare(0, 0.5, 0.34);
+    for (let k = 0; k < 6; k++) frame();
+    // A stronger flare while the first is still burning: the light carries on up from where it was.
+    m.flare(0, 1, 0.34);
+    for (let k = 0; k < 40; k++) frame();
+    // The ignition took several frames: no single step is most of the way up.
+    expect(Math.max(...light.slice(0, 5))).toBeLessThan(0.5 + 1e-6);
+    expect(light[0]!).toBeLessThan(0.5);
+    // At the retrigger the light does not dip: from the frame it was struck it climbs on to the new peak
+    // (the first flare was already past its own peak and falling, so a restart from zero would show as a drop).
+    const peak = light.indexOf(Math.max(...light));
+    expect(peak).toBeGreaterThan(6);
+    for (let k = 6; k <= peak; k++) expect(light[k]!).toBeGreaterThanOrEqual(light[k - 1]! - 1e-9);
+    expect(Math.max(...light)).toBeGreaterThan(0.95);
+    // And it ends dark.
+    expect(light[light.length - 1]!).toBeLessThan(0.2);
+  });
+});
+
+describe('a seal pushes the pieces out and they settle back', () => {
+  /** How far piece 1 (the small hexagon) is from its seat, in CSS px, for each of 40 frames after a seal. */
+  function recoil(reduced: boolean, art?: 'marble' | 'dotmatrix' | 'neon'): number[] {
+    const m = fresh({ phase: 40 });
+    m.reduced = reduced;
+    if (art) m.setArt(art, true);
+    m.lift(true);
+    const cam = camera(HOME_DIR);
+    // Settle into the sky (the shell's tonal logo stays assembled; only the sky moon recoils).
+    for (let k = 0; k < 80; k++) step(m, cam, T0, 1 / 60, 0);
+    const out = { x: 0, y: 0 };
+    m.piecePixels(1, out);
+    const x0 = out.x;
+    const y0 = out.y;
+    m.seal(1, 5);
+    const d: number[] = [];
+    for (let k = 0; k < 40; k++) {
+      step(m, cam, T0, 1 / 60, 0);
+      m.piecePixels(1, out);
+      d.push(Math.hypot(out.x - x0, out.y - y0));
+    }
+    return d;
+  }
+
+  it('arrives over a few frames, never in one, and settles back', () => {
+    const d = recoil(false);
+    const peak = Math.max(...d);
+    expect(peak).toBeGreaterThan(1);
+    // The first frame is about half the push, not all of it.
+    expect(d[0]!).toBeLessThan(0.65 * peak);
+    expect(d[0]!).toBeGreaterThan(0.2 * peak);
+    // The biggest single-frame step is well under the whole push (no teleport).
+    let step1 = 0;
+    for (let k = 1; k < d.length; k++) step1 = Math.max(step1, Math.abs(d[k]! - d[k - 1]!));
+    expect(Math.max(step1, d[0]!)).toBeLessThan(0.65 * peak);
+    // And it ends where it began.
+    expect(d[d.length - 1]!).toBeLessThan(0.15 * peak);
+  });
+
+  it('has no recoil at all in reduced motion, and half as much for the hologram', () => {
+    expect(Math.max(...recoil(true))).toBeLessThan(1e-6);
+    const marble = Math.max(...recoil(false, 'marble'));
+    const holo = Math.max(...recoil(false, 'dotmatrix'));
+    expect(holo).toBeGreaterThan(0.3 * marble);
+    expect(holo).toBeLessThan(0.75 * marble);
   });
 });
 

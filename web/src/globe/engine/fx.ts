@@ -6,7 +6,7 @@ import type { Activity } from './activity';
 import type { CameraRig } from './camera';
 import { ANCHOR_BASE, RayKind, type RayLayer } from './layers/rays';
 import { type RibbonLayer, RibbonStyle } from './layers/ribbons';
-import type { RingLayer } from './layers/rings';
+import { RingKind, type RingLayer } from './layers/rings';
 import { NO_CLUSTER, type NodeStore } from './nodes/store';
 import type { SharedUniforms } from './uniforms';
 
@@ -163,6 +163,31 @@ export class Fx {
     delay = 0,
   ): number {
     return this.t.rings.add(slot, kind, this.time + delay, dur, -px1, c.r, c.g, c.b, intensity, seed, px0);
+  }
+
+  /** A camera-facing six-point spark that opens from `px0` to `px1` CSS pixels (the landing spark). */
+  sparkPx(
+    slot: number,
+    c: THREE.Color,
+    px0: number,
+    px1: number,
+    dur: number,
+    intensity: number,
+    delay = 0,
+  ): number {
+    return this.t.rings.add(
+      slot,
+      RingKind.Spark,
+      this.time + delay,
+      dur,
+      -px1,
+      c.r,
+      c.g,
+      c.b,
+      intensity,
+      0,
+      px0,
+    );
   }
 
   ringAt(
@@ -355,9 +380,10 @@ export class Fx {
   }
 
   /**
-   * A beam between two endpoints (node slots or moon anchors): a bright head flies from A to B over
-   * `dur` seconds and leaves the conduit lit behind it until `life`. The color runs from `a` at the
-   * start to `b` at the end.
+   * A beam between two endpoints (node slots or moon anchors): a white-hot head flies from A to B over
+   * `dur` seconds, dragging a tail that thins to nothing over a faint hairline of the route, until `life`.
+   * The color runs from `a` at the start to `b` at the end. `kind` is a `RayKind` (add `RayKind.Still` for
+   * reduced motion: no flight, the end of the route is lit at once).
    */
   ray(
     slotA: number,
@@ -369,11 +395,12 @@ export class Fx {
     widthPx: number,
     intensity: number,
     delay = 0,
+    kind: number = RayKind.Beam,
   ): number {
     return this.t.rays.add(
       slotA,
       slotB,
-      RayKind.Beam,
+      kind,
       this.time + delay,
       dur,
       life,
@@ -429,43 +456,75 @@ export class Fx {
   // beam goes over the limb and the planet hides the rest of it.
 
   /**
-   * The uplink: a lifted arc from the producer to the moon's current place. A white head with a Blue
-   * Wave trail flies for `travel` seconds, ease-in-out, and arrives exactly when the moon receives.
+   * The uplink: a streak from the producer to the moon's current place. A white-hot head with a Blue Wave
+   * tail flies for `travel` seconds, ease-in-out, and arrives exactly when the moon receives the block.
+   * Reduced motion: no flight, the end of the route is lit at once instead.
    */
   uplink(producer: number, delay: number, travel: number): void {
     this.color('block', _c);
-    const red = this.reduced;
-    // Reduced motion: no flight, the whole conduit appears at once and fades.
-    this.ray(
-      producer,
-      this.moonAnchor(4),
-      _c,
-      _tint,
-      red ? 0.05 : travel,
-      red ? 0.9 : travel + 2.0,
-      red ? 2.2 : 2.8,
-      1.6,
-      delay,
-    );
+    if (this.reduced) {
+      this.ray(
+        producer,
+        this.moonAnchor(4),
+        _c,
+        _tint,
+        0.38,
+        0.9,
+        2.8,
+        1.3,
+        delay,
+        RayKind.Beam + RayKind.Still,
+      );
+      return;
+    }
+    this.ray(producer, this.moonAnchor(4), _c, _tint, travel, travel + 1.2, 3.2, 1.9, delay);
   }
 
   /**
    * A downlink: from a moon piece to a payee, in the tier color (tier, 22% toward white, 60% toward
-   * white). It leaves the moon fast and settles onto the node (ease-out), arriving in `travel`.
+   * white). It leaves the moon fast and settles onto the node (ease-out, a fifth of the way at constant
+   * speed so it lands moving), arriving in `travel`.
    */
   downlink(piece: number, slot: number, tier: THREE.Color, delay: number, travel: number): void {
     this.color('shockHot', _c);
+    if (this.reduced) {
+      this.ray(
+        this.moonAnchor(piece),
+        slot,
+        _c,
+        tier,
+        0.42,
+        0.95,
+        2.3,
+        1.4,
+        delay,
+        RayKind.Down + RayKind.Still,
+      );
+      return;
+    }
+    this.ray(this.moonAnchor(piece), slot, _c, tier, travel, travel + 1.1, 2.3, 1.8, delay, RayKind.Down);
+  }
+
+  /**
+   * The dev-fund pulse: the fourth coinbase output leaves the slanted bar and drifts out into space, away
+   * from the planet, to where no node is. A slow white streak with a light-blue tail (the tier colors
+   * belong to the payees), so it reads as something different from a payout.
+   */
+  devPulse(): void {
     const red = this.reduced;
+    const travel = red ? 0.42 : 1.0;
+    _c.set('#ffffff');
     this.ray(
-      this.moonAnchor(piece),
-      slot,
+      this.moonAnchor(0),
+      this.moonAnchor(5),
       _c,
-      tier,
-      red ? 0.05 : travel,
-      red ? 0.9 : travel + 1.4,
-      red ? 2.0 : 2.3,
-      1.8,
-      delay,
+      _tint,
+      travel,
+      travel + 0.9,
+      2.0,
+      red ? 1.0 : 1.3,
+      0,
+      RayKind.Drift + (red ? RayKind.Still : 0),
     );
   }
 

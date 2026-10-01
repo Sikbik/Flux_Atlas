@@ -408,6 +408,7 @@ export class GlobeEngine {
     this.rays = new RayLayer(this.u, 48, 43);
     this.moon = new Moon(this.u, { lite: this.profile.moonLite, ...(opts.moon ?? {}) });
     this.moon.setTokens(this.tokens);
+    this.moon.setArt(this.artDirection, true);
     this.scene.add(
       this.clusterLayer.mesh,
       this.nodeLayer.mesh,
@@ -419,7 +420,8 @@ export class GlobeEngine {
       this.rays.mesh,
       this.moon.group,
     );
-    this.overlayScene.add(this.moon.overlay);
+    // The beams' heads are drawn after the moon's body, so a head that leaves or lands on a piece shows on its face.
+    this.overlayScene.add(this.moon.overlay, this.rays.head);
 
     this.fx = new Fx({
       store: this.nodes,
@@ -543,6 +545,7 @@ export class GlobeEngine {
     const body = this.ensureBody(art);
     for (const k of Object.keys(this.bodies) as ArtDirection[]) this.bodies[k]?.setVisible(k === art);
     body.setVisible(true);
+    this.moon?.setArt(art);
     this.setTokens({});
   }
 
