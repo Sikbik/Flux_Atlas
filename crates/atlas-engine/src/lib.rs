@@ -298,11 +298,23 @@ pub struct Published {
 impl Published {
     fn from_state(server: ServerInfo, st: &NetworkState) -> Self {
         let nodes: Vec<NodeRecord> = st.nodes.listed().map(|e| e.rec.clone()).collect();
+        // The restored mesh is served from the first request on (M8): without this body,
+        // `mesh.bin` answered an empty mesh until the first publish, and a client that booted
+        // in that window never received the restored edges (they are not live deltas).
+        let generated_ms = now_ms();
+        let mut bodies = PrebuiltBodies::default();
+        if st.mesh.edge_count() > 0 {
+            let edges = st.mesh.edge_list();
+            match publish::mesh_body(0, generated_ms, Some(origin_of(&server)), &edges).0 {
+                Ok(b) => bodies.mesh_bin = Some(b),
+                Err(e) => tracing::error!(error = %e, "initial mesh.bin build failed"),
+            }
+        }
         let network = reducer::summarize(st);
         let tiers = reducer::tier_stats(st, &network);
         Self {
             seq: 0,
-            generated_ms: now_ms(),
+            generated_ms,
             stale: true,
             server,
             network,
@@ -315,7 +327,7 @@ impl Published {
                 .map(publish::block_lite)
                 .collect::<Vec<_>>()
                 .into(),
-            bodies: PrebuiltBodies::default(),
+            bodies,
             tiers: tiers.into(),
             freshness: Arc::from(Vec::new()),
             next_payees: st

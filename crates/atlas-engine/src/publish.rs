@@ -120,7 +120,7 @@ pub fn nodes_bin_body<S: std::hash::BuildHasher>(
 type MeshReq = (u64, u64, Option<Origin>, Vec<(NodeId, NodeId, u8)>);
 type MeshResp = (std::io::Result<PrebuiltBody>, u64);
 
-fn mesh_body(
+pub(crate) fn mesh_body(
     seq: u64,
     generated_ms: u64,
     origin: Option<Origin>,

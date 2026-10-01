@@ -733,7 +733,11 @@ with `seq <= nodes.bin seq`; the node-table part of a `block` (payout rotation, 
 bootstrap.seq`; feed items as in section 8. A failed `mesh.bin` fetch fails the resync (it is retried);
 only a 404 (a server without the mesh) loads an empty mesh. Every edge change reaches clients as a live
 `mesh` delta, including the edges of a node that left (B9: before, only the next `mesh.bin` dropped those,
-and the live check measured 62 ghost links kept by a resumed client).
+and the live check measured 62 ghost links kept by a resumed client). The restored mesh is served
+from the first request after a start (the initial published state carries a `mesh.bin` body at seq 0):
+restored edges are never live deltas, so an empty mesh served before the first publish would never be
+repaired by the stream (B9: a client booted 0.2 s after a restart missed 257,000 edges until its next
+resync).
 
 **Stable node keys.** Node URLs are `/node/<txid>:<vout>` (the colon percent-encoded in links). The
 router still accepts `/node/<ip:port>` and a legacy numeric id: it resolves the key against the loaded

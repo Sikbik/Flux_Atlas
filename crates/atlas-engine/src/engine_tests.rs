@@ -1174,6 +1174,47 @@ async fn geoip_database_loaded_later_streams_a_geo_delta() {
     eng.shutdown().await;
 }
 
+/// M8: a restarted engine serves its restored mesh from the first request on. Before, the
+/// initial published state had no `mesh.bin` body, the server answered an empty mesh until the
+/// first publish, and a client that booted in that window never received the restored edges.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_restarted_engine_serves_its_restored_mesh_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("m.redb")).unwrap();
+    let eng = start(store.clone());
+    let up = UpstreamQueue::new(3, 3_000_000);
+    inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+    until("nodes", || eng.published().nodes.len() == 9).await;
+    let ep = |i: usize| up.nodes[i].endpoint.unwrap();
+    inject(
+        &eng,
+        Obs::Topology {
+            queried: ep(0),
+            reports: vec![crate::obs::TopologyReport {
+                reporter: ep(0),
+                outbound: vec![ep(1), ep(2)],
+                inbound: vec![],
+            }],
+        },
+    )
+    .await;
+    until("edges", || eng.published().mesh_edge_count == 2).await;
+    eng.shutdown().await;
+    drop(eng);
+
+    let eng = start(store);
+    let p = eng.published();
+    let body = p
+        .bodies
+        .mesh_bin
+        .as_ref()
+        .expect("a mesh.bin body before any publish");
+    let mesh = atlas_core::codec::mesh_bin::decode_mesh_bin(&body.raw).unwrap();
+    assert_eq!(mesh.edge_count(), 2);
+    assert_eq!(mesh.origin, Some(eng.origin()));
+    eng.shutdown().await;
+}
+
 /// M8: when a node leaves, its mesh edges leave in a live `mesh` delta too (before, only the
 /// next mesh.bin dropped them, so a client resuming from live deltas kept them as ghost links),
 /// and bootstrap `mesh_seq` names that delta.
