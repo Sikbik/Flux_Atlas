@@ -15,6 +15,7 @@ import { EmptyState } from '../../../ui';
 import { track } from '../../achievements/events';
 import { hasMod } from '../keys';
 import { writePaletteText } from '../paletteUrl';
+import { drainTypeAhead } from '../typeAhead';
 import { loadRecents } from './recents';
 import { KeyCap, optionId, RowSkeletons, RowView } from './rows';
 import { type RunCtx, type RunMode, runRow } from './run';
@@ -26,8 +27,11 @@ export interface PaletteProps {
   phase: 'open' | 'closing';
   /** The text the URL carries (the palette's own text is authoritative while it is open). */
   urlText: string | null;
-  /** Text typed into the stand-in panel before this chunk arrived. */
-  seed: string;
+  /**
+   * Reads the text typed into the stand-in panel before this chunk arrived. It is a function because the
+   * host's render happened before that typing: only reading at mount sees what was typed.
+   */
+  seed: () => string;
   /** Closes the palette (the host decides how history moves). */
   close: () => void;
   /** Opens the palette from a key press (tells the achievements). */
@@ -45,7 +49,7 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
   const handles = useGlobeHandles();
   const loaded = useNetwork((s) => s.loaded);
 
-  const [raw, setRaw] = useState(seed || (urlText ?? ''));
+  const [raw, setRaw] = useState(() => seed() || (urlText ?? ''));
   const [chip, setChip] = useState<KindChip>('all');
   const [recents] = useState(() => loadRecents());
   const [userActive, setUserActive] = useState<string | null>(null);
@@ -108,8 +112,17 @@ export default function Palette({ phase, urlText, seed, close, via }: PalettePro
 
   // ---- URL text and focus ---------------------------------------------------------------------
 
+  const readSeed = useRef(seed);
+  readSeed.current = seed;
   useEffect(() => {
+    // Text the stand-in took while this tree was ready but not yet swapped in (React holds a ready tree for
+    // a moment so the stand-in does not flash, and the state above was set before those keys), and keys
+    // typed before any field existed.
+    const typed = readSeed.current();
+    const early = drainTypeAhead();
+    if (typed || early) setRaw((cur) => (typed || cur) + early);
     focusInput();
+    if (typed || early) window.requestAnimationFrame(() => focusInput());
     track({ type: 'palette', action: 'open', via });
   }, [focusInput, via]);
 

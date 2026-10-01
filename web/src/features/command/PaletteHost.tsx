@@ -10,6 +10,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { effectiveMotion, useUi } from '../../store/ui';
 import { registerPaletteCloser, takeOpenVia } from './paletteBridge';
 import { closePalette, paletteTextFromSearch } from './paletteUrl';
+import { drainTypeAhead } from './typeAhead';
 
 const loadPalette = () => import('./palette/Palette');
 const LazyPalette = lazy(loadPalette);
@@ -108,6 +109,15 @@ export function PaletteHost() {
                 spellCheck={false}
                 placeholder="Search nodes, apps, blocks, addresses, or type a command"
                 defaultValue={urlText ?? ''}
+                ref={(el) => {
+                  // Keys typed between the shortcut and this field are its first characters.
+                  if (!el) return;
+                  const early = drainTypeAhead();
+                  if (early) {
+                    el.value += early;
+                    seed.current = el.value;
+                  }
+                }}
                 onChange={(e) => {
                   seed.current = e.target.value;
                 }}
@@ -120,7 +130,7 @@ export function PaletteHost() {
         <LazyPalette
           phase={phase === 'closing' ? 'closing' : 'open'}
           urlText={urlText}
-          seed={seed.current || lastText.current}
+          seed={() => seed.current || lastText.current}
           close={close}
           via={via.current}
         />
