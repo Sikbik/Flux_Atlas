@@ -3,7 +3,7 @@
 
 import { lazy } from 'react';
 
-export { OperatorView, QueueView, WeatherView } from '../app/placeholders/views';
+export { OperatorView, WeatherView } from '../app/placeholders/views';
 
 export const NodeView = lazy(() =>
   import('../features/inspect/node/NodeView').then((m) => ({ default: m.NodeView })),
@@ -19,4 +19,8 @@ export const AppView = lazy(() =>
 
 export const AppHistoryView = lazy(() =>
   import('../features/inspect/app/History').then((m) => ({ default: m.AppHistoryView })),
+);
+
+export const QueueView = lazy(() =>
+  import('../features/inspect/queue/QueueView').then((m) => ({ default: m.QueueView })),
 );

@@ -4,6 +4,7 @@
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveMotion, useUi } from '../../../store/ui';
+import { withAlpha } from './canvas';
 import { cx } from './cx';
 import { isLand, type LandMask, loadLand } from './land';
 
@@ -118,16 +119,6 @@ function readPalette(el: Element): Palette {
     halo: 'rgb(8 10 15 / 0.9)',
     hot: v('--hot', '#ffffff'),
   };
-}
-
-/** `#rrggbb` with an alpha (canvas gradients interpolate badly through `transparent`). */
-function withAlpha(color: string, a: number): string {
-  if (/^#[0-9a-f]{6}$/i.test(color)) {
-    return `${color}${Math.round(Math.max(0, Math.min(1, a)) * 255)
-      .toString(16)
-      .padStart(2, '0')}`;
-  }
-  return color;
 }
 
 function markerColor(p: MapPoint, pal: Palette): string {

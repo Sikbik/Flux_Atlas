@@ -145,6 +145,32 @@ export function AddressLink({ addr, children, className, title, ...aria }: LinkP
   );
 }
 
+/** The payment queues: all tiers, or one tier's ring. Keeps the rest of the URL (the selection included). */
+export function QueueLink({
+  tier,
+  children,
+  className,
+  title,
+  ...aria
+}: LinkProps & { tier?: 'cumulus' | 'nimbus' | 'stratus' }) {
+  return tier ? (
+    <Link
+      to="/queue/$tier"
+      params={{ tier }}
+      search={true as never}
+      className={cx('ix-link', className)}
+      title={title}
+      {...aria}
+    >
+      {children}
+    </Link>
+  ) : (
+    <Link to="/queue" search={true as never} className={cx('ix-link', className)} title={title} {...aria}>
+      {children}
+    </Link>
+  );
+}
+
 /** A link to any path of the app (for the few places that build a route by hand). */
 export function PathLink({
   to,
@@ -152,7 +178,7 @@ export function PathLink({
   className,
   title,
   ...aria
-}: LinkProps & { to: '/queue' | '/weather' | '/analytics' | '/mempool' | '/supply' | '/settings' }) {
+}: LinkProps & { to: '/weather' | '/analytics' | '/mempool' | '/supply' | '/settings' }) {
   return (
     <Link to={to} search={true as never} className={cx('ix-link', className)} title={title} {...aria}>
       {children}

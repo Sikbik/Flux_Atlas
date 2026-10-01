@@ -157,7 +157,8 @@ function Produced() {
     abort.current = ctl;
     setBusy(true);
     try {
-      let before: number | null = ring[0]!.height;
+      // The ring is newest first: older blocks start below its last (oldest) entry.
+      let before: number | null = ring[ring.length - 1]!.height;
       const heights: number[] = [];
       let blocks = 0;
       for (let page = 0; page < 4 && before !== null; page++) {

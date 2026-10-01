@@ -3,6 +3,7 @@
 
 import './ui.css';
 
+export { fitCanvas, readVar, withAlpha } from './canvas';
 export { MiniBars, Spark } from './charts';
 export { AccentChip, Chip, StateChips, StatusChip, TierChip, tierLabel } from './chips';
 export { Btn, CopyButton, Switch } from './controls';
@@ -23,6 +24,7 @@ export {
   NodeLink,
   OperatorLink,
   PathLink,
+  QueueLink,
 } from './links';
 export { type MapPoint, MiniMap } from './map';
 export { etaShort, QueueCell } from './queuecell';

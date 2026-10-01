@@ -750,10 +750,12 @@ button.ix-chip:hover {
 
 /* ---- digits ------------------------------------------------------------------------------------ */
 
+/* A changed digit settles in from just below: never fully transparent, so a number that ticks every
+   second reads as moving rather than flickering. */
 @keyframes ix-tick {
   from {
-    opacity: 0;
-    transform: translateY(0.42em);
+    opacity: 0.25;
+    transform: translateY(0.3em);
   }
 }
 
@@ -1551,4 +1553,40 @@ a.ix-slot[data-sel="true"] {
 
 .ix-state[data-compact] {
   padding: 6px 0 2px;
+}
+
+/* ---- text field ---------------------------------------------------------------------------------- */
+
+.ix-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--ink-2);
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-sm);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.ix-input::placeholder {
+  color: var(--text-3);
+}
+
+.ix-input:hover {
+  border-color: var(--line-3);
+}
+
+.ix-input:focus-visible {
+  outline: none;
+  border-color: var(--accent-400);
+  box-shadow: var(--focus-ring);
+}
+
+.ix-input::-webkit-search-cancel-button {
+  display: none;
 }

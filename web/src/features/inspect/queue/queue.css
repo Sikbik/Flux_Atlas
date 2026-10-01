@@ -1,0 +1,626 @@
+/* Payment queue view (F3). One ring per tier, a belt of next payees per tier, a selected-node card.
+   The tier colour comes from `data-tier` (tokens.css): rings, belts and chips follow it. Everything that
+   moves is a transform or opacity; the rings themselves are canvases (see Wheel.tsx). */
+
+.ix-queue {
+  padding: 14px var(--ix-pad) 28px;
+}
+
+/* ---- top bar ----------------------------------------------------------------------------------- */
+
+.ix-q-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ix-q-search {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ix-q-search-i {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.ix-q-search .ix-input {
+  padding-left: 34px;
+  padding-right: 34px;
+}
+
+.ix-q-search-x {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  translate: 0 -50%;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.ix-q-search-x:hover {
+  color: var(--text-1);
+  background: var(--ink-3);
+}
+
+.ix-q-search-x:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ix-q-hits {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 1px;
+  max-height: 320px;
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--ink-1) 94%, transparent);
+  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.7);
+  backdrop-filter: blur(14px);
+}
+
+.ix-q-hit {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.ix-q-hit[data-tier] {
+  --tier-c: var(--tier);
+}
+
+.ix-q-hit > .ix-tier-glyph {
+  color: var(--tier);
+}
+
+.ix-q-hit[data-active] {
+  background: linear-gradient(90deg, var(--tier-soft, var(--accent-soft)), transparent 90%);
+}
+
+.ix-q-hit[data-empty] {
+  grid-template-columns: 1fr;
+  color: var(--text-3);
+  cursor: default;
+}
+
+.ix-q-hit-ep {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ix-q-clock {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 13px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-2);
+  background: var(--ink-2);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.ix-q-clock > .ix-q-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-ok);
+  box-shadow: var(--glow-ok);
+}
+
+.ix-q-clock[data-late] > .ix-q-dot {
+  background: var(--status-warn);
+  box-shadow: 0 0 14px -2px var(--status-warn);
+}
+
+/* ---- tier chooser (links in a single-tier view, tabs on a narrow window) ------------------------- */
+
+.ix-q-tiers,
+.ix-q-switch {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 14px;
+  padding: 3px;
+  border: 1px solid var(--line-1);
+  border-radius: 12px;
+  background: var(--ink-1);
+}
+
+.ix-q-switch {
+  display: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ix-q-tiers-b,
+.ix-q-switch-b {
+  display: grid;
+  place-items: center;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.ix-q-tiers-b:hover,
+.ix-q-switch-b:hover {
+  color: var(--text-1);
+}
+
+.ix-q-tiers-b:focus-visible,
+.ix-q-switch-b:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ix-q-tiers-b[aria-current="page"],
+.ix-q-switch-b[aria-selected="true"] {
+  background: var(--tier-soft, var(--accent-soft));
+  box-shadow: inset 0 0 0 1px var(--tier-line, var(--line-2));
+  color: var(--text-1);
+}
+
+/* ---- rings ------------------------------------------------------------------------------------- */
+
+.ix-q-wheels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.ix-q-wheels[data-n="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ix-q-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ix-wheel {
+  position: relative;
+  container: ixw / inline-size;
+  width: 100%;
+  max-width: 232px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  cursor: crosshair;
+}
+
+.ix-q-card[data-solo] .ix-wheel {
+  max-width: 340px;
+}
+
+.ix-wheel > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ix-wheel-mid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.ix-wheel-name {
+  font-family: var(--font-display);
+  font-size: clamp(10px, 4.6cqw, 13px);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--tier);
+}
+
+.ix-wheel-n {
+  font-size: clamp(20px, 11.5cqw, 34px);
+  font-weight: var(--fw-medium);
+  line-height: 1.05;
+  color: var(--text-1);
+}
+
+.ix-wheel-cap {
+  font-size: clamp(9px, 3.6cqw, 11px);
+  color: var(--text-3);
+}
+
+.ix-wheel-tip {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 1px;
+  padding: 6px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: rgb(8 10 15 / 0.94);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(calc(-50% - var(--ix-flip, 0) * 38%), calc(-100% - 14px));
+}
+
+.ix-wheel-tip > b {
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.ix-wheel-tip > small {
+  color: var(--text-3);
+}
+
+.ix-q-foot {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  min-height: 40px;
+  text-align: center;
+}
+
+.ix-q-foot-1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.ix-q-foot-1 small {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.ix-q-foot-2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 20px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.ix-q-foot-x {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.ix-q-foot-x:hover {
+  color: var(--text-1);
+  background: var(--ink-3);
+}
+
+.ix-q-foot-x:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ix-q-focus {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  font-size: var(--fs-xs);
+  text-decoration: none;
+  color: var(--tier);
+}
+
+.ix-q-focus:hover {
+  color: var(--text-1);
+}
+
+/* ---- belts ------------------------------------------------------------------------------------- */
+
+.ix-q-lanes {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ix-q-lane-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-family: var(--font-display);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--tier);
+}
+
+.ix-q-lane-h > small {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+  color: var(--text-3);
+}
+
+.ix-lane {
+  --ix-S: 112px;
+  --ix-G: 140px;
+}
+
+.ix-lane-view {
+  position: relative;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--tier) 7%, var(--ink-1)), var(--ink-1));
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+/* The belt runs inside a clip that stops short of the end cap and fades out toward it. */
+.ix-lane-clip {
+  position: absolute;
+  z-index: 1;
+  inset: 0 96px 0 0;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent 0, #000 34px, #000 calc(100% - 52px), transparent);
+}
+
+.ix-lane-gate {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--ix-G) - 9px);
+  width: 2px;
+  background: linear-gradient(180deg, transparent, var(--hot) 28%, var(--hot) 72%, transparent);
+  box-shadow: 0 0 9px 0 var(--hot-glow);
+  pointer-events: none;
+}
+
+.ix-lane-track {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  will-change: transform;
+}
+
+.ix-btile-cell {
+  position: absolute;
+  top: 6px;
+  left: calc(var(--ix-G) + (var(--ix-i) + 1) * var(--ix-S));
+  width: calc(var(--ix-S) - 8px);
+}
+
+.ix-btile {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  width: 100%;
+  height: 44px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  background: var(--ink-2);
+  text-align: left;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+div.ix-btile {
+  cursor: default;
+}
+
+.ix-btile:hover {
+  border-color: var(--tier-line);
+  background: var(--tier-soft);
+}
+
+.ix-btile:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ix-btile[data-state="next"] {
+  border-color: var(--tier);
+  background: var(--tier-soft);
+  box-shadow: 0 0 22px -8px var(--tier);
+  color: var(--text-1);
+}
+
+.ix-btile[data-state="paid"] {
+  border-style: dashed;
+  background: var(--ink-1);
+  color: var(--text-3);
+}
+
+.ix-btile[data-selected] {
+  box-shadow:
+    0 0 0 1px var(--hot),
+    0 0 18px -4px var(--hot-glow);
+}
+
+.ix-btile-ep {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ix-btile-eta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.ix-btile-eta > i {
+  font-style: normal;
+  color: var(--text-4);
+}
+
+.ix-btile[data-state="paid"] .ix-btile-eta {
+  color: var(--status-ok);
+}
+
+.ix-lane-end {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  align-content: center;
+  justify-items: end;
+  gap: 1px;
+  width: 96px;
+  padding-right: 12px;
+  font-size: 9px;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-4);
+  pointer-events: none;
+}
+
+.ix-lane-end > b {
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--text-3);
+}
+
+/* The paid node sets off toward the back of the queue as a small token: up, along the belt, away. */
+@keyframes ix-back {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  16% {
+    opacity: 1;
+    transform: translate(0, -22px) scale(1);
+  }
+  84% {
+    opacity: 0.85;
+    transform: translate(calc(var(--ix-fly) - 24px), -22px) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--ix-fly), -4px) scale(0.5);
+  }
+}
+
+.ix-ghost {
+  position: absolute;
+  z-index: 3;
+  top: 18px;
+  left: calc(var(--ix-G) + 10px);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--tier);
+  background: var(--tier-soft);
+  color: var(--hot);
+  box-shadow: 0 0 14px -2px var(--tier);
+  pointer-events: none;
+  animation: ix-back 1.15s var(--ease-in-out) both;
+}
+
+/* ---- next in line (a single tier) -------------------------------------------------------------- */
+
+.ix-q-next {
+  margin: 18px calc(var(--ix-pad) * -1) 0;
+}
+
+/* ---- narrow windows: one tier at a time -------------------------------------------------------- */
+
+@container ix (max-width: 559px) {
+  .ix-q-wheels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ix-q-card:not([data-active]):not([data-solo]),
+  .ix-q-lane:not([data-active]):not([data-solo]) {
+    display: none;
+  }
+
+  .ix-queue:not([data-focus]) .ix-q-switch {
+    display: grid;
+  }
+
+  .ix-q-focus {
+    display: none;
+  }
+
+  .ix-q-tiers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ix-q-facts > div {
+    padding: 0 8px;
+  }
+}
