@@ -1,8 +1,15 @@
 // UI preferences (zustand). Network data lives in the NetworkStore; URL state (selection, filters,
 // camera, windows) lives in the router. This holds only local preferences: motion, performance
 // tier, the globe's art style, the watchlist. Persisted per browser; every storage access is guarded.
+//
+// The watchlist is kept by collateral outpoint (ARCHITECTURE 8.1): node ids are local to the
+// instance that served the snapshot, so `watched` (ids) is derived from `watchedKeys` after every
+// snapshot load (`resolveWatched`). Stored numeric ids from older clients are resolved once against
+// the first snapshot that carries outpoints and rewritten as outpoints; unresolvable ones are dropped.
 
 import { create } from 'zustand';
+import { currentNodeTable, isOutpoint, outpointOfId } from './nodeKeys';
+import type { NodeTable } from './nodeTable';
 
 export type MotionPref = 'system' | 'full' | 'reduced' | 'off';
 export type PerfPref = 'auto' | 'high' | 'balanced' | 'lite';
@@ -14,27 +21,44 @@ export type GlobeArtPref = 'marble' | 'holo' | 'neon';
 
 export const GLOBE_ARTS: readonly GlobeArtPref[] = ['marble', 'holo', 'neon'];
 
-type Persisted = Pick<UiState, 'motion' | 'perf' | 'globeArt' | 'watched'>;
+const MAX_WATCHED = 500;
+
+interface Persisted {
+  motion: MotionPref;
+  perf: PerfPref;
+  globeArt: GlobeArtPref;
+  watchedKeys: string[];
+  legacyWatched: number[];
+}
 
 export interface UiState {
   motion: MotionPref;
   perf: PerfPref;
   globeArt: GlobeArtPref;
-  /** Watched node ids (WatchProbe enrollment; P1 effects). */
+  /** Watched node ids in the loaded snapshot (WatchProbe enrollment; P1 effects). Derived. */
   watched: number[];
+  /** Watched nodes by outpoint `txid:vout`: what is stored. */
+  watchedKeys: string[];
+  /**
+   * Numeric ids stored by an older client, or watched while the server sends no outpoints. They
+   * become outpoints at the first snapshot that has them.
+   */
+  legacyWatched: number[];
   setMotion(m: MotionPref): void;
   setPerf(p: PerfPref): void;
   setGlobeArt(a: GlobeArtPref): void;
   watch(id: number): void;
   unwatch(id: number): void;
+  /** Maps the watchlist onto a freshly loaded table (and migrates legacy ids). */
+  resolveWatched(table: NodeTable): void;
 }
 
 const KEY = 'atlas.ui.v1';
 
-function load(): Partial<Persisted> {
+/** Reads the stored preferences. `watched` holds outpoints, and numeric ids from older clients. */
+export function parseUi(raw: string | null | undefined): Partial<Persisted> {
+  if (!raw) return {};
   try {
-    const raw = globalThis.localStorage?.getItem(KEY);
-    if (!raw) return {};
     const v = JSON.parse(raw) as Record<string, unknown>;
     const out: Partial<Persisted> = {};
     if (v.motion === 'system' || v.motion === 'full' || v.motion === 'reduced' || v.motion === 'off')
@@ -42,9 +66,24 @@ function load(): Partial<Persisted> {
     if (v.perf === 'auto' || v.perf === 'high' || v.perf === 'balanced' || v.perf === 'lite')
       out.perf = v.perf;
     if (v.globeArt === 'marble' || v.globeArt === 'holo' || v.globeArt === 'neon') out.globeArt = v.globeArt;
-    if (Array.isArray(v.watched))
-      out.watched = v.watched.filter((x): x is number => Number.isInteger(x)).slice(0, 500);
+    if (Array.isArray(v.watched)) {
+      const list = v.watched.slice(0, MAX_WATCHED);
+      out.watchedKeys = [
+        ...new Set(list.filter((x): x is string => typeof x === 'string' && isOutpoint(x)).map(lower)),
+      ];
+      out.legacyWatched = [...new Set(list.filter((x): x is number => Number.isInteger(x) && x >= 0))];
+    }
     return out;
+  } catch {
+    return {};
+  }
+}
+
+const lower = (s: string) => s.toLowerCase();
+
+function load(): Partial<Persisted> {
+  try {
+    return parseUi(globalThis.localStorage?.getItem(KEY));
   } catch {
     return {};
   }
@@ -54,19 +93,61 @@ function save(s: Persisted): void {
   try {
     globalThis.localStorage?.setItem(
       KEY,
-      JSON.stringify({ motion: s.motion, perf: s.perf, globeArt: s.globeArt, watched: s.watched }),
+      JSON.stringify({
+        motion: s.motion,
+        perf: s.perf,
+        globeArt: s.globeArt,
+        watched: [...s.watchedKeys, ...s.legacyWatched],
+      }),
     );
   } catch {
     // Storage unavailable (private mode, quota): preferences last for the session only.
   }
 }
 
+/** True when the table carries outpoints (a server from B9 on). */
+function hasOutpoints(table: NodeTable): boolean {
+  for (let i = 0; i < table.count; i++) if (table.outpoint(i)) return true;
+  return false;
+}
+
+/** The watchlist resolved against `table`: legacy ids migrated, ids of the watched outpoints. */
+export function resolveWatchlist(
+  table: NodeTable,
+  keys: readonly string[],
+  legacy: readonly number[],
+): { watchedKeys: string[]; legacyWatched: number[]; watched: number[] } {
+  let watchedKeys = [...keys];
+  let legacyWatched = [...legacy];
+  if (legacyWatched.length > 0 && hasOutpoints(table)) {
+    // Resolved once, against whatever instance answered: the best an id from an older client can do.
+    for (const id of legacyWatched) {
+      const op = outpointOfId(table, id);
+      if (op && !watchedKeys.includes(op)) watchedKeys.push(op);
+    }
+    legacyWatched = [];
+    watchedKeys = watchedKeys.slice(0, MAX_WATCHED);
+  }
+  const watched: number[] = [];
+  for (const k of watchedKeys) {
+    const id = table.idOfOutpoint(k);
+    if (id >= 0) watched.push(id);
+  }
+  for (const id of legacyWatched) if (table.has(id) && !watched.includes(id)) watched.push(id);
+  return { watchedKeys, legacyWatched, watched };
+}
+
+const stored = load();
+
 export const useUi = create<UiState>()((set, get) => ({
   motion: 'system',
   perf: 'auto',
   globeArt: 'marble',
+  watchedKeys: [],
+  legacyWatched: [],
+  ...stored,
+  // Ids are known once a snapshot loads (`resolveWatched`).
   watched: [],
-  ...load(),
   setMotion: (motion) => {
     set({ motion });
     save(get());
@@ -80,13 +161,40 @@ export const useUi = create<UiState>()((set, get) => ({
     save(get());
   },
   watch: (id) => {
-    if (get().watched.includes(id)) return;
-    set({ watched: [...get().watched, id] });
+    const s = get();
+    if (s.watched.includes(id)) return;
+    const table = currentNodeTable();
+    const op = table ? outpointOfId(table, id) : null;
+    if (op) {
+      if (s.watchedKeys.includes(op)) return;
+      set({ watchedKeys: [...s.watchedKeys, op], watched: [...s.watched, id] });
+    } else {
+      // No outpoint known (an older server): keep the id until a snapshot has outpoints.
+      set({ legacyWatched: [...s.legacyWatched, id], watched: [...s.watched, id] });
+    }
     save(get());
   },
   unwatch: (id) => {
-    set({ watched: get().watched.filter((x) => x !== id) });
+    const s = get();
+    const table = currentNodeTable();
+    const op = table ? outpointOfId(table, id) : null;
+    set({
+      watched: s.watched.filter((x) => x !== id),
+      watchedKeys: op ? s.watchedKeys.filter((k) => k !== op) : s.watchedKeys,
+      legacyWatched: s.legacyWatched.filter((x) => x !== id),
+    });
     save(get());
+  },
+  resolveWatched: (table) => {
+    const s = get();
+    const next = resolveWatchlist(table, s.watchedKeys, s.legacyWatched);
+    const migrated =
+      next.legacyWatched.length !== s.legacyWatched.length ||
+      next.watchedKeys.length !== s.watchedKeys.length;
+    const same = next.watched.length === s.watched.length && next.watched.every((x, i) => x === s.watched[i]);
+    if (!migrated && same) return;
+    set(next);
+    if (migrated) save(get());
   },
 }));
 

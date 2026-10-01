@@ -11,7 +11,8 @@
 // server does not replay keepalive pings; hard gaps are detected per topic by the store from
 // `nodes.prev_seq` / `apps.prev_seq`, which call `requestResync`.
 //
-// Resync (server `resync`, a store gap, or a server restart seen in `hello`): the socket is closed,
+// Resync (server `resync`, a store gap, or another origin seen in `hello`: a different
+// `server.instance` or `server.started_ms` than the snapshot's, ARCHITECTURE 8.1): the socket is closed,
 // a fresh snapshot is fetched, and a new socket subscribes from the snapshot's seq. A fresh socket
 // avoids mixing frames of the old subscription with the new replay.
 //
@@ -155,8 +156,11 @@ export interface LiveClientOptions {
   resync: (reason: string, signal: AbortSignal) => Promise<number>;
   /** The store's resume seq, or null before any snapshot is loaded. */
   getResumeSeq: () => number | null;
-  /** `server.started_ms` of the loaded snapshot; a different one in `hello` forces a resync. */
-  getSnapshotServerStart?: () => number | null;
+  /**
+   * Origin of the loaded snapshot (`server.instance`, `server.started_ms`); a `hello` from another
+   * origin (the other instance behind the domain, or a restarted process) forces a full resync.
+   */
+  getSnapshotOrigin?: () => Pick<ServerInfo, 'instance' | 'started_ms'> | null;
   /** Every data message, in order, after dedupe (not hello, ping or resync). */
   onMessage: (msg: LiveMsg, receivedMs: number) => void;
   onStatus?: (s: LiveStatus) => void;
@@ -658,8 +662,13 @@ export class LiveClient {
     this.sampleOffset(msg.now_ms - received);
     this.helloSeq = msg.seq;
     this.setStatus({ server: msg.server });
-    const snapStart = this.o.getSnapshotServerStart?.() ?? null;
-    if (snapStart !== null && snapStart !== msg.server.started_ms) {
+    const snap = this.o.getSnapshotOrigin?.() ?? null;
+    if (snap !== null && (snap.instance ?? '') !== (msg.server.instance ?? '')) {
+      // Another instance answered: its node ids and seqs are its own; our state cannot be patched.
+      void this.runResync('other_instance');
+      return;
+    }
+    if (snap !== null && snap.started_ms !== msg.server.started_ms) {
       // The server restarted since our snapshot: its seq space is new; our state cannot be patched.
       void this.runResync('server_restarted');
       return;

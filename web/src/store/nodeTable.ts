@@ -6,7 +6,14 @@
 import type { StringTable } from '../api/bin/container';
 import type { NodeChange } from '../api/generated/NodeChange';
 import type { NodeLite } from '../api/generated/NodeLite';
-import { COUNTRY_SEP, type Locations, type NodesBin, statusCode, tierCode } from '../api/nodesBin';
+import {
+  COUNTRY_SEP,
+  type Locations,
+  type NodesBin,
+  type Outpoints,
+  statusCode,
+  tierCode,
+} from '../api/nodesBin';
 
 /** Field bits reported in change sets, so consumers can skip work they do not need. */
 export const NodeField = {
@@ -177,9 +184,15 @@ export class NodeTable {
   reachable: Uint8Array = new Uint8Array(0);
   /** >= 0: index into the snapshot's ips table; < 0: -(k + 1) into `endpointsExtra`. */
   endpointRef: Int32Array = new Int32Array(0);
+  /** >= 0: row of the snapshot's OUTPOINTS; < 0: -(k + 1) into `outpointsExtra`. */
+  outpointRef: Int32Array = new Int32Array(0);
 
   private ipsBase: StringTable | null = null;
   private endpointsExtra: string[] = [];
+  private outpointsBase: Outpoints | null = null;
+  private outpointsExtra: string[] = [];
+  /** Outpoint -> node id, built on first lookup and dropped when rows come or go. */
+  private outpointIndex: Map<string, number> | null = null;
   countries!: InternTable;
   orgs!: InternTable;
   versions!: InternTable;
@@ -216,6 +229,7 @@ export class NodeTable {
       this.lastConfirmed,
       this.reachable,
       this.endpointRef,
+      this.outpointRef,
     ];
   }
 
@@ -245,6 +259,11 @@ export class NodeTable {
     for (let i = 0; i < n; i++) this.endpointRef[i] = i;
     this.ipsBase = bin.ips;
     this.endpointsExtra = [];
+    this.outpointRef = new Int32Array(n);
+    for (let i = 0; i < n; i++) this.outpointRef[i] = i;
+    this.outpointsBase = bin.outpoints;
+    this.outpointsExtra = [];
+    this.outpointIndex = null;
     this.countries = new InternTable(bin.countries, countryKey);
     this.orgs = new InternTable(bin.orgs);
     this.versions = new InternTable(bin.versions);
@@ -269,6 +288,40 @@ export class NodeTable {
     if (ref === undefined) return '';
     if (ref >= 0) return this.ipsBase?.get(ref) ?? '';
     return this.endpointsExtra[-ref - 1] ?? '';
+  }
+
+  /** Collateral outpoint (`txid:vout`) of row `i`, the stable node key; '' when unknown. */
+  outpoint(i: number): string {
+    const ref = this.outpointRef[i];
+    if (ref === undefined || i >= this.count) return '';
+    if (ref >= 0) return this.outpointsBase?.get(ref) ?? '';
+    return this.outpointsExtra[-ref - 1] ?? '';
+  }
+
+  /** Outpoint of node `id`, or '' when the node or its outpoint is unknown. */
+  outpointOf(id: number): string {
+    const i = this.index.get(id);
+    return i === undefined ? '' : this.outpoint(i);
+  }
+
+  /** Node id holding `outpoint` (case-insensitive txid), or -1. */
+  idOfOutpoint(outpoint: string): number {
+    if (!this.outpointIndex) {
+      const m = new Map<string, number>();
+      for (let i = 0; i < this.count; i++) {
+        const op = this.outpoint(i);
+        if (op) m.set(op, this.ids[i]!);
+      }
+      this.outpointIndex = m;
+    }
+    return this.outpointIndex.get(outpoint.toLowerCase()) ?? -1;
+  }
+
+  private setOutpoint(i: number, op: string): void {
+    if (!op || this.outpoint(i) === op) return;
+    this.outpointsExtra.push(op);
+    this.outpointRef[i] = -this.outpointsExtra.length;
+    this.outpointIndex = null;
   }
 
   setEndpoint(i: number, ep: string | null): void {
@@ -325,11 +378,13 @@ export class NodeTable {
     this.lastConfirmed = re(this.lastConfirmed);
     this.reachable = re(this.reachable);
     this.endpointRef = re(this.endpointRef);
+    this.outpointRef = re(this.outpointRef);
     this.capacity = cap;
   }
 
   /** Inserts or overwrites a node from a live `NodeLite`. Returns its row index. */
   upsert(n: NodeLite): number {
+    const op = (n.outpoint ?? '').toLowerCase();
     let i = this.index.get(n.id);
     if (i === undefined) {
       if (this.count >= this.capacity) this.grow(this.count + 1);
@@ -343,7 +398,11 @@ export class NodeTable {
       this.lastConfirmed[i] = 0;
       this.reachable[i] = Reach.Unknown;
       this.loc[i] = 0;
+      this.outpointsExtra.push(op);
+      this.outpointRef[i] = -this.outpointsExtra.length;
+      this.outpointIndex = null;
     } else {
+      this.setOutpoint(i, op);
       this.locations.adjust(this.loc[i]!, -1);
     }
     this.tier[i] = tierCode(n.tier);
@@ -376,6 +435,7 @@ export class NodeTable {
     }
     this.index.delete(id);
     this.count = last;
+    this.outpointIndex = null;
     return true;
   }
 

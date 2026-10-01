@@ -11,6 +11,7 @@
 // reads through selectors (`store/react.ts`). Applying live messages is allocation-light: a block
 // with ~20 child events or a 6.7k-row reconcile delta stays well under a frame (see the benchmark).
 
+import type { SnapshotOrigin } from '../api/bin/container';
 import type { AppIndexEntry } from '../api/generated/AppIndexEntry';
 import type { AppMessageKind } from '../api/generated/AppMessageKind';
 import type { AppsDelta } from '../api/generated/AppsDelta';
@@ -208,8 +209,8 @@ export class NetworkStore {
   private nextPayeesSeq = 0;
   /** Highest `feed` seq pushed to the ring. */
   private feedSeq = 0;
-  /** Server run the seq marks above belong to (seqs restart with the server). */
-  private seqServerStart: number | null = null;
+  /** Origin (`instance/started_ms`) the seq marks above belong to (seqs restart with the server). */
+  private seqServer: string | null = null;
   freshness: ReadonlyMap<string, JobFreshness> = new Map();
   server: ServerInfo | null = null;
   /** True while the server serves restored state (upstream stale). */
@@ -238,6 +239,10 @@ export class NetworkStore {
   /** Local receipt time of the last message per type (freshness chips). */
   readonly lastMessageMs = new Map<LiveMsg['t'], number>();
   loaded = false;
+  /** Bumps with every snapshot load: node ids are re-resolved from stable keys after each. */
+  snapshotGen = 0;
+  /** Snapshot loads that switched to another instance (other node ids: every id cache is stale). */
+  instanceSwitches = 0;
 
   version = 0;
   readonly versions: Record<SliceName, number> = {
@@ -347,11 +352,23 @@ export class NetworkStore {
   // -------------------------------------------------------------------------------------------
 
   /**
-   * Loads a fresh snapshot (boot or resync). `nodes` and `bootstrap` may have been built at
-   * different seqs; each slice remembers its own and skips older deltas.
+   * Loads a fresh snapshot (boot or resync). The bodies must share one origin (the caller checks
+   * with `snapshotOriginError`). `nodes`, `mesh` and `bootstrap` may have been built at different
+   * seqs; each slice remembers its own and skips older deltas, and the resume point is the lowest
+   * seq whose snapshot still needs the stream (ARCHITECTURE 8.1):
+   * `min(bootstrap.seq, nodes.seq, M)`, where M is the mesh seq when it is below the bootstrap's
+   * `mesh_seq` (the mesh body misses edge changes the replay must bring).
+   *
+   * `mesh: null` means the server has no mesh (404): the mesh loads empty. Left out, the mesh is
+   * kept (unless the instance changed). A snapshot of another instance (`server.instance`) drops
+   * everything keyed by node id first: ids are assigned per data directory, so they mean other
+   * nodes there. A restart of the same instance (`started_ms` only) keeps its ids (ARCHITECTURE
+   * 3.3) and resets the seq marks, since seqs restart with the process.
    */
   loadSnapshot(s: { bootstrap: BootstrapDto; nodes: NodesBin; mesh?: MeshBin | null }): void {
     this.batch(() => {
+      const switched = this.loaded && (this.server?.instance ?? '') !== (s.bootstrap.server.instance ?? '');
+      if (switched) this.dropOriginState();
       this.nodes.load(s.nodes);
       this.lastNodesMsgSeq = null;
       this.lastAppsMsgSeq = null;
@@ -360,22 +377,38 @@ export class NetworkStore {
       nc.reloaded = true;
       this.applyBootstrap(s.bootstrap);
       if (s.mesh) this.loadMesh(s.mesh);
-      this.seq = Math.min(s.bootstrap.seq, s.nodes.seq);
+      else if (s.mesh === null || switched) this.loadEmptyMesh();
+      this.seq = resumeSeq(s.bootstrap, s.nodes, s.mesh ?? null);
       this.loaded = true;
+      this.snapshotGen++;
       this.touch(Slice.Nodes);
     });
   }
 
+  /** Forgets what is keyed by node id or live seq of the previous instance. */
+  private dropOriginState(): void {
+    this.blocks.reset([]);
+    this.feed.reset([]);
+    this.installing.clear();
+    this.nextPayees = null;
+    this.nextPayeesSeq = 0;
+    this.feedSeq = 0;
+    this.seqServer = null;
+    this.instanceSwitches++;
+    this.touch(Slice.Blocks | Slice.Feed | Slice.Pending | Slice.NextPayees);
+  }
+
   /** Seqs restart with the server: forget the seq marks of an earlier server run. */
-  private noteServer(startedMs: number): void {
-    if (this.seqServerStart === startedMs) return;
-    this.seqServerStart = startedMs;
+  private noteServer(server: ServerInfo): void {
+    const key = originKey(server);
+    if (this.seqServer === key) return;
+    this.seqServer = key;
     this.feedSeq = 0;
     this.nextPayeesSeq = 0;
   }
 
   private applyBootstrap(b: BootstrapDto): void {
-    this.noteServer(b.server.started_ms);
+    this.noteServer(b.server);
     this.bootstrapSeq = b.seq;
     this.server = b.server;
     this.stale = b.stale;
@@ -405,11 +438,20 @@ export class NetworkStore {
     this.touch(slices);
   }
 
-  /** Loads the full mesh (mesh.bin). */
+  /** Loads the full mesh (mesh.bin). Live `mesh` deltas at or below its seq are skipped. */
   loadMesh(m: MeshBin): void {
     this.mesh.clear();
     for (let i = 0; i < m.count; i++) this.mesh.set(m.a[i]! * EDGE_SHIFT + m.b[i]!, m.flags[i]!);
     this.meshSnapshotSeq = m.seq;
+    this.meshChanges().reloaded = true;
+    this.meshArrays = null;
+    this.touch(Slice.Mesh);
+  }
+
+  /** An empty mesh (a server without one); every live delta applies. */
+  private loadEmptyMesh(): void {
+    this.mesh.clear();
+    this.meshSnapshotSeq = 0;
     this.meshChanges().reloaded = true;
     this.meshArrays = null;
     this.touch(Slice.Mesh);
@@ -450,7 +492,7 @@ export class NetworkStore {
     this.batch(() => {
       switch (msg.t) {
         case 'block':
-          this.applyBlock(msg, msg.observed_ms);
+          this.applyBlock(msg, msg.seq, msg.observed_ms);
           break;
         case 'reorg':
           this.applyReorg(msg.fork_height);
@@ -465,7 +507,7 @@ export class NetworkStore {
           this.applyApps(msg, msg.seq);
           break;
         case 'mesh':
-          this.applyMesh(msg);
+          this.applyMesh(msg, msg.seq);
           break;
         case 'next_payees':
           this.nextPayees = { height: msg.height, payees: msg.payees, receivedMs };
@@ -533,7 +575,7 @@ export class NetworkStore {
           this.touch(Slice.Feed);
           break;
         case 'hello':
-          this.noteServer(msg.server.started_ms);
+          this.noteServer(msg.server);
           this.server = msg.server;
           this.setTip(msg.tip);
           break;
@@ -546,7 +588,19 @@ export class NetworkStore {
     });
   }
 
-  private applyBlock(m: BlockMsg, observedMs: number): void {
+  /**
+   * A block has two parts that snapshots cover at different seqs (ARCHITECTURE 8.1): the block list
+   * and choreography (bootstrap) and the node table (nodes.bin: payout rotation, confirms, the
+   * recently-paid flag). A replayed block applies only the parts its snapshots do not hold yet, so
+   * a payee is never rotated twice when nodes.bin is newer than the bootstrap.
+   */
+  private applyBlock(m: BlockMsg, seq: number, observedMs: number): void {
+    if (seq > this.bootstrapSeq) this.applyBlockToChain(m, observedMs);
+    if (seq > this.nodes.snapshotSeq) this.applyBlockToNodes(m);
+    else this.stats.skippedStale++;
+  }
+
+  private applyBlockToChain(m: BlockMsg, observedMs: number): void {
     const block: ChainBlock = {
       height: m.height,
       hash: m.hash,
@@ -570,6 +624,21 @@ export class NetworkStore {
     }
     this.setTip({ height: m.height, hash: m.hash, time_ms: m.time_ms, producer: m.producer?.id ?? null });
 
+    // Mempool: transactions first seen before the block's header time were most likely mined.
+    // (Heuristic; `setMempool` from GET /mempool reconciles.)
+    let pruned = false;
+    for (const tx of m.transfers_over_threshold) pruned = this.mempool.delete(tx.txid) || pruned;
+    for (const [id, e] of this.mempool) {
+      if (e.firstSeenMs <= m.time_ms) {
+        this.mempool.delete(id);
+        pruned = true;
+      }
+    }
+    if (pruned) this.touch(Slice.Mempool);
+    this.touch(Slice.Blocks);
+  }
+
+  private applyBlockToNodes(m: BlockMsg): void {
     // Node facts the block states outright (the matching `nodes` delta is idempotent with these).
     const t = this.nodes;
     const nc = this.nodeChanges();
@@ -617,19 +686,6 @@ export class NetworkStore {
       }
     }
     if (touched) this.touch(Slice.Nodes);
-
-    // Mempool: transactions first seen before the block's header time were most likely mined.
-    // (Heuristic; `setMempool` from GET /mempool reconciles.)
-    let pruned = false;
-    for (const tx of m.transfers_over_threshold) pruned = this.mempool.delete(tx.txid) || pruned;
-    for (const [id, e] of this.mempool) {
-      if (e.firstSeenMs <= m.time_ms) {
-        this.mempool.delete(id);
-        pruned = true;
-      }
-    }
-    if (pruned) this.touch(Slice.Mempool);
-    this.touch(Slice.Blocks);
   }
 
   private applyReorg(forkHeight: number): void {
@@ -840,7 +896,12 @@ export class NetworkStore {
     this.touch(Slice.Apps);
   }
 
-  private applyMesh(d: MeshDelta): void {
+  private applyMesh(d: MeshDelta, seq: number): void {
+    // mesh.bin already holds this change (a resume replays from below its seq for other topics).
+    if (seq <= this.meshSnapshotSeq) {
+      this.stats.skippedStale++;
+      return;
+    }
     const mc = this.meshChanges();
     for (const [a, b] of d.removed) {
       if (this.mesh.delete(edgeKey(a, b))) mc.removed.push([Math.min(a, b), Math.max(a, b)]);
@@ -941,6 +1002,46 @@ export class NetworkStore {
       installing: this.installing.size,
     };
   }
+}
+
+/** `instance/started_ms`: the origin a server info names (ARCHITECTURE 8.1). */
+export function originKey(server: Pick<ServerInfo, 'instance' | 'started_ms'>): string {
+  return `${server.instance ?? ''}/${server.started_ms}`;
+}
+
+/**
+ * The live seq to resume from after loading these snapshots (ARCHITECTURE 8.1):
+ * `min(bootstrap.seq, nodes.seq, M)`, M = the mesh seq only when it is below `bootstrap.mesh_seq`.
+ */
+export function resumeSeq(
+  bootstrap: Pick<BootstrapDto, 'seq' | 'mesh_seq'>,
+  nodes: Pick<NodesBin, 'seq'>,
+  mesh: Pick<MeshBin, 'seq'> | null,
+): number {
+  let seq = Math.min(bootstrap.seq, nodes.seq);
+  const meshSeq = bootstrap.mesh_seq;
+  if (mesh && meshSeq !== undefined && mesh.seq < meshSeq) seq = Math.min(seq, mesh.seq);
+  return seq;
+}
+
+/**
+ * Why `/bootstrap`, `/nodes.bin` and `/mesh.bin` cannot be loaded together, or null when they
+ * share the bootstrap's origin (ARCHITECTURE 8.1). A file without ORIGIN (an older server) is
+ * accepted only when the bootstrap names no instance either.
+ */
+export function snapshotOriginError(
+  bootstrap: Pick<BootstrapDto, 'server'>,
+  nodes: Pick<NodesBin, 'origin'>,
+  mesh: Pick<MeshBin, 'origin'> | null,
+): string | null {
+  const server = bootstrap.server;
+  const check = (what: string, o: SnapshotOrigin | null): string | null => {
+    if (o === null)
+      return server.instance ? `${what} has no origin, bootstrap is ${originKey(server)}` : null;
+    if (o.instance === server.instance && o.startedMs === server.started_ms) return null;
+    return `${what} is from ${o.instance}/${o.startedMs}, bootstrap from ${originKey(server)}`;
+  };
+  return check('nodes.bin', nodes.origin) ?? (mesh ? check('mesh.bin', mesh.origin) : null);
 }
 
 export function fromBlockLite(b: BlockLite): ChainBlock {

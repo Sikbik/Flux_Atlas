@@ -10,9 +10,10 @@ import {
   lazyRouteComponent,
   notFound,
   redirect,
+  useRouter,
   useRouterState,
 } from '@tanstack/react-router';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { queries } from '../api/queries';
 import { GlobeCanvas, GlobeProvider } from '../globe';
 import { Shell } from '../shell';
@@ -53,27 +54,48 @@ import {
   validateTimeSearch,
 } from './search';
 import { routeForHit } from './searchRoutes';
-import { resolveSelection } from './selection';
+import { canonicalNodeLocation, isUnresolvableLegacyKey, selectionKeys } from './selection';
 
 export interface RouterContext {
   queryClient: QueryClient;
   runtime: AtlasRuntime;
 }
 
-/** Feeds URL selection (`/node/:key`, `?sel=`) into the live runtime (the watchlist syncs itself). */
+/**
+ * Feeds URL selection (`/node/:key`, `?sel=`) into the live runtime as node keys; the runtime maps
+ * them to ids of the loaded snapshot, again after every resync (the watchlist syncs itself).
+ */
 function useSelectionSync() {
   const runtime = useRuntime();
-  const loaded = useNetwork((s) => s.loaded);
   const location = useRouterState({ select: (s) => s.location });
   useEffect(() => {
-    if (!loaded) return;
-    const keys: string[] = [];
-    const m = /^\/node\/([^/]+)/.exec(location.pathname);
-    if (m?.[1]) keys.push(decodeURIComponent(m[1]));
-    const sel = (location.search as { sel?: string }).sel;
-    if (sel) keys.push(...sel.split(','));
-    runtime.setSelected(resolveSelection(runtime.store, keys));
-  }, [runtime, location, loaded]);
+    runtime.setSelected(selectionKeys(location.pathname, (location.search as { sel?: unknown }).sel));
+  }, [runtime, location]);
+}
+
+/**
+ * Older node links (`/node/<id>`, `/node/<ip:port>`, the same in `?sel=` and `?w=`) are resolved
+ * against the loaded snapshot once and replaced with the outpoint form (ARCHITECTURE 8.1).
+ */
+function useCanonicalNodeUrl() {
+  const runtime = useRuntime();
+  const router = useRouter();
+  const gen = useNetwork((s) => (s.loaded ? s.snapshotGen : 0));
+  const location = useRouterState({ select: (s) => s.location });
+  useEffect(() => {
+    if (gen === 0) return;
+    const next = canonicalNodeLocation(
+      runtime.store.nodes,
+      location.pathname,
+      location.search as Record<string, unknown>,
+    );
+    if (!next) return;
+    void router.navigate({
+      href: next.pathname + router.options.stringifySearch(next.search),
+      hash: location.hash || undefined,
+      replace: true,
+    });
+  }, [runtime, router, gen, location]);
 }
 
 /**
@@ -83,6 +105,7 @@ function useSelectionSync() {
  */
 function RootLayout() {
   useSelectionSync();
+  useCanonicalNodeUrl();
   const ambient = useRouterState({ select: (s) => s.location.pathname === '/ambient' });
   return (
     <GlobeProvider>
@@ -108,6 +131,14 @@ const nodeRoute = createRoute({
   path: '/node/$key',
   component: function NodeRoute() {
     const { key } = nodeRoute.useParams();
+    // An older key (id, ip:port) the snapshot cannot place: not found (an outpoint goes to the server).
+    const runtime = useRuntime();
+    const gen = useNetwork((s) => (s.loaded ? s.snapshotGen : 0));
+    const missing = useMemo(
+      () => gen > 0 && isUnresolvableLegacyKey(runtime.store.nodes, key),
+      [runtime, gen, key],
+    );
+    if (missing) return <NotFound />;
     return <NodeView nodeKey={key} />;
   },
 });

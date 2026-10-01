@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { Coins, Network, OctagonX, TriangleAlert, WifiOff } from 'lucide-react';
 import { type ComponentType, useEffect, useRef } from 'react';
-import { useRuntime } from '../../../app/context';
+import { useNetwork, useRuntime } from '../../../app/context';
 import { toast } from '../../../app/toasts';
 import { Slice } from '../../../store/network';
 import { useUi } from '../../../store/ui';
@@ -66,6 +66,7 @@ export function WatchAlerts(): null {
   const qc = useQueryClient();
   const router = useRouter();
   const watched = useUi((s) => s.watched);
+  const instance = useNetwork((s) => s.instanceSwitches);
   const kinds = useWatchPrefs((s) => s.kinds);
   const notify = useWatchPrefs((s) => s.notify);
 
@@ -81,8 +82,10 @@ export function WatchAlerts(): null {
     const token = {};
     if (owner) return undefined;
     owner = token;
-    const e = new WatchEngine();
+    let e = new WatchEngine();
     engine.current = e;
+    // Node ids are per instance: another instance's snapshot starts the engine over.
+    let switches = store.instanceSwitches;
 
     const open = (to: string) => router.history.push(to);
     const deliver = (alerts: WatchAlert[]) => {
@@ -107,6 +110,11 @@ export function WatchAlerts(): null {
     run(true);
     const off = store.subscribe((change) => {
       if (!(change.slices & (Slice.Nodes | Slice.Tip))) return;
+      if (store.instanceSwitches !== switches) {
+        switches = store.instanceSwitches;
+        e = new WatchEngine();
+        engine.current = e;
+      }
       run(change.nodes?.reloaded === true);
     });
     return () => {
@@ -117,6 +125,7 @@ export function WatchAlerts(): null {
   }, [store, clock, router]);
 
   // The table starts without check-in heights; the server knows them. One lookup per watched node.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `instance` restarts the lookups for a new engine
   useEffect(() => {
     const e = engine.current;
     if (!e) return undefined;
@@ -143,7 +152,7 @@ export function WatchAlerts(): null {
     return () => {
       cancelled = true;
     };
-  }, [watched, qc, store]);
+  }, [watched, qc, store, instance]);
 
   return null;
 }
