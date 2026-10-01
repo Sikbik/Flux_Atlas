@@ -332,6 +332,7 @@ describe('the Chain tab', () => {
       difficulty_mean: end,
       block_time_s: d < 0 ? 120 : 30,
       block_time_max_s: null,
+      sampled: false,
     });
     const crossing = week({
       window: '1y',

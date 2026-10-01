@@ -255,6 +255,7 @@ describe('time per block', () => {
       difficulty_mean: 0.35,
       block_time_s: 30,
       block_time_max_s: 900 + i,
+      sampled: false,
     }));
     const model = chainModel(dto({ points: many }));
     expect(model.above).toBe(60);
@@ -278,6 +279,7 @@ describe('time per block', () => {
           difficulty_mean: 0.3,
           block_time_s: 120,
           block_time_max_s: null,
+          sampled: false,
         },
         {
           t_ms: FORK_MS + 10 * DAY,
@@ -286,6 +288,7 @@ describe('time per block', () => {
           difficulty_mean: 0.3,
           block_time_s: 30,
           block_time_max_s: null,
+          sampled: false,
         },
       ],
     });
@@ -518,6 +521,7 @@ describe('difficulty', () => {
           difficulty_mean: 12_000,
           block_time_s: 120,
           block_time_max_s: null,
+          sampled: false,
         },
         {
           t_ms: FORK_MS + 2 * DAY,
@@ -526,6 +530,7 @@ describe('difficulty', () => {
           difficulty_mean: 0.3,
           block_time_s: 30,
           block_time_max_s: null,
+          sampled: false,
         },
       ],
     });

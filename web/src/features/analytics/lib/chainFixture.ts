@@ -31,6 +31,7 @@ export function chainPoints(): ChainPointDto[] {
     difficulty_mean: i === 4 ? null : 0.346 + i * 0.001,
     block_time_s: i === 6 ? 195 : i === 3 ? 37.5 : 30,
     block_time_max_s: i === 6 ? 660 : i === 3 ? 90 : i === 8 ? null : 34,
+    sampled: false,
   }));
 }
 

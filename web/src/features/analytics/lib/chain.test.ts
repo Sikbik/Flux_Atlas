@@ -57,6 +57,7 @@ const point = (over: Partial<ChainPointDto> = {}): ChainPointDto => ({
   difficulty_mean: null,
   block_time_s: 30,
   block_time_max_s: 60,
+  sampled: false,
   ...over,
 });
 
@@ -758,6 +759,7 @@ describe('what one bucket says', () => {
       difficulty: 0.355898,
       block_time_s: 37.5,
       block_time_max_s: 90,
+      sampled: false,
     }),
     point({
       t_ms: FORK_MS + 2_000,
@@ -765,6 +767,7 @@ describe('what one bucket says', () => {
       difficulty: null,
       block_time_s: 30,
       block_time_max_s: null,
+      sampled: false,
     }),
     point({
       t_ms: FORK_MS + 3_000,
@@ -772,6 +775,7 @@ describe('what one bucket says', () => {
       difficulty: 0.36,
       block_time_s: 60,
       block_time_max_s: 330,
+      sampled: false,
     }),
   ]);
   const ctx = {
