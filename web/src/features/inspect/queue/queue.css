@@ -34,6 +34,27 @@
   padding-right: 34px;
 }
 
+/* The field's own placeholder is a blank; this overlay says it in a long or a short way by width. */
+.ix-q-ph {
+  position: absolute;
+  inset: 0 34px 0 34px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ix-q-ph-n {
+  display: none;
+}
+
+.ix-q-search .ix-input:not(:placeholder-shown) ~ .ix-q-ph {
+  display: none;
+}
+
 .ix-q-search-x {
   position: absolute;
   right: 6px;
@@ -204,11 +225,16 @@
 
 /* ---- rings ------------------------------------------------------------------------------------- */
 
+.ix-q-main {
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+}
+
 .ix-q-wheels {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
-  margin-top: 14px;
 }
 
 .ix-q-wheels[data-n="1"] {
@@ -593,7 +619,54 @@ div.ix-btile {
 /* ---- next in line (a single tier) -------------------------------------------------------------- */
 
 .ix-q-next {
-  margin: 18px calc(var(--ix-pad) * -1) 0;
+  min-width: 0;
+}
+
+.ix-q-next-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+}
+
+.ix-q-next-h > small {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+  color: var(--text-3);
+}
+
+.ix-q-next > .ix-hrows {
+  margin: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--ink-1);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.ix-q-next .ix-hrow {
+  min-height: 48px;
+  padding: 5px 14px;
+}
+
+.ix-q-next .ix-hrow-cell::before {
+  inset: 0 14px auto;
+}
+
+.ix-q-next .ix-hrow-cell:first-child::before {
+  display: none;
+}
+
+/* A wide window puts the ring and the list side by side. */
+@container ix (min-width: 700px) {
+  .ix-queue[data-focus] .ix-q-main {
+    grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+  }
 }
 
 /* ---- narrow windows: one tier at a time -------------------------------------------------------- */
@@ -616,8 +689,12 @@ div.ix-btile {
     display: none;
   }
 
-  .ix-q-tiers {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .ix-q-ph-w {
+    display: none;
+  }
+
+  .ix-q-ph-n {
+    display: inline;
   }
 
   .ix-q-facts > div {

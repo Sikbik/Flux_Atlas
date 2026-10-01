@@ -3,6 +3,7 @@ import { ChevronRight, CircleHelp, X } from 'lucide-react';
 import { memo, useCallback, useState } from 'react';
 import { useNetwork, useRuntime } from '../../../app/context';
 import { BLOCK_MS, formatFlux, formatInt } from '../../../lib/format';
+import { countryName } from '../derive/appSpec';
 import {
   cycleHours,
   estimatePayment,
@@ -35,6 +36,7 @@ import {
   NodeLink,
   QueueCell,
   QueueLink,
+  TierGlyph,
   tierLabel,
   useOpenSet,
 } from '../ui';
@@ -274,27 +276,35 @@ function LaneRow({
   );
 }
 
+/** The next payees of one tier as a list: the belt's tiles with their place. */
 function NextInLine({ tier, queue }: { tier: QueueTier; queue: TierQueue }) {
   const store = useRuntime().store;
-  const rows = Array.from(queue.ids.slice(0, 10), (id) => readNodeLive(store, id)).filter(
+  const rows = Array.from(queue.ids.slice(0, 8), (id) => readNodeLive(store, id)).filter(
     (n): n is NonNullable<ReturnType<typeof readNodeLive>> => n !== null,
   );
   return (
-    <ol className="ix-hrows ix-q-next" aria-label={`Next payees of ${tierLabel(tier)}`}>
-      {rows.map((n) => (
-        <li className="ix-hrow-cell" key={n.id}>
-          <NodeLink nodeKey={n.endpoint || n.id} className="ix-hrow" data-tier={n.tier}>
-            <span className="ix-hrow-glyph" aria-hidden="true" />
-            <span className="ix-hrow-main">
-              <b className="ix-mono ix-hrow-port">{n.endpoint}</b>
-              <span className="ix-hrow-sub">{n.country || 'Unknown place'}</span>
-            </span>
-            <QueueCell id={n.id} />
-            <ChevronRight className="ix-hrow-chev" size={15} strokeWidth={1.75} aria-hidden="true" />
-          </NodeLink>
-        </li>
-      ))}
-    </ol>
+    <section className="ix-q-next" data-tier={tier} aria-label={`Next payees of ${tierLabel(tier)}`}>
+      <h3 className="ix-q-next-h">
+        Next in line <small>one per block</small>
+      </h3>
+      <ol className="ix-hrows">
+        {rows.map((n) => (
+          <li className="ix-hrow-cell" key={n.id}>
+            <NodeLink nodeKey={n.endpoint || n.id} className="ix-hrow" data-tier={n.tier}>
+              <span className="ix-hrow-glyph" aria-hidden="true">
+                <TierGlyph tier={n.tier} size={16} />
+              </span>
+              <span className="ix-hrow-main">
+                <b className="ix-mono ix-hrow-port">{n.endpoint}</b>
+                <span className="ix-hrow-sub">{n.country ? countryName(n.country) : 'Unknown place'}</span>
+              </span>
+              <QueueCell id={n.id} />
+              <ChevronRight className="ix-hrow-chev" size={15} strokeWidth={1.75} aria-hidden="true" />
+            </NodeLink>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -369,21 +379,24 @@ export function QueueView({ tier }: { tier?: QueueTier }) {
         </div>
       )}
 
-      <div className="ix-q-wheels" data-n={shown.length}>
-        {shown.map((t) => (
-          <TierCard
-            key={t}
-            tier={t}
-            queue={queues.tiers[t]}
-            tip={tip}
-            loop={loop}
-            selectedId={sel.id}
-            onSelect={select}
-            onClear={clear}
-            active={active === t}
-            solo={focus !== null}
-          />
-        ))}
+      <div className="ix-q-main">
+        <div className="ix-q-wheels" data-n={shown.length}>
+          {shown.map((t) => (
+            <TierCard
+              key={t}
+              tier={t}
+              queue={queues.tiers[t]}
+              tip={tip}
+              loop={loop}
+              selectedId={sel.id}
+              onSelect={select}
+              onClear={clear}
+              active={active === t}
+              solo={focus !== null}
+            />
+          ))}
+        </div>
+        {focus ? <NextInLine tier={focus} queue={queues.tiers[focus]} /> : null}
       </div>
 
       <div className="ix-q-lanes">
@@ -401,8 +414,6 @@ export function QueueView({ tier }: { tier?: QueueTier }) {
           />
         ))}
       </div>
-
-      {focus ? <NextInLine tier={focus} queue={queues.tiers[focus]} /> : null}
 
       <Disclosures>
         <Disclosure

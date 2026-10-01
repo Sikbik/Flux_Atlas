@@ -36,7 +36,7 @@ export function NodeSearch({ onPick }: { onPick: (hit: NodeHit) => void }) {
         className="ix-input"
         type="search"
         value={q}
-        placeholder="Find a node by IP, port or id"
+        placeholder=" "
         autoComplete="off"
         spellCheck={false}
         role="combobox"
@@ -71,6 +71,10 @@ export function NodeSearch({ onPick }: { onPick: (hit: NodeHit) => void }) {
           }
         }}
       />
+      <span className="ix-q-ph" aria-hidden="true">
+        <span className="ix-q-ph-w">Find a node by IP, port or id</span>
+        <span className="ix-q-ph-n">Find a node</span>
+      </span>
       {q ? (
         <button
           type="button"

@@ -165,7 +165,14 @@ export function QueueLink({
       {children}
     </Link>
   ) : (
-    <Link to="/queue" search={true as never} className={cx('ix-link', className)} title={title} {...aria}>
+    <Link
+      to="/queue"
+      search={true as never}
+      activeOptions={{ exact: true }}
+      className={cx('ix-link', className)}
+      title={title}
+      {...aria}
+    >
       {children}
     </Link>
   );
