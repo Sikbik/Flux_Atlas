@@ -123,7 +123,9 @@ function ThirtyDays() {
       value={<AnimatedNumber value={totals.flux} format={fmt2} />}
       unit="FLUX"
       caption={young && first !== null ? `${count} since ${shortDate(first)}` : count}
-      spark={<Sparkline form="bars" values={days.map((d) => d.flux)} decorative />}
+      spark={
+        totals.count > 0 ? <Sparkline form="bars" values={days.map((d) => d.flux)} decorative /> : undefined
+      }
     />
   );
 }
