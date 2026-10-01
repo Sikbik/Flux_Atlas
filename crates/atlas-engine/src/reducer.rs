@@ -1308,12 +1308,27 @@ impl Reducer {
     fn finish(&mut self, mut tick: Tick) {
         let now = tick.now_ms;
         let tip = self.st.tip_height();
-        // Nodes that left: drop their mesh edges.
+        // Nodes that left: drop their mesh edges, and tell clients like any other edge change
+        // (before, only the next mesh.bin dropped them, so a client resuming from live deltas
+        // kept them as ghost links).
+        let mut gone = Vec::new();
         for id in tick.removed_nodes() {
             let d = self.st.mesh.remove_node(id);
             for (a, b) in &d.removed {
                 tick.batch.delete_mesh_edge(*a, *b);
+                gone.push([*a, *b]);
             }
+        }
+        if !gone.is_empty() {
+            tick.after.push((
+                LiveBody::Mesh(MeshDelta {
+                    added: Vec::new(),
+                    removed: gone,
+                    reporters: Vec::new(),
+                }),
+                None,
+            ));
+            tick.publish = true;
         }
         // New or moved endpoints: GeoResolve right away (it answers from its cache when the
         // location is known, so a changed IP is re-located within seconds).

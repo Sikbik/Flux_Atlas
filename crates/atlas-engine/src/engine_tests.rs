@@ -1120,3 +1120,56 @@ async fn geoip_database_loaded_later_streams_a_geo_delta() {
     assert!(cities(&eng).iter().all(|(c, _)| !c.is_empty()));
     eng.shutdown().await;
 }
+
+/// M8: when a node leaves, its mesh edges leave in a live `mesh` delta too (before, only the
+/// next mesh.bin dropped them, so a client resuming from live deltas kept them as ghost links),
+/// and bootstrap `mesh_seq` names that delta.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_departed_node_s_edges_leave_in_a_live_delta() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("m.redb")).unwrap();
+    let eng = start(store);
+    let up = UpstreamQueue::new(3, 3_000_000);
+    inject(&eng, Obs::NodeList(up.nodes.clone())).await;
+    until("nodes", || eng.published().nodes.len() == 9).await;
+    let ep = |i: usize| up.nodes[i].endpoint.unwrap();
+    inject(
+        &eng,
+        Obs::Topology {
+            queried: ep(0),
+            reports: vec![crate::obs::TopologyReport {
+                reporter: ep(0),
+                outbound: vec![ep(1), ep(2)],
+                inbound: vec![],
+            }],
+        },
+    )
+    .await;
+    until("edges", || eng.published().mesh_edge_count == 2).await;
+    let mut rx = eng.subscribe();
+    let mut rest = up.nodes.clone();
+    rest.remove(0);
+    inject(&eng, Obs::NodeList(rest)).await;
+    until("edges dropped", || eng.published().mesh_edge_count == 0).await;
+    let mut removed = Vec::new();
+    let mut delta_seq = 0;
+    while let Ok(m) = rx.try_recv() {
+        if let LiveBody::Mesh(d) = &m.body
+            && !d.removed.is_empty()
+        {
+            removed.extend(d.removed.iter().copied());
+            delta_seq = m.seq;
+        }
+    }
+    assert_eq!(removed.len(), 2, "both edges leave live: {removed:?}");
+    until("bootstrap mesh_seq", || {
+        let p = eng.published();
+        let Some(b) = p.bodies.bootstrap.as_ref() else {
+            return false;
+        };
+        let v: serde_json::Value = serde_json::from_slice(&b.raw).unwrap();
+        v["mesh_seq"].as_u64() == Some(delta_seq)
+    })
+    .await;
+    eng.shutdown().await;
+}

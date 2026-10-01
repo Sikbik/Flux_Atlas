@@ -726,7 +726,9 @@ topic skips what its snapshot already holds: `mesh` deltas with `seq <= mesh.bin
 with `seq <= nodes.bin seq`; the node-table part of a `block` (payout rotation, heartbeats, starts) with
 `seq <= nodes.bin seq`, while its block-list and choreography part is still applied when `seq >
 bootstrap.seq`; feed items as in section 8. A failed `mesh.bin` fetch fails the resync (it is retried);
-only a 404 (a server without the mesh) loads an empty mesh.
+only a 404 (a server without the mesh) loads an empty mesh. Every edge change reaches clients as a live
+`mesh` delta, including the edges of a node that left (B9: before, only the next `mesh.bin` dropped those,
+and the live check measured 62 ghost links kept by a resumed client).
 
 **Stable node keys.** Node URLs are `/node/<txid>:<vout>` (the colon percent-encoded in links). The
 router still accepts `/node/<ip:port>` and a legacy numeric id: it resolves the key against the loaded
