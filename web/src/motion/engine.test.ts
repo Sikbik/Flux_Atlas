@@ -409,6 +409,60 @@ describe('engine', () => {
       expect(row.querySelector('.fx-current')).toBeNull();
     });
 
+    describe('data-fx-delay: a row that follows an arrival with its own light', () => {
+      const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+      it('asks for the light only when the delay is over, and takes no budget while it waits', async () => {
+        const row = html('<div data-fx="current" data-fx-delay="40" style="position: relative">row</div>');
+        box(row, 20, 20, 400, 40);
+        row.setAttribute('data-fresh', '');
+        await tick();
+        expect(comets()).toBe(0);
+        expect(stats()?.active).toBe(0);
+        await wait(70);
+        expect(comets()).toBe(1);
+        expect(stats()?.byKind.current).toBe(1);
+      });
+
+      it('gets its light after two Currents that would have used the whole budget, once they are gone', async () => {
+        document.body.innerHTML = `
+          <div id="a" data-fx="current" style="position: relative">a</div>
+          <div id="b" data-fx="current" style="position: relative">b</div>
+          <div id="c" data-fx="current" data-fx-delay="40" style="position: relative">c</div>`;
+        const byId = (id: string) => document.getElementById(id) as HTMLElement;
+        const c = byId('c');
+        for (const el of [byId('a'), byId('b'), c]) {
+          box(el, 20, 20, 400, 40);
+          el.setAttribute('data-fresh', '');
+        }
+        await tick();
+        expect(stats()?.byKind.current).toBe(2); // a and b; c is still waiting
+        expect(stats()?.dropped).toBe(0); // and nothing was refused
+        driver.finishAll();
+        await wait(70);
+        expect(c.querySelectorAll('.fx-comet')).toHaveLength(1);
+        expect(stats()?.dropped).toBe(0);
+      });
+
+      it('draws nothing when the row went away, or stopped being fresh, while it waited', async () => {
+        document.body.innerHTML = `
+          <div id="gone" data-fx="current" data-fx-delay="30" style="position: relative">a</div>
+          <div id="stale" data-fx="current" data-fx-delay="30" style="position: relative">b</div>`;
+        const gone = document.getElementById('gone') as HTMLElement;
+        const stale = document.getElementById('stale') as HTMLElement;
+        box(gone, 20, 20, 400, 40);
+        box(stale, 20, 80, 400, 40);
+        gone.setAttribute('data-fresh', '');
+        stale.setAttribute('data-fresh', '');
+        await tick();
+        gone.remove();
+        stale.removeAttribute('data-fresh');
+        await wait(60);
+        expect(comets()).toBe(0);
+        expect(stats()?.active).toBe(0);
+      });
+    });
+
     it('leaves rows that did not opt in to the kit', async () => {
       const row = html('<div class="ui-table__row">row</div>');
       box(row, 20, 20, 400, 40);

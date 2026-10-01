@@ -227,6 +227,18 @@ function useDescribeContext(): DescribeContext {
   );
 }
 
+/**
+ * A payout to a watched node arrives with the block that paid it, and the block has its own light (the rail's
+ * streak and the card's lap, a second together). The row's Current waits for that to end, with a beat to spare: it
+ * reads as the consequence, and the effect budget (two Currents at once) never has to refuse it. The wait is
+ * counted from when the block was seen (`ev.ts`), so a row that shows later than the block lights at once.
+ */
+const BLOCK_LIGHT_MS = 1100;
+const blockLightLeft = (ev: PulseEvent): number | undefined => {
+  const left = Math.round(BLOCK_LIGHT_MS - (Date.now() - ev.ts));
+  return left > 0 ? left : undefined;
+};
+
 function EventRow({ ev, fresh }: { ev: PulseEvent; fresh: boolean }) {
   const ctx = useDescribeContext();
   const d = describeEvent(ev, ctx);
@@ -252,6 +264,7 @@ function EventRow({ ev, fresh }: { ev: PulseEvent; fresh: boolean }) {
       data-kind={ev.kind}
       data-fresh={fresh || undefined}
       data-fx={ev.kind === 'paid_mine' ? 'current' : undefined}
+      data-fx-delay={ev.kind === 'paid_mine' ? blockLightLeft(ev) : undefined}
       data-tier={d.tier && d.tier !== 'unknown' ? d.tier : undefined}
       style={{ '--ev': TONE_VAR[toneOf(ev.kind)] } as CSSProperties}
     >

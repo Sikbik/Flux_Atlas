@@ -11,7 +11,8 @@
 //   data-state turns on     Spark where the control lit (a switch's knob, a copy glyph), after a real
 //                           input, never for a change the app made on its own
 //   data-fresh appears      Current along the top edge of a row or card that opted in, on an element that
-//                           already exists (see fresh.ts: a view writes the attribute with `useFresh`)
+//                           already exists (see fresh.ts: a view writes the attribute with `useFresh`);
+//                           `data-fx-delay` holds it back for a row that follows an arrival with its own light
 //   pointer over a button   the edge light follows the pointer (the CSS draws it)
 //   data-fx tokens          the same for elements outside the kit: press, toggle, charge, current
 //
@@ -201,9 +202,20 @@ function toggled(el: HTMLElement, attr: string, before: string | null): void {
 
 function fresh(el: HTMLElement): void {
   if (!isRuled(el, 'fresh') || !once(el, 'current')) return;
-  const edge = el.getAttribute('data-fx-edge') as Edge | null;
+  const edge = (el.getAttribute('data-fx-edge') as Edge | null) ?? 'top';
   // Inline: the light is drawn inside the row, so it goes where the row goes while the row slides into place.
-  current(el, { edge: edge ?? 'top', inline: true });
+  const light = () => current(el, { edge, inline: true });
+  // `data-fx-delay` is for a row that is the consequence of an arrival with a light of its own (the payout a
+  // block lands with): it is asked for once that light is gone, so the budget never has to refuse it. The timer
+  // exists only after an arrival, and the light is dropped if the row went away or stopped being fresh meanwhile.
+  const wait = Number(el.getAttribute('data-fx-delay'));
+  if (!(wait > 0)) {
+    light();
+    return;
+  }
+  setTimeout(() => {
+    if (el.isConnected && el.hasAttribute('data-fresh')) light();
+  }, wait);
 }
 
 function onMutations(records: MutationRecord[]): void {
