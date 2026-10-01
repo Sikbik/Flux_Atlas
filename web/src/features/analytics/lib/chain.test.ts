@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { BlockTimeTargetDto } from '../../../api/generated/BlockTimeTargetDto';
+import type { ChainHistoryDto } from '../../../api/generated/ChainHistoryDto';
+import type { ChainPointDto } from '../../../api/generated/ChainPointDto';
+import type { ChainWindow } from '../../../api/generated/ChainWindow';
 import {
   type BlockTimeSummaryInput,
   blockTimeDomain,
@@ -36,7 +40,6 @@ import {
   timeDomain,
 } from './chain';
 import { withoutMeans } from './chainFixture';
-import type { BlockTimeTargetDto, ChainHistoryDto, ChainPointDto, ChainWindow } from './chainTypes';
 
 const DAY = 86_400_000;
 const FORK_MS = 1_757_938_712_000;

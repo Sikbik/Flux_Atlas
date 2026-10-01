@@ -2,11 +2,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ChainHistoryDto } from '../../../api/generated/ChainHistoryDto';
+import type { ChainWindow } from '../../../api/generated/ChainWindow';
 import { useUi } from '../../../store/ui';
 import { click, type Mounted, mount } from '../../../ui/internal/testing';
 import { chainHistoryKey } from '../hooks/useChainHistory';
 import { chainDto, chainPoints, DAY, FORK_MS, T0 } from '../lib/chainFixture';
-import type { ChainHistoryDto, ChainWindow } from '../lib/chainTypes';
 import { ChainTab } from './Chain';
 
 // ---- a stand-in for the server --------------------------------------------------------------------

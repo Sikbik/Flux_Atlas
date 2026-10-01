@@ -4,17 +4,15 @@
 // the typical block and the target (so one very long gap never flattens the rest and longer gaps are
 // marked instead), and every number and sentence the tab shows is formatted here. Pure: no DOM, no React.
 
+import type { BlockTimeTargetDto } from '../../../api/generated/BlockTimeTargetDto';
+import type { ChainCoverageDto } from '../../../api/generated/ChainCoverageDto';
+import type { ChainHistoryDto } from '../../../api/generated/ChainHistoryDto';
+import type { ChainPointDto } from '../../../api/generated/ChainPointDto';
+import type { ChainWindow } from '../../../api/generated/ChainWindow';
 import { formatDuration, formatInt, formatUtcDateTime, UNKNOWN } from '../../../lib/format';
 import { niceTicks } from '../viz/scale';
-import type {
-  BlockTimeTargetDto,
-  ChainCoverageDto,
-  ChainHistoryDto,
-  ChainPointDto,
-  ChainWindow,
-} from './chainTypes';
 
-export type { ChainWindow } from './chainTypes';
+export type { ChainWindow } from '../../../api/generated/ChainWindow';
 
 // ---------------------------------------------------------------------------------------------
 // Windows

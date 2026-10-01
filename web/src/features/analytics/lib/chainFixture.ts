@@ -1,7 +1,9 @@
 // A small, plausible answer from `/network/chain-history`, for the tests of the Chain tab and its charts.
 // Tests only: nothing in the app imports it.
 
-import type { BlockTimeTargetDto, ChainHistoryDto, ChainPointDto } from './chainTypes';
+import type { BlockTimeTargetDto } from '../../../api/generated/BlockTimeTargetDto';
+import type { ChainHistoryDto } from '../../../api/generated/ChainHistoryDto';
+import type { ChainPointDto } from '../../../api/generated/ChainPointDto';
 
 export const MIN = 60_000;
 export const DAY = 86_400_000;

@@ -6,6 +6,9 @@
 
 import { Blocks, History } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { ChainCoverageDto } from '../../../api/generated/ChainCoverageDto';
+import type { ChainHistoryDto } from '../../../api/generated/ChainHistoryDto';
+import type { ChainWindow } from '../../../api/generated/ChainWindow';
 import { isApiError } from '../../../api/http';
 import { formatInt } from '../../../lib/format';
 import {
@@ -34,7 +37,6 @@ import {
   paceVsTarget,
   WINDOW_TEXT,
 } from '../lib/chain';
-import type { ChainCoverageDto, ChainHistoryDto, ChainWindow } from '../lib/chainTypes';
 import { BlockTimeChart } from '../viz/BlockTimeChart';
 import { DifficultyChart } from '../viz/DifficultyChart';
 

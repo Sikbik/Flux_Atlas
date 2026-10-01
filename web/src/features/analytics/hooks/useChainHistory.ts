@@ -9,9 +9,10 @@
 // here because its types are the feature's own until the server's are generated.
 
 import { keepPreviousData, queryOptions, useQuery } from '@tanstack/react-query';
+import type { ChainHistoryDto } from '../../../api/generated/ChainHistoryDto';
+import type { ChainWindow } from '../../../api/generated/ChainWindow';
 import { getJson } from '../../../api/http';
 import { qk } from '../../../api/queryKeys';
-import type { ChainHistoryDto, ChainWindow } from '../lib/chainTypes';
 
 const SEC = 1000;
 const MIN = 60 * SEC;
