@@ -1,0 +1,588 @@
+/* The block rail and the time machine's closed strip (design 8.14). Cards are 186 px, the ghost 214 px,
+   newest at the right. A landing is a thunk: the new card enters with --ease-beat, the others slide by
+   one card (FLIP, in Rail.tsx), a white rim fades over 1.6 s. Only transform and opacity animate. */
+
+:root {
+  --rail-blur: 14px;
+  --card-w: 186px;
+  --ghost-w: 214px;
+}
+
+:root[data-perf="lite"] {
+  --rail-blur: 0px;
+}
+
+.railwrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--statusbar-h);
+  height: calc(var(--rail-h) + var(--timeline-h));
+  z-index: var(--z-rail);
+  pointer-events: none;
+}
+
+/* ---- the strip ------------------------------------------------------------------------------- */
+
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--timeline-h);
+  padding: 0 16px 0 88px;
+}
+
+.timeline > * {
+  pointer-events: auto;
+}
+
+.tl-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  padding: 0 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.tl-label:hover {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--text-1);
+}
+
+.tl-label .kbd {
+  height: 16px;
+  padding: 0 4px;
+}
+
+.tl-track {
+  position: relative;
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.05), rgb(134 161 218 / 0.35));
+}
+
+.tl-now {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  translate: 50% -50%;
+  border-radius: 50%;
+  background: var(--hot);
+  box-shadow: var(--glow-hot);
+}
+
+.tl-live {
+  color: var(--hot);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+}
+
+/* ---- the rail --------------------------------------------------------------------------------- */
+
+.rail {
+  position: relative;
+  height: var(--rail-h);
+  background: linear-gradient(to top, rgb(0 0 0 / 0.92), rgb(0 0 0 / 0.5));
+  border-top: 1px solid var(--line-1);
+  -webkit-backdrop-filter: blur(var(--rail-blur));
+  backdrop-filter: blur(var(--rail-blur));
+  pointer-events: auto;
+}
+
+/* The top rim: faint at the left, bright white at the live edge. */
+.rail::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(134 161 218 / 0.4) 70%, rgb(255 255 255 / 0.6));
+  pointer-events: none;
+}
+
+.rail-track {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 10px;
+  height: 100%;
+  margin: 0;
+  padding: 8px 16px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  list-style: none;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-mask: linear-gradient(to right, transparent 0, #000 96px);
+  mask: linear-gradient(to right, transparent 0, #000 96px);
+}
+
+.rail-track::-webkit-scrollbar {
+  display: none;
+}
+
+.blk-item {
+  position: relative;
+  flex: none;
+  width: var(--card-w);
+  list-style: none;
+}
+
+.blk {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  height: 100%;
+  padding: 9px 12px 12px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0.02));
+  color: var(--text-1);
+  text-decoration: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+a.blk:hover {
+  border-color: var(--line-3);
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.03));
+  transform: translateY(-2px);
+}
+
+a.blk:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.blk .r1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.blk-h {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.blk-age {
+  min-width: 3.4ch;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.blk .r2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.mixbar {
+  display: flex;
+  flex: 1;
+  gap: 1px;
+  min-width: 24px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.mixbar i {
+  display: block;
+  flex-basis: 0;
+  min-width: 2px;
+}
+
+.mixbar [data-mix="confirms"] {
+  background: var(--accent-500);
+}
+
+.mixbar [data-mix="starts"] {
+  background: var(--hot-2);
+}
+
+.mixbar [data-mix="transfers"] {
+  background: var(--accent-300);
+}
+
+.mixbar [data-mix="other"] {
+  background: var(--text-4);
+}
+
+.blk .r3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--text-2);
+  font: var(--fw-medium) 11.5px / 1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.blk-prod {
+  display: inline-flex;
+  flex: none;
+  color: var(--tier, var(--text-3));
+}
+
+.blk-ip {
+  flex: none;
+}
+
+.blk .r3 em {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  font-style: normal;
+  text-overflow: ellipsis;
+}
+
+/* The reward strip: the coinbase's four outputs in miniature. */
+.strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  height: 3px;
+}
+
+.strip i {
+  display: block;
+  flex-basis: 0;
+}
+
+.strip [data-part="cumulus"] {
+  background: var(--tier-cumulus);
+}
+
+.strip [data-part="nimbus"] {
+  background: var(--tier-nimbus);
+}
+
+.strip [data-part="stratus"] {
+  background: var(--tier-stratus);
+}
+
+.strip [data-part="dev"] {
+  background: var(--text-4);
+}
+
+/* ---- a block lands ---------------------------------------------------------------------------- */
+
+.blk-item[data-fresh] {
+  /* A beat behind the slide, so the slot is mostly clear when the card arrives. */
+  animation: blk-land 360ms var(--ease-beat) 90ms both;
+}
+
+@keyframes blk-land {
+  from {
+    transform: translateX(24px) scale(0.96);
+    opacity: 0;
+  }
+}
+
+/* The white rim: a hairline and a glow that fade over 1.6 s (opacity only). */
+.blk-item[data-fresh] .blk::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid rgb(255 255 255 / 0.55);
+  border-radius: inherit;
+  box-shadow:
+    0 0 24px -8px var(--hot-glow),
+    inset 0 0 0 1px rgb(255 255 255 / 0.18);
+  pointer-events: none;
+  animation: blk-rim var(--dur-fresh) var(--ease-out) both;
+}
+
+@keyframes blk-rim {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .blk-item[data-fresh] {
+    animation-name: blk-land-quiet;
+    animation-duration: var(--dur-base);
+    animation-timing-function: var(--ease-standard);
+  }
+}
+
+:root[data-motion="reduced"] .blk-item[data-fresh] {
+  animation-name: blk-land-quiet;
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-standard);
+}
+
+:root[data-motion-off] .blk-item[data-fresh] {
+  animation: none;
+}
+
+@keyframes blk-land-quiet {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---- orphaned by a reorganization -------------------------------------------------------------- */
+
+.blk-item[data-orphan] .blk {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--status-warn) 45%, transparent);
+  opacity: 0.6;
+}
+
+.blk-item[data-orphan] .blk-h {
+  text-decoration: line-through;
+  text-decoration-color: var(--status-warn);
+}
+
+.blk-orphan {
+  margin-left: 8px;
+  color: var(--status-warn);
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+}
+
+/* ---- the ghost card: the next block ------------------------------------------------------------ */
+
+.blk-item-ghost {
+  width: var(--ghost-w);
+}
+
+.blk.ghost {
+  padding-left: 16px;
+  border: 0;
+  border-radius: 0;
+  background: rgb(134 161 218 / 0.06);
+  clip-path: polygon(0 0, calc(100% - 21px) 0, 100% 12px, 100% 100%, 21px 100%, 0 calc(100% - 12px));
+  transition: none;
+}
+
+.blk.ghost::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(135deg, rgb(134 161 218 / 0.07) 0 6px, transparent 6px 12px);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.blk.ghost > * {
+  position: relative;
+}
+
+.blk.ghost .blk-h {
+  color: var(--text-2);
+}
+
+.cdwn {
+  color: var(--hot);
+  font: var(--fw-semibold) 13px / 1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.blk-item-ghost[data-late] .cdwn {
+  color: var(--status-warn);
+}
+
+.ghost-payees {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  min-height: 14px;
+  margin-top: 1px;
+}
+
+.ghost-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--tier);
+  font-size: 10.5px;
+}
+
+.ghost-chip span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blk.ghost .bar {
+  position: absolute;
+  left: 16px;
+  right: 12px;
+  bottom: 7px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.blk.ghost .bar i {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: linear-gradient(90deg, var(--accent-500), var(--hot));
+  transform-origin: left center;
+  animation: sb-prog var(--beat-ms, 30000ms) linear calc(var(--since, 0) * -1ms) both;
+}
+
+/* ---- loading ----------------------------------------------------------------------------------- */
+
+.blk-skel {
+  gap: 8px;
+}
+
+.skel {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--ink-2);
+}
+
+.skel-l {
+  width: 60%;
+  height: 14px;
+}
+
+.skel-m {
+  width: 80%;
+}
+
+.skel-s {
+  width: 45%;
+}
+
+/* ---- history ------------------------------------------------------------------------------------ */
+
+.rail-jump {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  z-index: 3;
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent-600);
+  box-shadow: var(--glow-accent);
+  color: #fff;
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  translate: -50% 0;
+  cursor: pointer;
+  animation: pill-in 120ms var(--ease-out) both;
+}
+
+.rail-jump:hover {
+  background: var(--accent-600-hover);
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---- the peek ---------------------------------------------------------------------------------- */
+
+.peek {
+  min-width: 226px;
+}
+
+.peek-title {
+  color: var(--text-1);
+  text-decoration: none;
+}
+
+.peek-title:hover {
+  text-decoration: underline;
+}
+
+.peek-gap {
+  margin-top: 10px;
+}
+
+.peek-link {
+  color: var(--text-1);
+  text-decoration: none;
+}
+
+a.peek-link:hover {
+  text-decoration: underline;
+}
+
+.peek-payees {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.peek-payee {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--tier);
+}
+
+.peek-amt {
+  color: var(--text-1);
+}
+
+/* ---- compact desktop and tablet landscape ------------------------------------------------------- */
+
+@media (max-width: 1279px) {
+  :root {
+    --card-w: 158px;
+    --ghost-w: 178px;
+  }
+  .ghost-payees {
+    display: none;
+  }
+}

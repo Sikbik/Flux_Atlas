@@ -1,17 +1,26 @@
-// DOM overlays that ride the globe: place labels (countries and cities), the hover tooltip and the
-// moon's DOM proxy button. Neutral, token-driven structure for the shell team to style; all
-// per-frame positioning goes through the anchor system (no React render per frame).
+// DOM overlays that ride the globe: place labels (countries and cities), hover cards, the first-visit hint beside
+// the moon and the moon's DOM proxy button. All per-frame positioning goes through the anchor system (no React
+// render per frame). This file is the gates and the logic that has to run from the first frame (what the pointer
+// rests on, when the hint is due, the moon's keyboard target); the layers themselves are chunks of their own in
+// features/chrome/overlays/, fetched when the data is in (the labels) or the pointer is over something (the
+// cards), so the shell chunk carries none of their markup, arithmetic or styles.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNetwork, useRuntime } from '../app/context';
-import { formatHeight, formatInt } from '../lib/format';
-import { useBeat } from '../lib/useClock';
-import type { NetworkStore } from '../store/network';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useNetwork } from '../app/context';
+import { useBootPhase } from '../features/chrome/boot/state';
+import { hoverKey, TIP_DELAY_MS } from '../features/chrome/cardplace';
+import {
+  MOON_HINT_DELAY_MS,
+  MOON_HINT_LEAVE_MS,
+  MOON_HINT_SHOW_MS,
+  markMoonHintSeen,
+  moonHintSeen,
+  startsMoonHint,
+} from '../features/chrome/home';
+import { lazyCard } from '../features/chrome/lazyCard';
 import type { Anchor } from './anchors';
-import { GlobeLabel, useGlobeAnchor, useGlobeEngine, useGlobeHover } from './context';
-import type { ZoomBand } from './engine/types';
-
-const TIER_NAME = ['Unknown', 'Cumulus', 'Nimbus', 'Stratus'] as const;
+import { useGlobeAnchor, useGlobeEngine, useGlobeHandles } from './context';
+import './overlays.css';
 
 /** The full-viewport, pointer-transparent layer every globe overlay lives in. */
 export function GlobeOverlay({ children }: { children: React.ReactNode }) {
@@ -22,208 +31,134 @@ export function GlobeOverlay({ children }: { children: React.ReactNode }) {
   );
 }
 
+const loadTips = () => import('../features/chrome/overlays/Tips');
+const tip = lazyCard(() => loadTips().then((m) => m.Tip));
+const moonCard = lazyCard(() => loadTips().then((m) => m.MoonCard));
+const moonHintCard = lazyCard(() => loadTips().then((m) => m.MoonHintCard));
+const labelsLayer = lazyCard(() =>
+  import('../features/chrome/overlays/PlaceLabels').then((m) => m.PlaceLabelsLayer),
+);
+
 // ---- place labels -----------------------------------------------------------------------------
 
-interface Place {
-  id: string;
-  kind: 'country' | 'city';
-  text: string;
-  lat: number;
-  lon: number;
-  count: number;
-}
-
-const regionNames = (() => {
-  try {
-    return new Intl.DisplayNames(['en'], { type: 'region' });
-  } catch {
-    return null;
-  }
-})();
-
-/** Countries with 50 or more nodes (at their nodes' mean position) and the 40 biggest sites. */
-export function computePlaces(store: NetworkStore): { countries: Place[]; cities: Place[] } {
-  const t = store.nodes;
-  const byCountry = new Map<string, { n: number; x: number; y: number; z: number }>();
-  for (let i = 0; i < t.count; i++) {
-    const lat = t.lat[i]!;
-    const lon = t.lon[i]!;
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    const cc = t.countryCode(i);
-    if (!cc) continue;
-    let c = byCountry.get(cc);
-    if (!c) {
-      c = { n: 0, x: 0, y: 0, z: 0 };
-      byCountry.set(cc, c);
-    }
-    const la = (lat * Math.PI) / 180;
-    const lo = (lon * Math.PI) / 180;
-    c.n++;
-    c.x += Math.cos(la) * Math.cos(lo);
-    c.y += Math.cos(la) * Math.sin(lo);
-    c.z += Math.sin(la);
-  }
-  const countries: Place[] = [];
-  for (const [cc, c] of byCountry) {
-    if (c.n < 50) continue;
-    const lat = (Math.atan2(c.z, Math.hypot(c.x, c.y)) * 180) / Math.PI;
-    const lon = (Math.atan2(c.y, c.x) * 180) / Math.PI;
-    countries.push({
-      id: `cc:${cc}`,
-      kind: 'country',
-      text: regionNames?.of(cc) ?? cc,
-      lat,
-      lon,
-      count: c.n,
-    });
-  }
-  countries.sort((a, b) => b.count - a.count);
-  const locs = t.locations;
-  const cities: Place[] = [];
-  if (locs) {
-    for (let l = 1; l < locs.length; l++) {
-      const info = locs.info(l);
-      if (!info?.city || info.nodeCount <= 0 || !Number.isFinite(info.lat)) continue;
-      cities.push({
-        id: `loc:${l}`,
-        kind: 'city',
-        text: info.city,
-        lat: info.lat,
-        lon: info.lon,
-        count: info.nodeCount,
-      });
-    }
-  }
-  cities.sort((a, b) => b.count - a.count);
-  return { countries, cities: cities.slice(0, 40) };
-}
-
 /**
- * Country labels at the global and continental zoom bands, city labels from the regional band
- * (design 7.7), collision-culled in node-count order, kept out of the moon's clearance, at most 60.
+ * Country labels at the global and continental zoom bands, city labels from the regional band (design 7.7).
+ * The layer is its own chunk and mounts once the data is in: there is nothing to name before it.
  */
 export function PlaceLabels() {
-  const runtime = useRuntime();
-  const engine = useGlobeEngine();
   const loaded = useNetwork((s) => s.loaded);
-  const nodesVersion = useNetwork((s) => Math.floor(s.versions.Nodes / 50));
-  const [band, setBand] = useState<ZoomBand>(0);
-  useEffect(() => {
-    if (!engine) return;
-    return engine.on('zoomBand', (z) => setBand(z.band));
-  }, [engine]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: recomputed on load and every 50 node changes
-  const places = useMemo(
-    () => (loaded ? computePlaces(runtime.store) : { countries: [], cities: [] }),
-    [runtime, loaded, nodesVersion],
-  );
-  const list = band >= 2 ? places.cities : places.countries;
-  const kind = band >= 2 ? 'city' : 'country';
-  return (
-    <div className="globe-places" data-band={band}>
-      {list.slice(0, 60).map((p, k) => (
-        <PlaceLabel key={p.id} place={p} priority={k} kind={kind} />
-      ))}
-    </div>
-  );
+  return loaded ? <labelsLayer.Card /> : null;
 }
 
-function PlaceLabel({ place, priority, kind }: { place: Place; priority: number; kind: string }) {
-  const anchor = useMemo<Anchor>(
-    () => ({ kind: 'world', lat: place.lat, lon: place.lon, alt: 0.012 }),
-    [place.lat, place.lon],
-  );
-  return (
-    <GlobeLabel
-      anchor={anchor}
-      className={`globe-place globe-place-${kind}`}
-      options={{ group: 'places', priority, dx: 6, dy: -8 }}
-    >
-      {place.text}
-    </GlobeLabel>
-  );
-}
+// ---- hover cards ----------------------------------------------------------------------------------
 
-// ---- hover tooltip ----------------------------------------------------------------------------
-
-/** The node under the pointer (after 180 ms) or the moon's card (design 7.7, 6.4 P). */
+/** The node or site under the pointer (after a short rest) or the moon's card (design 7.7, 6.4 P, 8.17). */
 export function GlobeTooltip() {
-  const hover = useGlobeHover();
-  const [shown, setShown] = useState(hover);
+  const { hover } = useGlobeHandles();
+  // The engine re-emits `hover` on every frame while the pointer rests on something, so the card follows
+  // what is under the pointer (its key), not the event: otherwise the delay would restart every frame and
+  // the card would never show.
+  const key = useSyncExternalStore(
+    hover.subscribe,
+    () => hoverKey(hover.get()),
+    () => '',
+  );
+  const [settled, setSettled] = useState('');
   useEffect(() => {
-    if (!hover) {
-      setShown(null);
+    // The pointer is over something: its card's code starts to load well before the rest delay is over.
+    if (key !== '') tip.preload();
+    if (key === '' || key === 'moon') {
+      setSettled(key);
       return;
     }
-    if (hover.kind === 'moon') {
-      setShown(hover);
-      return;
-    }
-    const h = setTimeout(() => setShown(hover), 180);
+    const h = setTimeout(() => setSettled(key), TIP_DELAY_MS);
     return () => clearTimeout(h);
-  }, [hover]);
-  if (!shown) return null;
-  return shown.kind === 'moon' ? <MoonCard /> : <NodeTip id={shown.id} nodeKey={shown.key} />;
+  }, [key]);
+  const now = hover.get();
+  if (!now || key === '' || key !== settled) return null;
+  return <tip.Card hover={now} />;
 }
 
-function NodeTip({ id, nodeKey }: { id: number; nodeKey: string }) {
-  const runtime = useRuntime();
-  const t = runtime.store.nodes;
-  const i = t.indexOf(id);
-  const tier = i >= 0 ? (t.tier[i] ?? 0) : 0;
-  const city = i >= 0 ? (t.locations?.info(t.loc[i] ?? 0)?.city ?? '') : '';
-  const anchor = useMemo<Anchor>(() => ({ kind: 'node', id }), [id]);
-  return (
-    <GlobeLabel anchor={anchor} className="globe-tip" options={{ dx: 14, dy: -14, fade: false }}>
-      <span className="globe-tip-title mono">{nodeKey}</span>
-      <span className="globe-tip-sub" data-tier={TIER_NAME[tier]?.toLowerCase()}>
-        {TIER_NAME[tier]}
-        {city ? `, ${city}` : ''}
-      </span>
-    </GlobeLabel>
-  );
-}
+// ---- the first-visit hint (design 9.1, step 8) ---------------------------------------------------
 
-function MoonCard() {
-  const runtime = useRuntime();
-  const beat = useBeat(runtime.clock);
-  const nodes = useNetwork((s) => s.nodes.count);
-  const tip = useNetwork((s) => s.tip);
-  const anchor = useMemo<Anchor>(() => ({ kind: 'moon' }), []);
-  return (
-    <GlobeLabel
-      anchor={anchor}
-      className="globe-tip globe-tip-moon"
-      options={{ dx: -230, dy: -40, fade: false }}
-    >
-      <span className="globe-tip-title">Flux chain</span>
-      <span className="globe-tip-sub tabular">
-        {tip ? `Block ${formatHeight(tip.height)}` : 'Waiting for a block'}
-      </span>
-      <span className="globe-tip-sub tabular">
-        {beat.height === null ? '' : `Next block in ${Math.ceil(beat.remainingMs / 1000)} s`}
-      </span>
-      <span className="globe-tip-sub tabular">Network {formatInt(nodes)} nodes</span>
-      <span className="globe-tip-hint">
-        Click for About Flux <kbd>M</kbd>
-      </span>
-    </GlobeLabel>
+/**
+ * Once, after the first block that lands when the boot is over: a quiet note beside the moon, "That is the
+ * chain. Click it.", gone after six seconds and never again (a local flag). It waits for the relay of beams to
+ * finish, and it gives way to the moon's own card, to any window and to leaving the bare globe.
+ */
+export function MoonHint({ home }: { home: boolean }) {
+  const { hover } = useGlobeHandles();
+  const boot = useBootPhase();
+  const height = useNetwork((s) => s.tip?.height ?? null);
+  const hovering = useSyncExternalStore(
+    hover.subscribe,
+    () => hover.get()?.kind === 'moon',
+    () => false,
   );
+  const [phase, setPhase] = useState<'idle' | 'wait' | 'show' | 'leave'>('idle');
+  const seen = useRef(moonHintSeen());
+  const baseline = useRef<number | null>(null);
+  const live = useRef({ home, height });
+  live.current = { home, height };
+
+  useEffect(() => {
+    if (phase === 'show' && (hovering || !home)) {
+      setPhase('leave');
+      return;
+    }
+    if (phase !== 'idle' || seen.current) return;
+    if (boot === 'done' && baseline.current === null && height !== null) {
+      // The tip the boot ended on: the hint belongs to the first block after it.
+      baseline.current = height;
+      return;
+    }
+    if (startsMoonHint({ seen: false, booted: boot === 'done', baseline: baseline.current, height, home }))
+      setPhase('wait');
+  }, [boot, height, home, hovering, phase]);
+
+  // One timer per phase: the wait for the relay, the six seconds shown, the fade out.
+  useEffect(() => {
+    if (phase === 'idle') return undefined;
+    // The card's code loads during the wait for the relay of beams.
+    if (phase === 'wait') moonHintCard.preload();
+    const ms =
+      phase === 'wait' ? MOON_HINT_DELAY_MS : phase === 'show' ? MOON_HINT_SHOW_MS : MOON_HINT_LEAVE_MS;
+    const t = window.setTimeout(() => {
+      if (phase !== 'wait') {
+        setPhase(phase === 'show' ? 'leave' : 'idle');
+        return;
+      }
+      if (!live.current.home) {
+        // Not on the bare globe any more: wait for the next block instead.
+        baseline.current = live.current.height;
+        setPhase('idle');
+        return;
+      }
+      markMoonHintSeen();
+      seen.current = true;
+      setPhase('show');
+    }, ms);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+
+  if (phase === 'idle' || phase === 'wait') return null;
+  return <moonHintCard.Card leaving={phase === 'leave'} />;
 }
 
 // ---- the moon's DOM proxy (design 7.10.6) -----------------------------------------------------
 
 /**
  * A transparent button over the moon, positioned every frame, so the moon is reachable by keyboard
- * and assistive technology. The canvas does the pointer hit test (`pointer-events: none` here). The moon
- * is a real object on a world orbit: the button follows its projected place, grows with its perspective
- * size (never under the 44 px touch target) and dims while the planet is hiding the moon, so a focus
- * ring on it never sits on a moon that is not there. It stays reachable while hidden (the `M` key
- * also opens About Flux from anywhere).
+ * and assistive technology. The canvas does the pointer hit test (`pointer-events: none` here). Focus
+ * shows the moon's card, like hover does. The moon is a real object on a world orbit: the button follows
+ * its projected place, grows with its perspective size (never under the 44 px touch target) and dims
+ * while the planet is hiding the moon, so a focus ring on it never sits on a moon that is not there. It
+ * stays reachable while hidden (the `M` key also opens About Flux from anywhere).
  */
 export function MoonProxy({ hidden }: { hidden?: boolean }) {
   const engine = useGlobeEngine();
   const ref = useRef<HTMLButtonElement>(null);
+  const [focused, setFocused] = useState(false);
   const anchor = useMemo<Anchor>(() => ({ kind: 'moon' }), []);
   const last = useRef({ size: 0, dim: false });
   const options = useMemo(
@@ -254,13 +189,21 @@ export function MoonProxy({ hidden }: { hidden?: boolean }) {
   useGlobeAnchor(ref, engine && !hidden ? anchor : null, options);
   if (!engine || hidden) return null;
   return (
-    <button
-      ref={ref}
-      type="button"
-      className="globe-moon-proxy"
-      aria-label="About Flux, live network totals"
-      aria-haspopup="dialog"
-      onClick={() => engine.moonClick()}
-    />
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className="globe-moon-proxy"
+        aria-label="About Flux, live network totals"
+        aria-haspopup="dialog"
+        onClick={() => engine.moonClick()}
+        onFocus={(e) => {
+          moonCard.preload();
+          setFocused(e.currentTarget.matches(':focus-visible'));
+        }}
+        onBlur={() => setFocused(false)}
+      />
+      {focused ? <moonCard.Card /> : null}
+    </>
   );
 }

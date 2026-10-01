@@ -1,0 +1,100 @@
+/* The phone's tab bar (design 3.6): 64 px of glass above the bottom safe area, five tabs of 44 px or more. The lit
+   tab wears a pill of Blue Wave behind its icon and name; Live carries a light that is the connection's. */
+
+.shell-tabs {
+  display: none;
+}
+
+.shell[data-layout="phone"] .shell-tabs {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: var(--z-statusbar);
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  height: calc(var(--tabbar-h) + var(--safe-bottom));
+  padding: 0 var(--space-3) var(--safe-bottom);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border-top: 1px solid var(--glass-border);
+  pointer-events: auto;
+}
+
+.shell-tab {
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+/* The pill behind the lit tab: it grows in from its centre, so changing tab reads as one light moving. */
+.shell-tab::before {
+  content: "";
+  position: absolute;
+  inset: 7px 6px;
+  border: 1px solid rgb(79 122 212 / 0.4);
+  border-radius: var(--r-lg);
+  background: var(--accent-soft);
+  opacity: 0;
+  transform: scale(0.88);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.shell-tab[aria-current="page"] {
+  color: var(--text-1);
+}
+
+.shell-tab[aria-current="page"]::before {
+  opacity: 1;
+  transform: none;
+}
+
+.shell-tab:active:not([aria-current="page"]) {
+  color: var(--text-2);
+}
+
+.shell-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-lg);
+}
+
+.tab-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.tab-label {
+  position: relative;
+}
+
+.tab-live {
+  position: absolute;
+  top: -3px;
+  right: -6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .shell-tab::before {
+    transform: none;
+  }
+}
+
+:root[data-motion="reduced"] .shell-tab::before,
+:root[data-motion-off] .shell-tab::before {
+  transform: none;
+}

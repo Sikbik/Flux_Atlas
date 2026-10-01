@@ -12,8 +12,10 @@ re-centres in the free area, and the phone shows one sheet.
 | `route.ts` | `windowForPath`, `pathForWindow`, `parseExtraWindows`, `serializeExtraWindows` (pure) |
 | `machine.ts` | `wmReduce`, `initialWmState`, `defaultWorkspace`, `clampRect` and the selectors |
 | `store.ts` | `createWindowManager` (subscriptions, persistence), `wmKeyHandler` (keyboard) |
-| `react.tsx` | `WindowManagerProvider`, `useWm`, `useWmDispatch`, `useWindowManager`, `WindowLayer`, `WindowFrame`, `WindowDots` |
-| `wm.css` | minimal token-driven chrome (`wm-` classes), imported by `react.tsx` |
+| `react.tsx` | `WindowManagerProvider`, `useWm`, `useWmDispatch`, `useWindowManager`, `WindowLayer`, `WindowFrame`, `WindowDots`, `useWindowMeta` |
+| `wm.css` | the window chrome (`wm-` classes), imported by `react.tsx` |
+| `chrome.ts`, `ghost.ts`, `meta.tsx`, `scrollfade.ts`, `glyphs.tsx` | the chrome's pure geometry (FLIP, gutter, stable order), the exit ghost, the title bar meta, the body's "more to read" fade, the glyph and accent per window type |
+| `sheet.ts`, `useSheetDrag.ts`, `PhoneSheet.tsx` | the phone sheet: snap heights and the drag's decision (pure), the drag gesture, and the sheet chrome for a sheet that is not a window (the Live tab's) |
 | `index.ts` | re-exports everything but the React layer |
 
 ## The model
@@ -163,14 +165,108 @@ global keymap (design 10.4), not to this handler.
    `extra`, and dispatches `close` for `free` windows. Put `<WindowDots />` under the dock launchers.
 7. Install `wmKeyHandler` on `window` with `onEscape` clearing the selection first.
 
-## For the shell team
+## The window chrome (`react.tsx`, `wm.css`)
 
-`WindowFrame` is deliberately plain: a `section[role=dialog]` with `data-window-type`,
-`data-window-id`, `data-placement` (`docked`, `floating`, `sheet`), `data-mode`, `data-focused` and
-`data-dragging`, a `.wm-titlebar` drag handle with `.wm-btn` controls, `.wm-body` for content, and
-`.wm-resize[data-edge]` handles. Everything visual in `wm.css` reads tokens (`--slab-bg-solid`,
-`--line-*`, `--shadow-window*`, `--r-*`, `--window-titlebar-h`, `--z-window..--z-window-max`). Not
-built here, and yours to add: the aperture open and close (6.4 A), the focus rim flare and sweep (6.4
-C), the spring on snap and FLIP re-tiling (6.4 B), the swap animation (6.4 G), real icons for the
-controls (they are text glyphs now), the tether drawing, the pop-out, and the sheet's drag gesture
-(the grabber currently cycles peek, half, tall, full on click).
+A window is a `section.wm-window[role=dialog]` wrapper (geometry and the state attributes; no filter, clip,
+mask or shadow of its own) around a `.wm-shadow` (the drop shadow, a filter that follows the slab's chamfer)
+around a `.wm-slab` (the material, the 1 px rim, the chamfered top right corner), plus the resize handles and
+`.wm-cut` (the hairline on the chamfer's diagonal) as siblings of the shadow. Inside the slab: `.wm-titlebar`
+(glyph disc, title, subtitle, freshness chip, controls), then `.wm-body`.
+
+State attributes on the wrapper, for CSS and for anything that wants to attach to a window:
+`data-window-type`, `data-window-id`, `data-placement` (`docked`, `floating`, `sheet`), `data-mode`
+(`normal`, `minimized`, `maximized`), `data-snap` (phone sheets), `data-focused`, `data-dragging`, `data-sheet-drag`
+(a phone sheet under a finger), `data-accent` (a Flux blue tone or
+white) or `data-tier` (a node window wears its tier). Tests and tethers find windows by these; a ghost
+(below) never carries them.
+
+| Behaviour | How |
+|---|---|
+| Open | the wrapper scales from 0.96 and fades in (`wm-open`, `--dur-slow`); reduced motion fades only |
+| Focus | the hot rim cross-fades in over the quiet one, and one flare crosses the top edge (900 ms, `wm-flare`); an event on arrival, never a loop (the motion language drops the 9 s sweep). Reduced motion and off: no flare |
+| Drag | `scale(1.006)` and a deeper shadow; the snap zone previews as `.wm-drop-zone` |
+| Move to a new rectangle (maximise, dock, float, snap) | one FLIP of transform from the old rectangle, 340 ms, never while dragging, resizing or when the viewport changed |
+| Close | a ghost (a copy of the frame, inert, `aria-hidden`, without the identity attributes) fades and shrinks in place, 200 ms |
+| Minimise | the ghost flies to the window's `.wm-dot` in the dock, 300 ms |
+| Retarget (node to node) | the body fades in with a 6 px rise, 320 ms; the frame stays |
+| Body | thin scrollbar; fades over its last 30 px only while there is more to read (`data-more`) |
+
+Only transform and opacity animate. A docked, snapped or maximised window that fills the workspace's
+height is drawn with a 12 px gutter above and below (`withGutter`); the shell leaves a 12 px margin at the
+workspace's right edge, so a docked inspector floats clear of the screen like the others.
+
+Each `Frame` selects its own window, and the view inside is memoised on the fields it depends on (type,
+key, binding, placement, mode, title): dragging changes the rectangle every frame and re-renders neither
+the layer nor the view. Frames keep the order they appeared in the DOM (`stableOrder`) and stack by
+z-index: moving a frame's element in the document would cancel a click that is half done on one of its
+controls. Pressing a control on an unfocused extra window raises it but does not make it the path's
+window, so Close and Minimise act on the window you pressed them on.
+
+### Ready for the motion language's Power-on
+
+`web/src/motion` reveals a window with a `<PowerOn>` wrapper (a circle of light that opens from the launcher,
+a shorter exit, the window kept mounted until `onExited`). The frame is built to take it:
+
+- **The wrapper is clean.** `.wm-window` has no `filter`, `clip-path`, `mask` or `box-shadow`, in every
+  placement (the phone sheet's shadow and radius live on `.wm-shadow` too), so the aperture's clip can sit on
+  it or on a wrapper around it. The chamfer mask is on `.wm-slab` and the drop shadow on `.wm-shadow`, both
+  inside.
+- **Geometry in one place.** The `left`, `top`, `width`, `height` and `zIndex` of a window are one inline
+  `style` object in `WindowFrame` (and in `PhoneSheet`). To wrap: move that object to the `PowerOn` wrapper,
+  give `.wm-window` `position: relative` and a full-size box, and keep every state attribute where it is (the
+  title bar, the rim and the tethers read them from `.wm-window`).
+- **The origin** is the dock button `[data-launcher="<id>"]`, where `<id>` is `launcherOf(win.type)`
+  (`shell/frame/dock.ts`: a node or a host opens from `nodes`, the explorer types from `explorer`, the queue from
+  `queue`, ...), or the node marker for an inspector.
+- **What goes when it lands:** the `wm-open` entrance (`animation` on `.wm-window`, and its `wm-fade` and
+  `wm-sheet-in` variants) and the exit ghost in `ghost.ts`; a leaving window then stays rendered with
+  `open={false}` until `onExited` instead of being copied.
+- **Dense zones.** The title bar is `data-fx-density="dense"`: its controls (minimise, maximise, close) get no
+  light, the window opening and closing is their answer.
+
+### Telling the frame about a window: `useWindowMeta`
+
+```tsx
+import { useWindowMeta } from '../../shell/wm/react';
+
+useWindowMeta({
+  subtitle: 'Stratus node, Helsinki',   // a line under the title
+  mono: true,                            // set the title in Plex Mono (IPs, ids, hashes)
+  tier: 'stratus',                       // a node window wears its tier colour and capsule glyph
+  fresh: { label: 'nodes', evidenceMs: lastNodesMs, cadenceMs: 90_000 },  // the title bar's own freshness chip
+});
+```
+
+Call it from anywhere inside the window's content; it clears when the content unmounts. `accent` overrides
+the type's default (`WINDOW_ACCENT` in `glyphs.tsx`). The title itself stays the window manager's (`setTitle`).
+The chip uses the same rule as the status bar: fresh under 1.5x the cadence, aging to 3x, stale to 10x, dead
+beyond; an unknown time reads "Unknown".
+
+### The phone sheet (design 3.6)
+
+Under 720 px wide the window manager shows one window, the focused one, as a bottom sheet standing on the tab bar
+(`windowRect`). Its height is one of four snaps kept in `WmState.sheet` (`setSheet`): peek 132 px, half 372 px, tall
+(the viewport less the tab bar and 250 px) and full (the viewport less the tab bar and 16 px). The frame sets
+`data-placement="sheet"` and `data-snap`.
+
+| Behaviour | How |
+|---|---|
+| Heights and the drag's decision | `sheet.ts`, pure: `sheetHeights(viewportH)` restates the formula in `machine.ts` (`sheet.test.ts` runs both across viewport heights, so the two cannot drift), `nearestSnap` throws the sheet 180 ms of its speed past the finger, takes the nearest snap, lets a flick (0.45 px per ms or more) move it one snap its way, and dismisses a sheet carried below 60 percent of peek |
+| The gesture | `useSheetDrag.ts`: the grabber and the title bar. Pointer events with `touch-action: none`; 6 px of slop so a tap stays a tap; while the finger is down the sheet moves with a transform only (no state, no layout) and carries `data-sheet-drag`; past full it follows at a quarter of the travel |
+| On release | the snap is dispatched and the sheet, already in its final rectangle, is carried there from where it was let go with one FLIP of `translate3d` (340 ms, `--ease-out-expo`); a flick down from peek slides the sheet away (240 ms) and closes it (`data-sheet-gone` keeps the ghost from fading it a second time) |
+| Keyboard | the grabber is a button: Enter and a tap cycle the snaps (`cycleSnap`), Arrow up and down step through them (`stepSnap`). Both walk only the snaps that differ in height, because a short viewport (375 by 667) folds tall into half (`distinctSnaps`) |
+| Clip and skirt | `.wm-layer[data-layout="phone"]` is clipped above the tab bar and sits above the header, and a sheet has a skirt of its own material under its edge, so a sheet pulled up shows no gap, one released low never draws over the bar, and a full sheet covers the header: its material goes solid there (`data-snap="full"`) and the frame makes the header `inert` behind it |
+| Scroll | the body scrolls only at tall and full (`scrollsAt`); at peek and half it is a preview, read by lifting the sheet |
+| Safe area | the frame gives the window manager a viewport that ends where the bottom safe area begins, because the sheet stands on the tab bar, which stands on the safe area |
+
+`PhoneSheet` draws the same sheet (the same classes, grabber, title bar, drag and snaps) for the one view that is
+not a route: the Live tab's. It is not a window: it never takes a window id or a route, the frame shows it when
+nothing else is in the sheet, and opening a window closes it. The globe's inset accounts for it
+(`insetFor` in `shell/frame/routing.ts`).
+
+### Not built
+
+The aperture open (a clip-path circle out of the clicked launcher or marker, 6.4 A) and the pop-out are not
+here: the open is a plain scale and fade, which the motion layer can replace by attaching to the state
+attributes above. The moon does not park as a 24 px symbol in the header's Beat mini when a sheet is tall or full
+(7.10.6): that needs the engine.

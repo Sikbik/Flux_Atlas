@@ -10,6 +10,8 @@ export type ToastKind = 'info' | 'success' | 'warning' | 'error' | 'achievement'
 export interface Toast {
   id: number;
   kind: ToastKind;
+  /** Pushing a toast with the key of one already queued or on screen refreshes that one instead of stacking another. */
+  key?: string;
   title: string;
   body?: string;
   /** Route opened when the toast is clicked, for example `/node/1.2.3.4:16127`. */
@@ -30,14 +32,23 @@ interface ToastState {
 }
 
 const MAX_TOASTS = 5;
-const DEFAULT_TTL_MS = 6000;
+/** Design 6.4 H: five seconds, seven for an achievement (a longer sentence that teaches). */
+const DEFAULT_TTL_MS = 5000;
+const ACHIEVEMENT_TTL_MS = 7000;
 let nextId = 1;
 
-export const useToasts = create<ToastState>()((set) => ({
+export const useToasts = create<ToastState>()((set, get) => ({
   toasts: [],
   push(t) {
+    const ttlMs = t.ttlMs ?? (t.kind === 'achievement' ? ACHIEVEMENT_TTL_MS : DEFAULT_TTL_MS);
+    const known = t.key === undefined ? undefined : get().toasts.find((x) => x.key === t.key);
+    if (known) {
+      const refreshed: Toast = { ...t, id: known.id, ttlMs, createdMs: Date.now() };
+      set((s) => ({ toasts: s.toasts.map((x) => (x.id === known.id ? refreshed : x)) }));
+      return known.id;
+    }
     const id = nextId++;
-    const next: Toast = { ...t, id, ttlMs: t.ttlMs ?? DEFAULT_TTL_MS, createdMs: Date.now() };
+    const next: Toast = { ...t, id, ttlMs, createdMs: Date.now() };
     set((s) => ({ toasts: [...s.toasts, next].slice(-MAX_TOASTS) }));
     return id;
   },

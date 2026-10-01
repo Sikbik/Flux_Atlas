@@ -21,6 +21,16 @@
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNetwork } from '../../app/context';
+import { AimStrip } from '../../features/chrome/AimStrip';
+import { Boot } from '../../features/chrome/boot/Boot';
+import { bootInstant, finishBoot, useBootPhase } from '../../features/chrome/boot/state';
+import { useApplyLayers } from '../../features/chrome/layers';
+import { lazyCard } from '../../features/chrome/lazyCard';
+import { usePhone } from '../../features/chrome/phone';
+import { useRootPrefs } from '../../features/chrome/prefs';
+import { BlockRail } from '../../features/chrome/Rail';
+import { StatusBar } from '../../features/chrome/StatusBar';
+import { ToastHost } from '../../features/chrome/toasthost';
 import { CommandLayer } from '../../features/command';
 import {
   type Anchor,
@@ -31,6 +41,7 @@ import {
   Tether,
   useGlobeBinding,
 } from '../../globe';
+import { MoonHint } from '../../globe/overlays';
 import { windowContent } from '../windowContent';
 import { visibleWindows } from '../wm/machine';
 import { useWm, WindowLayer, WindowManagerProvider } from '../wm/react';
@@ -38,9 +49,22 @@ import { windowForPath } from '../wm/route';
 import { PHONE_MAX_W, WINDOW_SPECS } from '../wm/specs';
 import { createWindowManager, type WindowManager } from '../wm/store';
 import type { WindowState } from '../wm/types';
-import { BlockRail, BootVeil, Dock, PhoneTabs, StatusBar, TopBar } from './regions';
+import { ShellActionsContext } from './actions';
+import { Dock } from './Dock';
+import { useShellKeys } from './keys';
+import { useLauncher } from './launchers';
+import { liveSheet } from './livegate';
+import { PhoneHeader } from './PhoneHeader';
+import { PhoneTabs } from './PhoneTabs';
 import { useGlobeInsetSync, useWindowRouting } from './routing';
+import { TopBar } from './TopBar';
 import './frame.css';
+
+/** The Pulse is its own chunk: it mounts with the shell and is long loaded by the time the boot is over. */
+const pulse = lazyCard(() => import('../../features/chrome/Pulse').then((m) => m.Pulse));
+
+/** The workspace stops this far from the right edge: a docked inspector floats clear of the screen (design 3.1). */
+const WORKSPACE_MARGIN = 12;
 
 const viewportNow = () => ({
   w: typeof window === 'undefined' ? 1600 : window.innerWidth,
@@ -63,10 +87,42 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   const [phone, setPhone] = useState(() => viewportNow().w < PHONE_MAX_W);
   const topRef = useRef<HTMLElement>(null);
   const dockRef = useRef<HTMLElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLElement>(null);
+  const statusRef = useRef<HTMLElement>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const { requestClose, focusWindow } = useWindowRouting(wm);
+  const launch = useLauncher();
+  const boot = useBootPhase();
+  const liveOpen = usePhone((s) => s.live);
+  const setLive = usePhone((s) => s.setLive);
+  const sheetOpen = useWm((s) => s.layout === 'phone' && visibleWindows(s).length > 0, Object.is);
+  // The bare globe: no window of any kind and no Live sheet. The first-visit hint belongs to it alone.
+  const anyWindow = useWm((s) => visibleWindows(s).length > 0, Object.is);
+  const bareGlobe = pathname === '/' && !anyWindow && !(phone && liveOpen);
+  const actions = useMemo(() => ({ requestClose, focusWindow, launch }), [requestClose, focusWindow, launch]);
   useGlobeInsetSync(wm, ambient);
+  useRootPrefs();
+  useApplyLayers();
+  useShellKeys(launch, !ambient);
+  // The ambient screen is the moon and the planet alone: there is no boot to wait for.
+  useEffect(() => {
+    if (ambient) finishBoot({ instant: true });
+  }, [ambient]);
+
+  // The phone has one sheet. A window that opens over the bare globe takes it (the Live sheet gives way) and
+  // the sheet rises to half; the Live sheet opening rises to half too (design 3.6). A window retargeting or
+  // replacing another keeps the height the finger left.
+  const sheetKind = sheetOpen ? 'window' : phone && liveOpen ? 'live' : 'none';
+  // A full sheet is the whole screen: what it covers (the header) is out of reach for the keyboard and for a screen reader too.
+  const sheetFull = useWm((st) => st.sheet === 'full', Object.is) && sheetKind !== 'none';
+  const lastKind = useRef(sheetKind);
+  useEffect(() => {
+    const before = lastKind.current;
+    lastKind.current = sheetKind;
+    if (before === sheetKind) return;
+    if (sheetKind === 'window') setLive(false);
+    if (before === 'none' && sheetKind !== 'none') wm.dispatch({ t: 'setSheet', snap: 'half' });
+  }, [sheetKind, setLive, wm]);
 
   // Measure the workspace and hand it to the window manager (on resize and layout changes).
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-measures when the layout (ambient, phone) swaps regions
@@ -80,16 +136,29 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         ? (tabsRef.current?.getBoundingClientRect().top ?? v.h - 64)
         : (bottomRef.current?.getBoundingClientRect().top ?? v.h - 154);
       const left = isPhone ? 0 : (dockRef.current?.getBoundingClientRect().right ?? 76) + 8;
+      // The tab bar stands on the bottom safe area; the window manager's sheets stand on the tab bar, so the
+      // viewport it is given ends where the safe area begins.
+      const safeBottom =
+        isPhone && tabsRef.current
+          ? Number.parseFloat(getComputedStyle(tabsRef.current).paddingBottom) || 0
+          : 0;
       wm.dispatch({
         t: 'setViewport',
-        viewport: v,
-        workspace: { x: left, y: top, w: Math.max(1, v.w - left), h: Math.max(1, bottomEdge - top) },
+        viewport: { w: v.w, h: v.h - safeBottom },
+        workspace: {
+          x: left,
+          y: top,
+          w: Math.max(1, v.w - left - (isPhone ? 0 : WORKSPACE_MARGIN)),
+          h: Math.max(1, bottomEdge - top),
+        },
       });
     };
     measure();
     window.addEventListener('resize', measure);
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    for (const el of [topRef.current, bottomRef.current, tabsRef.current, dockRef.current])
+    // Every region whose size moves an edge of the free area: the top bar, the dock, the rail, the status bar
+    // (a taller status bar lifts the rail without resizing it) and the phone's tab bar.
+    for (const el of [topRef.current, bottomRef.current, statusRef.current, tabsRef.current, dockRef.current])
       if (el) ro?.observe(el);
     return () => {
       window.removeEventListener('resize', measure);
@@ -112,36 +181,51 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
   }
 
   return (
-    <div className="shell" data-layout={phone ? 'phone' : 'desktop'}>
-      <GlobeOverlay>
-        <PlaceLabels />
-        <GlobeTooltip />
-        <MoonProxy />
-      </GlobeOverlay>
-      <WindowTethers />
-      <TopBar ref={topRef} phone={phone} />
-      {phone ? null : <Dock ref={dockRef} />}
-      <main className="shell-stage" data-region="stage" aria-label="Globe">
-        {pageRoute ? (
-          <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
-            <Suspense fallback={null}>
-              <Outlet />
-            </Suspense>
-          </div>
-        ) : null}
-      </main>
-      {phone ? <PhoneTabs ref={tabsRef} /> : <BlockRail ref={bottomRef} />}
-      {phone ? null : <StatusBar />}
-      <WindowLayer
-        renderContent={(win: WindowState) =>
-          win.binding === 'primary' && !pageRoute ? <Outlet /> : windowContent(win)
-        }
-        onRequestClose={requestClose}
-        onFocusWindow={focusWindow}
-      />
-      <CommandLayer />
-      <BootVeil />
-    </div>
+    <ShellActionsContext.Provider value={actions}>
+      <div
+        className="shell"
+        data-layout={phone ? 'phone' : 'desktop'}
+        data-boot={boot}
+        data-boot-instant={boot === 'done' && bootInstant() ? '' : undefined}
+      >
+        <a className="skip-link" href="#shell-stage">
+          Skip to the globe
+        </a>
+        <GlobeOverlay>
+          <PlaceLabels />
+          <GlobeTooltip />
+          <MoonProxy />
+          <MoonHint home={bareGlobe} />
+        </GlobeOverlay>
+        <WindowTethers />
+        {phone ? <PhoneHeader ref={topRef} inert={sheetFull || undefined} /> : <TopBar ref={topRef} />}
+        {phone ? null : <Dock ref={dockRef} />}
+        {phone ? null : <AimStrip />}
+        {phone ? null : <pulse.Card />}
+        <main className="shell-stage" id="shell-stage" tabIndex={-1} data-region="stage" aria-label="Globe">
+          {pageRoute ? (
+            <div className="shell-page" data-chrome={primary ? WINDOW_SPECS[primary.type].chrome : 'page'}>
+              <Suspense fallback={null}>
+                <Outlet />
+              </Suspense>
+            </div>
+          ) : null}
+        </main>
+        {phone ? <PhoneTabs ref={tabsRef} /> : <BlockRail ref={bottomRef} />}
+        {phone ? null : <StatusBar ref={statusRef} />}
+        <WindowLayer
+          renderContent={(win: WindowState) =>
+            win.binding === 'primary' && !pageRoute ? <Outlet /> : windowContent(win)
+          }
+          onRequestClose={requestClose}
+          onFocusWindow={focusWindow}
+        />
+        {phone && liveOpen && !sheetOpen ? <liveSheet.Card /> : null}
+        <ToastHost />
+        <CommandLayer />
+        <Boot />
+      </div>
+    </ShellActionsContext.Provider>
   );
 }
 

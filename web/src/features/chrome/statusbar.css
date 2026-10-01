@@ -1,0 +1,348 @@
+/* The status bar (design 8.8): 28 px, glass, 11 px text. Chips are mono where they carry data. Stale and
+   dead read in words and colour, never colour alone. Nothing here animates layout; the tip's progress
+   is a scaleX on the compositor. */
+
+.statusbar {
+  position: fixed;
+  inset: auto 0 0 0;
+  height: var(--statusbar-h);
+  z-index: var(--z-statusbar);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 16px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border-top: 1px solid var(--glass-border);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.sb-anchor {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.sb-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+button.sb-left {
+  height: 100%;
+  cursor: default;
+}
+
+.sb-right > * {
+  flex: none;
+}
+
+.statusbar b {
+  color: var(--text-2);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-dim {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- connection ------------------------------------------------------------------------------ */
+
+.sb-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-1);
+}
+
+.sb-conn b {
+  color: var(--text-1);
+}
+
+/* ---- freshness chips ------------------------------------------------------------------------- */
+
+.sb-fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-fresh b {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.sb-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+
+.sb-fresh[data-state="fresh"] .sb-dot {
+  background: var(--status-ok);
+}
+
+.sb-fresh[data-state="aging"] {
+  color: var(--text-2);
+}
+
+.sb-fresh[data-state="stale"],
+.sb-fresh[data-state="dead"] {
+  color: var(--status-warn);
+}
+
+.sb-fresh[data-state="stale"] .sb-dot {
+  background: var(--status-warn);
+}
+
+.sb-fresh[data-state="dead"] {
+  color: var(--status-crit);
+}
+
+.sb-fresh[data-state="dead"] .sb-dot {
+  background: var(--status-crit);
+}
+
+.sb-fresh[data-state="unknown"] .sb-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--text-4);
+}
+
+.sb-fresh em {
+  font-style: normal;
+  font-family: var(--font-sans);
+}
+
+.sb-age {
+  min-width: 3.4ch;
+}
+
+/* Quiet at rest: every path that is keeping up is one 5 px light (fresh green, aging grey, unknown hollow);
+   the words come back for a path that is stale or dead, and the hover card has every age. */
+.sb-leds {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sb-led {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+
+.sb-led[data-state="fresh"] {
+  background: var(--status-ok);
+  opacity: 0.85;
+}
+
+.sb-led[data-state="unknown"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--text-4);
+}
+
+.sb-leds:empty {
+  display: none;
+}
+
+/* The tip chip carries the next-block progress: a hairline track that fills over the 30 s interval. */
+.sb-tipchip {
+  gap: 7px;
+}
+
+.sb-prog {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.sb-prog i {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-500), var(--hot));
+  transform-origin: left center;
+  animation: sb-prog var(--beat-ms, 30000ms) linear calc(var(--since, 0) * -1ms) both;
+}
+
+@keyframes sb-prog {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .sb-prog i {
+    animation-timing-function: steps(30, end);
+  }
+}
+
+:root[data-motion="reduced"] .sb-prog i,
+:root[data-motion-off] .sb-prog i {
+  animation-timing-function: steps(30, end);
+}
+
+/* ---- right group ----------------------------------------------------------------------------- */
+
+.sb-cut {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  text-decoration: none;
+}
+
+.sb-cut:hover {
+  color: var(--text-1);
+}
+
+.sb-cut b {
+  color: var(--text-1);
+}
+
+.sb-totals {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sb-tiers {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 6px;
+  padding-right: 12px;
+  border-right: 1px solid var(--line-2);
+}
+
+.sb-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tier);
+}
+
+.sb-tier b {
+  color: var(--text-2);
+}
+
+.sb-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sb-price[data-stale] {
+  color: var(--text-3);
+}
+
+.sb-price[data-stale] b {
+  color: var(--text-3);
+}
+
+.sb-price em {
+  color: var(--status-warn);
+  font-style: normal;
+}
+
+.sb-up {
+  color: var(--div-pos);
+}
+
+.sb-down {
+  color: var(--div-neg);
+}
+
+.sb-clock {
+  display: none;
+}
+
+.sb-build {
+  color: var(--text-4);
+  font-family: var(--font-mono);
+}
+
+/* ---- hover cards ------------------------------------------------------------------------------ */
+
+.sb-card-body {
+  min-width: 236px;
+  max-width: 320px;
+}
+
+.sb-card-gap {
+  margin-top: 10px;
+}
+
+.sb-card-state[data-state="stale"] {
+  color: var(--status-warn);
+}
+
+.sb-card-state[data-state="dead"] {
+  color: var(--status-crit);
+}
+
+.sb-jobs {
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.sb-note {
+  margin: 8px 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+.sb-card-body .sb-tier {
+  color: var(--tier);
+}
+
+/* ---- compact desktop and tablet landscape ---------------------------------------------------- */
+
+@media (max-width: 1679px) {
+  .sb-tiers {
+    display: none;
+  }
+}
+
+@media (max-width: 1360px) {
+  .sb-clock {
+    display: inline;
+  }
+}
+
+@media (max-width: 1279px) {
+  .sb-build,
+  .sb-prog {
+    display: none;
+  }
+}

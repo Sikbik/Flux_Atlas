@@ -1,0 +1,9 @@
+/* The globe's overlays that load with the shell (design 7.10.6): the moon's keyboard target. The place labels
+   and the hover cards have their own stylesheets, loaded with their chunks (features/chrome/overlays/). */
+
+/* The moon's keyboard target: a focus ring with a Blue Wave glow. */
+.globe-moon-proxy:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 2px;
+  box-shadow: var(--glow-accent);
+}

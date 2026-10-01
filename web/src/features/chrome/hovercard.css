@@ -1,0 +1,34 @@
+/* The content of the chrome's hover cards (design 8.17): a title and label and value rows. The card itself
+   (glass, rim, shadow, placement) is the UI kit's HoverCard. */
+
+.hc-title {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
+}
+
+.hc-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 14px;
+  margin: 0;
+}
+
+.hc-rows dt {
+  color: var(--text-3);
+}
+
+.hc-rows dd {
+  margin: 0;
+  color: var(--text-1);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hc-rows dd.mono {
+  font-size: 11.5px;
+}

@@ -1,6 +1,9 @@
-/* Minimal window chrome for the window-manager core. Token-driven only; the shell team owns the
-   visual pass (aperture, rim sweep, glass) and restyles these classes. Geometry (left, top, width,
-   height, z-index) is set inline from the window manager's state. */
+/* Window chrome (design 8.3). A window is a wrapper (geometry, the state attributes) around a shadow (the drop
+   shadow) around a slab (the material, the rim, the chamfer). The wrapper carries no filter, clip, mask or
+   shadow of its own: the shadow is a wrapper because a mask would clip a box-shadow, and the motion language's
+   Power-on reveals a window with a clip that it can only put on a plain element. The top right corner is cut at
+   the hexagon angle with a mask on the slab and a hairline on the diagonal. Geometry (left, top, width, height,
+   z-index) is set inline from the window manager's state. Only opacity and transform ever animate. */
 
 .wm-layer {
   position: fixed;
@@ -11,45 +14,191 @@
 
 .wm-window {
   position: fixed;
-  display: flex;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
+  color: var(--text-1);
   pointer-events: auto;
-  background: var(--slab-bg-solid);
-  border: 1px solid var(--line-2);
+  transform-origin: 50% 50%;
+  transition: transform var(--dur-fast) var(--ease-out);
+  animation: wm-open var(--dur-slow) var(--ease-out-expo) backwards;
+}
+
+@keyframes wm-open {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* The shadow follows the slab's chamfer because a drop-shadow filter reads the alpha of what is inside it. */
+.wm-shadow {
+  position: absolute;
+  inset: 0;
+  filter: var(--drop-window);
+}
+
+/* Lifted while dragged: a hair larger, a deeper shadow. */
+.wm-window[data-dragging] {
+  transform: scale(1.006);
+  transition: none;
+}
+
+.wm-window[data-dragging] .wm-shadow {
+  filter: drop-shadow(0 40px 56px rgb(0 0 0 / 0.62)) drop-shadow(0 6px 14px rgb(0 0 0 / 0.5));
+}
+
+:root[data-perf="lite"] .wm-shadow {
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-window);
-  color: var(--text-1);
+}
+
+/* ---- the slab: material, rim and chamfer ------------------------------------------------------------- */
+
+.wm-slab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
+  isolation: isolate;
+  border-radius: var(--r-xl);
+  background: var(--slab-spill), var(--slab-bg);
+  /* The top right corner, cut 24 by 14 px: a diagonal mask (12.09 px is the corner's distance to the cut). */
+  -webkit-mask: linear-gradient(210deg, transparent 12.09px, #000 12.6px);
+  mask: linear-gradient(210deg, transparent 12.09px, #000 12.6px);
 }
 
-.wm-window[data-focused] {
-  border-color: var(--line-blue);
-  box-shadow: var(--shadow-window-active);
+/* The rim is a 1 px gradient border, lit like the globe's limb: quiet always, hot (white along the top)
+   on the focused window, cross-fading between the two. */
+.wm-slab::before,
+.wm-slab::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
 }
 
-.wm-window[data-placement="docked"],
-.wm-window[data-mode="maximized"] {
-  border-radius: var(--r-lg);
+.wm-slab::before {
+  background: var(--rim-quiet);
 }
 
-.wm-window[data-placement="sheet"] {
-  border-radius: var(--r-2xl) var(--r-2xl) 0 0;
-  border-bottom: 0;
+.wm-slab::after {
+  background: var(--rim-hot);
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
+
+.wm-window[data-focused] .wm-slab::after {
+  opacity: 1;
+}
+
+/* The diagonal of the chamfer: a hairline where the corner is cut. */
+.wm-cut {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 8;
+  width: var(--chamfer-md-x);
+  height: var(--chamfer-md);
+  pointer-events: none;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.7px),
+    rgb(255 255 255 / 0.32) 50%,
+    transparent calc(50% + 0.7px)
+  );
+}
+
+.wm-window[data-focused] .wm-cut {
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.7px),
+    rgb(255 255 255 / 0.5) 50%,
+    transparent calc(50% + 0.7px)
+  );
+}
+
+/* ---- title bar ------------------------------------------------------------------------------------------- */
 
 .wm-titlebar {
+  position: relative;
+  z-index: 2;
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: 12px;
   height: var(--window-titlebar-h);
-  padding-inline: var(--space-5) var(--space-3);
+  padding: 0 18px 0 14px;
   border-bottom: 1px solid var(--line-1);
+  container-type: inline-size;
   cursor: grab;
   user-select: none;
   touch-action: none;
+}
+
+/* A hairline in the window's accent fades out across the bar. */
+.wm-titlebar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 55%, transparent), transparent 55%);
+  opacity: 0.7;
+}
+
+/* Focus arrival: one flare along the top edge, white at the middle and the window's accent toward the ends, over
+   900 ms (design 6.4 C). An event, not a loop: the motion language drops the 9 s sweep. Transform and opacity. */
+.wm-titlebar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 100%;
+  height: 1px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--accent) 80%, #fff) 22%,
+    #fff 50%,
+    color-mix(in oklab, var(--accent) 80%, #fff) 78%,
+    transparent
+  );
+}
+
+.wm-window[data-focused] .wm-titlebar::before {
+  animation: wm-flare 900ms var(--ease-out) both;
+}
+
+@keyframes wm-flare {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.3);
+  }
+  16% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
 }
 
 .wm-window[data-dragging] .wm-titlebar {
@@ -60,40 +209,97 @@
   cursor: default;
 }
 
-.wm-title {
+/* The glyph disc: a radial tint of the window's accent, an inset ring and a soft glow. */
+.wm-glyph {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--accent);
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 70%),
+    rgb(0 0 0 / 0.7);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent) 55%, transparent),
+    0 0 14px -4px var(--accent);
+}
+
+.wm-heading {
+  display: grid;
   flex: 1;
   min-width: 0;
+  line-height: 1.15;
+}
+
+.wm-title {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--fs-md);
-  white-space: nowrap;
   overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-heading);
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wm-title[data-mono] {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  letter-spacing: 0;
+}
+
+.wm-sub {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The freshness chip is the kit's; in a title bar it drops its pill and reads as quiet text. */
+.wm-fresh.ui-fresh[data-variant="chip"] {
+  flex: none;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-size: var(--fs-2xs);
 }
 
 .wm-controls {
   display: flex;
-  gap: var(--space-1);
+  flex: none;
+  gap: 2px;
+  margin-left: 6px;
 }
 
 .wm-btn {
-  display: inline-grid;
+  display: grid;
   place-items: center;
-  min-width: var(--hit-min);
-  min-height: var(--hit-min);
+  width: 26px;
+  height: 26px;
   padding: 0;
-  font: inherit;
-  font-family: var(--font-mono);
-  color: var(--text-2);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-md);
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-3);
   cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .wm-btn:hover {
-  color: var(--text-1);
   background: var(--ink-3);
+  color: var(--text-1);
+}
+
+.wm-btn[aria-pressed="true"] {
+  color: var(--accent);
 }
 
 .wm-btn:focus-visible,
@@ -103,16 +309,53 @@
   box-shadow: var(--focus-ring);
 }
 
+.wm-btn-close:hover {
+  background: var(--status-crit-soft);
+  color: var(--status-crit);
+}
+
+/* On a narrow bar the data's name steps aside and keeps its dot and age. */
+@container (max-width: 400px) {
+  .wm-fresh .ui-fresh__label {
+    display: none;
+  }
+}
+
+/* ---- body ------------------------------------------------------------------------------------------------- */
+
 .wm-body {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-4) transparent;
 }
 
-/* Resize handles: edges 6 px, corners 12 px, inside the frame. */
+/* The body fades over its last 30 px only while there is more to read. */
+.wm-body[data-more] {
+  -webkit-mask: linear-gradient(to bottom, #000 calc(100% - 30px), transparent);
+  mask: linear-gradient(to bottom, #000 calc(100% - 30px), transparent);
+}
+
+.wm-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.wm-body::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--ink-4);
+  background-clip: padding-box;
+}
+
+/* ---- resize handles: edges 6 px, corners 12 px, inside the frame --------------------------------------------- */
+
 .wm-resize {
   position: absolute;
+  z-index: 9;
   touch-action: none;
 }
 
@@ -179,69 +422,284 @@
   bottom: 0;
 }
 
-/* Drop zone while a window is dragged near an edge (design 6.4 B). */
-.wm-drop-zone {
-  position: fixed;
-  pointer-events: none;
-  z-index: var(--z-window-max);
-  background: var(--accent-soft);
-  border: 1px dashed var(--accent-400);
+/* ---- maximised and docked ------------------------------------------------------------------------------------ */
+
+.wm-window[data-mode="maximized"] .wm-slab {
   border-radius: var(--r-lg);
-  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
-/* Phone sheet grabber. */
+/* ---- drop zone while a window is dragged near an edge (design 6.4 B) ------------------------------------------ */
+
+.wm-drop-zone {
+  position: fixed;
+  z-index: var(--z-window-max);
+  border: 1px dashed var(--accent-400);
+  border-radius: var(--r-xl);
+  background: var(--accent-soft);
+  pointer-events: none;
+  animation: wm-zone-in var(--dur-fast) var(--ease-out) backwards;
+}
+
+@keyframes wm-zone-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---- the phone sheet ------------------------------------------------------------------------------------------ */
+
+/* The layer is clipped above the tab bar: a sheet that is pulled up, thrown low or still on its way to its snap
+   never draws over the bar, whatever it is carrying below its own edge. */
+.wm-layer[data-layout="phone"] {
+  clip-path: inset(0 0 calc(var(--tabbar-h) + var(--safe-bottom, 0px)) 0);
+  /* Above the header: a full sheet covers it (design 3.6), and nothing of the header shows through. */
+  z-index: calc(var(--z-topbar) + 1);
+}
+
+.wm-window[data-placement="sheet"] {
+  animation-name: wm-sheet-in;
+}
+
+.wm-window[data-placement="sheet"] .wm-shadow {
+  filter: none;
+  box-shadow: 0 -14px 44px -10px rgb(0 0 0 / 0.6);
+  border-radius: var(--r-2xl) var(--r-2xl) 0 0;
+}
+
+/* Lite tier: a dragged window keeps the plain shadow of the lite tier instead of the deeper lift. */
+:root[data-perf="lite"] .wm-window[data-dragging] .wm-shadow {
+  filter: none;
+}
+
+/* The skirt: under the sheet's own edge the material goes on, so a sheet that is being pulled up (its box is
+   still the height it started at) never shows the globe through a gap. The layer's clip cuts it at the tab bar. */
+.wm-window[data-placement="sheet"]::after {
+  content: "";
+  position: absolute;
+  top: calc(100% - 1px);
+  right: 0;
+  left: 0;
+  height: 100vh;
+  pointer-events: none;
+  background: var(--slab-bg);
+}
+
+.wm-window[data-placement="sheet"][data-sheet-drag] {
+  will-change: transform;
+}
+
+.wm-window[data-placement="sheet"] .wm-slab {
+  border-radius: var(--r-2xl) var(--r-2xl) 0 0;
+  -webkit-mask: none;
+  mask: none;
+}
+
+/* Full height: the sheet is the whole screen (design 3.6), so nothing behind it may show through; the material goes
+   solid. */
+.wm-window[data-placement="sheet"][data-snap="full"] .wm-slab,
+.wm-window[data-placement="sheet"][data-snap="full"]::after {
+  background: var(--slab-spill), var(--slab-bg-solid);
+}
+
+.wm-window[data-placement="sheet"] .wm-cut {
+  display: none;
+}
+
+/* The content scrolls only when the sheet is tall or full (design 3.6); below that it is a preview, read by
+   lifting the sheet. */
+.wm-window[data-placement="sheet"] .wm-body {
+  overscroll-behavior: contain;
+}
+
+.wm-window[data-placement="sheet"]:is([data-snap="peek"], [data-snap="half"]) .wm-body {
+  overflow-y: hidden;
+}
+
+/* A taller title bar for a thumb, with a larger disc, a larger name and 44 px controls. */
+.wm-window[data-placement="sheet"] .wm-titlebar {
+  height: 64px;
+  gap: var(--space-5);
+  padding: 0 var(--space-6);
+}
+
+.wm-window[data-placement="sheet"] .wm-glyph {
+  width: 40px;
+  height: 40px;
+}
+
+.wm-window[data-placement="sheet"] .wm-title {
+  font-size: 18px;
+}
+
+.wm-window[data-placement="sheet"] .wm-title[data-mono] {
+  font-size: 16px;
+}
+
+.wm-window[data-placement="sheet"] .wm-sub {
+  font-size: var(--fs-sm);
+}
+
+.wm-window[data-placement="sheet"] .wm-btn {
+  width: var(--touch-min);
+  height: var(--touch-min);
+  border-radius: 50%;
+  background: var(--ink-3);
+  color: var(--text-2);
+}
+
+@keyframes wm-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
 .wm-grabber {
+  position: relative;
+  z-index: 3;
   flex: none;
   align-self: center;
   width: var(--touch-min);
   height: var(--space-6);
   padding: 0;
-  background: transparent;
   border: 0;
+  /* A capsule, so the focus ring (a keyboard user's) hugs the handle instead of boxing it. */
+  border-radius: var(--r-pill);
+  background: transparent;
   cursor: pointer;
-  position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .wm-grabber::before {
   content: "";
   position: absolute;
-  left: 25%;
-  right: 25%;
   top: 50%;
+  right: 25%;
+  left: 25%;
   height: 4px;
   margin-top: -2px;
   border-radius: var(--r-pill);
   background: var(--line-3);
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
-/* Minimized windows, placed by the dock. */
+/* A thumb's target: the grabber is 44 by 16 to look at and about 100 by 44 to hit. */
+.wm-grabber::after {
+  content: "";
+  position: absolute;
+  inset: -14px -28px;
+}
+
+.wm-window[data-sheet-drag] .wm-grabber::before {
+  background: var(--text-3);
+}
+
+/* ---- the ghost a closed or minimised window leaves behind ---------------------------------------------------------- */
+
+.wm-ghost {
+  pointer-events: none;
+  animation: none;
+}
+
+/* ---- minimised windows, placed by the dock -------------------------------------------------------------------------- */
+
 .wm-dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  justify-content: center;
 }
 
 .wm-dot {
   width: 10px;
   height: 10px;
   padding: 0;
-  border-radius: var(--r-pill);
   border: 1px solid var(--line-3);
+  border-radius: var(--r-pill);
   background: var(--ink-4);
   cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .wm-dot:hover {
+  border-color: var(--accent-400);
   background: var(--accent-400);
 }
 
+/* ---- narrow desktops and touch ---------------------------------------------------------------------------------------- */
+
+@media (max-width: 1279px) {
+  .wm-btn-min,
+  .wm-btn-max {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .wm-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* ---- motion preferences: windows cross-fade and nothing travels ------------------------------------------------------ */
+
 @media (prefers-reduced-motion: reduce) {
-  .wm-drop-zone {
+  :root:not([data-motion="full"]) .wm-window {
+    animation-name: wm-fade;
     transition: none;
+  }
+  :root:not([data-motion="full"]) .wm-window[data-dragging] {
+    transform: none;
+  }
+  :root:not([data-motion="full"]) .wm-window[data-focused] .wm-titlebar::before {
+    animation: none;
+    opacity: 0;
+  }
+  :root:not([data-motion="full"]) .wm-slab::after {
+    transition: none;
+  }
+}
+
+:root[data-motion="reduced"] .wm-window {
+  animation-name: wm-fade;
+  transition: none;
+}
+
+:root[data-motion="reduced"] .wm-window[data-dragging] {
+  transform: none;
+}
+
+:root[data-motion="reduced"] .wm-window[data-focused] .wm-titlebar::before,
+:root[data-motion-off] .wm-window[data-focused] .wm-titlebar::before {
+  animation: none;
+  opacity: 0;
+}
+
+:root[data-motion-off] .wm-window {
+  animation: none;
+  transition: none;
+}
+
+:root[data-motion-off] .wm-window[data-dragging] {
+  transform: none;
+}
+
+:root[data-motion-off] .wm-slab::after,
+:root[data-motion-off] .wm-drop-zone {
+  animation: none;
+  transition: none;
+}
+
+@keyframes wm-fade {
+  from {
+    opacity: 0;
   }
 }
