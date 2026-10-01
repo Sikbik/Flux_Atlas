@@ -144,9 +144,9 @@ A Switch turned on (the kit's knob takes 220 ms to travel and the head waits 65%
 
 **Time.** On an edge, `--fx-dur-current` is the run along a 700 px edge and every 100 px more or less moves it 40 ms, clamped to 440 to 920 ms (a 400 px card edge 520 ms, a 1,200 px rail 840 ms), with `--fx-ease-run`. A lap is `--fx-dur-lap` (900 ms) with `--fx-ease-lap` (nearly even, so the head reads as one steady lap). Tails: 0.1 times the edge length (56 to 160 px) on an edge, 0.14 times the perimeter (40 to 84 px) on a lap.
 
-**Used on.** The rail's top edge once per block; the card that just landed, once around; the P0 block row and P1 rows (a payment to a watched or owned node) in the Pulse feed (6.5); toasts (as the Power-on panel's top edge).
+**Used on.** The rail's top edge once per block; the card that just landed, once around; P1 rows in the Pulse feed (a payment to a watched or owned node, 6.5), which arrive about two seconds after the block's own light is gone; toasts (as the Power-on panel's top edge).
 
-**Never on.** P2 and P3 events (the rows arrive with the kit's own wash), table rows, anything that arrives more than twice a second, anything on mount that was already there.
+**Never on.** The P0 block row (the rail already carries the block's light), P2 and P3 events (the rows arrive with the kit's own wash), table rows, anything that arrives more than twice a second, anything on mount that was already there.
 
 **Reduced.** One line along the edge fades in and out over 480 ms; nothing travels. **Off.** Nothing.
 
@@ -193,7 +193,7 @@ Closing: 0 to 180 ms the same circle closes into the launcher while the wrapper 
 
 **Means** that this number, row or state changed and the new value is the news. **The kit draws it**: `FlashOnChange` (a wash behind the value, at most 12% of the light colour, decaying over `--dur-fresh`, 1600 ms; reduced holds a steady tint for 1 s; off draws none), `AnimatedNumber` (the odometer, 6.4 D, with its direction tint) and `DataTable`'s `data-fresh` and `data-enter` rows. There is no runner for it in `web/src/motion` and none should be added: this language says when Settle is the answer and that nothing else is drawn on top of it.
 
-**Used on.** A value that changed in place (the tip, the counters, a row's figure), a row arriving in a dense list, a status chip changing state (the label and colour cross-fade, no light). **Never** with a Current on the same element in the same moment: a row either arrives (the kit's wash) or is a P0 or P1 event that earns a Current, not both.
+**Used on.** A value that changed in place (the tip, the counters, a row's figure), a row arriving in a dense list, a status chip changing state (its label and colour change, no light). **Never** with a Current on the same element in the same moment: a row either arrives (the kit's wash) or is a P1 event that earns a Current, not both.
 
 **Colour.** The accent for a neutral change, white for the tip (`tone="white"`), and `--div-pos` and `--div-neg` for direction (`tone="auto"`), always next to a sign or an arrow and never as colour alone. This is the one place the language lets a data colour in, because the change itself is the data.
 
@@ -409,7 +409,7 @@ Which surface speaks which word. A surface that is not listed does not move.
 | Windows | Power-on | `<PowerOn open origin>` | the wrapper carries no clip or shadow |
 | Toasts, the command palette | Power-on, panel variant | `<PowerOn variant="panel">` | a quick sweep along the top edge |
 | `DataTable` rows | Settle | the kit | dense: no light |
-| Pulse feed rows | Settle for all, Current for P0 and P1 | the kit's `data-fresh`; `data-fx="current"` on those rows only | the block row, a payment to a watched or owned node |
+| Pulse feed rows | Settle for all, Current for P1 only | the kit's `data-fresh`; `data-fx="current"` on P1 rows only | a payment to a watched or owned node; the block row settles like the rest, the rail carries the block's light |
 | Block rail | Current | `<Current signal={tip} edge="top"/>`, and `<Current edge="perimeter" fireOnMount/>` in each new card | not while the rail is hover-frozen or scrolled into history |
 | Status bar: tip and counters | Settle | the kit's `AnimatedNumber` and `FlashOnChange` | no light |
 | Status bar: connection, freshness chips | none | a static dot and a word | the state change is its own answer |
@@ -433,7 +433,7 @@ Which surface speaks which word. A surface that is not listed does not move.
 - **Compositor only.** Light is `transform` and `opacity` on tiny `will-change` elements (a Pulse is two chains of 4 to 18 links and two blooms, for 180 to 260 ms), plus gradients, masks and clips that are static while they run. Every node is removed when its effect ends.
 - **Two named exceptions, both paint-only and bounded.** The slide line animates two registered custom properties on a 2 px strip for 300 ms. The window surge animates one registered length (`--fx-ring`) through a radial gradient on a window-sized, mostly transparent layer for 480 ms, at most two at once; its box is `contain: layout style`.
 - **Lite tier.** Under `data-perf="lite"` the heads lose their wide bloom and the slide line its blurred glow.
-- **Measured** at 1600 by 900, device pixel ratio 1 and 2, with the globe running: frame times at rest and during about 25 interactions in 8 seconds (presses, switches, window opens and closes, simulated blocks) are the same 16.7 ms at the median and the 99th percentile, and no frame over 25 ms belongs to an effect. `web/src/motion/tools/frametime.mjs` repeats the measurement and attributes every frame over 25 ms to the script that held it, so a long frame from elsewhere in the app is never mistaken for one of ours (and the reverse).
+- **Measured** at 1600 by 900, device pixel ratio 1 and 2, with the globe running: frame times at rest and during about 25 interactions in 8 seconds (presses, switches, window opens and closes, simulated blocks) hold 16.7 ms at the median and 16.8 ms at the 99th percentile, and no frame over 25 ms belongs to an effect. `web/src/motion/tools/frametime.mjs` repeats the measurement and attributes every frame over 25 ms to the script that held it, so a long frame from elsewhere in the app is never mistaken for one of ours (and the reverse).
 
 ## 11. Joining the language
 
@@ -500,7 +500,7 @@ Section 6 of the design direction describes motion across the product, and this 
 |---|---|---|
 | 6.4 C and 8.3 (focused window) | the focused rim sweeps a highlight along the top edge every 9 s (`--sweep`) | No loop in chrome (principle 3). The one-time arrival flare of 6.4 C stays: it is an event. The sweep is dropped |
 | 6.5 Connection indicator | the Live dot carries a slow 2.4 s ping ring | A static dot and the words. The per-block ping already belongs to the Beat chip (8.4) |
-| 6.4 A and `--dur-portal-open` | a 660 ms aperture, a 1.5 px mouth ring at the source, a 2 px rim ring, a 220 ms close | Power-on: a 420 and 480 ms open, the rim is the surge's leading edge, the source's own Charge ring is its mouth, a 180 ms close. Same aperture, faster |
+| 6.4 A and `--dur-portal-open` | a 660 ms aperture, a 1.5 px mouth ring at the source, a 2 px rim ring, a 220 ms close | Power-on: a 420 and 480 ms open, the rim is the surge's leading edge, the mouth ring is dropped (a launcher is already charged from the hover), a 180 ms close. Same aperture, faster |
 | 6.6 table row "Loops" | rim sweep, live ping, anticipation glow, aim breath are off in Reduced and Off | In chrome there are none in Full either. The aim breath and the moon's anticipation glow are the globe's (6.4 M, 7.10) and unchanged; their chrome mirrors (`data-soon` on the aim strip) are static states |
-| 6.1 principle 2 (one loud motion) | a single loud effect in view, quiet motion may coexist | Unchanged and made concrete: the loud ones are the Beat and a window aperture; everything in this language is quiet and budgeted (section 7) |
+| 6.1 principle 2 (one loud motion) | a single loud effect in view, quiet motion may coexist | Unchanged. Power-on is the aperture, one of the loud effects (at most two alive, and a window opens one at a time); Pulse, Charge, Spark, Current and Slide are quiet and budgeted (section 7) |
 | 8.5 dock hover | scale 1.08 with a spring | Unchanged. Charge adds the ring; scale and ring are one hover state, not two effects |

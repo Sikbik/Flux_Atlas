@@ -107,13 +107,13 @@ A toggle chip (`<Chip onClick selected>`) sparks at its icon when it turns on an
 
 `DataTable`: nothing. New rows arrive with the kit's own wash and `data-enter` fade (Settle), and a table is a quiet zone. Do not add `data-fx="current"` to table rows.
 
-The Pulse feed (dense, so quiet): every row settles with the kit's wash; only the P0 block row and P1 rows (a payment to a watched or owned node) earn a Current along their top edge. Opt those in and nothing else:
+The Pulse feed (dense, so quiet): every row settles with the kit's wash; only P1 rows (a payment to a watched or owned node) earn a Current along their top edge. Opt those in and nothing else:
 
 ```tsx
-<li className="evt" data-fresh={fresh || undefined} data-fx={isBlock || isMine ? 'current' : undefined}>
+<li className="evt" data-fresh={fresh || undefined} data-fx={isMine ? 'current' : undefined}>
 ```
 
-The streak runs when `data-fresh` appears on the element (not for a row that was already there). `data-fx-edge="bottom"` and the other edges are available for odd layouts.
+The streak runs when `data-fresh` appears on the element (not for a row that was already there). The P0 block row does not get one: the rail already carries the block's light (a Current on the rail, one on the new card; the budget allows two at once), and a payment lands about two seconds later. `data-fx-edge="bottom"` and the other edges are available for odd layouts.
 
 ### Window chrome
 
@@ -180,7 +180,7 @@ What each frame attribute means to the language. Most mean nothing, on purpose.
 
 | Attribute | On | What to do |
 |---|---|---|
-| `data-fresh` | `.evt` feed rows, rail cards | Current only on P0 and P1 rows via `data-fx="current"`; for rail cards use `<Current fireOnMount>` |
+| `data-fresh` | `.evt` feed rows, rail cards | Current only on P1 rows (mine) via `data-fx="current"`; the block row settles like the rest; for rail cards use `<Current fireOnMount>` |
 | `data-kind`, `data-tier` | rows, chips, cards | nothing: they are the kit's colour roles, and the light is never tier or status coloured |
 | `data-leaving` | globe and rail cards | a plain fade; no light |
 | `data-frozen` | `.pulse` (hover-freeze) | pass `disabled` to any `<Current>` there while frozen |
