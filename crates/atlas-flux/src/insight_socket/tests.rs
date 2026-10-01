@@ -558,3 +558,33 @@ async fn dual_health_is_any_healthy() {
     let h = wait_health(&mut health, |h| !h.connected).await;
     assert!(!h.healthy);
 }
+
+#[tokio::test]
+async fn oversized_message_ends_the_session() {
+    // A frame over the cap (the library default would buffer up to 64 MiB) drops the session,
+    // which then reconnects like any other failure.
+    let huge = format!(
+        r#"42["weird","{}"]"#,
+        "x".repeat(super::client::MAX_MESSAGE_BYTES + 1)
+    );
+    let server = FakeServer::start(Script {
+        on_subscribe: vec![huge, block_frame(H1)],
+        ..Script::default()
+    })
+    .await;
+    let (socket, mut rx) = InsightSocket::spawn(&server.url, &fast_config());
+    assert!(matches!(
+        next_state(&mut rx).await,
+        ConnState::Connecting { attempt: 1 }
+    ));
+    assert!(matches!(
+        next_state(&mut rx).await,
+        ConnState::Connected { .. }
+    ));
+    let ConnState::Disconnected { reason, .. } = next_state(&mut rx).await else {
+        panic!("expected a disconnect")
+    };
+    let r = reason.to_ascii_lowercase();
+    assert!(r.contains("size") || r.contains("too"), "{reason}");
+    socket.shutdown().await;
+}

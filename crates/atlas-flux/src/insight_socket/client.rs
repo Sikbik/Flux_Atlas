@@ -10,6 +10,12 @@ use tokio::time::{Instant, MissedTickBehavior, sleep, sleep_until, timeout};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+
+/// Largest message or frame accepted from an Insight socket. Real frames (block and tx
+/// pushes, socket.io control packets) are under about 10 KB; the library default is 64 MiB,
+/// which a misbehaving server could make the process buffer (X1 L8).
+pub const MAX_MESSAGE_BYTES: usize = 1 << 20;
 
 use super::config::{SocketConfig, endpoint_label};
 use super::frame::{ChainPush, Frame, parse_frame};
@@ -270,9 +276,12 @@ impl Worker {
         if let Ok(ua) = HeaderValue::from_str(&self.cfg.user_agent) {
             request.headers_mut().insert("User-Agent", ua);
         }
+        let ws_cfg = WebSocketConfig::default()
+            .max_message_size(Some(MAX_MESSAGE_BYTES))
+            .max_frame_size(Some(MAX_MESSAGE_BYTES));
         let connect = timeout(
             self.cfg.connect_timeout,
-            tokio_tungstenite::connect_async(request),
+            tokio_tungstenite::connect_async_with_config(request, Some(ws_cfg), false),
         );
         let ws = tokio::select! {
             biased;
