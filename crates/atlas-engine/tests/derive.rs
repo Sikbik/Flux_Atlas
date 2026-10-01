@@ -1086,6 +1086,66 @@ fn mesh_diff() {
 }
 
 #[test]
+fn stale_catalog_never_rolls_an_app_back() {
+    use atlas_core::app::AppSpec;
+    use atlas_engine::derive::apps::apply_catalog;
+    let spec = |name: &str, instances: u32| AppSpec {
+        spec_version: 8,
+        name: name.to_owned(),
+        owner: "1Owner".to_owned(),
+        instances,
+        ..AppSpec::default()
+    };
+    let h = |b: u8| Some(Hash32([b; 32]));
+    let mut st = NetworkState::default();
+    let mut tick = Tick::new(NOW);
+    let rep = apply_catalog(
+        &mut st,
+        &mut tick,
+        vec![(spec("Alpha", 3), h(1), 100), (spec("Beta", 3), h(2), 100)],
+    );
+    assert_eq!(rep.added, 2);
+    // A newer spec of Alpha arrives (an update at 200), and Gamma registers at 210.
+    let mut tick = Tick::new(NOW + 1);
+    let rep = apply_catalog(
+        &mut st,
+        &mut tick,
+        vec![
+            (spec("Alpha", 5), h(3), 200),
+            (spec("Beta", 3), h(2), 100),
+            (spec("Gamma", 1), h(4), 210),
+        ],
+    );
+    assert_eq!((rep.updated, rep.added), (1, 1));
+    assert_eq!(st.apps.records["alpha"].spec.instances, 5);
+    // A stale copy of the catalog (built before height 200): Alpha at its old spec, no Gamma.
+    let mut tick = Tick::new(NOW + 2);
+    let rep = apply_catalog(
+        &mut st,
+        &mut tick,
+        vec![(spec("Alpha", 3), h(1), 100), (spec("Beta", 3), h(2), 100)],
+    );
+    assert_eq!(rep.stale, 1, "{rep:?}");
+    assert_eq!(rep.kept_newer, 1, "{rep:?}");
+    assert_eq!((rep.updated, rep.removed), (0, 0), "{rep:?}");
+    let a = &st.apps.records["alpha"];
+    assert_eq!((a.height, a.spec.instances, a.spec_hash), (200, 5, h(3)));
+    assert!(st.apps.records.contains_key("gamma"));
+    assert_eq!(tick.events.len(), 0, "a stale catalog emits nothing");
+    // A fresh catalog without Beta (expired) removes it; one at the same height with another
+    // hash keeps the held record.
+    let mut tick = Tick::new(NOW + 3);
+    let rep = apply_catalog(
+        &mut st,
+        &mut tick,
+        vec![(spec("Alpha", 9), h(9), 200), (spec("Gamma", 1), h(4), 210)],
+    );
+    assert_eq!((rep.removed, rep.stale, rep.updated), (1, 1, 0), "{rep:?}");
+    assert_eq!(st.apps.records["alpha"].spec_hash, h(3));
+    assert!(!st.apps.records.contains_key("beta"));
+}
+
+#[test]
 fn mesh_outlier_calls_are_discarded() {
     use atlas_engine::state::mesh::{
         CallScreen, OUTLIER_MIN_ADDED, OUTLIER_WARMUP, OUTLIER_WINDOW, Verdict,

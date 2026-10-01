@@ -557,7 +557,7 @@ impl Reducer {
             }
             Obs::Catalog(specs) => {
                 let rep = dapps::apply_catalog(&mut self.st, tick, specs);
-                if rep.added + rep.updated + rep.removed > 0 {
+                if rep.added + rep.updated + rep.removed + rep.stale + rep.kept_newer > 0 {
                     tracing::info!(?rep, "app catalog merged");
                 }
                 self.fresh().ok("app_catalog");

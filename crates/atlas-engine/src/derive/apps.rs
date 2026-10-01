@@ -118,9 +118,29 @@ pub struct CatalogReport {
     pub added: u32,
     pub updated: u32,
     pub removed: u32,
+    /// Specs older than the record already held (a stale copy of the catalog), left alone.
+    pub stale: u32,
+    /// Apps missing from the catalog but registered or updated after its newest spec, kept.
+    pub kept_newer: u32,
+}
+
+/// True when a catalog spec at `height` with `hash` should replace `old`. App records are
+/// monotonic: a spec older than the held one never replaces it (a stale catalog fetch once
+/// rolled records back to an older spec without any event), and at one height a known hash is
+/// kept unless the held record has none.
+fn supersedes(old: &AppRecord, hash: Option<Hash32>, height: u32) -> bool {
+    match height.cmp(&old.height) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Less => false,
+        std::cmp::Ordering::Equal => old.spec_hash.is_none() && hash.is_some(),
+    }
 }
 
 /// Merges the global app catalog. The first load into an empty table emits no events.
+///
+/// Records only move forward (see [`supersedes`]), and an app missing from the catalog is
+/// removed only when its record is not newer than the catalog's newest spec, so a stale copy of
+/// the catalog neither rolls a record back nor drops an app registered after it was built.
 pub fn apply_catalog(
     st: &mut NetworkState,
     tick: &mut Tick,
@@ -132,6 +152,7 @@ pub fn apply_catalog(
         apps: specs.len(),
         ..CatalogReport::default()
     };
+    let catalog_height = specs.iter().map(|(_, _, h)| *h).max().unwrap_or(0);
     let mut seen = HashSet::with_capacity(specs.len());
     for (spec, hash, height) in specs {
         let key = spec.key();
@@ -168,7 +189,9 @@ pub fn apply_catalog(
                 tick.app_upserted(DeltaCause::Reconcile, &key);
                 rep.added += 1;
             }
-            Some(old) if old.spec_hash != hash || old.height != height => {
+            Some(old) if old.spec_hash == hash && old.height == height => {}
+            Some(old) if !supersedes(old, hash, height) => rep.stale += 1,
+            Some(old) => {
                 let changed = old.spec.diff(&spec);
                 let mut rec = AppRecord::from_spec(spec, hash, height, now);
                 rec.first_seen_ms = old.first_seen_ms;
@@ -185,16 +208,19 @@ pub fn apply_catalog(
                 tick.app_upserted(DeltaCause::Reconcile, &key);
                 rep.updated += 1;
             }
-            Some(_) => {}
         }
     }
-    let gone: Vec<String> = st
-        .apps
-        .records
-        .keys()
-        .filter(|k| !seen.contains(*k))
-        .cloned()
-        .collect();
+    let mut gone: Vec<String> = Vec::new();
+    for (k, r) in &st.apps.records {
+        if seen.contains(k) {
+            continue;
+        }
+        if r.height > catalog_height {
+            rep.kept_newer += 1;
+        } else {
+            gone.push(k.clone());
+        }
+    }
     for name in gone {
         st.apps.records.remove(&name);
         tick.batch.delete_app(&name);
