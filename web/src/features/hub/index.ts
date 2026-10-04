@@ -2,7 +2,15 @@
 
 export { Hub, HubGrid, type HubSpan, HubStack } from './Hub';
 export { HubFigure, type HubFigureProps, HubFigures, HubHero, type HubHeroProps } from './HubHero';
-export { HubLink, type HubLinkProps, HubTile, type HubTileProps, HubTiles } from './HubLink';
+export {
+  HubButton,
+  type HubButtonProps,
+  HubLink,
+  type HubLinkProps,
+  HubTile,
+  type HubTileProps,
+  HubTiles,
+} from './HubLink';
 export { HubNav, type HubNavItem, type HubNavProps } from './HubNav';
 export { HubPanel, type HubPanelProps, type PanelState } from './HubPanel';
 export { HubSearch, type HubSearchExample, type HubSearchProps } from './HubSearch';

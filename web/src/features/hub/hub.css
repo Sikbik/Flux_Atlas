@@ -70,6 +70,11 @@
   .hub-grid > [data-span="third"] {
     grid-column: span 1;
   }
+
+  /* A panel with no partner in a two-column grid fills the row rather than leaving a gap. */
+  .hub-grid > [data-fill="row"] {
+    grid-column: 1 / -1;
+  }
 }
 
 @container hub (max-width: 599px) {
@@ -352,10 +357,55 @@
   transform: none;
 }
 
+/* On a phone two tiles share a row: the arrow gives way, the glyph and the padding shrink, the words may wrap, and an
+   odd tile out takes the whole row instead of leaving a gap. */
+@container hub (max-width: 599px) {
+  .hub-tiles {
+    gap: var(--space-3);
+  }
+
+  .hub-tile {
+    gap: var(--space-4);
+    padding: var(--space-4);
+  }
+
+  .hub-tile__icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .hub-tile__go {
+    display: none;
+  }
+
+  .hub-tile__title,
+  .hub-tile__caption {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .hub-tiles__item:nth-child(odd):last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---- a link that wears the Button ----------------------------------------------------------------------- */
+
+.hub-button,
+.hub-button:hover {
+  text-decoration: none;
+}
+
 /* ---- the nav of a hub's views --------------------------------------------------------------------------- */
 
 .hub-nav {
   min-width: 0;
+}
+
+/* In a view header's meta row the nav takes a line of its own, and the chips that follow wrap under it. */
+.hub-nav--row {
+  flex: 1 1 100%;
 }
 
 .hub-nav__list {
@@ -548,6 +598,8 @@
 
 .hub-hero__visual {
   position: relative;
+  display: grid;
+  align-content: center;
   min-width: 0;
 }
 
@@ -649,6 +701,13 @@
   color: var(--text-3);
   font-size: var(--fs-2xs);
   line-height: var(--lh-snug);
+}
+
+/* A change with its period may wrap under the figure instead of running into the next one. */
+.hub-fig__note .ui-delta {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+  white-space: normal;
 }
 
 /* ---- a leaderboard -------------------------------------------------------------------------------------- */

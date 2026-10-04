@@ -59,3 +59,39 @@ export function HubTile({ icon: Icon, title, caption, emphasis, className, ...re
     </li>
   );
 }
+
+export interface HubButtonProps extends Omit<ShellLinkProps, 'children'> {
+  variant?: 'primary' | 'secondary' | 'ghost';
+  size?: 'sm' | 'md';
+  icon?: LucideIcon;
+  iconRight?: LucideIcon;
+  children: ReactNode;
+}
+
+/**
+ * A link that wears the kit's Button (which is a `<button>`): the primary action of a hub that leads to a window, such
+ * as the latest block. It is a real link, so middle click and copy address work.
+ */
+export function HubButton({
+  variant = 'secondary',
+  size = 'md',
+  icon: Icon,
+  iconRight: IconRight,
+  className,
+  children,
+  ...rest
+}: HubButtonProps) {
+  const px = size === 'sm' ? 14 : 16;
+  return (
+    <ShellLink
+      className={cx('ui-button', 'hub-button', className)}
+      data-variant={variant}
+      data-size={size}
+      {...rest}
+    >
+      {Icon ? <Icon size={px} strokeWidth={1.5} aria-hidden="true" /> : null}
+      <span className="ui-button__label">{children}</span>
+      {IconRight ? <IconRight size={px} strokeWidth={1.5} aria-hidden="true" /> : null}
+    </ShellLink>
+  );
+}

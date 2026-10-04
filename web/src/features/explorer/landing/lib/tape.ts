@@ -76,15 +76,40 @@ export function barText(b: TapeBar, now: number): string {
   return parts.join(', ');
 }
 
+export interface TapeFacts {
+  blocks: number;
+  txs: number;
+  /** The mean seconds between neighbours in the tape, or null when no two are consecutive. */
+  avgGapS: number | null;
+  late: number;
+  /** The most transactions in one block of the tape. */
+  busiest: number;
+  /** Where the tape starts and ends (unix ms), or null for an empty one. */
+  fromMs: number | null;
+  toMs: number | null;
+}
+
+/** The figures a tape is read by. */
+export function tapeFacts(bars: readonly TapeBar[]): TapeFacts {
+  const gaps = bars.map((b) => b.gapS).filter((g): g is number => g !== null);
+  return {
+    blocks: bars.length,
+    txs: bars.reduce((s, b) => s + b.txCount, 0),
+    avgGapS: gaps.length === 0 ? null : gaps.reduce((s, g) => s + g, 0) / gaps.length,
+    late: bars.filter((b) => b.late).length,
+    busiest: bars.reduce((m, b) => Math.max(m, b.txCount), 0),
+    fromMs: bars[0]?.timeMs ?? null,
+    toMs: bars[bars.length - 1]?.timeMs ?? null,
+  };
+}
+
 /** One sentence for the whole tape: how many blocks, how steady, how busy. */
 export function tapeSummary(bars: readonly TapeBar[]): string {
   if (bars.length === 0) return 'No blocks yet.';
-  const gaps = bars.map((b) => b.gapS).filter((g): g is number => g !== null);
-  const txs = bars.reduce((s, b) => s + b.txCount, 0);
-  const late = bars.filter((b) => b.late).length;
+  const f = tapeFacts(bars);
   const pace =
-    gaps.length === 0
+    f.avgGapS === null
       ? ''
-      : ` Blocks came ${(gaps.reduce((s, g) => s + g, 0) / gaps.length).toFixed(1)} seconds apart on average${late > 0 ? `, ${late} of them late` : ''}.`;
-  return `The last ${bars.length} blocks carried ${txs.toLocaleString('en-US')} transactions.${pace}`;
+      : ` Blocks came ${f.avgGapS.toFixed(1)} seconds apart on average${f.late > 0 ? `, ${f.late} of them late` : ''}.`;
+  return `The last ${f.blocks} blocks carried ${f.txs.toLocaleString('en-US')} transactions.${pace}`;
 }

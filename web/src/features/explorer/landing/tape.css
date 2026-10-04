@@ -1,0 +1,322 @@
+/* The block tape (the Explorer landing's hero graphic). Each bar is one block, as tall as its transactions and cut into
+   the kinds the rail's mix bar uses; the slot after the last is the block that is coming, filling as the 30 seconds
+   pass. Bars are links. Motion is transform and opacity only: the bars grow in once, a new block slides the row by one
+   slot, the coming block fills on the Beat's own clock (a negative delay), and Reduced and Off draw the same state
+   without travel. Tokens only; classes are prefixed ex-tape. */
+
+.ex-tape {
+  --tape-h: 136px;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+}
+
+.ex-tape [data-mix="confirms"] {
+  --mix: var(--accent-500);
+}
+
+.ex-tape [data-mix="starts"] {
+  --mix: var(--hot-2);
+}
+
+.ex-tape [data-mix="transfers"] {
+  --mix: var(--accent-300);
+}
+
+.ex-tape [data-mix="other"] {
+  --mix: var(--text-4);
+}
+
+.ex-tape__stage {
+  position: relative;
+  height: var(--tape-h);
+  padding-top: 22px;
+}
+
+/* The scale the bars are read against, the one number the tape needs. */
+.ex-tape__scale {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--text-4);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  letter-spacing: 0.01em;
+}
+
+.ex-tape__bars,
+.ex-tape__ghosts {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 3px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--line-2);
+  list-style: none;
+}
+
+.ex-tape__bars > li {
+  position: relative;
+  display: flex;
+  flex: 0 0 var(--bar, 6px);
+  min-width: 3px;
+}
+
+/* A slot for a block the browser does not hold yet: the tape keeps its length, with the older end still empty. */
+.ex-tape__empty > i {
+  display: block;
+  align-self: flex-end;
+  inline-size: 100%;
+  block-size: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--ink-3);
+  opacity: 0.55;
+}
+
+/* Where the tape starts, named under its first bar. */
+.ex-tape__from {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  color: var(--text-4);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.ex-tape__from .ui-reltime {
+  color: inherit;
+}
+
+.ex-tape__bar {
+  display: flex;
+  align-items: flex-end;
+  inline-size: 100%;
+  border-radius: 3px 3px 0 0;
+  text-decoration: none;
+  outline: none;
+}
+
+.ex-tape__bar:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.ex-tape__col {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 1px;
+  inline-size: 100%;
+  block-size: calc(var(--h, 0.05) * 100%);
+  min-block-size: 3px;
+  overflow: hidden;
+  border-radius: 3px 3px 0 0;
+  opacity: var(--dim, 1);
+  transform-origin: bottom;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.ex-tape__col > i {
+  display: block;
+  flex-basis: 0;
+  min-block-size: 2px;
+  background: var(--mix, var(--text-4));
+}
+
+/* The bar under the pointer or the focus stays lit; its neighbours step back. */
+.ex-tape__bar:hover .ex-tape__col,
+.ex-tape__bar:focus-visible .ex-tape__col {
+  filter: brightness(1.3);
+}
+
+@media (hover: hover) {
+  .ex-tape__bars:hover {
+    --dim: 0.55;
+  }
+
+  .ex-tape__bars > li:hover {
+    --dim: 1;
+  }
+}
+
+.ex-tape__bars:has(:focus-visible) {
+  --dim: 0.55;
+}
+
+.ex-tape__bars > li:has(:focus-visible) {
+  --dim: 1;
+}
+
+/* A late block carries a small warm diamond under the baseline: colour is never the only cue (the key names it). */
+.ex-tape__bars > li[data-late]::after {
+  content: "";
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 1px;
+  background: var(--status-warn);
+  transform: translateX(-50%) rotate(45deg);
+  pointer-events: none;
+}
+
+/* The block that is coming: a dashed slot with the elapsed share of the 30 seconds rising in it. */
+.ex-tape__next::before,
+.ex-tape__next-fill {
+  position: absolute;
+  inset: auto 0 0;
+  block-size: 58%;
+  border-radius: 3px 3px 0 0;
+}
+
+.ex-tape__next::before {
+  content: "";
+  border: 1px dashed var(--line-3);
+  border-bottom: 0;
+}
+
+.ex-tape__next-fill {
+  background: color-mix(in oklab, var(--accent-500) 38%, transparent);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  animation: ex-tape-fill 30000ms var(--beat-tf, linear) calc(var(--since, 0) * -1ms) both;
+}
+
+@keyframes ex-tape-fill {
+  from {
+    transform: scaleY(0);
+  }
+
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* The first view grows the bars in from the left; a block that arrives later grows in on its own. */
+.ex-tape__col[data-reveal] {
+  animation: ex-tape-grow var(--dur-slower) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 9ms);
+}
+
+.ex-tape__col[data-fresh] {
+  animation: ex-tape-grow var(--dur-slower) var(--ease-out) both;
+}
+
+@keyframes ex-tape-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* Loading: the geometry of the tape, still. */
+.ex-tape__ghosts > i {
+  display: block;
+  flex: 1 1 0;
+  min-width: 3px;
+  max-width: 14px;
+  block-size: calc(var(--h) * 100%);
+  border-radius: 3px 3px 0 0;
+  background: var(--ink-3);
+  opacity: 0.6;
+}
+
+/* The reading of one bar: the rail's glass card, centred over the bar and kept inside the stage. */
+.ex-tape__tip.cp-tip {
+  bottom: calc(100% - 16px);
+  min-width: 208px;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+.ex-tape .ex-tape__swatch {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 2px;
+  background: var(--mix);
+}
+
+.ex-tape__axis {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+  color: var(--text-4);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+}
+
+.ex-tape__axis .ui-reltime {
+  color: inherit;
+}
+
+.ex-tape__key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1.2 var(--font-sans);
+  list-style: none;
+}
+
+.ex-tape__key li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ex-tape__key i {
+  display: block;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 2px;
+  background: var(--mix, var(--text-4));
+}
+
+.ex-tape__key i[data-late] {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 1px;
+  background: var(--status-warn);
+  transform: rotate(45deg);
+}
+
+@container (max-width: 479px) {
+  .ex-tape {
+    --tape-h: 108px;
+  }
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+/* Reduced: no growing, no sliding; the coming block fills in steps, a second at a time. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ex-tape__col {
+    animation: none;
+    transition: none;
+  }
+
+  :root:not([data-motion="full"]) .ex-tape__next-fill {
+    animation-timing-function: steps(30, end);
+  }
+}
+
+:root[data-motion="reduced"] .ex-tape__col {
+  animation: none;
+  transition: none;
+}
+
+:root[data-motion="reduced"] .ex-tape__next-fill {
+  animation-timing-function: steps(30, end);
+}
+
+/* Off: nothing moves; the coming block is drawn from the whole seconds into the interval. */
+:root:is([data-motion="off"], [data-motion-off]) .ex-tape__col {
+  animation: none;
+  transition: none;
+}
+
+:root:is([data-motion="off"], [data-motion-off]) .ex-tape__next-fill {
+  animation: none;
+  transform: scaleY(calc(min(var(--sec, 0), 30) / 30));
+}

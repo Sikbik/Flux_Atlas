@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChainBlock } from '../../../../store/network';
-import { barText, LATE_AFTER_S, MIN_SCALE_TX, tapeBars, tapeCount, tapeSummary } from './tape';
+import { barText, LATE_AFTER_S, MIN_SCALE_TX, tapeBars, tapeCount, tapeFacts, tapeSummary } from './tape';
 
 const T0 = 1_790_000_000_000;
 
@@ -102,5 +102,35 @@ describe('words', () => {
       'The last 3 blocks carried 60 transactions. Blocks came 31.0 seconds apart on average.',
     );
     expect(tapeSummary([])).toBe('No blocks yet.');
+  });
+});
+
+describe('tapeFacts', () => {
+  it('counts the blocks, the transactions, the late ones and the busiest', () => {
+    const bars = tapeBars(
+      run(block(1, 0, { txCount: 4 }), block(2, 30, { txCount: 30 }), block(3, 100, { txCount: 10 })),
+      5,
+    );
+    const f = tapeFacts(bars);
+    expect(f.blocks).toBe(3);
+    expect(f.txs).toBe(44);
+    expect(f.busiest).toBe(30);
+    expect(f.late).toBe(1);
+    expect(f.avgGapS).toBeCloseTo(50);
+    expect(f.fromMs).toBe(T0);
+    expect(f.toMs).toBe(T0 + 100_000);
+  });
+
+  it('has no mean gap when no two blocks are neighbours, and nothing for an empty tape', () => {
+    expect(tapeFacts(tapeBars(run(block(1, 0), block(9, 90)), 5)).avgGapS).toBeNull();
+    expect(tapeFacts([])).toEqual({
+      blocks: 0,
+      txs: 0,
+      avgGapS: null,
+      late: 0,
+      busiest: 0,
+      fromMs: null,
+      toMs: null,
+    });
   });
 });

@@ -19,6 +19,11 @@ export interface HubPanelProps extends Omit<ComponentPropsWithoutRef<'section'>,
   /** Controls at the right of the heading (a segmented control, a small button). */
   actions?: ReactNode;
   span?: HubSpan;
+  /**
+   * `row`: in a medium window, where the grid has two columns, the panel takes the whole row instead of leaving a gap
+   * beside it (a third-width panel that has no partner).
+   */
+  fill?: 'row';
   /** Heading level (default 2: the view header's title is the page's 1). */
   level?: 2 | 3;
   state?: PanelState;
@@ -49,6 +54,7 @@ export function HubPanel({
   aside,
   actions,
   span = 'half',
+  fill,
   level = 2,
   state = 'ready',
   error,
@@ -75,6 +81,7 @@ export function HubPanel({
       padding="none"
       className={cx('hub-panel', className)}
       data-span={span}
+      data-fill={fill}
       data-state={state}
       data-flush={flush || undefined}
       aria-labelledby={headingId}
