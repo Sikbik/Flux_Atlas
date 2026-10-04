@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { FleetHistoryDay, WalletActivityItem } from '../types';
+import type { FleetDay, WalletActivity } from '../types';
 import {
   ACTIVITY_GROUPS,
   type ActivityGroup,
@@ -12,11 +12,12 @@ import {
   newestFirst,
   paymentAmount,
   paymentSummary,
+  paymentTier,
   tiersPresent,
   toneOfKind,
 } from './activity';
 
-const item = (t: number, kind: string, detail = ''): WalletActivityItem => ({
+const item = (t: number, kind: string, detail = ''): WalletActivity => ({
   t_ms: t,
   kind,
   node_key: 'a:0',
@@ -25,41 +26,47 @@ const item = (t: number, kind: string, detail = ''): WalletActivityItem => ({
 });
 
 const feed = [
-  item(5, 'node_paid', 'Paid 9.00 FLUX'),
-  item(4, 'node_ip_changed', 'IP changed'),
-  item(3, 'node_paid', 'Paid 9.00 FLUX'),
-  item(2, 'app_deployed', 'App deployed'),
-  item(1, 'node_at_risk', 'At risk'),
+  item(5, 'paid', 'Paid 9.00000000 FLUX (stratus)'),
+  item(4, 'ip_changed', 'Endpoint changed from 1.2.3.4:16127 to 5.6.7.8:16127'),
+  item(3, 'paid', 'Paid 9.00000000 FLUX (stratus)'),
+  item(2, 'apps', '2 apps running'),
+  item(1, 'at_risk', '600 blocks without a confirmation'),
   item(0, 'surprise_kind', 'Something new'),
 ];
 
 describe('groups', () => {
-  it('puts each kind under one filter, and an unknown kind under the chain', () => {
-    expect(groupOfKind('node_paid')).toBe('payments');
-    expect(groupOfKind('node_dosed')).toBe('health');
-    expect(groupOfKind('node_ip_changed')).toBe('nodes');
-    expect(groupOfKind('app_renewed')).toBe('apps');
-    expect(groupOfKind('reward_reduction')).toBe('chain');
-    expect(groupOfKind('surprise_kind')).toBe('chain');
+  it('puts each kind under one filter, and an unknown kind under node changes', () => {
+    expect(groupOfKind('paid')).toBe('payments');
+    expect(groupOfKind('dos')).toBe('health');
+    expect(groupOfKind('benchmark')).toBe('health');
+    expect(groupOfKind('ip_changed')).toBe('nodes');
+    expect(groupOfKind('version')).toBe('nodes');
+    expect(groupOfKind('apps')).toBe('apps');
+    expect(groupOfKind('surprise_kind')).toBe('nodes');
   });
 
-  it('lists five filters', () => {
-    expect(ACTIVITY_GROUPS.map((g) => g.id)).toEqual(['payments', 'health', 'nodes', 'apps', 'chain']);
+  it('lists four filters', () => {
+    expect(ACTIVITY_GROUPS.map((g) => g.id)).toEqual(['payments', 'health', 'nodes', 'apps']);
   });
 
   it('labels a kind in words, and makes up words for a new one', () => {
-    expect(kindLabel('node_paid')).toBe('Payment');
-    expect(kindLabel('node_ip_changed')).toBe('IP changed');
+    expect(kindLabel('paid')).toBe('Payment');
+    expect(kindLabel('ip_changed')).toBe('Endpoint changed');
     expect(kindLabel('surprise_kind')).toBe('Surprise kind');
   });
 
   it('gives a kind a colour role', () => {
-    expect(toneOfKind('node_paid')).toBe('pay');
-    expect(toneOfKind('node_recovered')).toBe('ok');
-    expect(toneOfKind('node_at_risk')).toBe('warn');
-    expect(toneOfKind('node_dosed')).toBe('crit');
-    expect(toneOfKind('node_heartbeat')).toBe('muted');
-    expect(toneOfKind('app_deployed')).toBe('info');
+    expect(toneOfKind('paid')).toBe('pay');
+    expect(toneOfKind('recovered')).toBe('ok');
+    expect(toneOfKind('at_risk')).toBe('warn');
+    expect(toneOfKind('dos')).toBe('crit');
+    expect(toneOfKind('apps')).toBe('info');
+  });
+
+  it('reads a benchmark row for its news', () => {
+    expect(toneOfKind('benchmark', 'Benchmark passed (stratus): 900 EPS')).toBe('ok');
+    expect(toneOfKind('benchmark', 'Benchmark failed: 120 EPS')).toBe('warn');
+    expect(toneOfKind('benchmark', 'Benchmark running: 0 EPS')).toBe('info');
   });
 });
 
@@ -77,11 +84,11 @@ describe('filterActivity', () => {
   });
 
   it('counts each group', () => {
-    expect(countByGroup(feed)).toEqual({ payments: 2, health: 1, nodes: 1, apps: 1, chain: 1 });
+    expect(countByGroup(feed)).toEqual({ payments: 2, health: 1, nodes: 2, apps: 1 });
   });
 
   it('sorts newest first without touching the input', () => {
-    const shuffled = [feed[2], feed[0], feed[4]] as WalletActivityItem[];
+    const shuffled = [feed[2], feed[0], feed[4]] as WalletActivity[];
     expect(newestFirst(shuffled).map((i) => i.t_ms)).toEqual([5, 3, 1]);
     expect(shuffled.map((i) => i.t_ms)).toEqual([3, 5, 1]);
   });
@@ -89,20 +96,27 @@ describe('filterActivity', () => {
 
 describe('payments', () => {
   it('reads the amount back out of the sentence', () => {
-    expect(paymentAmount('Paid 9.00 FLUX')).toBe(9);
+    expect(paymentAmount('Paid 9.00000000 FLUX (stratus)')).toBe(9);
     expect(paymentAmount('Paid 1,234.50 FLUX at block 3,006,000')).toBe(1234.5);
     expect(paymentAmount('Payment received')).toBeNull();
   });
 
+  it('reads the tier out of the brackets', () => {
+    expect(paymentTier('Paid 9.00000000 FLUX (stratus)')).toBe('stratus');
+    expect(paymentTier('Paid 1.00000000 FLUX (Cumulus)')).toBe('cumulus');
+    expect(paymentTier('Paid 1.00000000 FLUX')).toBeNull();
+    expect(paymentTier('Paid 1.00000000 FLUX (unknown)')).toBeNull();
+  });
+
   it('adds up the payments with an amount and counts those without', () => {
     expect(paymentSummary(feed)).toEqual({ count: 2, flux: 18 });
-    expect(paymentSummary([item(1, 'node_paid', 'Payment received')])).toEqual({ count: 1, flux: 0 });
+    expect(paymentSummary([item(1, 'paid', 'Payment received')])).toEqual({ count: 1, flux: 0 });
     expect(paymentSummary([])).toEqual({ count: 0, flux: 0 });
   });
 });
 
 describe('the fleet over time', () => {
-  const history: FleetHistoryDay[] = [
+  const history: FleetDay[] = [
     { day_ms: 1, cumulus: 0, nimbus: 0, stratus: 180 },
     { day_ms: 2, cumulus: 0, nimbus: 0, stratus: 200 },
     { day_ms: 3, cumulus: 0, nimbus: 0, stratus: 208 },

@@ -3,13 +3,13 @@
 // Pure functions; the server says what is wrong, this says what it means.
 
 import type {
-  BenchBand,
   BenchMetric,
-  Concentration,
   ConcentrationBy,
+  HealthKind,
   HealthReason,
-  HealthReasonKind,
   NodeAttention,
+  WalletBenchmark,
+  WalletConcentration,
 } from '../types';
 
 // ---- issues ---------------------------------------------------------------------------------------
@@ -26,29 +26,29 @@ interface Copy {
 const nodes = (n: number) => `${n} ${n === 1 ? 'node' : 'nodes'}`;
 
 /** What each kind of reason means and what to do about it, in the voice of the app: what happened, what next. */
-export const ISSUE_COPY: Record<HealthReasonKind, Copy> = {
+export const ISSUE_COPY: Record<HealthKind, Copy> = {
   dos: {
     severity: 'crit',
     title: (n) => `${nodes(n)} on the DoS list`,
-    why: 'These nodes failed a benchmark or broke a network rule, so the queue skips them for 720 blocks, about six hours. They earn nothing meanwhile.',
-    fix: 'Open the node in FluxOS and read its benchmark result. Free CPU, disk or bandwidth if a metric fell short, and check its ports are open. The ban lifts on its own.',
+    why: 'These nodes were not confirmed in time, so the network moved them to the DoS list. The queue skips them and they cannot be confirmed again for 720 blocks, about six hours, and they earn nothing meanwhile.',
+    fix: 'Check that fluxd is running and synced, and that the node can reach the network. The ban lifts on its own; the node can be started again once it does.',
   },
   bench_failed: {
     severity: 'crit',
     title: (n) => `${nodes(n)} failed the benchmark`,
-    why: 'A failed benchmark can lower a node to a smaller tier or put it on the DoS list.',
-    fix: 'See the measurement that fell short below. Stop other load on the host, then run the benchmark again from FluxOS.',
+    why: 'A failed benchmark can lower a node to a smaller tier or get it removed from the list.',
+    fix: 'See the measurements that fell short below. Stop other load on the host, then run the benchmark again from FluxOS.',
   },
   expiring_soon: {
     severity: 'crit',
     title: (n) => `${nodes(n)} close to expiring`,
-    why: 'A node that goes 640 blocks, about 5.3 hours, without checking in is dropped from the network and stops earning.',
-    fix: 'Make sure fluxd is running and synced and that the node can reach the network. Check-ins happen on their own about every 500 blocks.',
+    why: 'A node has 640 blocks, about 5.3 hours, from its last confirmation to confirm again, or it drops off the list and stops earning. Healthy nodes confirm well inside that; these have under 120 blocks, about an hour, left.',
+    fix: 'Make sure fluxd is running and synced and that the node can reach the network. It confirms on its own as soon as it can.',
   },
   unreachable: {
     severity: 'warn',
     title: (n) => `${nodes(n)} not reachable`,
-    why: 'The last Atlas sweep could not reach their API port, so their health cannot be seen from outside.',
+    why: 'The last Atlas sweep could not reach their API port, so their health cannot be seen from outside. They may still be earning.',
     fix: 'Check the node is online, that its API port is forwarded and that the firewall allows it.',
   },
   bench_error: {
@@ -59,17 +59,52 @@ export const ISSUE_COPY: Record<HealthReasonKind, Copy> = {
   },
   low_headroom: {
     severity: 'warn',
-    title: (n) => `${nodes(n)} with little headroom`,
-    why: 'A measurement sits close to the tier minimum, so a small dip would fail the next benchmark.',
+    title: (n) => `${nodes(n)} close to a tier minimum`,
+    why: 'A measured figure (CPU, disk write or bandwidth) sits within a tenth of what the tier requires. These vary from run to run, so a small dip can fail the next benchmark.',
     fix: 'Reduce other load on the host, or move the node to stronger hardware, before the next benchmark.',
   },
   version_outdated: {
     severity: 'info',
     title: (n) => `${nodes(n)} behind on FluxOS`,
-    why: 'Older FluxOS versions miss fixes and can be skipped when apps are placed.',
+    why: 'Most of the network runs a newer FluxOS. Older versions miss fixes and can be skipped when apps are placed.',
     fix: 'Update FluxOS from the node (ArcaneOS nodes update themselves).',
   },
 };
+
+/**
+ * Two kinds say more than one thing, so they split by what the server measured: a node below a tier minimum is a
+ * failure already and one near it is a warning; a node behind on FluxOS is not behind on fluxbench.
+ */
+const VARIANT_COPY: Record<string, Copy> = {
+  'low_headroom:below': {
+    severity: 'crit',
+    title: (n) => `${nodes(n)} below a tier minimum`,
+    why: 'A measurement is under what the tier requires, so the node will fail its next benchmark and can lose its tier or be removed.',
+    fix: 'Move the node to hardware that meets its tier, or free the resource that fell short (disk, CPU, bandwidth, memory), then run the benchmark again.',
+  },
+  'low_headroom:near': ISSUE_COPY.low_headroom,
+  'version_outdated:flux_os': ISSUE_COPY.version_outdated,
+  'version_outdated:bench': {
+    severity: 'info',
+    title: (n) => `${nodes(n)} behind on fluxbench`,
+    why: 'Most of the network runs a newer fluxbench, the tool that scores a node. Keeping it current keeps the scores comparable and picks up fixes.',
+    fix: 'Update fluxbench with FluxOS (ArcaneOS nodes update themselves).',
+  },
+};
+
+/** The variant of a reason, for the two kinds that have them (`low_headroom`, `version_outdated`). */
+export function variantOf(r: Pick<HealthReason, 'kind' | 'metric' | 'value' | 'threshold'>): string | null {
+  if (r.kind === 'low_headroom') {
+    return r.value !== null && r.threshold !== null && r.value < r.threshold ? 'below' : 'near';
+  }
+  if (r.kind === 'version_outdated') return r.metric === 'bench' ? 'bench' : 'flux_os';
+  return null;
+}
+
+function copyOf(r: Pick<HealthReason, 'kind' | 'metric' | 'value' | 'threshold'>): Copy | null {
+  const v = variantOf(r);
+  return (v ? VARIANT_COPY[`${r.kind}:${v}`] : undefined) ?? ISSUE_COPY[r.kind] ?? null;
+}
 
 const SEVERITY_RANK: Record<Severity, number> = { crit: 0, warn: 1, info: 2 };
 
@@ -82,7 +117,9 @@ export interface IssueNode {
 }
 
 export interface IssueGroup {
-  kind: HealthReasonKind;
+  /** `kind`, or `kind:variant` where a kind splits. */
+  id: string;
+  kind: HealthKind;
   severity: Severity;
   title: string;
   why: string;
@@ -96,30 +133,36 @@ export interface IssueGroup {
  * two groups.
  */
 export function groupIssues(attention: readonly NodeAttention[]): IssueGroup[] {
-  const by = new Map<HealthReasonKind, IssueNode[]>();
+  const by = new Map<string, { kind: HealthKind; copy: Copy; list: IssueNode[] }>();
   for (const a of attention) {
     for (const r of a.reasons) {
-      if (!(r.kind in ISSUE_COPY)) continue;
-      const list = by.get(r.kind) ?? [];
-      list.push({
+      const copy = copyOf(r);
+      if (!copy) continue;
+      const variant = variantOf(r);
+      const id = variant ? `${r.kind}:${variant}` : r.kind;
+      let g = by.get(id);
+      if (!g) {
+        g = { kind: r.kind, copy, list: [] };
+        by.set(id, g);
+      }
+      g.list.push({
         key: a.node_key,
         detail: r.detail,
         metric: r.metric,
         value: r.value,
         threshold: r.threshold,
       });
-      by.set(r.kind, list);
     }
   }
   const out: IssueGroup[] = [];
-  for (const [kind, list] of by) {
-    const c = ISSUE_COPY[kind];
+  for (const [id, { kind, copy, list }] of by) {
     out.push({
+      id,
       kind,
-      severity: c.severity,
-      title: c.title(list.length),
-      why: c.why,
-      fix: c.fix,
+      severity: copy.severity,
+      title: copy.title(list.length),
+      why: copy.why,
+      fix: copy.fix,
       nodes: list,
     });
   }
@@ -136,7 +179,7 @@ export const attentionCount = (attention: readonly NodeAttention[]): number =>
 export function worstSeverity(reasons: readonly HealthReason[]): Severity | null {
   let worst: Severity | null = null;
   for (const r of reasons) {
-    const s = ISSUE_COPY[r.kind]?.severity;
+    const s = copyOf(r)?.severity;
     if (s && (worst === null || SEVERITY_RANK[s] < SEVERITY_RANK[worst])) worst = s;
   }
   return worst;
@@ -198,17 +241,32 @@ export type BandStatus = 'below' | 'near' | 'ok' | 'untested';
 export const NEAR_MARGIN = 0.1;
 
 /**
- * Where the weakest node of the fleet stands against the tier's minimum: `below` fails it, `near` is within a tenth
- * above it, `ok` clears it, `untested` when the tier states no minimum for the metric.
+ * The metrics a benchmark measures afresh every run (CPU, disk write, bandwidth), so they drift. The others
+ * (cores, memory, SSD) are the size of the machine and never do, which is why the server flags those only when
+ * they are below the minimum and never for being close to it.
  */
-export function bandStatus(b: Pick<BenchBand, 'fleet_min' | 'minimum'>): BandStatus {
+export const DRIFTS: Record<BenchMetric, boolean> = {
+  eps: true,
+  disk_write_mbs: true,
+  down_mbps: true,
+  up_mbps: true,
+  ram_gb: false,
+  cores: false,
+  ssd_gb: false,
+};
+
+/**
+ * Where the weakest node of the fleet stands against the tier's minimum: `below` fails it, `near` is within a tenth
+ * above it (a metric that drifts only), `ok` clears it, `untested` when the tier states no minimum for the metric.
+ */
+export function bandStatus(b: Pick<WalletBenchmark, 'fleet_min' | 'minimum' | 'metric'>): BandStatus {
   if (b.minimum === null || b.minimum <= 0) return 'untested';
   if (b.fleet_min < b.minimum) return 'below';
-  return b.fleet_min < b.minimum * (1 + NEAR_MARGIN) ? 'near' : 'ok';
+  return DRIFTS[b.metric] && b.fleet_min < b.minimum * (1 + NEAR_MARGIN) ? 'near' : 'ok';
 }
 
 /** The fleet's median against the network's: `above`, `below` or `level` (within a twentieth). */
-export function medianStanding(b: Pick<BenchBand, 'fleet_median' | 'network'>): {
+export function medianStanding(b: Pick<WalletBenchmark, 'fleet_median' | 'network'>): {
   side: 'above' | 'below' | 'level';
   /** The fleet median over the network median, minus one. */
   ratio: number | null;
@@ -225,7 +283,7 @@ export interface BandScale {
 }
 
 /** The axis of one band: room around every number it draws, never below zero. */
-export function bandScale(b: BenchBand): BandScale {
+export function bandScale(b: WalletBenchmark): BandScale {
   const values = [b.network.p10, b.network.p50, b.network.p90, b.fleet_median, b.fleet_min];
   if (b.minimum !== null) values.push(b.minimum);
   const finite = values.filter((v) => Number.isFinite(v));
@@ -236,7 +294,7 @@ export function bandScale(b: BenchBand): BandScale {
 }
 
 /** One sentence about a band, for the text twin and a screen reader. */
-export function bandSentence(b: BenchBand): string {
+export function bandSentence(b: WalletBenchmark): string {
   const m = METRIC_META[b.metric];
   const unit = m.unit === 'cores' ? 'cores' : m.unit;
   const median = `${metricValue(b.fleet_median, b.metric)} ${unit}`;
@@ -254,7 +312,9 @@ export function bandSentence(b: BenchBand): string {
       : bandStatus(b) === 'below'
         ? ` The weakest node, ${metricValue(b.fleet_min, b.metric)}, is below the minimum of ${metricValue(b.minimum, b.metric)}.`
         : ` The weakest node is ${metricValue(b.fleet_min, b.metric)}, against a minimum of ${metricValue(b.minimum, b.metric)}.`;
-  return `${m.label}: the fleet median is ${median}, ${stand} the network median ${net}.${min}`;
+  const measured =
+    b.fleet_nodes > 0 ? ` Measured on ${b.fleet_nodes} ${b.fleet_nodes === 1 ? 'node' : 'nodes'}.` : '';
+  return `${m.label}: the fleet median is ${median}, ${stand} the network median ${net}.${min}${measured}`;
 }
 
 // ---- concentration --------------------------------------------------------------------------------
@@ -274,39 +334,67 @@ const BY_WORD: Record<ConcentrationBy, { one: string; plural: string }> = {
   provider: { one: 'provider', plural: 'providers' },
 };
 
+/** The server's bucket for nodes whose place or provider is not known. It is last, and the index leaves it out. */
+export const UNKNOWN_BUCKET = 'unknown';
+
 export interface ConcentrationRead {
   by: ConcentrationBy;
-  level: RiskLevel;
+  /** `unknown` when no node has a known place (so there is nothing to grade). */
+  level: RiskLevel | 'unknown';
   /** The risk, said plainly: "One provider outage takes down 100% of this fleet." */
   headline: string;
   /** The word on the gauge. */
   label: string;
   /** How many equal-sized groups would spread the fleet as thinly (1 over the index). */
   effective: number;
+  /** The largest known bucket and its share of the whole fleet. */
   top: { label: string; nodes: number; share: number } | null;
+  /** Nodes in the known buckets, and nodes with no known value. */
+  known: number;
+  unknown: number;
+  /** Every node counted, known or not. */
+  total: number;
 }
 
 const pct = (share: number): string => `${Math.round(share * 100)}%`;
 
-/** What an index and a top share mean for the viewer. */
-export function readConcentration(c: Concentration, total: number): ConcentrationRead {
-  const level = riskLevel(c.hhi);
+/**
+ * What an index and a top share mean for the viewer. The server's buckets are the whole fleet, its unknown bucket
+ * last; the index and the top share are over the known ones, so the headline's share is taken against the whole fleet
+ * (it is what an outage would actually take down at most) and a note says how many nodes are not placed.
+ */
+export function readConcentration(c: WalletConcentration): ConcentrationRead {
   const word = BY_WORD[c.by];
-  const lead = c.buckets[0] ?? null;
-  const top = lead ? { label: lead.label, nodes: lead.nodes, share: c.top_share } : null;
-  const label = level === 'low' ? 'Diversified' : level === 'moderate' ? 'Moderate' : 'Concentrated';
+  const knownBuckets = c.buckets.filter((b) => b.key !== UNKNOWN_BUCKET);
+  const unknown = c.buckets.find((b) => b.key === UNKNOWN_BUCKET)?.nodes ?? 0;
+  const known = knownBuckets.reduce((s, b) => s + b.nodes, 0);
+  const total = known + unknown;
+  const lead = knownBuckets[0] ?? null;
+  const share = lead && total > 0 ? lead.nodes / total : 0;
+  const top = lead ? { label: lead.label, nodes: lead.nodes, share } : null;
+  const level: RiskLevel | 'unknown' = lead ? riskLevel(c.hhi) : 'unknown';
+  const label =
+    level === 'unknown'
+      ? 'Unknown'
+      : level === 'low'
+        ? 'Diversified'
+        : level === 'moderate'
+          ? 'Moderate'
+          : 'Concentrated';
   const effective = c.hhi > 0 ? 1 / c.hhi : 0;
   let headline: string;
-  if (total <= 0 || !lead) {
+  if (total <= 0) {
     headline = `No ${word.plural} to compare: the fleet has no nodes.`;
-  } else if (c.buckets.length === 1) {
+  } else if (!lead) {
+    headline = `No node has a known ${word.one} yet.`;
+  } else if (knownBuckets.length === 1 && unknown === 0) {
     headline = `One ${word.one} outage takes down 100% of this fleet.`;
   } else if (c.by === 'provider') {
-    headline = `One provider outage, ${lead.label}, takes down ${pct(c.top_share)} of this fleet.`;
+    headline = `One provider outage, ${lead.label}, takes down ${pct(share)} of this fleet.`;
   } else {
-    headline = `Losing ${lead.label} would take down ${pct(c.top_share)} of this fleet.`;
+    headline = `Losing ${lead.label} would take down ${pct(share)} of this fleet.`;
   }
-  return { by: c.by, level, headline, label, effective, top };
+  return { by: c.by, level, headline, label, effective, top, known, unknown, total };
 }
 
 /** `Provider`, `Country`, `City`: the dimension as a heading. */

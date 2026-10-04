@@ -1,11 +1,12 @@
-// The last thirty days of earnings as bars, and what they add up to. The full chart, the projection and the profit
-// are the Earnings tab; this is the glance that tells whether it is worth opening.
+// The recent days of earnings as bars, and what they add up to. Atlas keeps the payouts of the blocks it has stored, at
+// most thirty days. The full chart, the projection and the profit are the Earnings tab; this is the glance that tells
+// whether it is worth opening.
 
 import { useMemo } from 'react';
 import { formatInt } from '../../../../lib/format';
 import { AnimatedNumber, Delta, Sparkline, Stat, StatGrid } from '../../../../ui';
 import { useWalletCtx } from '../../context';
-import { buildDaily, parallelRatio, sliceDays, totalsOf } from '../../lib/earnings';
+import { buildDaily, isCompleteDay, parallelRatio, totalsOf } from '../../lib/earnings';
 import { flux } from '../../lib/money';
 import { Panel } from '../../ui/Panel';
 import { formatFlux2 } from './Standing';
@@ -13,32 +14,36 @@ import { formatFlux2 } from './Standing';
 export function EarningsGlance() {
   const { dto, money, setTab } = useWalletCtx();
   const e = dto.earnings;
-  const days = useMemo(() => sliceDays(e.days, '30d'), [e.days]);
   const daily = useMemo(
     () =>
       buildDaily({
-        days,
+        days: e.days,
+        coveredFromMs: e.covered_from_ms,
         ratio: parallelRatio(flux(e.native_per_day), flux(e.pa_per_day)),
         history: money.history,
         spot: money.spot,
         currency: money.currency,
         nowMs: Date.now(),
       }),
-    [days, e.native_per_day, e.pa_per_day, money.history, money.spot, money.currency],
+    [e.days, e.covered_from_ms, e.native_per_day, e.pa_per_day, money.history, money.spot, money.currency],
   );
   const t = useMemo(() => totalsOf(daily), [daily]);
 
-  const half = Math.floor(daily.native.length / 2);
-  const recent = daily.native.slice(half).reduce((s, v) => s + v, 0);
-  const earlier = daily.native.slice(0, half).reduce((s, v) => s + v, 0);
+  // The shape of the whole days: the window's first day and the running one are artefacts of where it starts and
+  // ends, and would draw a dip at each edge.
+  const whole = useMemo(() => daily.native.filter((_, i) => isCompleteDay(daily, i)), [daily]);
+  const half = Math.floor(whole.length / 2);
+  const recent = whole.slice(half).reduce((s, v) => s + v, 0);
+  const earlier = whole.slice(0, half).reduce((s, v) => s + v, 0);
   const change = half >= 3 && earlier > 0 ? (recent / earlier - 1) * 100 : null;
+  const n = e.days.length;
 
-  if (e.days.length === 0) {
+  if (n === 0) {
     return (
-      <Panel title="Earnings, 30 days">
+      <Panel title="Earnings, recent days">
         <p className="wl-note">
-          No payment has reached this wallet in the period Atlas has recorded. Earnings appear here from the
-          first one.
+          No payout is on record for this address yet. Atlas builds this from the blocks it has stored, so
+          earnings appear here from the first one it sees.
         </p>
       </Panel>
     );
@@ -46,8 +51,8 @@ export function EarningsGlance() {
 
   return (
     <Panel
-      title="Earnings, 30 days"
-      aside={`${formatInt(days.length)} ${days.length === 1 ? 'day' : 'days'}, UTC`}
+      title={`Earnings, ${formatInt(n)} ${n === 1 ? 'day' : 'days'}`}
+      aside={`${formatInt(t.payments)} ${t.payments === 1 ? 'payment' : 'payments'}, UTC`}
     >
       <StatGrid min={140} columns={2}>
         <Stat
@@ -60,13 +65,25 @@ export function EarningsGlance() {
             )
           }
           caption={t.value === null ? undefined : money.fmt(t.value)}
-          spark={<Sparkline values={daily.native} form="area" size="tile" label="Native FLUX per day" />}
+          spark={
+            whole.length >= 2 ? (
+              <Sparkline values={whole} form="area" size="tile" label="Native FLUX per whole day" />
+            ) : undefined
+          }
         />
         <Stat
           label="A day on average"
-          value={<AnimatedNumber value={t.average} format={formatFlux2} maxHz={0} />}
+          value={
+            t.average === null ? null : <AnimatedNumber value={t.average} format={formatFlux2} maxHz={0} />
+          }
           unit="FLUX"
-          caption={t.best ? `best day ${formatFlux2(t.best.native)}` : undefined}
+          caption={
+            t.average === null
+              ? 'needs one whole day'
+              : t.best
+                ? `best day ${formatFlux2(t.best.native)}`
+                : undefined
+          }
         />
       </StatGrid>
       <button type="button" className="wl-more" onClick={() => setTab('earnings')}>

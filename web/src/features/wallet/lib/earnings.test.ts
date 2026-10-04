@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import type { EarningsDay, ParallelClaim, PriceDay, PricesDto } from '../types';
+import type { EarningsDay, PaClaim, PricePoint, PricesDto } from '../types';
 import {
   buildDaily,
   claimsCsv,
   dailyCsv,
+  effectiveRange,
+  isCompleteDay,
   isEarningsRange,
   missedRows,
   PAYMENT_VERDICT,
   parallelRatio,
   paymentHealth,
+  rangesFor,
   sliceDays,
   totalsOf,
 } from './earnings';
@@ -35,7 +38,7 @@ const spot: PricesDto['spot'] = {
   btc: 0.000001,
 };
 
-const history: PriceDay[] = Array.from({ length: 40 }, (_, i) => ({
+const history: PricePoint[] = Array.from({ length: 40 }, (_, i) => ({
   day_ms: START + i * DAY_MS,
   usd: 0.05 + i * 0.001,
 }));
@@ -53,22 +56,40 @@ function days(n: number): EarningsDay[] {
 }
 
 describe('sliceDays', () => {
-  const all = days(120);
+  const all = days(30);
   it('keeps the newest days of a range', () => {
-    expect(sliceDays(all, '30d')).toHaveLength(30);
-    expect(sliceDays(all, '30d')[29]).toBe(all[119]);
-    expect(sliceDays(all, '90d')).toHaveLength(90);
+    expect(sliceDays(all, '7d')).toHaveLength(7);
+    expect(sliceDays(all, '7d')[6]).toBe(all[29]);
+    expect(sliceDays(all, '14d')).toHaveLength(14);
   });
 
   it('keeps every day for all, and copes with fewer days than asked', () => {
-    expect(sliceDays(all, 'all')).toHaveLength(120);
-    expect(sliceDays(days(10), '30d')).toHaveLength(10);
-    expect(sliceDays([], '30d')).toEqual([]);
+    expect(sliceDays(all, 'all')).toHaveLength(30);
+    expect(sliceDays(days(5), '7d')).toHaveLength(5);
+    expect(sliceDays([], '7d')).toEqual([]);
   });
 
   it('knows its ranges', () => {
-    expect(isEarningsRange('90d')).toBe(true);
-    expect(isEarningsRange('7d')).toBe(false);
+    expect(isEarningsRange('14d')).toBe(true);
+    expect(isEarningsRange('30d')).toBe(false);
+    expect(isEarningsRange('90d')).toBe(false);
+  });
+});
+
+describe('ranges that fit the data', () => {
+  it('offers a range only when the data is longer than it', () => {
+    expect(rangesFor(30).map((r) => r.value)).toEqual(['7d', '14d', 'all']);
+    expect(rangesFor(14).map((r) => r.value)).toEqual(['7d', 'all']);
+    expect(rangesFor(8).map((r) => r.value)).toEqual(['7d', 'all']);
+    expect(rangesFor(7).map((r) => r.value)).toEqual(['all']);
+    expect(rangesFor(0).map((r) => r.value)).toEqual(['all']);
+  });
+
+  it('falls back to all when the stored range is not offered', () => {
+    expect(effectiveRange('14d', 30)).toBe('14d');
+    expect(effectiveRange('14d', 10)).toBe('all');
+    expect(effectiveRange('7d', 3)).toBe('all');
+    expect(effectiveRange('all', 30)).toBe('all');
   });
 });
 
@@ -87,7 +108,16 @@ describe('parallelRatio', () => {
 
 describe('buildDaily', () => {
   const now = START + 10 * DAY_MS + 6 * 3_600_000;
-  const base = { days: days(11), ratio: 0.97, history, spot, currency: 'usd' as const, nowMs: now };
+  // The stored blocks begin at the start of the first day: a whole first day.
+  const base = {
+    days: days(11),
+    coveredFromMs: START as number | null,
+    ratio: 0.97,
+    history,
+    spot,
+    currency: 'usd' as const,
+    nowMs: now,
+  };
 
   it('lays the days out as columns, tiers apart', () => {
     const d = buildDaily(base);
@@ -130,11 +160,46 @@ describe('buildDaily', () => {
     expect(buildDaily({ ...base, nowMs: START + 12 * DAY_MS }).partialLast).toBe(false);
     expect(buildDaily({ ...base, days: [] }).partialLast).toBe(false);
   });
+
+  it('knows when the stored blocks begin part way through the first day', () => {
+    expect(buildDaily(base).partialFirst).toBe(false);
+    // Covered from 14:20 on the first day: that day is partial.
+    expect(buildDaily({ ...base, coveredFromMs: START + 14 * 3_600_000 + 1_200_000 }).partialFirst).toBe(
+      true,
+    );
+    // Within the first hour counts as a whole day.
+    expect(buildDaily({ ...base, coveredFromMs: START + 20 * 60_000 }).partialFirst).toBe(false);
+    // A range that dropped the first day has no partial first day, whatever the window began.
+    expect(
+      buildDaily({
+        ...base,
+        days: days(11).slice(3),
+        coveredFromMs: START + 14 * 3_600_000,
+      }).partialFirst,
+    ).toBe(false);
+    expect(buildDaily({ ...base, coveredFromMs: null }).partialFirst).toBe(false);
+  });
+
+  it('says which days are whole', () => {
+    const d = buildDaily({ ...base, coveredFromMs: START + 14 * 3_600_000 });
+    expect(isCompleteDay(d, 0)).toBe(false);
+    expect(isCompleteDay(d, 1)).toBe(true);
+    expect(isCompleteDay(d, 9)).toBe(true);
+    expect(isCompleteDay(d, 10)).toBe(false);
+  });
 });
 
 describe('totalsOf', () => {
   const now = START + 10 * DAY_MS + 6 * 3_600_000;
-  const input = { days: days(11), ratio: 1, history, spot, currency: 'usd' as const, nowMs: now };
+  const input = {
+    days: days(11),
+    coveredFromMs: START as number | null,
+    ratio: 1,
+    history,
+    spot,
+    currency: 'usd' as const,
+    nowMs: now,
+  };
 
   it('adds the days up', () => {
     const t = totalsOf(buildDaily(input));
@@ -144,15 +209,27 @@ describe('totalsOf', () => {
     expect(t.value).toBeGreaterThan(0);
   });
 
-  it('averages only complete days, so a running day does not drag it down', () => {
+  it('averages only whole days, so a running day does not drag it down', () => {
     const list = days(11);
     list[10] = { ...(list[10] as EarningsDay), native: '700.00000000' };
     const t = totalsOf(buildDaily({ ...input, days: list }));
     expect(t.average).toBe(3000);
+    expect(t.completeDays).toBe(10);
     expect(t.native).toBe(30_700);
   });
 
-  it('finds the best complete day', () => {
+  it('leaves the partial first day out of the average too', () => {
+    const list = days(11);
+    list[0] = { ...(list[0] as EarningsDay), native: '1200.00000000' };
+    list[10] = { ...(list[10] as EarningsDay), native: '700.00000000' };
+    const t = totalsOf(buildDaily({ ...input, days: list, coveredFromMs: START + 15 * 3_600_000 }));
+    expect(t.average).toBe(3000);
+    expect(t.completeDays).toBe(9);
+    // The totals still count everything that was paid.
+    expect(t.native).toBe(1200 + 9 * 3000 + 700);
+  });
+
+  it('finds the best whole day', () => {
     const list = days(11);
     list[4] = { ...(list[4] as EarningsDay), native: '3600.00000000' };
     list[10] = { ...(list[10] as EarningsDay), native: '9000.00000000' };
@@ -160,9 +237,34 @@ describe('totalsOf', () => {
     expect(t.best).toEqual({ t: START + 4 * DAY_MS, native: 3600 });
   });
 
+  it('has no average or best day while there is no whole day', () => {
+    // One partial day only: the window began mid-day and today is still running.
+    const one = days(1);
+    const t = totalsOf(
+      buildDaily({
+        ...input,
+        days: one,
+        coveredFromMs: START + 9 * 3_600_000,
+        nowMs: START + 12 * 3_600_000,
+      }),
+    );
+    expect(t.native).toBe(3000);
+    expect(t.average).toBeNull();
+    expect(t.best).toBeNull();
+    expect(t.completeDays).toBe(0);
+  });
+
   it('is empty for no days', () => {
     const t = totalsOf(buildDaily({ ...input, days: [] }));
-    expect(t).toEqual({ native: 0, pa: 0, payments: 0, value: null, average: 0, best: null });
+    expect(t).toEqual({
+      native: 0,
+      pa: 0,
+      payments: 0,
+      value: null,
+      average: null,
+      best: null,
+      completeDays: 0,
+    });
   });
 });
 
@@ -216,7 +318,15 @@ describe('missedRows', () => {
 
 describe('dailyCsv', () => {
   const now = START + 10 * DAY_MS + 6 * 3_600_000;
-  const base = { days: days(3), ratio: 1, history, spot, currency: 'usd' as const, nowMs: now };
+  const base = {
+    days: days(3),
+    coveredFromMs: START as number | null,
+    ratio: 1,
+    history,
+    spot,
+    currency: 'usd' as const,
+    nowMs: now,
+  };
 
   it('writes a row a day with the tiers, the price that day and the value', () => {
     const d = buildDaily(base);
@@ -232,7 +342,7 @@ describe('dailyCsv', () => {
       'price_usd_that_day',
       'native_value_usd',
       'native_and_parallel_value_usd',
-      'running_day',
+      'partial_day',
     ]);
     expect(rows).toHaveLength(3);
     expect(rows[0]).toEqual(['2026-09-01', 3000, 0, 0, 3000, 333, 3000, 0.05, 150, 300, false]);
@@ -257,16 +367,19 @@ describe('dailyCsv', () => {
     expect((rows[0] as unknown[])[header.indexOf('native_value_usd')]).toBeNull();
   });
 
-  it('marks the running day', () => {
-    const d = buildDaily({ ...base, days: days(11) });
+  it('marks the running day and a partial first day', () => {
+    const d = buildDaily({ ...base, days: days(11), coveredFromMs: START + 15 * 3_600_000 });
     const { header, rows } = dailyCsv(d, 'usd', history, spot);
-    expect((rows[10] as unknown[])[header.indexOf('running_day')]).toBe(true);
-    expect((rows[9] as unknown[])[header.indexOf('running_day')]).toBe(false);
+    const at = (i: number) => (rows[i] as unknown[])[header.indexOf('partial_day')];
+    expect(at(0)).toBe(true);
+    expect(at(1)).toBe(false);
+    expect(at(9)).toBe(false);
+    expect(at(10)).toBe(true);
   });
 });
 
 describe('claimsCsv', () => {
-  const claims: ParallelClaim[] = [
+  const claims: PaClaim[] = [
     {
       chain: 'eth',
       amount: 1250.5,
@@ -274,21 +387,59 @@ describe('claimsCsv', () => {
       to: '0xdef',
       explorer_url: 'https://etherscan.io/tx/0xabc',
       time_ms: Date.UTC(2026, 9, 1, 8, 30, 0),
+      main_txid: null,
+      fee: 12,
     },
-    { chain: 'kda', amount: 80, txid: 'k1', to: 'k:abc', explorer_url: null, time_ms: null },
+    {
+      chain: 'kda',
+      amount: 80,
+      txid: 'k1',
+      to: 'k:abc',
+      explorer_url: null,
+      time_ms: null,
+      main_txid: null,
+      fee: 0,
+    },
+    {
+      chain: 'flux',
+      amount: 5000,
+      txid: `flux:${'b'.repeat(64)}`,
+      to: 't3abc',
+      explorer_url: `https://explorer.runonflux.io/tx/${'b'.repeat(64)}`,
+      time_ms: Date.UTC(2026, 9, 2, 0, 0, 0),
+      main_txid: 'b'.repeat(64),
+      fee: 20,
+    },
   ];
 
   it('writes a row per claim, empty where a time or link is not known', () => {
     const { header, rows } = claimsCsv(claims);
-    expect(header).toEqual(['time_utc', 'chain', 'amount_flux', 'transaction', 'to_address', 'explorer_url']);
+    expect(header).toEqual([
+      'time_utc',
+      'chain',
+      'amount_flux',
+      'fee_flux',
+      'transaction',
+      'main_chain_txid',
+      'to_address',
+      'explorer_url',
+    ]);
     expect(rows[0]).toEqual([
       '2026-10-01 08:30:00',
       'eth',
       1250.5,
+      12,
       '0xabc',
+      null,
       '0xdef',
       'https://etherscan.io/tx/0xabc',
     ]);
-    expect(rows[1]).toEqual([null, 'kda', 80, 'k1', 'k:abc', null]);
+    expect(rows[1]).toEqual([null, 'kda', 80, 0, 'k1', null, 'k:abc', null]);
+  });
+
+  it('carries the Flux transaction of a claim-all', () => {
+    const { rows } = claimsCsv(claims);
+    expect(rows[2]?.[5]).toBe('b'.repeat(64));
+    expect(rows[2]?.[3]).toBe(20);
   });
 });

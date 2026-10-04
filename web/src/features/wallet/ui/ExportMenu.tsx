@@ -45,6 +45,7 @@ export function ExportMenu({
           const e = dto.earnings;
           const daily = buildDaily({
             days: e.days,
+            coveredFromMs: e.covered_from_ms,
             ratio: parallelRatio(flux(e.native_per_day), flux(e.pa_per_day)),
             history: money.history,
             spot: money.spot,

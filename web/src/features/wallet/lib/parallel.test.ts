@@ -1,20 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import type { ParallelChain, ParallelClaim } from '../types';
+import type { PaChain, PaClaim } from '../types';
 import {
   chainName,
   chainTicker,
   chainTotals,
+  claimChainLabel,
   claimEfficiency,
   claimedShare,
+  claimHistoryTotals,
   claimLink,
   explorerUrl,
   feeShareText,
+  isClaimAll,
+  receivingLink,
   safeHttpUrl,
   sortChains,
   verdictView,
 } from './parallel';
 
-const chain = (id: string, over: Partial<ParallelChain> = {}): ParallelChain => ({
+const claim = (over: Partial<PaClaim> = {}): PaClaim => ({
+  chain: 'eth',
+  amount: 100,
+  txid: '0xabc',
+  to: '0xdef',
+  explorer_url: 'https://etherscan.io/tx/0xabc',
+  time_ms: 1_700_000_000_000,
+  main_txid: null,
+  fee: 2,
+  ...over,
+});
+
+const MAIN = 'a'.repeat(64);
+
+const chain = (id: string, over: Partial<PaChain> = {}): PaChain => ({
   chain: id,
   name: id.toUpperCase(),
   active: true,
@@ -65,6 +83,16 @@ describe('claimEfficiency', () => {
     const e = claimEfficiency(chain('a', { claimable: -5, claim_fee: -1 }));
     expect(e.gross).toBe(0);
     expect(e.fee).toBe(0);
+  });
+
+  it('does not call a claim worth it when the chain published no fee', () => {
+    // The server sends 0 for a chain whose fee Fusion did not list.
+    const e = claimEfficiency(chain('a', { claimable: 5_000, claim_fee: 0 }));
+    expect(e.feeKnown).toBe(false);
+    expect(e.feeShare).toBeNull();
+    expect(e.verdict).toBe('unknown');
+    expect(verdictView('unknown')).toEqual({ label: 'Fee not published', tone: 'off' });
+    expect(claimEfficiency(chain('a', { claimable: 5_000, claim_fee: 10 })).feeKnown).toBe(true);
   });
 });
 
@@ -136,18 +164,64 @@ describe('links', () => {
 
   it("prefers the server's own link, then the chain's template", () => {
     const chains = [chain('eth', { explorer_tx: 'https://etherscan.io/tx/{txid}' })];
-    const own: ParallelClaim = {
-      chain: 'eth',
-      amount: 1,
-      txid: '0xabc',
-      to: '0xdef',
-      explorer_url: 'https://etherscan.io/tx/0xabc?x=1',
-      time_ms: 1,
-    };
+    const own = claim({ amount: 1, explorer_url: 'https://etherscan.io/tx/0xabc?x=1', time_ms: 1 });
     expect(claimLink(own, chains)).toBe('https://etherscan.io/tx/0xabc?x=1');
     expect(claimLink({ ...own, explorer_url: null }, chains)).toBe('https://etherscan.io/tx/0xabc');
     expect(claimLink({ ...own, explorer_url: 'javascript:1' }, chains)).toBe('https://etherscan.io/tx/0xabc');
     expect(claimLink({ ...own, explorer_url: null, chain: 'zzz' }, chains)).toBeNull();
+  });
+});
+
+describe('claim-all and history', () => {
+  const chains = [
+    chain('eth', { name: 'Ethereum', explorer_address: 'https://etherscan.io/address/{address}' }),
+    chain('kda', { name: 'Kadena', explorer_address: null }),
+  ];
+  const all = claim({
+    chain: 'flux',
+    txid: `flux:${MAIN}`,
+    main_txid: MAIN,
+    to: 't3abc',
+    explorer_url: `https://explorer.runonflux.io/tx/${MAIN}`,
+    amount: 5_000,
+    fee: 20,
+    time_ms: 1_790_000_000_000,
+  });
+
+  it('tells a claim-all from a claim on one chain', () => {
+    expect(isClaimAll(all)).toBe(true);
+    expect(isClaimAll(claim())).toBe(false);
+    expect(claimChainLabel(all, chains)).toBe('All chains');
+    expect(claimChainLabel(claim(), chains)).toBe('Ethereum');
+    expect(claimChainLabel(claim({ chain: 'zzz' }), chains)).toBe('ZZZ');
+  });
+
+  it('links a claim-all to the Flux explorer the server named', () => {
+    expect(claimLink(all, chains)).toBe(`https://explorer.runonflux.io/tx/${MAIN}`);
+  });
+
+  it("finds where a chain's claims went, from its newest claim on that chain", () => {
+    const list = [all, claim({ to: '0xnewest' }), claim({ to: '0xolder', time_ms: 1 })];
+    expect(receivingLink(chains[0] as PaChain, list)).toEqual({
+      address: '0xnewest',
+      url: 'https://etherscan.io/address/0xnewest',
+    });
+    // A claim-all is not a claim on that chain; a chain with no template or no claim has no link.
+    expect(receivingLink(chains[0] as PaChain, [all])).toBeNull();
+    expect(receivingLink(chains[1] as PaChain, [claim({ chain: 'kda', to: 'k:abc' })])).toBeNull();
+    expect(receivingLink(chains[0] as PaChain, [])).toBeNull();
+  });
+
+  it('adds up the history and finds its newest claim', () => {
+    expect(
+      claimHistoryTotals([all, claim({ amount: 10, fee: 1, time_ms: 5 }), claim({ time_ms: null })]),
+    ).toEqual({
+      count: 3,
+      amount: 5_110,
+      fees: 23,
+      lastMs: 1_790_000_000_000,
+    });
+    expect(claimHistoryTotals([])).toEqual({ count: 0, amount: 0, fees: 0, lastMs: null });
   });
 });
 

@@ -54,7 +54,7 @@ export function FleetHealth() {
 
   const issues = useMemo(() => groupIssues(dto.health.attention), [dto.health.attention]);
   const provider = dto.concentration.find((c) => c.by === 'provider');
-  const read = provider && total > 0 ? readConcentration(provider, total) : null;
+  const read = provider && total > 0 ? readConcentration(provider) : null;
 
   const segments: ShareSegment[] = (['healthy', 'attention', 'down'] as const)
     .filter((b) => counts[b] > 0)
@@ -103,7 +103,7 @@ export function FleetHealth() {
           {issues.slice(0, 3).map((g) => {
             const Icon = SEVERITY_ICON[g.severity];
             return (
-              <li key={g.kind} data-severity={g.severity}>
+              <li key={g.id} data-severity={g.severity}>
                 <Icon size={15} strokeWidth={1.5} aria-hidden="true" />
                 <span>
                   <b>
@@ -121,7 +121,7 @@ export function FleetHealth() {
         <p className="wl-note">{formatInt(issues.length - 3)} more kinds of issue in Health and risk.</p>
       ) : null}
 
-      {read ? (
+      {read && read.level !== 'unknown' ? (
         <div className="wl-risk" data-level={read.level}>
           <StatusChip
             status={read.level === 'low' ? 'confirmed' : 'at-risk'}

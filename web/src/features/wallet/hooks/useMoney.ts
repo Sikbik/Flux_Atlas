@@ -5,7 +5,7 @@
 import { useMemo } from 'react';
 import { formatMoney, formatPrice, priceOf, toMoney } from '../lib/money';
 import { useWalletPrefs } from '../prefs';
-import type { CurrencyCode, PriceDay, PricesDto } from '../types';
+import type { CurrencyCode, PricePoint, PricesDto } from '../types';
 import { usePrices } from './useWallet';
 
 export interface Money {
@@ -19,7 +19,7 @@ export interface Money {
   /** One FLUX in the chosen currency, or null while unknown. */
   price: number | null;
   /** The dollar history, oldest first (empty while unknown). */
-  history: readonly PriceDay[];
+  history: readonly PricePoint[];
   /** FLUX as money in the chosen currency (null while unknown). */
   value: (fluxAmount: number) => number | null;
   /** FLUX as text in the chosen currency: `$3,120.45`, or "Unknown". */
@@ -32,7 +32,7 @@ export interface Money {
   change24h: number | null;
 }
 
-const NO_HISTORY: readonly PriceDay[] = [];
+const NO_HISTORY: readonly PricePoint[] = [];
 
 export function useMoney(): Money {
   const currency = useWalletPrefs((s) => s.currency);

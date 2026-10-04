@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PriceDay, PricesDto } from '../types';
+import type { PricePoint, PricesDto } from '../types';
 import {
   convertMoney,
   DAY_MS,
@@ -33,7 +33,7 @@ const spot: PricesDto['spot'] = {
   btc: 0.00000088,
 };
 
-const history = (n: number, start = 1_700_000_000_000): PriceDay[] =>
+const history = (n: number, start = 1_700_000_000_000): PricePoint[] =>
   Array.from({ length: n }, (_, i) => ({
     day_ms: Math.floor(start / DAY_MS) * DAY_MS + i * DAY_MS,
     usd: 0.05 + i * 0.001,
@@ -119,14 +119,14 @@ describe('priceOf and conversions', () => {
 describe('priceOnDay', () => {
   const h = history(10);
   it('finds the day itself, however late in it', () => {
-    expect(priceOnDay(h, (h[3] as PriceDay).day_ms + 17 * 3_600_000)).toBe((h[3] as PriceDay).usd);
+    expect(priceOnDay(h, (h[3] as PricePoint).day_ms + 17 * 3_600_000)).toBe((h[3] as PricePoint).usd);
   });
 
   it('uses the nearest earlier day for a gap, and the ends for a day outside', () => {
-    const gapped = [h[0], h[2], h[5]] as PriceDay[];
-    expect(priceOnDay(gapped, (h[3] as PriceDay).day_ms)).toBe((h[2] as PriceDay).usd);
-    expect(priceOnDay(h, (h[0] as PriceDay).day_ms - 40 * DAY_MS)).toBe((h[0] as PriceDay).usd);
-    expect(priceOnDay(h, (h[9] as PriceDay).day_ms + 40 * DAY_MS)).toBe((h[9] as PriceDay).usd);
+    const gapped = [h[0], h[2], h[5]] as PricePoint[];
+    expect(priceOnDay(gapped, (h[3] as PricePoint).day_ms)).toBe((h[2] as PricePoint).usd);
+    expect(priceOnDay(h, (h[0] as PricePoint).day_ms - 40 * DAY_MS)).toBe((h[0] as PricePoint).usd);
+    expect(priceOnDay(h, (h[9] as PricePoint).day_ms + 40 * DAY_MS)).toBe((h[9] as PricePoint).usd);
   });
 
   it('has no price for no history', () => {
@@ -136,15 +136,18 @@ describe('priceOnDay', () => {
 
 describe('historicPrice', () => {
   const h = history(10);
-  const ms = (h[4] as PriceDay).day_ms + 1000;
+  const ms = (h[4] as PricePoint).day_ms + 1000;
   it('is exact in dollars', () => {
-    expect(historicPrice(h, spot, 'usd', ms)).toEqual({ price: (h[4] as PriceDay).usd, approximate: false });
+    expect(historicPrice(h, spot, 'usd', ms)).toEqual({
+      price: (h[4] as PricePoint).usd,
+      approximate: false,
+    });
   });
 
   it("is the dollar price at today's exchange rate in any other currency, and says so", () => {
     const r = historicPrice(h, spot, 'eur', ms);
     expect(r?.approximate).toBe(true);
-    expect(r?.price).toBeCloseTo(((h[4] as PriceDay).usd * 0.0687) / 0.0747, 10);
+    expect(r?.price).toBeCloseTo(((h[4] as PricePoint).usd * 0.0687) / 0.0747, 10);
   });
 
   it('gives nothing without the rates', () => {

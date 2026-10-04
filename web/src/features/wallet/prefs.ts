@@ -50,7 +50,7 @@ const DEFAULTS: Persisted = {
   columns: [...DEFAULT_COLUMNS],
   density: 'comfortable',
   groupBy: 'none',
-  earningsRange: '30d',
+  earningsRange: 'all',
   horizon: '24h',
 };
 

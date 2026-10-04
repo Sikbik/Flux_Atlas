@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ProjectionDay, RewardReduction } from '../types';
+import type { ProjectionDay, SubsidyReduction } from '../types';
 import { DAY_MS, MONTH_DAYS } from './money';
 import {
   buildProjection,
@@ -28,7 +28,7 @@ function days(cutAt: number | null, n = 365): ProjectionDay[] {
   });
 }
 
-const reduction = (daysAhead: number): RewardReduction => ({
+const reduction = (daysAhead: number): SubsidyReduction => ({
   height: 3_071_200,
   eta_ms: START + daysAhead * DAY_MS + 5 * 3_600_000,
   subsidy_before: '14.00000000',

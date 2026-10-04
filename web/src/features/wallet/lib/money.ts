@@ -6,7 +6,7 @@
 // currencies are drawn from it at today's exchange rate, and every place that does that says it is approximate.
 
 import { fluxToNumber, UNKNOWN } from '../../../lib/format';
-import { CURRENCIES, type CurrencyCode, type PriceDay, type PricesDto } from '../types';
+import { CURRENCIES, type CurrencyCode, type PricePoint, type PricesDto } from '../types';
 
 export const DAY_MS = 86_400_000;
 /** The average month, in days: 365.25 / 12. Run-rate figures per month use it. */
@@ -153,20 +153,20 @@ export function convertMoney(
  * The dollar price on the UTC day that contains `ms`: the day's own entry, else the nearest earlier one, else (a
  * day before the history begins) the first. Null for an empty history. `history` is oldest first.
  */
-export function priceOnDay(history: readonly PriceDay[], ms: number): number | null {
+export function priceOnDay(history: readonly PricePoint[], ms: number): number | null {
   const n = history.length;
   if (n === 0) return null;
   const day = Math.floor(ms / DAY_MS) * DAY_MS;
   let lo = 0;
   let hi = n - 1;
-  if (day <= (history[0] as PriceDay).day_ms) return (history[0] as PriceDay).usd;
-  if (day >= (history[hi] as PriceDay).day_ms) return (history[hi] as PriceDay).usd;
+  if (day <= (history[0] as PricePoint).day_ms) return (history[0] as PricePoint).usd;
+  if (day >= (history[hi] as PricePoint).day_ms) return (history[hi] as PricePoint).usd;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if ((history[mid] as PriceDay).day_ms <= day) lo = mid;
+    if ((history[mid] as PricePoint).day_ms <= day) lo = mid;
     else hi = mid - 1;
   }
-  return (history[lo] as PriceDay).usd;
+  return (history[lo] as PricePoint).usd;
 }
 
 /**
@@ -174,7 +174,7 @@ export function priceOnDay(history: readonly PriceDay[], ms: number): number | n
  * rate (`spot[code] / spot.usd`), so it is approximate, and `approximate` says so for the caption.
  */
 export function historicPrice(
-  history: readonly PriceDay[],
+  history: readonly PricePoint[],
   spot: Nullable<PricesDto['spot']>,
   code: CurrencyCode,
   ms: number,

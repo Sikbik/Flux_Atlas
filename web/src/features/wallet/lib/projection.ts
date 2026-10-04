@@ -2,7 +2,7 @@
 // price scenario, and the profitability read (net per month, margin, yield on collateral, break-even price).
 // Pure functions over the wallet's own numbers; nothing here fetches or draws.
 
-import type { CurrencyCode, PayTier, ProjectionDay, RewardReduction } from '../types';
+import type { CurrencyCode, PayTier, ProjectionDay, SubsidyReduction } from '../types';
 import { PAY_TIERS } from '../types';
 import { DAY_MS, flux, MONTH_DAYS } from './money';
 
@@ -46,7 +46,7 @@ export const dayStart = (ms: number): number => Math.floor(ms / DAY_MS) * DAY_MS
  */
 export function buildProjection(
   days: readonly ProjectionDay[],
-  reduction: RewardReduction | null,
+  reduction: SubsidyReduction | null,
   includePa: boolean,
 ): Projection {
   const t: number[] = [];
@@ -81,7 +81,11 @@ export function buildProjection(
   };
 }
 
-function findStep(t: readonly number[], total: readonly number[], r: RewardReduction): ProjectionStep | null {
+function findStep(
+  t: readonly number[],
+  total: readonly number[],
+  r: SubsidyReduction,
+): ProjectionStep | null {
   if (t.length < 2) return null;
   const at = dayStart(r.eta_ms);
   const first = t[0] as number;

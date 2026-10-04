@@ -73,22 +73,35 @@ export function Standing() {
           }
           caption={
             balance === null
-              ? undefined
+              ? 'Waiting for the explorer'
               : `${money.text(balance)}${money.price === null ? '' : ` at ${money.priceText} per FLUX`}`
           }
         />
         <div className="wl-split">
-          <ShareBar
-            segments={segments}
-            size="md"
-            legend="inline"
-            format={(v) => `${formatInt(Math.round(v))} FLUX`}
-            label="Balance split between collateral and liquid FLUX"
-          />
-          <p className="wl-note">
-            <Lock size={12} strokeWidth={1.5} aria-hidden="true" className="wl-inline-icon" /> Collateral is
-            locked to your nodes. It counts in the balance, and spending it stops the node.
-          </p>
+          {balance === null ? (
+            <p className="wl-note">
+              <Lock size={12} strokeWidth={1.5} aria-hidden="true" className="wl-inline-icon" />{' '}
+              {locked > 0
+                ? `${formatInt(Math.round(locked))} FLUX of the balance is locked as node collateral. `
+                : ''}
+              The explorer is slow to answer right now, so the balance is left blank rather than guessed. It
+              fills in by itself.
+            </p>
+          ) : (
+            <>
+              <ShareBar
+                segments={segments}
+                size="md"
+                legend="inline"
+                format={(v) => `${formatInt(Math.round(v))} FLUX`}
+                label="Balance split between collateral and liquid FLUX"
+              />
+              <p className="wl-note">
+                <Lock size={12} strokeWidth={1.5} aria-hidden="true" className="wl-inline-icon" /> Collateral
+                is locked to your nodes. It counts in the balance, and spending it stops the node.
+              </p>
+            </>
+          )}
         </div>
       </div>
 
@@ -96,10 +109,20 @@ export function Standing() {
         <StatGrid min={150} columns={2}>
           <Stat
             label="Rich list"
-            value={s.richlist_rank === null ? 'Unranked' : `#${formatInt(s.richlist_rank)}`}
+            value={
+              s.richlist_rank !== null
+                ? `#${formatInt(s.richlist_rank)}`
+                : balance === null
+                  ? null
+                  : 'Unranked'
+            }
             caption={
               <>
-                by balance.{' '}
+                {s.richlist_rank !== null
+                  ? 'by balance. '
+                  : balance === null
+                    ? 'Waiting for the explorer. '
+                    : 'Outside the top 1,000 by balance. '}
                 <Link
                   to="/richlist"
                   search={(prev: Record<string, unknown>) => prev as never}

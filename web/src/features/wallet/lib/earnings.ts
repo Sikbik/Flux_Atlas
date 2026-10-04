@@ -2,24 +2,44 @@
 // estimated alongside, each day valued at its own price, and the expected-against-received read. Pure
 // functions over the wallet's days.
 
-import type { CurrencyCode, EarningsDay, ParallelClaim, PriceDay, PricesDto, WalletEarnings } from '../types';
+import type { CurrencyCode, EarningsDay, PaClaim, PricePoint, PricesDto, WalletEarnings } from '../types';
 import { type CsvCell, dateStamp, dateTimeStamp } from './csv';
 import { DAY_MS, flux, historicPrice } from './money';
 
-export type EarningsRange = '30d' | '90d' | 'all';
+/**
+ * The server keeps the payouts of the stored blocks, at most 30 days, so the ranges are short: a week, two weeks, or
+ * all it has.
+ */
+export type EarningsRange = '7d' | '14d' | 'all';
 
-export const EARNINGS_RANGES: readonly { value: EarningsRange; label: string; days: number }[] = [
-  { value: '30d', label: '30 days', days: 30 },
-  { value: '90d', label: '90 days', days: 90 },
+export interface RangeOption {
+  value: EarningsRange;
+  label: string;
+  days: number;
+}
+
+export const EARNINGS_RANGES: readonly RangeOption[] = [
+  { value: '7d', label: '7 days', days: 7 },
+  { value: '14d', label: '14 days', days: 14 },
   { value: 'all', label: 'All', days: Number.POSITIVE_INFINITY },
 ];
 
-export const isEarningsRange = (v: unknown): v is EarningsRange => v === '30d' || v === '90d' || v === 'all';
+export const isEarningsRange = (v: unknown): v is EarningsRange => v === '7d' || v === '14d' || v === 'all';
 
 /** The newest `n` days (`all` keeps them all). */
 export function sliceDays(days: readonly EarningsDay[], range: EarningsRange): EarningsDay[] {
   const n = EARNINGS_RANGES.find((r) => r.value === range)?.days ?? Number.POSITIVE_INFINITY;
   return Number.isFinite(n) ? days.slice(-n) : [...days];
+}
+
+/** The ranges worth offering for `count` days of data: one as long as the data adds nothing over All. */
+export function rangesFor(count: number): readonly RangeOption[] {
+  return EARNINGS_RANGES.filter((r) => r.value === 'all' || count > r.days);
+}
+
+/** The chosen range, or All when the data is too short to offer it (a restarted server holds only a few days). */
+export function effectiveRange(range: EarningsRange, count: number): EarningsRange {
+  return rangesFor(count).some((r) => r.value === range) ? range : 'all';
 }
 
 /**
@@ -52,16 +72,23 @@ export interface Daily {
   approximate: boolean;
   /** The last day is still running. */
   partialLast: boolean;
+  /** The first day is only partly covered: the stored blocks begin part way through it. */
+  partialFirst: boolean;
 }
 
 export interface DailyInput {
   days: readonly EarningsDay[];
+  /** When the first stored block the figures cover happened (`WalletEarnings.covered_from_ms`). */
+  coveredFromMs: number | null;
   ratio: number;
-  history: readonly PriceDay[];
+  history: readonly PricePoint[];
   spot: PricesDto['spot'] | null | undefined;
   currency: CurrencyCode;
   nowMs: number;
 }
+
+/** A window that begins less than this far into its first day covers that day for every practical purpose. */
+export const PARTIAL_FIRST_MS = 3_600_000;
 
 export function buildDaily(i: DailyInput): Daily {
   const out: Daily = {
@@ -77,6 +104,7 @@ export function buildDaily(i: DailyInput): Daily {
     valueWithPa: [],
     approximate: false,
     partialLast: false,
+    partialFirst: false,
   };
   for (const d of i.days) {
     const native = flux(d.native);
@@ -94,9 +122,20 @@ export function buildDaily(i: DailyInput): Daily {
     out.valueWithPa.push(p ? (native + pa) * p.price : null);
     if (p?.approximate) out.approximate = true;
   }
+  const first = out.t[0];
   const last = out.t[out.t.length - 1];
   out.partialLast = last !== undefined && i.nowMs - last < DAY_MS && i.nowMs >= last;
+  out.partialFirst =
+    first !== undefined &&
+    i.coveredFromMs !== null &&
+    i.coveredFromMs - first >= PARTIAL_FIRST_MS &&
+    i.coveredFromMs - first < DAY_MS;
   return out;
+}
+
+/** Whether day `i` is a whole day: the window's first day and the running one are not. */
+export function isCompleteDay(d: Pick<Daily, 't' | 'partialFirst' | 'partialLast'>, i: number): boolean {
+  return !(d.partialFirst && i === 0) && !(d.partialLast && i === d.t.length - 1);
 }
 
 export interface DailyTotals {
@@ -105,21 +144,31 @@ export interface DailyTotals {
   payments: number;
   /** Over the days with a price; null with none. */
   value: number | null;
-  /** Native FLUX per day across the days counted. */
-  average: number;
+  /** Native FLUX per whole day; null while there is no whole day to average. */
+  average: number | null;
+  /** The best whole day; null while there is none. */
   best: { t: number; native: number } | null;
+  /** How many whole days the average and the best day are over. */
+  completeDays: number;
 }
 
-/** Totals over the days shown. A running day is left out of the average (it would drag it down). */
+/**
+ * Totals over the days shown. The totals count every payment received; the average and the best day count whole
+ * days only, because the window's first day starts part way through and the running day has not ended, and either
+ * would drag the average down.
+ */
 export function totalsOf(d: Daily): DailyTotals {
   let native = 0;
   let pa = 0;
   let payments = 0;
   let value = 0;
   let valued = false;
+  let completeNative = 0;
+  let completeDays = 0;
   let best: DailyTotals['best'] = null;
   d.t.forEach((t, i) => {
-    native += d.native[i] as number;
+    const n = d.native[i] as number;
+    native += n;
     pa += d.pa[i] as number;
     payments += d.payments[i] as number;
     const v = d.value[i];
@@ -127,19 +176,19 @@ export function totalsOf(d: Daily): DailyTotals {
       value += v;
       valued = true;
     }
-    const complete = !(d.partialLast && i === d.t.length - 1);
-    if (complete && (best === null || (d.native[i] as number) > best.native))
-      best = { t, native: d.native[i] as number };
+    if (!isCompleteDay(d, i)) return;
+    completeNative += n;
+    completeDays++;
+    if (best === null || n > best.native) best = { t, native: n };
   });
-  const complete = d.partialLast ? d.t.length - 1 : d.t.length;
-  const completeNative = d.partialLast ? native - (d.native[d.t.length - 1] ?? 0) : native;
   return {
     native,
     pa,
     payments,
     value: valued ? value : null,
-    average: complete > 0 ? completeNative / complete : 0,
+    average: completeDays > 0 ? completeNative / completeDays : null,
     best,
+    completeDays,
   };
 }
 
@@ -221,7 +270,7 @@ export function missedRows(missed: WalletEarnings['missed']): MissedRow[] {
 export function dailyCsv(
   d: Daily,
   currency: CurrencyCode,
-  history: readonly PriceDay[],
+  history: readonly PricePoint[],
   spot: PricesDto['spot'] | null | undefined,
 ): { header: string[]; rows: CsvCell[][] } {
   const cur = currency.toUpperCase();
@@ -238,7 +287,7 @@ export function dailyCsv(
     ...(showOwn ? [`price_${cur.toLowerCase()}_that_day_approximate`] : []),
     `native_value_${cur.toLowerCase()}${showOwn ? '_approximate' : ''}`,
     `native_and_parallel_value_${cur.toLowerCase()}${showOwn ? '_approximate' : ''}`,
-    'running_day',
+    'partial_day',
   ];
   const rows = d.t.map((t, i): CsvCell[] => {
     const usd = historicPrice(history, spot, 'usd', t);
@@ -256,7 +305,7 @@ export function dailyCsv(
       d.valueWithPa[i] === null || d.valueWithPa[i] === undefined
         ? null
         : round(d.valueWithPa[i] as number, 4),
-      d.partialLast && i === d.t.length - 1,
+      !isCompleteDay(d, i),
     ];
   });
   return { header, rows };
@@ -264,15 +313,29 @@ export function dailyCsv(
 
 const round = (v: number, places = 8): number => Math.round(v * 10 ** places) / 10 ** places;
 
-/** The claims export: one row per claim, newest first as the server gives them. */
-export function claimsCsv(claims: readonly ParallelClaim[]): { header: string[]; rows: CsvCell[][] } {
+/**
+ * The claims export: one row per claim, newest first as the server gives them. A claim-all is paid on the Flux main
+ * chain, so its row carries that transaction id too (`main_chain_txid`), empty for a claim on one chain.
+ */
+export function claimsCsv(claims: readonly PaClaim[]): { header: string[]; rows: CsvCell[][] } {
   return {
-    header: ['time_utc', 'chain', 'amount_flux', 'transaction', 'to_address', 'explorer_url'],
+    header: [
+      'time_utc',
+      'chain',
+      'amount_flux',
+      'fee_flux',
+      'transaction',
+      'main_chain_txid',
+      'to_address',
+      'explorer_url',
+    ],
     rows: claims.map((c) => [
       c.time_ms === null ? null : dateTimeStamp(c.time_ms),
       c.chain,
       c.amount,
+      c.fee,
       c.txid,
+      c.main_txid,
       c.to,
       c.explorer_url,
     ]),

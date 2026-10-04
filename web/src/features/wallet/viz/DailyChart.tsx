@@ -7,7 +7,7 @@ import { formatInt } from '../../../lib/format';
 import { tierLabel } from '../../../ui';
 import type { Money } from '../hooks/useMoney';
 import { dateStamp } from '../lib/csv';
-import type { Daily } from '../lib/earnings';
+import { type Daily, isCompleteDay } from '../lib/earnings';
 import { DAY_MS } from '../lib/money';
 import { axisFromZero, dayDomain, fluxTick, roundedTop } from '../lib/plotAxis';
 import type { PayTier } from '../types';
@@ -104,7 +104,7 @@ export function DailyChart({ daily, tiers, includePa, unit, money, rangeKey }: D
           {daily.t.map((t, i) => {
             const x = geo.x(t) + (slot - bw) / 2;
             let acc = 0;
-            const running = daily.partialLast && i === n - 1;
+            const running = !isCompleteDay(daily, i);
             return (
               <g key={t}>
                 {shown.map((s, k) => {
@@ -147,7 +147,7 @@ export function DailyChart({ daily, tiers, includePa, unit, money, rangeKey }: D
         </>
       );
     },
-    [daily.t, daily.partialLast, shown, amount, n],
+    [daily, shown, amount, n],
   );
 
   const track = useMemo(
@@ -182,7 +182,9 @@ export function DailyChart({ daily, tiers, includePa, unit, money, rangeKey }: D
       aside:
         daily.partialLast && i === n - 1
           ? 'running day'
-          : `${formatInt(daily.payments[i] as number)} payments`,
+          : daily.partialFirst && i === 0
+            ? 'partial day'
+            : `${formatInt(daily.payments[i] as number)} payments`,
       rows,
     };
   };

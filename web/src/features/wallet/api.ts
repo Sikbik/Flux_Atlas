@@ -1,17 +1,38 @@
-// Fetchers and query options for the wallet workspace's three endpoints. They live here, next to the feature,
-// until the backend's generated types and `api/endpoints.ts` entries land (see types.ts).
+// Fetchers and query options for the wallet workspace's three endpoints. The shared client has no entries for them
+// (`api/endpoints.ts` is the app's own explorer API), so they live here, next to the feature, on the same `getJson`.
 //
 // The three are deliberately separate queries: the wallet itself comes from this server's own data and is fast
-// and dependable, the parallel assets come from an external service (Zelcore Fusion) that can be down on its
+// and dependable, the parallel assets come from an external service (Flux Fusion) that can be down on its
 // own, and the prices change slowly. A failure in one never blanks the others.
 
 import { queryOptions } from '@tanstack/react-query';
-import { getJson, type RequestOptions, seg } from '../../api/http';
+import { ApiError, getJson, type RequestOptions, seg } from '../../api/http';
 import { qk } from '../../api/queryKeys';
 import type { ParallelAssetsDto, PricesDto, WalletDto } from './types';
 
 const SEC = 1000;
 const MIN = 60 * SEC;
+
+/** What the server says when Fusion does not answer (503 with `Retry-After: 30`, or 502): ask again after this. */
+export const FUSION_RETRY_MS = 30 * SEC;
+
+/** Whether an error is the parallel-asset service being down (as opposed to a bad address or a client fault). */
+export function isUpstreamDown(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    (error.code === 'upstream_unavailable' ||
+      error.code === 'upstream' ||
+      error.code === 'unavailable' ||
+      error.status === 502 ||
+      error.status === 503)
+  );
+}
+
+/** How long to wait before asking again: the server's `Retry-After` when it sent one, else half a minute. */
+export function retryAfterMs(error: unknown): number {
+  const s = error instanceof ApiError ? error.retryAfterS : undefined;
+  return s !== undefined && Number.isFinite(s) && s > 0 ? Math.min(s, 300) * SEC : FUSION_RETRY_MS;
+}
 
 export const walletApi = {
   wallet: (addr: string, o?: RequestOptions) => getJson<WalletDto>(`/wallet/${seg(addr)}`, undefined, o),
@@ -44,9 +65,12 @@ export const walletQueries = {
     queryOptions({
       queryKey: walletKeys.assets(addr),
       queryFn: ({ signal }) => walletApi.parallelAssets(addr, { signal }),
-      // An external service: ask politely, and keep what it said for a few minutes.
+      // An external service: ask politely, and keep what it said for a few minutes. While it is down, ask again at
+      // the pace the server states, and stop the moment it answers (the page is open and visible: no background
+      // polling).
       staleTime: 5 * MIN,
       retry: 1,
+      refetchInterval: (query) => (query.state.status === 'error' ? retryAfterMs(query.state.error) : false),
     }),
   prices: () =>
     queryOptions({

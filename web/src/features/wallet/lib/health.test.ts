@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BenchBand, Concentration, HealthReason, NodeAttention } from '../types';
+import type { HealthReason, NodeAttention, WalletBenchmark, WalletConcentration } from '../types';
 import {
   attentionCount,
   bandScale,
@@ -18,6 +18,7 @@ import {
   readConcentration,
   riskLevel,
   uptimeBands,
+  variantOf,
   worstSeverity,
 } from './health';
 
@@ -105,6 +106,50 @@ describe('groupIssues', () => {
     ];
     expect(Object.keys(ISSUE_COPY).sort()).toEqual([...kinds].sort());
   });
+
+  it('splits low headroom into below the minimum and near it', () => {
+    const groups = groupIssues([
+      attn('a:0', reason('low_headroom', { metric: 'ssd_gb', value: 380, threshold: 400 })),
+      attn('b:0', reason('low_headroom', { metric: 'eps', value: 790, threshold: 750 })),
+      attn('c:0', reason('low_headroom', { metric: 'down_mbps', value: 102, threshold: 100 })),
+    ]);
+    expect(groups.map((g) => g.id)).toEqual(['low_headroom:below', 'low_headroom:near']);
+    expect(groups[0]?.severity).toBe('crit');
+    expect(groups[0]?.title).toBe('1 node below a tier minimum');
+    expect(groups[1]?.severity).toBe('warn');
+    expect(groups[1]?.nodes.map((n) => n.key)).toEqual(['b:0', 'c:0']);
+  });
+
+  it('splits version reasons by what is behind', () => {
+    const groups = groupIssues([
+      attn('a:0', reason('version_outdated', { metric: 'flux_os' })),
+      attn('b:0', reason('version_outdated', { metric: 'bench' })),
+      attn('c:0', reason('version_outdated', { metric: 'bench' })),
+    ]);
+    expect(groups.map((g) => g.id)).toEqual(['version_outdated:bench', 'version_outdated:flux_os']);
+    expect(groups[0]?.title).toBe('2 nodes behind on fluxbench');
+    expect(groups[1]?.title).toBe('1 node behind on FluxOS');
+  });
+
+  it('names the variant of a reason', () => {
+    expect(variantOf(reason('dos'))).toBeNull();
+    expect(variantOf(reason('low_headroom', { value: 1, threshold: 2 }))).toBe('below');
+    expect(variantOf(reason('low_headroom', { value: 2, threshold: 2 }))).toBe('near');
+    expect(variantOf(reason('low_headroom'))).toBe('near');
+    expect(variantOf(reason('version_outdated', { metric: 'bench' }))).toBe('bench');
+    expect(variantOf(reason('version_outdated'))).toBe('flux_os');
+  });
+
+  it('grades a node close to expiry as critical, with the blocks left', () => {
+    const groups = groupIssues([
+      attn('a:0', reason('expiring_soon', { metric: 'blocks_left', value: 90, threshold: 120 })),
+    ]);
+    expect(groups[0]?.severity).toBe('crit');
+    expect(groups[0]?.nodes[0]?.value).toBe(90);
+    expect(marginText(groups[0]?.nodes[0] ?? { value: null, threshold: null }, 'blocks')).toBe(
+      '90 blocks against 120 blocks (25% under)',
+    );
+  });
 });
 
 describe('attention helpers', () => {
@@ -125,13 +170,14 @@ describe('attention helpers', () => {
   });
 });
 
-const band = (over: Partial<BenchBand> = {}): BenchBand => ({
+const band = (over: Partial<WalletBenchmark> = {}): WalletBenchmark => ({
   tier: 'stratus',
   metric: 'eps',
   network: { p10: 800, p50: 1100, p90: 1700 },
   fleet_median: 1240,
   fleet_min: 910,
   minimum: 700,
+  fleet_nodes: 12,
   ...over,
 });
 
@@ -142,6 +188,16 @@ describe('benchmark bands', () => {
     expect(bandStatus(band({ fleet_min: 910 }))).toBe('ok');
     expect(bandStatus(band({ minimum: null }))).toBe('untested');
     expect(bandStatus(band({ minimum: 0 }))).toBe('untested');
+  });
+
+  it('calls a provisioned size near its minimum fine, as the server does, and below it a failure', () => {
+    // Cores, memory and SSD are the machine's size and never drift: at the minimum is exactly right.
+    expect(bandStatus(band({ metric: 'cores', minimum: 8, fleet_min: 8 }))).toBe('ok');
+    expect(bandStatus(band({ metric: 'ssd_gb', minimum: 400, fleet_min: 410 }))).toBe('ok');
+    expect(bandStatus(band({ metric: 'ram_gb', minimum: 32, fleet_min: 30 }))).toBe('below');
+    // Measured figures drift, so within a tenth above the minimum is near.
+    expect(bandStatus(band({ metric: 'disk_write_mbs', minimum: 450, fleet_min: 480 }))).toBe('near');
+    expect(bandStatus(band({ metric: 'down_mbps', minimum: 100, fleet_min: 111 }))).toBe('ok');
   });
 
   it('compares the fleet median with the network median', () => {
@@ -171,6 +227,8 @@ describe('benchmark bands', () => {
       'CPU events per second: the fleet median is 1,240 EPS, 13% above the network median 1,100 EPS.',
     );
     expect(t).toContain('weakest node is 910, against a minimum of 700');
+    expect(t).toContain('Measured on 12 nodes.');
+    expect(bandSentence(band({ fleet_nodes: 1 }))).toContain('Measured on 1 node.');
     expect(bandSentence(band({ fleet_min: 600 }))).toContain('below the minimum of 700');
     expect(bandSentence(band({ minimum: null }))).toContain('The tier states no minimum.');
   });
@@ -183,13 +241,22 @@ describe('benchmark bands', () => {
   });
 });
 
-const conc = (by: Concentration['by'], buckets: [string, number][], total: number): Concentration => {
-  const shares = buckets.map(([, n]) => n / total);
+/** A concentration as the server builds it: the known buckets, the index over them, an unknown bucket last. */
+const conc = (
+  by: WalletConcentration['by'],
+  buckets: [string, number][],
+  unknown = 0,
+): WalletConcentration => {
+  const known = buckets.reduce((s, [, n]) => s + n, 0);
+  const shares = buckets.map(([, n]) => n / known);
   return {
     by,
-    buckets: buckets.map(([label, nodes]) => ({ key: label.toLowerCase(), label, nodes })),
+    buckets: [
+      ...buckets.map(([label, nodes]) => ({ key: label.toLowerCase(), label, nodes })),
+      ...(unknown > 0 ? [{ key: 'unknown', label: 'Unknown', nodes: unknown }] : []),
+    ],
     hhi: shares.reduce((s, x) => s + x * x, 0),
-    top_share: Math.max(...shares),
+    top_share: Math.max(0, ...shares),
   };
 };
 
@@ -203,51 +270,79 @@ describe('concentration', () => {
   });
 
   it('says what one provider outage does to a single-provider fleet', () => {
-    const r = readConcentration(conc('provider', [['Hetzner', 208]], 208), 208);
+    const r = readConcentration(conc('provider', [['Hetzner', 208]]));
     expect(r.level).toBe('high');
     expect(r.headline).toBe('One provider outage takes down 100% of this fleet.');
     expect(r.effective).toBeCloseTo(1, 12);
     expect(r.label).toBe('Concentrated');
+    expect(r.total).toBe(208);
   });
 
   it('names the biggest group when there are several', () => {
-    const c = conc(
-      'country',
-      [
-        ['Germany', 115],
-        ['Finland', 93],
-      ],
-      208,
-    );
-    const r = readConcentration(c, 208);
+    const c = conc('country', [
+      ['Germany', 115],
+      ['Finland', 93],
+    ]);
+    const r = readConcentration(c);
     expect(r.headline).toBe('Losing Germany would take down 55% of this fleet.');
     expect(r.top).toEqual({ label: 'Germany', nodes: 115, share: 115 / 208 });
     expect(r.effective).toBeCloseTo(1 / (0.5529 ** 2 + 0.4471 ** 2), 2);
     expect(
       readConcentration(
-        conc(
-          'provider',
-          [
-            ['A', 10],
-            ['B', 6],
-          ],
-          16,
-        ),
-        16,
+        conc('provider', [
+          ['A', 10],
+          ['B', 6],
+        ]),
       ).headline,
     ).toContain('One provider outage, A, takes down 63%');
   });
 
   it('reads a spread fleet as diversified', () => {
     const buckets: [string, number][] = Array.from({ length: 20 }, (_, i) => [`P${i}`, 5]);
-    const r = readConcentration(conc('provider', buckets, 100), 100);
+    const r = readConcentration(conc('provider', buckets));
     expect(r.level).toBe('low');
     expect(r.label).toBe('Diversified');
     expect(r.effective).toBeCloseTo(20, 9);
   });
 
+  it('takes the share against the whole fleet and says how many nodes are not placed', () => {
+    const r = readConcentration(
+      conc(
+        'country',
+        [
+          ['Germany', 60],
+          ['Finland', 30],
+        ],
+        10,
+      ),
+    );
+    expect(r.known).toBe(90);
+    expect(r.unknown).toBe(10);
+    expect(r.total).toBe(100);
+    expect(r.top).toEqual({ label: 'Germany', nodes: 60, share: 0.6 });
+    expect(r.headline).toBe('Losing Germany would take down 60% of this fleet.');
+  });
+
+  it('does not call a single known place the whole fleet while others are unknown', () => {
+    const r = readConcentration(conc('provider', [['Hetzner', 8]], 2));
+    expect(r.headline).toBe('One provider outage, Hetzner, takes down 80% of this fleet.');
+  });
+
+  it('has nothing to grade when no node has a known place', () => {
+    const r = readConcentration({
+      by: 'country',
+      buckets: [{ key: 'unknown', label: 'Unknown', nodes: 5 }],
+      hhi: 0,
+      top_share: 0,
+    });
+    expect(r.level).toBe('unknown');
+    expect(r.label).toBe('Unknown');
+    expect(r.top).toBeNull();
+    expect(r.headline).toBe('No node has a known country yet.');
+  });
+
   it('copes with a fleet of no nodes', () => {
-    const r = readConcentration({ by: 'city', buckets: [], hhi: 0, top_share: 0 }, 0);
+    const r = readConcentration({ by: 'city', buckets: [], hhi: 0, top_share: 0 });
     expect(r.top).toBeNull();
     expect(r.headline).toBe('No cities to compare: the fleet has no nodes.');
   });

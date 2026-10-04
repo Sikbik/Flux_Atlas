@@ -1,5 +1,9 @@
 // What was actually paid, day by day: the totals for the range, and the stacked daily chart. The range, the unit and the
 // parallel assets switch live; the chart draws in again for a new range and stands still otherwise.
+//
+// Atlas keeps the payouts of the blocks it has stored, at most thirty days, and the first and last day of that window are
+// partial (it begins part way through a day, and today is still running). The averages count whole days only; the
+// totals count everything that was paid. A freshly started server has little or nothing, and says so.
 
 import { useMemo } from 'react';
 import { formatInt } from '../../../../lib/format';
@@ -8,9 +12,10 @@ import { useWalletCtx } from '../../context';
 import { formatDay } from '../../lib/dates';
 import {
   buildDaily,
-  EARNINGS_RANGES,
   type EarningsRange,
+  effectiveRange,
   parallelRatio,
+  rangesFor,
   sliceDays,
   totalsOf,
 } from '../../lib/earnings';
@@ -23,24 +28,27 @@ import { formatFlux2 } from '../overview/Standing';
 
 export function Realized({ unit, onUnit }: { unit: Unit; onUnit: (u: Unit) => void }) {
   const { dto, money } = useWalletCtx();
-  const range = useWalletPrefs((s) => s.earningsRange);
+  const stored = useWalletPrefs((s) => s.earningsRange);
   const setRange = useWalletPrefs((s) => s.setEarningsRange);
   const includePa = useWalletPrefs((s) => s.includePa);
   const e = dto.earnings;
 
+  const range = effectiveRange(stored, e.days.length);
+  const options = rangesFor(e.days.length);
   const days = useMemo(() => sliceDays(e.days, range), [e.days, range]);
   const ratio = parallelRatio(flux(e.native_per_day), flux(e.pa_per_day));
   const daily = useMemo(
     () =>
       buildDaily({
         days,
+        coveredFromMs: e.covered_from_ms,
         ratio,
         history: money.history,
         spot: money.spot,
         currency: money.currency,
         nowMs: Date.now(),
       }),
-    [days, ratio, money.history, money.spot, money.currency],
+    [days, e.covered_from_ms, ratio, money.history, money.spot, money.currency],
   );
   const totals = useMemo(() => totalsOf(daily), [daily]);
   const tiers = useMemo(() => PAY_TIERS.filter((t) => daily[t].some((v) => v > 0)), [daily]);
@@ -49,14 +57,23 @@ export function Realized({ unit, onUnit }: { unit: Unit; onUnit: (u: Unit) => vo
     return (
       <Panel title="Daily earnings">
         <p className="wl-note">
-          Nothing has been paid to this address in the period Atlas has recorded. When a node is paid, each
-          day appears here, stacked by tier.
+          No payouts are on record for this address yet. Atlas builds this history from the blocks it has
+          stored, so a server that has just started has little of it. Each payout appears here, stacked by
+          tier, as its block arrives.
         </p>
       </Panel>
     );
   }
 
   const withPa = includePa ? totals.native + totals.pa : totals.native;
+  const partial: string[] = [];
+  if (daily.partialFirst && e.covered_from_ms !== null) {
+    partial.push(
+      `the first day is partial because the stored blocks begin on ${formatDay(daily.t[0] as number)}`,
+    );
+  }
+  if (daily.partialLast) partial.push('today is still running');
+
   return (
     <Panel
       title="Daily earnings"
@@ -73,13 +90,15 @@ export function Realized({ unit, onUnit }: { unit: Unit; onUnit: (u: Unit) => vo
               { value: 'money', label: money.currency.toUpperCase(), disabled: !money.ready },
             ]}
           />
-          <SegmentedControl
-            size="sm"
-            aria-label="Range"
-            value={range}
-            onChange={(v) => setRange(v as EarningsRange)}
-            options={EARNINGS_RANGES.map((r) => ({ value: r.value, label: r.label }))}
-          />
+          {options.length > 1 ? (
+            <SegmentedControl
+              size="sm"
+              aria-label="Range"
+              value={range}
+              onChange={(v) => setRange(v as EarningsRange)}
+              options={options.map((r) => ({ value: r.value, label: r.label }))}
+            />
+          ) : null}
         </>
       }
     >
@@ -92,9 +111,17 @@ export function Realized({ unit, onUnit }: { unit: Unit; onUnit: (u: Unit) => vo
         />
         <Stat
           label="A day on average"
-          value={<AnimatedNumber value={totals.average} format={formatFlux2} maxHz={0} />}
+          value={
+            totals.average === null ? null : (
+              <AnimatedNumber value={totals.average} format={formatFlux2} maxHz={0} />
+            )
+          }
           unit="FLUX"
-          caption={daily.partialLast ? 'complete days only' : undefined}
+          caption={
+            totals.average === null
+              ? 'needs one whole day'
+              : `over ${formatInt(totals.completeDays)} whole ${totals.completeDays === 1 ? 'day' : 'days'}`
+          }
         />
         <Stat
           label="Best day"
@@ -128,6 +155,9 @@ export function Realized({ unit, onUnit }: { unit: Unit; onUnit: (u: Unit) => vo
         money={money}
         rangeKey={range}
       />
+      {partial.length > 0 ? (
+        <p className="wl-note">Averages count whole days only: {partial.join(', and ')}.</p>
+      ) : null}
     </Panel>
   );
 }

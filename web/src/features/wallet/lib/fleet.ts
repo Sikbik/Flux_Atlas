@@ -5,7 +5,7 @@
 import type { SortValue } from '../../../ui';
 import { type FleetNode, type FleetState, fleetState } from '../../inspect/derive/operator';
 import { type NodeStatusKind, nodeStatusKind } from '../../inspect/derive/statusKind';
-import type { HealthReasonKind, NodeAttention, NodeRow, PayTier, WalletPayout } from '../types';
+import type { HealthKind, NodeAttention, NodeRow, PayTier, WalletPayout } from '../types';
 import { type CsvCell, dateTimeStamp } from './csv';
 import { type Severity, worstSeverity } from './health';
 import { flux } from './money';
@@ -23,7 +23,7 @@ export interface FleetRow {
   state: FleetState;
   statusKind: NodeStatusKind;
   /** The kinds of finding the server raised for this node. */
-  issues: HealthReasonKind[];
+  issues: HealthKind[];
   severity: Severity | null;
   /** The next payment: when (unix ms) and how much (FLUX). */
   etaMs: number | null;

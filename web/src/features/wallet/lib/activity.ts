@@ -1,99 +1,94 @@
 // The wallet's activity feed: which kinds of event there are, how they group under a filter, and what the
 // fleet-over-time chart plots. Pure functions over the server's items; `tabs/Activity.tsx` draws them.
+//
+// The server writes one row per node event a person would read, with a plain-language `detail` of its own
+// ("Paid 9.00000000 FLUX (stratus)"). The kind says what sort of row it is; the detail says the rest.
 
-import type { FleetHistoryDay, WalletActivityItem } from '../types';
+import type { FleetDay, WalletActivity } from '../types';
 
-export type ActivityGroup = 'payments' | 'health' | 'nodes' | 'apps' | 'chain';
+export type ActivityGroup = 'payments' | 'health' | 'nodes' | 'apps';
 
 export const ACTIVITY_GROUPS: readonly { id: ActivityGroup; label: string }[] = [
   { id: 'payments', label: 'Payments' },
   { id: 'health', label: 'Health' },
   { id: 'nodes', label: 'Node changes' },
   { id: 'apps', label: 'Apps' },
-  { id: 'chain', label: 'Chain' },
 ];
 
+/** The kinds the server writes (`WalletActivity.kind`). */
 const GROUP_OF: Record<string, ActivityGroup> = {
-  node_paid: 'payments',
-  node_at_risk: 'health',
-  node_unreachable: 'health',
-  node_recovered: 'health',
-  node_dosed: 'health',
-  node_expired: 'health',
-  node_heartbeat: 'health',
-  node_joined: 'nodes',
-  node_left: 'nodes',
-  node_started: 'nodes',
-  node_ip_changed: 'nodes',
+  paid: 'payments',
+  at_risk: 'health',
+  expired: 'health',
+  dos: 'health',
+  unreachable: 'health',
+  recovered: 'health',
+  benchmark: 'health',
+  status: 'health',
+  started: 'nodes',
+  confirmed: 'nodes',
+  left: 'nodes',
   collateral_spent: 'nodes',
-  app_deployed: 'apps',
-  app_updated: 'apps',
-  app_renewed: 'apps',
-  app_expired: 'apps',
-  app_pending: 'apps',
-  app_install_failed: 'apps',
-  version_milestone: 'chain',
-  large_transfer: 'chain',
-  reorg: 'chain',
-  reward_reduction: 'chain',
+  ip_changed: 'nodes',
+  version: 'nodes',
+  apps: 'apps',
 };
 
-/** The filter group of a feed kind; a kind this client does not know falls under the chain. */
+/** The filter group of a feed kind; a kind this client does not know is a change to a node. */
 export function groupOfKind(kind: string): ActivityGroup {
-  return GROUP_OF[kind] ?? 'chain';
+  return GROUP_OF[kind] ?? 'nodes';
 }
 
-/** How a kind reads when there is nothing else to say: `node_ip_changed` becomes "IP changed". */
+const LABELS: Record<string, string> = {
+  started: 'Started',
+  confirmed: 'Confirmed',
+  paid: 'Payment',
+  ip_changed: 'Endpoint changed',
+  at_risk: 'At risk of expiry',
+  expired: 'Expired',
+  left: 'Left the node list',
+  dos: 'DOS listed',
+  collateral_spent: 'Collateral spent',
+  unreachable: 'Became unreachable',
+  recovered: 'Reachable again',
+  status: 'Status changed',
+  benchmark: 'Benchmark',
+  version: 'Version changed',
+  apps: 'Apps changed',
+};
+
+/** How a kind reads on its own: `ip_changed` is "Endpoint changed", and a kind nobody has named gets its words. */
 export function kindLabel(kind: string): string {
-  const LABELS: Record<string, string> = {
-    node_paid: 'Payment',
-    node_ip_changed: 'IP changed',
-    node_at_risk: 'At risk of expiry',
-    node_unreachable: 'Became unreachable',
-    node_recovered: 'Reachable again',
-    node_dosed: 'DoS listed',
-    node_expired: 'Expired',
-    node_joined: 'Joined',
-    node_left: 'Left',
-    node_started: 'Started',
-    node_heartbeat: 'Checked in',
-    collateral_spent: 'Collateral spent',
-    app_deployed: 'App deployed',
-    app_updated: 'App updated',
-    app_renewed: 'App renewed',
-    app_expired: 'App expired',
-    app_pending: 'App pending',
-    app_install_failed: 'App install failed',
-    reward_reduction: 'Reward cut',
-  };
   const known = LABELS[kind];
   if (known) return known;
   const words = kind.replaceAll('_', ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export type ActivityTone = 'ok' | 'warn' | 'crit' | 'pay' | 'info' | 'muted';
+export type ActivityTone = 'ok' | 'warn' | 'crit' | 'pay' | 'info';
 
-/** The colour role of a kind: good news, a warning, trouble, money, plain information, or background noise. */
-export function toneOfKind(kind: string): ActivityTone {
+/**
+ * The colour role of a row: money, good news, a warning, trouble, or plain information. A benchmark row is good or
+ * bad news by what it says, so the detail is read for that one kind.
+ */
+export function toneOfKind(kind: string, detail = ''): ActivityTone {
   switch (kind) {
-    case 'node_paid':
+    case 'paid':
       return 'pay';
-    case 'node_joined':
-    case 'node_recovered':
+    case 'confirmed':
+    case 'recovered':
       return 'ok';
-    case 'node_at_risk':
-    case 'node_unreachable':
-    case 'node_ip_changed':
-    case 'app_install_failed':
+    case 'at_risk':
+    case 'unreachable':
+    case 'ip_changed':
       return 'warn';
-    case 'node_dosed':
-    case 'node_expired':
-    case 'node_left':
+    case 'dos':
+    case 'expired':
+    case 'left':
     case 'collateral_spent':
       return 'crit';
-    case 'node_heartbeat':
-      return 'muted';
+    case 'benchmark':
+      return /\bfailed\b/i.test(detail) ? 'warn' : /\bpassed\b/i.test(detail) ? 'ok' : 'info';
     default:
       return 'info';
   }
@@ -101,22 +96,22 @@ export function toneOfKind(kind: string): ActivityTone {
 
 /** The items of the groups that are on; none on means all (an empty filter hides nothing). */
 export function filterActivity(
-  items: readonly WalletActivityItem[],
+  items: readonly WalletActivity[],
   on: ReadonlySet<ActivityGroup>,
-): WalletActivityItem[] {
+): WalletActivity[] {
   if (on.size === 0) return [...items];
   return items.filter((i) => on.has(groupOfKind(i.kind)));
 }
 
 /** How many items each group holds, for the counts on the filter chips. */
-export function countByGroup(items: readonly WalletActivityItem[]): Record<ActivityGroup, number> {
-  const out: Record<ActivityGroup, number> = { payments: 0, health: 0, nodes: 0, apps: 0, chain: 0 };
+export function countByGroup(items: readonly WalletActivity[]): Record<ActivityGroup, number> {
+  const out: Record<ActivityGroup, number> = { payments: 0, health: 0, nodes: 0, apps: 0 };
   for (const i of items) out[groupOfKind(i.kind)]++;
   return out;
 }
 
 /** Newest first, whatever order the items arrive in. */
-export function newestFirst(items: readonly WalletActivityItem[]): WalletActivityItem[] {
+export function newestFirst(items: readonly WalletActivity[]): WalletActivity[] {
   return [...items].sort((a, b) => b.t_ms - a.t_ms);
 }
 
@@ -127,8 +122,8 @@ export interface PaymentSummary {
 }
 
 /**
- * The FLUX in a payment's detail line ("Paid 9.00 FLUX"): the server writes the amount in the sentence, so it is
- * read back out. A detail with no amount counts as a payment of unknown size.
+ * The FLUX in a payment's detail line ("Paid 9.00000000 FLUX (stratus)"): the server writes the amount in the
+ * sentence, so it is read back out. A detail with no amount counts as a payment of unknown size.
  */
 export function paymentAmount(detail: string): number | null {
   const m = /(\d[\d,]*(?:\.\d+)?)\s*FLUX/i.exec(detail);
@@ -137,11 +132,17 @@ export function paymentAmount(detail: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function paymentSummary(items: readonly WalletActivityItem[]): PaymentSummary {
+/** The tier a payment's detail names in brackets ("... FLUX (stratus)"), when it does. */
+export function paymentTier(detail: string): 'cumulus' | 'nimbus' | 'stratus' | null {
+  const m = /\((cumulus|nimbus|stratus)\)/i.exec(detail);
+  return m ? ((m[1] ?? '').toLowerCase() as 'cumulus' | 'nimbus' | 'stratus') : null;
+}
+
+export function paymentSummary(items: readonly WalletActivity[]): PaymentSummary {
   let count = 0;
   let total = 0;
   for (const i of items) {
-    if (i.kind !== 'node_paid') continue;
+    if (i.kind !== 'paid') continue;
     count++;
     total += paymentAmount(i.detail) ?? 0;
   }
@@ -158,7 +159,7 @@ export interface FleetSeries {
   total: number[];
 }
 
-export function fleetSeries(history: readonly FleetHistoryDay[]): FleetSeries {
+export function fleetSeries(history: readonly FleetDay[]): FleetSeries {
   const out: FleetSeries = { t: [], cumulus: [], nimbus: [], stratus: [], total: [] };
   for (const d of history) {
     out.t.push(d.day_ms);
