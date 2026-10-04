@@ -31,14 +31,13 @@ export function QuickLinks() {
 
   return (
     <HubTiles label="Quick links">
-      {height === null ? null : (
-        <HubTile
-          icon={Box}
-          title="Latest block"
-          caption={`Block ${formatInt(height)}`}
-          to={{ type: 'block', key: String(height) }}
-        />
-      )}
+      <HubTile
+        icon={Box}
+        title="Latest block"
+        caption={height === null ? 'Reading the chain tip' : `Block ${formatInt(height)}`}
+        to={{ type: 'block', key: String(height ?? 0) }}
+        pending={height === null}
+      />
       <HubTile
         icon={Mempool}
         title="Mempool"

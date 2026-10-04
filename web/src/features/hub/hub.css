@@ -402,6 +402,16 @@
   transform: none;
 }
 
+/* A tile whose target is not known yet is the tile without the invitation: no arrow, no pointer, no lift. */
+.hub-tile[data-pending] {
+  cursor: default;
+}
+
+.hub-tile[data-pending]::after,
+.hub-tile[data-pending] .hub-tile__go {
+  display: none;
+}
+
 /* On a phone two tiles share a row: the arrow gives way, the glyph and the padding shrink, and the words may wrap
    (an odd tile out takes the whole row: see the columns above). */
 @container hub (max-width: 599px) {

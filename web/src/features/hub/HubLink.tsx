@@ -83,12 +83,17 @@ export interface HubTileProps extends Omit<ShellLinkProps, 'children' | 'title'>
   caption?: ReactNode;
   /** The tile is the one the reader asked for (the rich list, found easily). */
   emphasis?: boolean;
+  /**
+   * Where the tile goes is not known yet (the latest block, before the first block is in): the same tile, held as
+   * plain text until it is, so the row neither reflows nor gains a tile when the answer comes.
+   */
+  pending?: boolean;
 }
 
 /** One go-to tile: a glyph, a name, a live line, and an arrow that appears on hover and focus. */
-export function HubTile({ icon: Icon, title, caption, emphasis, className, ...rest }: HubTileProps) {
-  return (
-    <ShellLink className={cx('hub-tile', className)} data-emphasis={emphasis || undefined} {...rest}>
+export function HubTile({ icon: Icon, title, caption, emphasis, pending, className, ...rest }: HubTileProps) {
+  const body = (
+    <>
       <span className="hub-tile__icon" aria-hidden="true">
         <Icon size={16} strokeWidth={1.5} />
       </span>
@@ -98,6 +103,18 @@ export function HubTile({ icon: Icon, title, caption, emphasis, className, ...re
         {caption ? <span className="hub-tile__caption">{caption}</span> : null}
       </span>
       <ArrowRight className="hub-tile__go" size={14} strokeWidth={1.5} aria-hidden="true" />
+    </>
+  );
+  if (pending) {
+    return (
+      <span className={cx('hub-tile', className)} data-emphasis={emphasis || undefined} data-pending="">
+        {body}
+      </span>
+    );
+  }
+  return (
+    <ShellLink className={cx('hub-tile', className)} data-emphasis={emphasis || undefined} {...rest}>
+      {body}
     </ShellLink>
   );
 }

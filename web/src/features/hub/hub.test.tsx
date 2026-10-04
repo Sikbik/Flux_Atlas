@@ -438,6 +438,31 @@ describe('HubTiles', () => {
     m.unmount();
   });
 
+  it('holds a tile whose target is not known as plain text, in its place, until it is', () => {
+    const tiles = (height: number | null) => (
+      <HubTiles label="Quick links">
+        <HubTile
+          icon={Box}
+          title="Latest block"
+          caption={height === null ? 'Reading the chain tip' : `Block ${height}`}
+          to={{ type: 'block', key: String(height ?? 0) }}
+          pending={height === null}
+        />
+        <HubTile icon={Box} title="Mempool" to="/mempool" />
+      </HubTiles>
+    );
+    const m = mount(tiles(null));
+    const first = m.container.querySelector('li.hub-tiles__item');
+    expect(first?.querySelector('a')).toBeNull();
+    expect(first?.querySelector('.hub-tile[data-pending]')).not.toBeNull();
+    expect(m.container.querySelectorAll('li.hub-tiles__item')).toHaveLength(2);
+    m.rerender(tiles(3007909));
+    const link = m.container.querySelector('li.hub-tiles__item a.hub-tile');
+    expect(link?.textContent).toContain('Block 3007909');
+    expect(m.container.querySelectorAll('li.hub-tiles__item')).toHaveLength(2);
+    m.unmount();
+  });
+
   it("puts a space between a tile's title and its line so a screen reader does not read them as one word", () => {
     const m = mount(
       <HubTiles label="Quick links">
