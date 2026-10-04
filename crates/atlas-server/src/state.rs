@@ -14,12 +14,16 @@ use crate::config::ServerConfig;
 use crate::derived::DerivedGuard;
 use crate::error::ApiError;
 use crate::explorer::Explorer;
+use crate::keep::KeepGood;
 use crate::ledger::{AppLedger, PayoutLedger, Slot};
 use crate::live::hub::Hub;
 use crate::metrics::Metrics;
 use crate::net::ForwardStats;
 use crate::net::listener::Listener;
+use crate::proxy::TtlCache;
+use crate::sources::{FusionMeta, FusionWallet, LiveSources, MarketSources, Spot};
 use crate::views::{ViewCache, Views};
+use crate::wallet::fleet::FleetLedger;
 use crate::watch::WatchHooks;
 
 /// Cheap, cloneable application state.
@@ -66,6 +70,19 @@ pub struct Inner {
     /// Every permanent app message, compact (app economy).
     pub app_messages: Arc<Slot<AppLedger>>,
     hosted: tokio::sync::Mutex<HostedSlot>,
+    /// Fusion and CoinGecko (live, or fixed answers in the demo server and tests).
+    pub sources: Arc<dyn MarketSources>,
+    /// `/wallet/{addr}` bodies by address (30 s).
+    pub wallet_cache: moka::future::Cache<String, Arc<CachedBody>>,
+    /// Fusion's answers by address (10 min), single-flight and charged like explorer lookups.
+    pub fusion_wallets: TtlCache<String, FusionWallet>,
+    /// Fusion's fee table and active chains (12 h, last good copy).
+    pub fusion_meta: Arc<KeepGood<FusionMeta>>,
+    /// CoinGecko spot prices (5 min) and daily history (12 h), last good copies.
+    pub spot: Arc<KeepGood<Spot>>,
+    pub price_history: Arc<KeepGood<Vec<atlas_core::api::PricePoint>>>,
+    /// Daily fleet sizes by address from the stored keyframes (rebuilt every 3 hours).
+    pub fleet: Arc<KeepGood<FleetLedger>>,
 }
 
 /// Node id to the apps with an instance on it.
@@ -87,6 +104,10 @@ pub const METRICS_CACHE_BYTES: u64 = 16 << 20;
 pub const TIMELINE_CACHE_BYTES: u64 = 24 << 20;
 /// Byte bound of the `/nodes` page cache.
 pub const NODES_CACHE_BYTES: u64 = 16 << 20;
+/// Byte bound of the `/wallet` body cache (a 210-node wallet is about 350 KB).
+pub const WALLET_CACHE_BYTES: u64 = 24 << 20;
+/// Byte bound of the Fusion answers (a few KB per address).
+pub const FUSION_CACHE_BYTES: u64 = 4 << 20;
 
 /// Store reads running at once. Each holds a blocking-pool thread; during a compaction they all
 /// wait on the database lock, so the bound keeps a compaction from piling up threads.
@@ -126,11 +147,28 @@ impl AppState {
 
     /// State with explicit watch hooks (tests record the calls).
     pub fn with_hooks(engine: EngineHandle, cfg: ServerConfig, hooks: Arc<dyn WatchHooks>) -> Self {
+        Self::with_parts(engine, cfg, hooks, None)
+    }
+
+    /// State with explicit market sources (the demo server's and tests' fixed answers); `None`
+    /// asks Fusion on the explorer's interactive lane and CoinGecko on the bulk lane.
+    pub fn with_parts(
+        engine: EngineHandle,
+        cfg: ServerConfig,
+        hooks: Arc<dyn WatchHooks>,
+        sources: Option<Arc<dyn MarketSources>>,
+    ) -> Self {
         let ring = 4096;
         let hub = Hub::start(&engine, cfg.ws.clone(), ring);
         // User lookups draw from their own upstream lane (gates and breakers), never from the
         // ingest's budget (X1 M2).
         let explorer = Explorer::new(engine.clients().interactive(), cfg.proxy, cfg.limits);
+        let sources = sources.unwrap_or_else(|| {
+            Arc::new(LiveSources {
+                fusion: explorer.clients().fusion.clone(),
+                coingecko: engine.bulk_clients().coingecko.clone(),
+            })
+        });
         let listener = Listener::new(cfg.http.clone(), cfg.proxies.clone());
         let derived = DerivedGuard::new(cfg.derived);
         let state = Self {
@@ -181,6 +219,29 @@ impl AppState {
                     .build(),
                 payouts: Arc::default(),
                 app_messages: Arc::default(),
+                sources,
+                wallet_cache: moka::future::Cache::builder()
+                    .max_capacity(WALLET_CACHE_BYTES)
+                    .weigher(|k: &String, v: &Arc<CachedBody>| body_weight(k.len(), v))
+                    .time_to_live(crate::wallet::WALLET_TTL)
+                    .build(),
+                fusion_wallets: TtlCache::new("parallel assets", FUSION_CACHE_BYTES),
+                fusion_meta: Arc::new(KeepGood::new(
+                    crate::wallet::FUSION_META_TTL,
+                    Duration::from_secs(60),
+                )),
+                spot: Arc::new(KeepGood::new(
+                    crate::wallet::SPOT_TTL,
+                    Duration::from_secs(60),
+                )),
+                price_history: Arc::new(KeepGood::new(
+                    crate::wallet::HISTORY_TTL,
+                    Duration::from_secs(300),
+                )),
+                fleet: Arc::new(KeepGood::new(
+                    crate::wallet::FLEET_TTL,
+                    Duration::from_secs(600),
+                )),
             }),
         };
         let weak = Arc::downgrade(&state.inner);
@@ -209,6 +270,8 @@ impl AppState {
             if let Err(e) = s.app_ledger().await {
                 tracing::debug!(error = %e.message, "app ledger warm-up failed");
             }
+            // Starts the fleet ledger build (it reads a keyframe per stored day).
+            let _ = s.fleet_ledger().await;
         });
         state
     }
@@ -334,6 +397,28 @@ impl AppState {
                 move || async move { s.store_read(move |st| AppLedger::build(st, complete)).await },
             )
             .await
+    }
+
+    /// The fleet ledger when it is built; never waits (the first call starts the build, which
+    /// reads one keyframe per stored day on the blocking pool).
+    pub async fn fleet_ledger(&self) -> Option<Arc<FleetLedger>> {
+        let s = self.clone();
+        self.fleet
+            .peek(move || async move {
+                s.store_read_within(Duration::from_secs(120), |st| {
+                    let t = Instant::now();
+                    let l = FleetLedger::build(st)?;
+                    tracing::info!(
+                        days = l.day_count(),
+                        ms = t.elapsed().as_millis() as u64,
+                        "fleet ledger built"
+                    );
+                    Ok(l)
+                })
+                .await
+            })
+            .await
+            .map(|(_, l)| l)
     }
 
     /// The one-time permanent app-message backfill has finished.

@@ -25,8 +25,10 @@ pub const INSIGHT_BASES: [&str; 3] = [
 pub const FLUXOS_GATEWAY: &str = "https://api.runonflux.io";
 /// Flux stats service.
 pub const STATS_BASE: &str = "https://stats.runonflux.io";
-/// CoinGecko public API (price fallback).
+/// CoinGecko public API (price fallback, the price view).
 pub const COINGECKO_BASE: &str = "https://api.coingecko.com";
+/// Flux Fusion (parallel-asset claims).
+pub const FUSION_BASE: &str = "https://fusion.runonflux.io";
 
 /// Consecutive faults that open the circuit.
 pub const BREAKER_THRESHOLD: u32 = 5;

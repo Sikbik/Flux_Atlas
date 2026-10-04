@@ -1,0 +1,46 @@
+{
+ "status": "success",
+ "data": {
+  "snapshot": {
+   "percentage": 0,
+   "kda": 10,
+   "bsc": 10,
+   "eth": 16,
+   "trx": 20,
+   "sol": 10,
+   "avax": 12,
+   "erg": 10,
+   "algo": 10,
+   "matic": 31,
+   "base": 10
+  },
+  "mining": {
+   "percentage": 0,
+   "kda": 10,
+   "bsc": 10,
+   "eth": 12,
+   "trx": 20,
+   "sol": 10,
+   "avax": 8,
+   "erg": 10,
+   "algo": 10,
+   "matic": 31,
+   "base": 10
+  },
+  "swap": {
+   "percentage": 0.005,
+   "premiumPercentage": 0.0004,
+   "main": 8,
+   "kda": 5,
+   "bsc": 8,
+   "eth": 12,
+   "trx": 15,
+   "sol": 5,
+   "avax": 8,
+   "erg": 5,
+   "algo": 5,
+   "matic": 16,
+   "base": 5
+  }
+ }
+}

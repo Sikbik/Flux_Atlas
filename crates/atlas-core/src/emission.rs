@@ -101,6 +101,45 @@ pub fn tier_payout(height: u32, tier: Tier) -> Option<Amount> {
     ))
 }
 
+/// Sum of the payouts one node of `tier` is owed at every height of `[from, to)`, with the
+/// subsidy reductions applied where they fall. Zero for `Unknown`, below PoN and for an empty
+/// range.
+pub fn tier_payout_total(from: u32, to: u32, tier: Tier) -> Amount {
+    let mut sum: i64 = 0;
+    let mut h = from.max(PON_ACTIVATION_HEIGHT);
+    while h < to {
+        // The payout is constant up to the next reduction.
+        let end = next_reduction_height(h).map_or(to, |r| r.min(to));
+        let per = tier_payout(h, tier).map_or(0, Amount::sat);
+        sum = sum.saturating_add(per.saturating_mul(i64::from(end - h)));
+        h = end;
+    }
+    Amount::from_sat(sum)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Parallel assets
+// ---------------------------------------------------------------------------------------------
+
+/// Chains that carry FLUX as a parallel asset (Fusion's coinbase statistics list kda, eth,
+/// bsc, trx, sol, avax, erg, algo, matic and base).
+pub const PARALLEL_ASSET_CHAINS: u32 = 10;
+/// Percent of the native coinbase a payee accrues on each parallel-asset chain.
+pub const PARALLEL_ASSET_PERCENT_PER_CHAIN: u32 = 10;
+
+/// **The parallel-asset rule** (the one place it is written down): every FLUX a node earns on
+/// the main chain accrues another 10% of itself on each of the 10 parallel-asset chains,
+/// claimable through Flux Fusion (`maxClaimablePerChain` is 10% of the address's coinbase
+/// total). The accrual over all chains therefore equals the native rewards. Fusion's claim-all
+/// skips chains that are not active for swaps (erg in 2026), but those still accrue.
+pub fn parallel_asset_accrual(native: Amount) -> Amount {
+    let total = i128::from(native.sat())
+        * i128::from(PARALLEL_ASSET_CHAINS)
+        * i128::from(PARALLEL_ASSET_PERCENT_PER_CHAIN)
+        / 100;
+    Amount::from_sat(total.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64)
+}
+
 /// The full expected coinbase split at a PoN height (before fees).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct PayoutSchedule {
@@ -265,6 +304,38 @@ mod tests {
             assert_eq!(s.cumulus + s.nimbus + s.stratus + s.dev_fund_min, s.subsidy);
             assert!(!s.dev_fund_min.is_negative());
         }
+    }
+
+    #[test]
+    fn payout_totals_cross_reductions() {
+        let r = PON_ACTIVATION_HEIGHT + REDUCTION_INTERVAL;
+        assert_eq!(
+            tier_payout_total(r - 10, r - 10, Tier::Stratus),
+            Amount::ZERO
+        );
+        assert_eq!(tier_payout_total(r - 10, r, Tier::Stratus), flux("90"));
+        // 10 blocks at 9 FLUX, then 10 at 8.1.
+        assert_eq!(
+            tier_payout_total(r - 10, r + 10, Tier::Stratus),
+            flux("171")
+        );
+        assert_eq!(tier_payout_total(r - 2, r + 2, Tier::Cumulus), flux("3.8"));
+        assert_eq!(tier_payout_total(r, r + 5, Tier::Unknown), Amount::ZERO);
+        // Below PoN nothing is owed.
+        assert_eq!(
+            tier_payout_total(
+                PON_ACTIVATION_HEIGHT - 5,
+                PON_ACTIVATION_HEIGHT + 1,
+                Tier::Nimbus
+            ),
+            flux("3.5")
+        );
+    }
+
+    #[test]
+    fn parallel_assets_match_native() {
+        assert_eq!(parallel_asset_accrual(flux("3024.5")), flux("3024.5"));
+        assert_eq!(parallel_asset_accrual(Amount::ZERO), Amount::ZERO);
     }
 
     #[test]

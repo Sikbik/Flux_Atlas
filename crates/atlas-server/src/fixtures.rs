@@ -104,6 +104,14 @@ fn h20(tag: &str, i: u64) -> [u8; 20] {
     out
 }
 
+/// Hash of fixture block `h` (each block's `prev_hash` is the hash of `h - 1`).
+pub fn block_hash(h: u32) -> Hash32 {
+    h32("block", u64::from(h))
+}
+
+/// The operator the demo server shows as its wallet: nodes 8 to 15, all three tiers.
+pub const DEMO_WALLET_OPERATOR: usize = 1;
+
 /// Payment address of operator `k`.
 pub fn operator_address(k: usize) -> String {
     t1_address(h20("operator", k as u64))
@@ -934,7 +942,8 @@ pub fn offline_clients(base: Option<&str>) -> ClientsConfig {
         fluxos_gateway: base.clone(),
         insight_bases: vec![base.clone()],
         stats_base: base.clone(),
-        coingecko_base: base,
+        coingecko_base: base.clone(),
+        fusion_base: base,
         ..ClientsConfig::default()
     };
     c.http.attempts = 1;
@@ -972,9 +981,21 @@ pub fn fixture_engine(
     config: EngineConfig,
     spec: FixtureSpec,
 ) -> anyhow::Result<(EngineHandle, Fixture)> {
-    let f = Fixture::build(spec);
+    fixture_engine_from(db, clients, config, Fixture::build(spec), |_| Ok(()))
+}
+
+/// [`fixture_engine`] over a prebuilt (possibly adjusted) fixture; `extra` writes more into the
+/// store after the fixture is seeded and before the engine starts.
+pub fn fixture_engine_from(
+    db: &Path,
+    clients: ClientsConfig,
+    config: EngineConfig,
+    f: Fixture,
+    extra: impl FnOnce(&Store) -> anyhow::Result<()>,
+) -> anyhow::Result<(EngineHandle, Fixture)> {
     let store = Store::open(db)?;
     seed_store(&store, &f)?;
+    extra(&store)?;
     let engine = Engine::start(config, store, atlas_flux::Clients::new(clients)?);
     wait_for_startup_publish(&engine, Duration::from_secs(10));
     publish(&engine, &f, false)?;

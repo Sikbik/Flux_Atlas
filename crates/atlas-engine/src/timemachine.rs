@@ -376,6 +376,15 @@ fn keyframe(store: &Store, t_ms: u64) -> Result<Option<Keyframe>, StoreError> {
     }))
 }
 
+/// The nodes of the keyframe at or before `t_ms` (any format) with its time, without
+/// replaying events: what a daily rollup over the stored keyframes reads.
+pub fn keyframe_nodes(
+    store: &Store,
+    t_ms: u64,
+) -> Result<Option<(u64, Vec<SnapNode>)>, StoreError> {
+    Ok(keyframe(store, t_ms)?.map(|k| (k.ts_ms, k.nodes)))
+}
+
 /// Reconstructs the node set at `t_ms`: the keyframe at or before it plus the events after.
 pub fn state_at(store: &Store, t_ms: u64) -> Result<TimeMachineState, TimeMachineError> {
     let Some(k) = keyframe(store, t_ms)? else {

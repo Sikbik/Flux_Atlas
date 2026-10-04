@@ -73,6 +73,22 @@ fn parse_one(dir: &str, name: &str) -> Result<Claim, String> {
                 let p: CoinGeckoSimplePrice = plain(r);
                 assert!(p.0["zelcash"].usd > 0.0);
             }),
+            ("explorer", "coingecko_simple_price_multi.json") => ok({
+                let p: CoinGeckoSpot = plain(r);
+                let (prices, change) = p.prices("zelcash");
+                assert_eq!(prices.len(), 16, "{prices:?}");
+                assert!(prices["usd"] > 0.0 && prices["btc"] > 0.0 && prices["idr"] > 1.0);
+                assert!(!prices.contains_key("usd_24h_change"));
+                assert!(change.is_some());
+                assert!(p.prices("bitcoin").0.is_empty());
+            }),
+            ("explorer", "coingecko_market_chart_trimmed8.json") => ok({
+                let c: CoinGeckoMarketChart = plain(r);
+                assert_eq!(c.prices.len(), 8);
+                assert!(c.prices.windows(2).all(|w| w[0].0 < w[1].0));
+                assert!(c.prices.iter().all(|p| p.1 > 0.0));
+            }),
+            ("fusion", n) => ok(fusion_fixture(n, r)),
             ("explorer", "insight_socketio_inv_capture.json") => ok({
                 let v: serde_json::Value = plain(r);
                 for f in v["frames"].as_array().unwrap() {
@@ -526,11 +542,77 @@ fn parse_one(dir: &str, name: &str) -> Result<Claim, String> {
     }
 }
 
+/// Flux Fusion answers (trimmed real responses, October 2026).
+fn fusion_fixture(name: &str, r: &str) {
+    use atlas_flux::models::fusion::*;
+    match name {
+        "fusion_fees.json" => {
+            let f: FusionFees = env(r);
+            assert_eq!(f.mining_fee("kda"), Some(10.0));
+            assert_eq!(f.mining_fee("matic"), Some(31.0));
+            assert_eq!(f.mining_fee("erg"), Some(10.0));
+            assert_eq!(f.mining_fee("doge"), None);
+        }
+        "fusion_swap_activechains.json" => {
+            let a: ActiveChains = env(r);
+            assert!(a.0.iter().any(|c| c == "main"));
+            assert!(a.0.iter().any(|c| c == "base"));
+            // erg accrues but is not swappable.
+            assert!(!a.0.iter().any(|c| c == "erg"));
+        }
+        "fusion_coinbase_summary_t3c4.json" => {
+            let s: CoinbaseSummary = env(r);
+            assert_eq!(s.address, "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ");
+            assert_eq!(s.chain_statistics.len(), 10);
+            assert!((s.max_claimable_per_chain * 10.0 - s.amount).abs() < 1e-6);
+            for c in &s.chain_statistics {
+                assert!((c.possible_to_claim - 43_555.5).abs() < 1e-9, "{c:?}");
+                assert!(
+                    (c.claimed_amount + c.possible_to_claim - s.max_claimable_per_chain).abs()
+                        < 1e-6
+                );
+                assert!((c.received_amount + c.fees_paid - c.claimed_amount).abs() < 1e-6);
+            }
+        }
+        "fusion_coinbase_multiavailable_t3c4.json" => {
+            let m: MultiAvailable = env(r);
+            // Nine active chains of 43,555.5: erg is left out of the claim-all.
+            assert!((m.total_claim - 9.0 * 43_555.5).abs() < 1e-9);
+            assert!((m.total_reward + m.total_fee - m.total_claim).abs() < 1e-9);
+        }
+        "fusion_coinbase_claimed_t3c4_trimmed4.json" => {
+            let c: Claimed = env(r);
+            assert_eq!(c.number_of_txs, 39, "the untrimmed count");
+            assert_eq!(c.transactions.len(), 4);
+            let first = &c.transactions[0];
+            assert_eq!(first.chain, "matic");
+            assert!(first.txid.starts_with("0x"));
+            assert_eq!(first.timestamp, Some(1_698_487_313_694));
+            let last = c.transactions.last().unwrap();
+            assert!(last.txid.starts_with("flux:"));
+            assert_eq!(last.claimed_address, "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ");
+            assert!(last.fee > 0.0);
+        }
+        "fusion_coinbase_summary_t1a_single_node.json" => {
+            let s: CoinbaseSummary = env(r);
+            assert!(!s.is_miner);
+            assert!(s.amount > 4_000.0 && s.number_of_txs > 2_000);
+        }
+        "fusion_coinbase_summary_no_coinbase.json" => {
+            // An address without coinbase answers zeros, not an error.
+            let s: CoinbaseSummary = env(r);
+            assert_eq!(s.amount, 0.0);
+            assert_eq!(s.chain_statistics.len(), 10);
+        }
+        other => panic!("unclaimed fusion fixture {other}"),
+    }
+}
+
 #[test]
 fn every_fixture_is_claimed_and_parses() {
     let mut failures = Vec::new();
     let (mut parsed, mut excluded) = (0, 0);
-    for dir in ["explorer", "flux"] {
+    for dir in ["explorer", "flux", "fusion"] {
         let mut names: Vec<String> = std::fs::read_dir(root().join(dir))
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())

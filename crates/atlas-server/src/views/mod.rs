@@ -168,6 +168,7 @@ pub struct Views {
     pub(crate) apps_index: OnceLock<Arc<CachedBody>>,
     pub(crate) mesh: OnceLock<Arc<Adjacency>>,
     pub(crate) search: OnceLock<Arc<analytics::SearchCatalog>>,
+    pub(crate) wallet: OnceLock<Arc<crate::wallet::network::WalletNetwork>>,
 }
 
 impl Views {
@@ -189,7 +190,16 @@ impl Views {
             apps_index: OnceLock::new(),
             mesh: OnceLock::new(),
             search: OnceLock::new(),
+            wallet: OnceLock::new(),
         }
+    }
+
+    /// What wallets are measured against in this publish (built on first use).
+    pub fn wallet_network(&self) -> Arc<crate::wallet::network::WalletNetwork> {
+        Arc::clone(
+            self.wallet
+                .get_or_init(|| Arc::new(crate::wallet::network::WalletNetwork::build(self))),
+        )
     }
 
     pub fn nodes(&self) -> &[NodeRecord] {

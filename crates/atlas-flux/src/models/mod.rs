@@ -3,6 +3,7 @@
 
 pub mod apps;
 pub mod daemon;
+pub mod fusion;
 pub mod insight;
 pub mod node_api;
 pub mod nodes;

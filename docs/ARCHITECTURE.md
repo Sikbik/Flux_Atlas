@@ -100,6 +100,10 @@ Environment: the Rust toolchain lives in `~/.cargo/bin` (`export PATH="$HOME/.ca
   (`Clients::bulk`, `atlas_upstream_lane_*{lane="bulk"}`): the same pool, one request at a time and at most one a
   second per host (`HttpConfig::bulk_policy`, never looser than the ingest policy), 2 attempts, its own breakers,
   primaries only. Its queue and faults never touch the ingest or the explorer.
+  **Third-party market sources (B11).** Flux Fusion (`fusion.runonflux.io`, parallel assets) is asked on the
+  interactive lane (2 req/s, burst 4, 3 concurrent; a wallet's three calls run at once) and CoinGecko's price
+  view (spot in 16 currencies, a year of daily history) on the bulk lane, next to the existing status-bar price
+  job. Fusion's `/coinbase/records` (37 MB for a large wallet) and `/coinbase/stats` (times out) are never called.
   The Insight UTXO list is capped at 4 MiB (the explorer's UTXO cache size); a larger set is a
   definitive answer (no mirror failover, no breaker fault). Input path segments `.` and `..` are
   refused before any request.
@@ -652,6 +656,9 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
 | `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`). `t` is floored to 10 s within a day of now and to 60 s before that (B8, X1 M7), and that instant is what is answered: header `seq` = 0, `generated_ms` = the floored t; one reconstruction per instant however many requests arrive (cached 60 s). **Honest bounds (B9):** the index's `first_ms` is the first keyframe (the earliest `t` with a whole network state; `null` before any keyframe), and a `t` before it answers **404 `no_history`** with "no data before <time>" instead of a partial globe built from the events alone. A reconstruction replays at most **50,000 events** after its keyframe; a `t` that would need more (keyframes missing for many hours) also answers 404 `no_history`. The file carries ORIGIN (its node ids are this instance's) and OUTPOINTS. Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs. Earnings (B7) are address-level sums over the stored blocks' payouts, see Operator earnings below: `earned_24h`, `earned_7d`, `earned_30d` (`null` when the stored blocks do not cover the whole window), `earnings_from_height` / `earnings_from_ms` (start of the contiguous stored block history used, at most 30 days back) and `earned_covered` (the sum from there to the tip) |
+| `GET /wallet/{addr}` | wallet dashboard (B11, see Wallet below): `WalletDto` for a t1 / t3 address (400 `bad_request` for anything else, a ZelID included). An address without nodes answers 200 with empty fleet sections |
+| `GET /wallet/{addr}/parallel-assets` | parallel assets from Flux Fusion (B11): `ParallelAssetsDto`. Fusion failing with nothing cached answers **503 `upstream_unavailable`** (unreachable, with `Retry-After`) or **502 `upstream_unavailable`** (unusable answer); no other endpoint depends on it |
+| `GET /prices` | FLUX prices (B11): `PricesDto`, CoinGecko spot in 16 currencies (5 min) and 365 daily USD prices (12 h), the last good copies served while CoinGecko fails; without any copy the spot falls back to the status-bar price (USD and BTC), and 503 `upstream_unavailable` when there is none either |
 | `GET /ws` | WebSocket live stream (§8) |
 | `GET /healthz` · `/readyz` · `/metrics/prometheus` | ops. **Liveness (B9):** `/healthz` is 200 while the engine is alive and **503 `{status: "dead", reason}`** once a supervised engine part died or stalled (section 3.4); `atlas healthcheck` (the image's HEALTHCHECK) fails on it. `/readyz` is 200 only when fresh state is published, the engine is alive and the store writer commits (503 `starting`, `dead` or `store_failing`). A dead engine also makes the process exit with status 1, so the container restart policy restarts it on the persisted state. `/healthz` and `/readyz` are public (FluxOS and FDM may probe them). `/metrics/prometheus` is private (B8, X1 L15): it answers a loopback TCP peer, or `Authorization: Bearer <ATLAS_METRICS_TOKEN>` when that is set, and 404 to anyone else (section 11.2 says how to scrape it). Prometheus families (bounded labels only): HTTP per route; WS clients, messages, bytes, drops; explorer proxy caches; per ingest job `atlas_ingest_job_runs_total`, `_errors_total`, `_last_success_age_seconds` (absent before the first success), `_stale`, `_upstream_calls_total`, `_upstream_errors_total`, `_upstream_seconds_total` (job duration = time in upstream calls); `atlas_upstream_requests_total{host,result}` and `atlas_upstream_request_duration_seconds{host}`; `atlas_engine_events_total{kind}`, `atlas_live_messages_total{type}`, block/reorg/reconcile/rank-correction counters, `atlas_block_emit_latency_seconds{quantile}`; `atlas_store_commit_duration_seconds` (DB writes); `atlas_publish_duration_seconds`; `atlas_replay_ring_messages{ring}` / `_capacity{ring}` (hub and engine); the edge (section 11.2): `atlas_http_connections`, `_max`, `atlas_http_connection_peers`, `atlas_http_connection_events_total{event}`, `atlas_client_ip_source_total{source}`, `atlas_fdm_peer_requests_total{peer}` (built-in FDM balancers only), `atlas_untrusted_forwarders`, `atlas_request_timeouts_total`, `atlas_store_read_timeouts_total`, `atlas_store_reads_in_flight`, `atlas_limited_total{limit}`; liveness and the writer (B9, section 3.4): `atlas_engine_alive`, the store writer queue, backpressure and commit-failure streak, `atlas_upstream_answers_rejected_total` |
 
@@ -709,6 +716,72 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > transaction, any fiat price paid off chain, the USD value at payment time before this server's own price history,
 > and running instances before the first ingest (the `instance_count` metric starts then).
 
+> **Wallet (B11).** `GET /wallet/{addr}` is one call for the wallet dashboard except parallel assets
+> (`WalletDto`, `crates/atlas-server/src/wallet/`). It is computed from memory (published nodes, the payout ledger,
+> the hosted apps, the fleet ledger) plus the fleet's node events, once per address per 30 s (concurrent requests share
+> the computation; a miss is charged to the client's compute budget and computes in a compute slot). Two explorer
+> lookups (balance, rich list) are waited for at most 6 s and are `null` after that; they keep filling the explorer
+> cache. Measured on 3130 against mainnet: a 208-node wallet 1.7 s cold (the Insight balance of an address with
+> 148,000 transactions), under 1 ms warm, 298 KB (25 KB brotli); a 424-node wallet 0.6 s cold, 454 KB (39 KB); a
+> one-node wallet 0.19 s, 28 KB (2.7 KB); 1,500 nodes compute in 80 ms (debug build).
+> - **Standing:** Insight balance, `collateral_locked` (every listed node; rewards go to the address holding the
+>   collateral, so `liquid = balance - collateral`), rich-list position (top 1,000), `operator_rank` (by confirmed
+>   nodes among payment addresses, ties share the rank) and `operator_count`, `share_of_tier` (0..1 of each tier's
+>   confirmed nodes), `first_active_ms`.
+> - **Earnings:** `days` sums the stored blocks' payouts to the address per UTC day (the payout ledger, at most 30
+>   days; block times estimated from the height). `native_per_day` is the run rate: per tier, confirmed nodes x tier
+>   payout x 2,880 / queue length (`3,025.45` FLUX a day for the 208 Stratus nodes of `t3c4Efx...`, queue 1,782). The
+>   **parallel-asset rule** lives in `atlas_core::emission::parallel_asset_accrual`: a payee accrues 10% of its
+>   native rewards on each of the 10 Fusion chains, so `pa_per_day = native_per_day` (181,527 FLUX a month in all
+>   for that wallet). `projection` is the next 365 UTC days at the current fleet and queue sizes, each day's 2,880
+>   blocks paid at that day's subsidy (`tier_payout_total` splits a day at a reduction height); `reduction` is the
+>   next one (height 3,071,200: 14 to 12.6 FLUX).
+> - **Expected against received:** received counts every payout to the address over the ledger's window. A payout
+>   belongs to a node when the block recorded it (every live block does) or when the wallet runs one node of that
+>   tier. In a tier whose payouts are all attributed, each confirmed node's payments are checked against the queue:
+>   a gap of about `k` queue lengths between consecutive payments (or from the window start, or to the predicted
+>   next payment) holds `k - 1` missed ones (rounded, so queue drift is never a miss), and `missed` names those nodes.
+>   Where some payouts cannot be attributed (blocks backfilled before this server saw them: a large wallet's payouts to
+>   one address cannot be told apart), expected is the tier's queue slots over the window, at least the payouts
+>   received, and no node is named. Measured over the 7.8 stored days of 3100's copy: 2,859 of 2,859 for
+>   `t3c4Efx...` (the Stratus queue grew from about 1,650 to 1,760 nodes that week), 14 of 14 for a one-node wallet.
+> - **Health** (`attention`, most reasons first; `healthy` counts the rest): `version_outdated` (FluxOS or fluxbench
+>   older than the version most confirmed nodes run, numeric order), `bench_failed`, `bench_error`, `dos`,
+>   `unreachable` (the last crawl), `expiring_soon` and `low_headroom`. **Expiry:** fewer than 120 blocks (about an
+>   hour) before the confirmation deadline. A node may confirm again only 500 blocks after its last confirmation and
+>   does so right then (99% of the network within 500 blocks), so a healthy node sits between 641 and about 140
+>   blocks before the deadline; the 4-hour threshold first proposed flagged 70% of healthy nodes. **Headroom:** the
+>   measured metrics (EPS, disk write, download, upload) within 10% above the tier minimum, and the provisioned ones
+>   (cores, RAM, SSD) only below it (they sit at the minimum by design). The minimums are `Tier::minimums`
+>   (cores, RAM, SSD from FluxOS `fluxSpecifics`; EPS 240 / 640 / 1,520, disk write 180 / 180 / 400 MB/s,
+>   bandwidth 25 / 50 / 100 Mb/s from fluxbench).
+> - **Benchmarks:** per tier the fleet runs and per metric any of its nodes measured: the network's p10 / p50 / p90
+>   over confirmed nodes of the tier (computed once per publish), the fleet's median and minimum, the tier minimum.
+> - **Concentration:** confirmed nodes by country, city and provider (ASN), largest first with an `unknown` bucket;
+>   `hhi` (0..1) and `top_share` over the known buckets.
+> - **Apps** on the fleet (the hosted-apps map), **activity** (the newest 200 readable node events: starts, confirms,
+>   payments, expiries, DOS, reachability, benchmark and version changes; periodic confirms, peer links and geo
+>   updates are left out), **payouts** (each confirmed node's next payment, soonest first), and **fleet_history**:
+>   confirmed nodes per tier at the end of each UTC day of the stored keyframes (one keyframe per day, mapped to
+>   payment addresses through the stored node records, kept as change points, rebuilt every 3 hours in the background; the
+>   first requests after a start answer with today's row only), today live.
+>
+> **Parallel assets (B11).** `GET /wallet/{addr}/parallel-assets` asks Fusion `/coinbase/summary`,
+> `/coinbase/multiavailable` and `/coinbase/claimed` at once (about 3.8 s for a large wallet, 0.2 s for a small one)
+> and keeps the answer 10 minutes per address (single-flight, charged to the client's explorer budget on a miss);
+> `/fees` and `/swap/activechains` are kept 12 hours (last good copy on failure). Per chain: `mined` (claimed plus
+> claimable, 10% of the coinbase), `claimed`, `received`, `fees_paid`, `claimable`, `claim_fee` (Fusion's flat mining
+> fee), `active` (in the active chains: erg accrues but is not active, and Fusion's claim-all leaves it out: 391,999.5
+> of 435,555 claimable for `t3c4Efx...`), a display name and explorer templates (`{txid}`, `{address}`). Claims come
+> newest first; a claim-all paid out on the main chain reads `flux:<txid>` and carries `main_txid` and an
+> explorer.runonflux.io link. `accrual_per_day` is the parallel-asset rule at the wallet's run rate.
+>
+> **Prices (B11).** `GET /prices` asks CoinGecko on the bulk lane: `simple/price` for `zelcash` in usd, eur, gbp,
+> aud, cad, chf, jpy, cny, inr, krw, sgd, hkd, thb, myr, idr and btc (one call, kept 5 minutes) and
+> `coins/zelcash/market_chart?days=365&interval=daily` (one row per UTC day, today the current price; kept 12 hours).
+> Expired copies are served while one background refresh runs; a failed refresh keeps the copy and is not retried for
+> 60 s (spot) or 5 minutes (history). The status-bar price (Insight `markets/info`, CoinGecko fallback) is unchanged.
+>
 > **Chain history (B10).** `GET /network/chain-history?window` returns `{window, generated_ms, from_ms, to_ms,
 > from_height, to_height, block_count, avg_block_time_s, bucket_ms, latest_height, latest_difficulty,
 > target_block_time_s, targets, points, coverage}` (`ChainHistoryDto`).
@@ -1114,7 +1187,7 @@ updated; the counters below show it. Limits key a client by its IPv4 address or 
 | `sub` messages | burst 8, then one per 2 s (deferred, not dropped) | per connection |
 | Explorer lookups that reach upstream (cache misses) | 5/s, burst 20 | per client |
 | Explorer budget | 20/s, burst 60; 16 concurrent fetches, 10 s queue | global (503 with `Retry-After`) |
-| Compute routes (`/nodes`, `/operator/{address}`, `/metrics`, `/timeline/state`, `/search`, `/nodes/{key}/history`, `/nodes/{key}/payments`) | 15/s, burst 60 | per client (429 with `Retry-After`) |
+| Compute routes (`/nodes`, `/operator/{address}`, `/metrics`, `/timeline/state`, `/search`, `/nodes/{key}/history`, `/nodes/{key}/payments`; `/wallet/{addr}` on a cache miss) | 15/s, burst 60 | per client (429 with `Retry-After`) |
 | Compute slots for those routes | 2 at once, 5 s queue | global (503 with `Retry-After`) |
 | Store reads | 32 at once, 10 s deadline including the wait | global (503 with `Retry-After: 5`) |
 

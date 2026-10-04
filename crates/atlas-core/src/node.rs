@@ -84,6 +84,40 @@ impl Tier {
         }
     }
 
+    /// Minimum benchmark a node needs to run as this tier; `None` for `Unknown`.
+    pub const fn minimums(self) -> Option<TierMinimums> {
+        match self {
+            Self::Cumulus => Some(TierMinimums {
+                cores: 4.0,
+                ram_gb: 7.0,
+                ssd_gb: 220.0,
+                eps: 240.0,
+                disk_write_mbs: 180.0,
+                down_mbps: 25.0,
+                up_mbps: 25.0,
+            }),
+            Self::Nimbus => Some(TierMinimums {
+                cores: 8.0,
+                ram_gb: 30.0,
+                ssd_gb: 440.0,
+                eps: 640.0,
+                disk_write_mbs: 180.0,
+                down_mbps: 50.0,
+                up_mbps: 50.0,
+            }),
+            Self::Stratus => Some(TierMinimums {
+                cores: 16.0,
+                ram_gb: 61.0,
+                ssd_gb: 880.0,
+                eps: 1520.0,
+                disk_write_mbs: 400.0,
+                down_mbps: 100.0,
+                up_mbps: 100.0,
+            }),
+            Self::Unknown => None,
+        }
+    }
+
     /// Index 0..3 for per-tier arrays; `None` for `Unknown`.
     pub const fn index(self) -> Option<usize> {
         match self {
@@ -106,6 +140,27 @@ impl FromStr for Tier {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self::parse_lenient(s))
     }
+}
+
+/// The minimum benchmark of a tier ([`Tier::minimums`]).
+///
+/// Sources: cores, RAM and SSD are FluxOS's `fluxSpecifics` (`ZelBack/config/default.js`:
+/// `cpu` 40 / 80 / 160 in tenths of a core, `ram` 7000 / 30000 / 61000 MB, `hdd` 220 / 440 /
+/// 880 GB), the resources FluxOS accounts a node of each tier with. EPS, disk write speed and
+/// bandwidth are not in the FluxOS source: fluxbench checks them, against the published Flux
+/// node requirements (Cumulus 240 EPS, 180 MB/s, 25 Mb/s; Nimbus 640 EPS, 180 MB/s, 50 Mb/s;
+/// Stratus 1520 EPS, 400 MB/s, 100 Mb/s; bandwidth both ways).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TierMinimums {
+    /// Logical cores.
+    pub cores: f64,
+    pub ram_gb: f64,
+    pub ssd_gb: f64,
+    /// CPU events per second.
+    pub eps: f64,
+    pub disk_write_mbs: f64,
+    pub down_mbps: f64,
+    pub up_mbps: f64,
 }
 
 /// Node lifecycle status. Every entry of the deterministic node list is `Confirmed`; the other

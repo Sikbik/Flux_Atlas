@@ -18,8 +18,8 @@ pub mod txsize;
 pub mod upstream;
 
 pub use clients::{
-    Clients, ClientsConfig, Conditional, FluxOsClient, InsightClient, MessageFilter, NodeApiClient,
-    StatsClient,
+    Clients, ClientsConfig, Conditional, FluxOsClient, FusionClient, InsightClient, MessageFilter,
+    NodeApiClient, StatsClient,
 };
 pub use error::{FluxError, Result};
 pub use http::Lane;

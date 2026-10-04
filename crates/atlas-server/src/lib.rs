@@ -20,6 +20,7 @@ pub mod error;
 pub mod explorer;
 pub mod extract;
 pub mod fixtures;
+pub mod keep;
 pub mod ledger;
 pub mod live;
 pub mod metrics;
@@ -27,8 +28,10 @@ pub mod net;
 pub mod proxy;
 pub mod routes;
 pub mod search;
+pub mod sources;
 pub mod state;
 pub mod views;
+pub mod wallet;
 pub mod watch;
 pub mod web;
 
