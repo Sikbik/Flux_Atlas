@@ -2,7 +2,8 @@
 // into the same kinds the rail's mix bar uses (node confirmations, node starts, transfers, the rest). Gaps between
 // blocks and a late block show up as the spacing and the colour of the bar. Pure.
 
-import type { ChainBlock } from '../../../../store/network';
+import type { BlockLite } from '../../../../api/generated/BlockLite';
+import { type ChainBlock, fromBlockLite } from '../../../../store/network';
 import { type MixSegment, mixSegments, txMix } from '../../../chrome/rail';
 import { BLOCK_SECONDS } from '../../lib/emission';
 
@@ -58,6 +59,25 @@ export function tapeBars(newestFirst: readonly ChainBlock[], count: number): Tap
       other: mix.other,
     };
   });
+}
+
+/**
+ * The live ring (newest first) with the older blocks a server list adds below it, newest first. The ring wins where
+ * the two overlap, a block is never repeated, and a list that adds nothing hands the ring back as it is (same array,
+ * so nothing downstream redraws).
+ */
+export function mergeTapeBlocks(
+  live: readonly ChainBlock[],
+  history: readonly BlockLite[] | undefined,
+): readonly ChainBlock[] {
+  if (!history || history.length === 0) return live;
+  const have = new Set(live.map((b) => b.height));
+  const oldest = live.length > 0 ? (live[live.length - 1] as ChainBlock).height : Number.POSITIVE_INFINITY;
+  const older = history
+    .filter((b) => b.height < oldest && !have.has(b.height))
+    .sort((a, b) => b.height - a.height)
+    .map(fromBlockLite);
+  return older.length === 0 ? live : [...live, ...older];
 }
 
 /** How many bars fit a row of `width` px: about 9 px each, between 20 and 60. */

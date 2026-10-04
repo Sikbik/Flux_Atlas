@@ -7,7 +7,8 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { queries } from '../../../api/queries';
 import { useChainBlocks } from '../../../app/context';
-import { type ChainBlock, fromBlockLite } from '../../../store/network';
+import type { ChainBlock } from '../../../store/network';
+import { mergeTapeBlocks } from './lib/tape';
 
 /** How many of the newest blocks the history asks for. */
 export const TAPE_HISTORY = 64;
@@ -24,15 +25,6 @@ export function useTapeBlocks(): TapeBlocks {
   // A tape is decoration: when the history cannot be had it is not asked again, and nothing says it failed.
   const history = useInfiniteQuery({ ...queries.blocks({ limit: TAPE_HISTORY }), retry: false });
   const first = history.data?.pages[0]?.items;
-  const blocks = useMemo(() => {
-    if (!first || first.length === 0) return live;
-    const have = new Set(live.map((b) => b.height));
-    const oldest = live.length > 0 ? (live[live.length - 1] as ChainBlock).height : Number.POSITIVE_INFINITY;
-    const older = first
-      .filter((b) => b.height < oldest && !have.has(b.height))
-      .sort((a, b) => b.height - a.height)
-      .map(fromBlockLite);
-    return older.length === 0 ? live : [...live, ...older];
-  }, [live, first]);
+  const blocks = useMemo(() => mergeTapeBlocks(live, first), [live, first]);
   return { blocks, ready: live.length > 0 && !history.isPending };
 }

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import type { BlockLite } from '../../../../api/generated/BlockLite';
 import type { ChainBlock } from '../../../../store/network';
-import { barText, LATE_AFTER_S, MIN_SCALE_TX, tapeBars, tapeCount, tapeFacts, tapeSummary } from './tape';
+import {
+  barText,
+  LATE_AFTER_S,
+  MIN_SCALE_TX,
+  mergeTapeBlocks,
+  tapeBars,
+  tapeCount,
+  tapeFacts,
+  tapeSummary,
+} from './tape';
 
 const T0 = 1_790_000_000_000;
 
@@ -132,5 +142,56 @@ describe('tapeFacts', () => {
       fromMs: null,
       toMs: null,
     });
+  });
+});
+
+function lite(height: number, afterS: number, over: Partial<BlockLite> = {}): BlockLite {
+  return {
+    height,
+    hash: `h${height}`,
+    time_ms: T0 + afterS * 1000,
+    size: 2500,
+    tx_count: 12,
+    kind: 'pon',
+    producer: null,
+    payouts: [],
+    reward: '14.00000000',
+    fees: '0.00000000',
+    confirm_count: 9,
+    start_count: 1,
+    transfer_count: 1,
+    ...over,
+  };
+}
+
+describe('mergeTapeBlocks', () => {
+  const live = run(block(10, 270), block(11, 300), block(12, 330));
+
+  it('puts the older blocks of the list under the live ring, newest first', () => {
+    const merged = mergeTapeBlocks(live, [lite(7, 180), lite(9, 240), lite(8, 210)]);
+    expect(merged.map((b) => b.height)).toEqual([12, 11, 10, 9, 8, 7]);
+    expect(merged.slice(0, 3)).toEqual(live);
+    expect(merged[3]?.live).toBe(false);
+  });
+
+  it('lets the live ring win where the list overlaps it, and never repeats a block', () => {
+    const merged = mergeTapeBlocks(live, [lite(12, 331), lite(11, 301), lite(10, 271), lite(9, 240)]);
+    expect(merged.map((b) => b.height)).toEqual([12, 11, 10, 9]);
+    expect(merged[0]?.timeMs).toBe(T0 + 330_000);
+  });
+
+  it('hands the ring back as it is when the list adds nothing', () => {
+    expect(mergeTapeBlocks(live, undefined)).toBe(live);
+    expect(mergeTapeBlocks(live, [])).toBe(live);
+    expect(mergeTapeBlocks(live, [lite(12, 330), lite(10, 270)])).toBe(live);
+  });
+
+  it('does not take a block newer than the ring for an older one', () => {
+    expect(mergeTapeBlocks(live, [lite(13, 360)])).toBe(live);
+  });
+
+  it('builds the whole tape from the list when the ring is still empty', () => {
+    const merged = mergeTapeBlocks([], [lite(3, 60), lite(5, 120), lite(4, 90)]);
+    expect(merged.map((b) => b.height)).toEqual([5, 4, 3]);
   });
 });
