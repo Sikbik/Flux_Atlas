@@ -42,15 +42,25 @@ function useFreeArea(): { centre: number; width: number } {
 /** Room the strip needs (its lead, three chips and its padding) plus a little air; under it, it steps aside. */
 const STRIP_ROOM = { wide: 650, narrow: 584 };
 
+/**
+ * Where the desktop strip sits and whether it shows: the free area's centre, and whether the strip is allowed
+ * here and has the room. The globe focus pill (GlobeFocus.tsx) lines up under it with the same answer.
+ */
+export function useAimPlacement(): { centre: number; allowed: boolean; shown: boolean } {
+  const allowed = useAimVisible();
+  const { centre, width } = useFreeArea();
+  const compact = useWm((s) => s.viewport.w < 1280, Object.is);
+  return { centre, allowed, shown: allowed && width >= (compact ? STRIP_ROOM.narrow : STRIP_ROOM.wide) };
+}
+
 const key = (l: PayoutLine) => `${l.tier}:${l.node ?? l.address}`;
 
 export function AimStrip({ inline = false }: { inline?: boolean }) {
   const { clock } = useRuntime();
-  const allowedHere = useAimVisible();
-  const allowed = inline || allowedHere;
-  const { centre, width } = useFreeArea();
-  const compact = useWm((s) => s.viewport.w < 1280, Object.is);
-  const visible = inline || (allowed && width >= (compact ? STRIP_ROOM.narrow : STRIP_ROOM.wide));
+  const place = useAimPlacement();
+  const allowed = inline || place.allowed;
+  const centre = place.centre;
+  const visible = inline || place.shown;
   const beat = useBeat(clock);
   const lines = usePayoutLines();
   const keyOf = useNodeKey();

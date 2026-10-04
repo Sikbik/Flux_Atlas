@@ -9,6 +9,7 @@ import { type ComponentPropsWithRef, useLayoutEffect, useMemo, useRef } from 're
 import { AimStrip } from '../../features/chrome/AimStrip';
 import { BeatChip, LiveChip } from '../../features/chrome/Beat';
 import { FluxRound } from '../../features/chrome/brand';
+import { GlobeFocus } from '../../features/chrome/GlobeFocus';
 import { usePhone } from '../../features/chrome/phone';
 import { useGlobeEngine } from '../../globe';
 import { cx } from '../../ui';
@@ -99,6 +100,7 @@ export function PhoneHeader({ ref, className, ...rest }: ComponentPropsWithRef<'
         <span>Search nodes, apps, blocks</span>
       </button>
       <AimStrip inline />
+      <GlobeFocus inline />
     </header>
   );
 }

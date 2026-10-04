@@ -24,6 +24,7 @@ import { useNetwork } from '../../app/context';
 import { AimStrip } from '../../features/chrome/AimStrip';
 import { Boot } from '../../features/chrome/boot/Boot';
 import { bootInstant, finishBoot, useBootPhase } from '../../features/chrome/boot/state';
+import { GlobeFocus } from '../../features/chrome/GlobeFocus';
 import { useApplyLayers } from '../../features/chrome/layers';
 import { lazyCard } from '../../features/chrome/lazyCard';
 import { usePhone } from '../../features/chrome/phone';
@@ -223,6 +224,7 @@ function ShellFrame({ wm, ambient, pathname }: { wm: WindowManager; ambient: boo
         {phone ? <PhoneHeader ref={topRef} inert={sheetFull || undefined} /> : <TopBar ref={topRef} />}
         {phone ? null : <Dock ref={dockRef} />}
         {phone ? null : <AimStrip />}
+        {phone ? null : <GlobeFocus />}
         {phone ? null : <pulse.Card />}
         <main className="shell-stage" id="shell-stage" tabIndex={-1} data-region="stage" aria-label="Globe">
           {pageRoute ? (

@@ -1,0 +1,120 @@
+/* The globe focus pill (GlobeFocus.tsx): the aim strip's glass, lit at the rim in the accent so a focus that
+   outlived its page is easy to spot. Centred on the free area like the strip, 8 px under it while it shows,
+   in its place while it steps aside; it moves with a transform, never `top` or `left`. */
+
+.globefocus {
+  position: fixed;
+  top: calc(var(--topbar-h) + 14px);
+  left: 0;
+  z-index: calc(var(--z-globe-hud) + 5);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 4px 0 12px;
+  border: 1px solid color-mix(in oklab, var(--accent-500) 45%, var(--glass-border));
+  border-radius: var(--r-pill);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-glass), var(--shadow-inset-hi);
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  translate: calc(var(--aim-x, 50vw) - 50%) var(--gf-y, 0px);
+  transition: translate var(--dur-slower) var(--ease-out);
+  animation: ui-fade-in var(--dur-base) var(--ease-out);
+  pointer-events: auto;
+}
+
+/* Under the aim strip (38 px tall) with 8 px between them. */
+.globefocus[data-below-aim] {
+  --gf-y: 46px;
+}
+
+.globefocus-i {
+  flex: none;
+  color: var(--accent-500);
+}
+
+.globefocus-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.globefocus-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px 0 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: rgb(255 255 255 / 0.04);
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .globefocus-clear:hover {
+    border-color: var(--line-3);
+    background: rgb(255 255 255 / 0.09);
+  }
+}
+
+.globefocus-clear:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.globefocus-clear .ui-kbd {
+  margin-left: 2px;
+}
+
+/* ---- phone: a row of the header, under the aim strip ---------------------------------------------- */
+
+.globefocus[data-inline] {
+  position: static;
+  z-index: auto;
+  margin: 6px var(--space-6) 0;
+  height: 34px;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  translate: none;
+  transition: none;
+}
+
+.globefocus[data-inline] .globefocus-clear {
+  height: 30px;
+  margin-left: auto;
+}
+
+@media (pointer: coarse) {
+  .globefocus-clear {
+    min-height: 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .globefocus,
+  :root:not([data-motion="full"]) .globefocus-clear {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .globefocus,
+:root:is([data-motion="reduced"], [data-motion="off"]) .globefocus-clear {
+  transition: none;
+}
+
+/* The fade in is opacity only, which Reduced keeps; Off drops it. */
+:root[data-motion="off"] .globefocus {
+  animation: none;
+}

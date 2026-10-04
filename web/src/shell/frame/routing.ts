@@ -5,6 +5,7 @@
 
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type RefObject, useCallback, useEffect, useLayoutEffect } from 'react';
+import { flag } from '../../app/search';
 import { isBooting, subscribeBoot } from '../../features/chrome/boot/state';
 import { usePhone } from '../../features/chrome/phone';
 import { useGlobeHandles } from '../../globe';
@@ -89,14 +90,16 @@ export function useWindowRouting(wm: WindowManager) {
     [go, current],
   );
 
-  // Keyboard: Esc clears the selection first, then closes the topmost window; the rest of the map
-  // (focus cycle, move, resize, dock, minimize, maximize) is the window manager's.
+  // Keyboard: Esc clears the selection first (a node, a fleet shown on the globe, the watchlist's focus;
+  // features/chrome/focus.ts), then closes the topmost window; the rest of the map (focus cycle, move,
+  // resize, dock, minimize, maximize) is the window manager's.
   useEffect(() => {
     const onKey = wmKeyHandler(wm, {
       onEscape: () => {
         const { path, search } = current();
-        if (typeof search.sel === 'string' && search.sel) {
-          go(path, { ...search, sel: undefined });
+        const selected = typeof search.sel === 'string' && search.sel !== '';
+        if (selected || flag(search.watched) === true) {
+          go(path, { ...search, sel: undefined, watched: undefined });
           return true;
         }
         return false;
