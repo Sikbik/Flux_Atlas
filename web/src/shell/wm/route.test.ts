@@ -9,6 +9,7 @@ describe('windowForPath', () => {
       ['/host/65.109.26.93', { type: 'host', key: '65.109.26.93' }],
       ['/app/BitcoinWhitepaper', { type: 'app', key: 'BitcoinWhitepaper' }],
       ['/app/BitcoinWhitepaper/history/3', { type: 'app', key: 'BitcoinWhitepaper' }],
+      ['/explorer', { type: 'explorer', key: null }],
       ['/block/2996929', { type: 'block', key: '2996929' }],
       ['/tx/abc', { type: 'tx', key: 'abc' }],
       ['/address/t1abc', { type: 'address', key: 't1abc' }],
@@ -40,6 +41,7 @@ describe('windowForPath', () => {
       '/node',
       '/node/1/extra',
       '/about/x',
+      '/explorer/blocks',
     ])
       expect(windowForPath(p), p).toBeNull();
   });
@@ -55,6 +57,7 @@ describe('windowForPath', () => {
       '/queue',
       '/queue/nimbus',
       '/about',
+      '/explorer',
       '/analytics/churn',
     ]) {
       const ref = windowForPath(p)!;

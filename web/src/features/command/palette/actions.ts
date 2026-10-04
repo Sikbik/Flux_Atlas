@@ -103,6 +103,15 @@ export const ACTIONS: readonly ActionDef[] = [
     alongside: true,
   })),
   page(
+    'view.explorer',
+    'Explorer',
+    'The chain at a glance: blocks, supply, charts, the rich list and search',
+    'chain overview hub blockchain blocks transactions explorer latest block',
+    'explorer',
+    '/explorer',
+    { keys: ['E'] },
+  ),
+  page(
     'view.mempool',
     'Mempool',
     'Transactions waiting for a block',
@@ -121,8 +130,8 @@ export const ACTIONS: readonly ActionDef[] = [
   page(
     'view.richlist',
     'Rich list',
-    'The largest balances',
-    'whales balances top addresses',
+    'Who holds the supply, and who moved',
+    'whales balances top addresses richest holders concentration movers gainers losers',
     'address',
     '/richlist',
   ),

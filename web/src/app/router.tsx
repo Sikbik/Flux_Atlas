@@ -25,6 +25,7 @@ import {
   AppHistoryView,
   AppView,
   BlockView,
+  ExplorerView,
   GlobeHome,
   HostView,
   MempoolView,
@@ -197,6 +198,12 @@ const appHistoryRoute = createRoute({
     const { name, n } = appHistoryRoute.useParams();
     return <AppHistoryView name={name} n={n} />;
   },
+});
+
+const explorerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/explorer',
+  component: ExplorerView,
 });
 
 const blockRoute = createRoute({
@@ -386,6 +393,7 @@ export const routeTree = rootRoute.addChildren([
   hostRoute,
   appRoute,
   appHistoryRoute,
+  explorerRoute,
   blockRoute,
   txRoute,
   addressRoute,

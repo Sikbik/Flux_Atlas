@@ -107,6 +107,9 @@ export const WINDOW_SPECS: Record<WindowType, WindowSpec> = {
   // the palette or `/?wallet=`. It rides on the Operator launcher, which is the operator's door.
   wallet: spec('wallet', named('Wallet'), { float: { x: 118, y: 'top', w: 1180, h: 'fill' } }),
   about: spec('about', () => 'About Flux', docked(464, { tether: 'moon', key: 'M' })),
+  // The Explorer landing: the hub of the chain, as wide as the analytics window (maximizable). It is what the
+  // dock's Explorer launcher opens; the block, transaction, address and the other explorer views open from it.
+  explorer: spec('explorer', () => 'Explorer', { float: { x: 118, y: 'top', w: 1112, h: 'fill' }, key: 'E' }),
   block: spec('block', named('Block'), { key: 'E' }),
   tx: spec('tx', named('Transaction'), { key: 'E' }),
   address: spec('address', named('Address'), { key: 'E' }),

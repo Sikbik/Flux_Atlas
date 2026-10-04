@@ -250,6 +250,29 @@ describe('local matches', () => {
   });
 });
 
+describe('finding the explorer and the rich list', () => {
+  const best = (raw: string) => run(raw).best;
+
+  it('finds the Explorer landing by its name, as a page that opens /explorer', () => {
+    const row = best('explorer');
+    expect(row?.id).toBe('action:view.explorer');
+    expect(row?.action).toEqual({ type: 'go', target: { to: '/explorer' } });
+    expect(run('explorer').groups.flatMap((g) => g.rows.map((r) => r.id))).toContain('action:view.explorer');
+  });
+
+  it('finds the Explorer by what it is about', () => {
+    for (const q of ['blockchain', 'hub', 'overview'])
+      expect(ids(run(q)), q).toContain('action:view.explorer');
+  });
+
+  it('finds the rich list by "rich", "whales", "richest", "holders" and "movers"', () => {
+    for (const q of ['rich', 'whales', 'richest', 'holders', 'movers', 'rich list', 'concentration'])
+      expect(ids(run(q)), q).toContain('action:view.richlist');
+    expect(best('rich')?.id).toBe('action:view.richlist');
+    expect(best('whales')?.action).toEqual({ type: 'go', target: { to: '/richlist' } });
+  });
+});
+
 describe('actions and prefixes', () => {
   it('hoists an exact command above weaker groups', () => {
     const m = run('ambient');

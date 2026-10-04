@@ -7,6 +7,11 @@ export const AnalyticsView = lazy(() =>
   import('../features/analytics/views/AnalyticsView').then((m) => ({ default: m.AnalyticsView })),
 );
 
+/** The Explorer landing (`/explorer`): the hub of the chain, live. What the dock's Explorer launcher opens. */
+export const ExplorerView = lazy(() =>
+  import('../features/explorer/landing/ExplorerView').then((m) => ({ default: m.ExplorerView })),
+);
+
 export const BlockView = lazy(() =>
   import('../features/explorer/views/BlockView').then((m) => ({ default: m.BlockView })),
 );

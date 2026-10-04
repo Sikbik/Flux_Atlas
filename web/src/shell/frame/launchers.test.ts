@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { type LauncherId, PALETTE_SEED, runLauncher } from './launchers';
+import { LAUNCHERS, type LauncherId, PALETTE_SEED, runLauncher } from './launchers';
 import type { ShellNav } from './nav';
 
 function env(open: { id: string; type: string; key: string | null; binding: string } | null = null) {
@@ -19,7 +19,6 @@ function env(open: { id: string; type: string; key: string | null; binding: stri
       nav,
       openWindowOfType: () => open as never,
       focus,
-      tipHeight: () => 2_998_000,
     });
   return { run, palette, open: open_, focus };
 }
@@ -64,5 +63,39 @@ describe('the Operator launcher', () => {
     const e = env({ id: 'operator:abc', type: 'operator', key: 'abc', binding: 'extra' });
     e.run('operator');
     expect(e.open).toHaveBeenCalledWith({ type: 'operator', key: 'abc' });
+  });
+});
+
+describe('the Explorer launcher', () => {
+  it('opens the landing, not the latest block', () => {
+    const e = env();
+    e.run('explorer');
+    expect(e.open).toHaveBeenCalledWith({ type: 'explorer', key: null });
+    expect(e.palette).not.toHaveBeenCalled();
+  });
+
+  it('raises an explorer window that is open, whatever it shows', () => {
+    const e = env({ id: 'block:2998000', type: 'block', key: '2998000', binding: 'primary' });
+    e.run('explorer');
+    expect(e.focus).toHaveBeenCalledWith('block:2998000');
+    expect(e.open).not.toHaveBeenCalled();
+  });
+
+  it('brings an explorer window that rides in ?w= to the front by opening it', () => {
+    const e = env({ id: 'richlist:', type: 'richlist', key: null, binding: 'extra' });
+    e.run('explorer');
+    expect(e.open).toHaveBeenCalledWith({ type: 'richlist', key: null });
+  });
+
+  it('stands for the landing and every explorer view in the dock', () => {
+    expect(LAUNCHERS.explorer.types).toEqual([
+      'explorer',
+      'block',
+      'tx',
+      'address',
+      'mempool',
+      'supply',
+      'richlist',
+    ]);
   });
 });

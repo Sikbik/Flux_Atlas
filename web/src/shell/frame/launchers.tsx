@@ -20,7 +20,6 @@ import {
   UserRoundCheck,
 } from 'lucide-react';
 import { useCallback } from 'react';
-import { useRuntime } from '../../app/context';
 import { windowOfType } from '../wm/machine';
 import { useWindowManager } from '../wm/react';
 import type { WindowRef, WindowType } from '../wm/types';
@@ -56,7 +55,7 @@ export interface Launcher {
   accent: 'chain' | 'app' | 'analytics' | 'time' | 'operator' | 'terminal' | 'pulse';
 }
 
-const EXPLORER_TYPES = ['block', 'tx', 'address', 'mempool', 'supply', 'richlist'] as const;
+const EXPLORER_TYPES = ['explorer', 'block', 'tx', 'address', 'mempool', 'supply', 'richlist'] as const;
 
 export const LAUNCHERS: Record<LauncherId, Launcher> = {
   globe: { id: 'globe', label: 'Globe', key: 'G', icon: Globe, types: [], accent: 'chain' },
@@ -156,6 +155,9 @@ export const PALETTE_SEED: Partial<Record<LauncherId, string>> = {
 /** The Operator launcher's window: the nodes you follow (`/operator/watchlist`), which also finds an operator to follow. */
 export const WATCHLIST: WindowRef = { type: 'operator', key: 'watchlist' };
 
+/** The Explorer launcher's window: the landing (`/explorer`), the hub from which every explorer view opens. */
+export const EXPLORER_HOME: WindowRef = { type: 'explorer', key: null };
+
 /** Runs a launcher. `source` is the launcher's element (the aperture opens out of it). */
 export type RunLauncher = (id: LauncherId) => void;
 
@@ -163,7 +165,6 @@ export type RunLauncher = (id: LauncherId) => void;
 export function useLauncher(): RunLauncher {
   const nav = useShellNav();
   const wm = useWindowManager();
-  const { store } = useRuntime();
   return useCallback(
     (id) => {
       runLauncher(id, {
@@ -177,10 +178,9 @@ export function useLauncher(): RunLauncher {
           return null;
         },
         focus: (windowId) => wm.dispatch({ t: 'focus', id: windowId }),
-        tipHeight: () => store.tip?.height ?? null,
       });
     },
-    [nav, wm, store],
+    [nav, wm],
   );
 }
 
@@ -190,7 +190,6 @@ interface LauncherEnv {
     types: readonly WindowType[],
   ): { id: string; type: WindowType; key: string | null; binding: string } | null;
   focus(windowId: string): void;
-  tipHeight(): number | null;
 }
 
 /** What each launcher does (exported for tests; the hook binds the environment). */
@@ -233,15 +232,15 @@ export function runLauncher(id: LauncherId, env: LauncherEnv): void {
       return;
     }
     case 'explorer': {
+      // Raise the explorer window that is open, whatever it shows (a block, an address, the rich list); otherwise
+      // open the landing, from which the latest block is one action away.
       const w = env.openWindowOfType(l.types);
       if (w) {
         if (w.binding === 'extra') nav.open({ type: w.type, key: w.key });
         else env.focus(w.id);
         return;
       }
-      const tip = env.tipHeight();
-      if (tip !== null) nav.open({ type: 'block', key: String(tip) });
-      else nav.open({ type: 'mempool', key: null });
+      nav.open(EXPLORER_HOME);
       return;
     }
     case 'ambient':

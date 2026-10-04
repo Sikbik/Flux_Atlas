@@ -6,6 +6,7 @@ export type WindowType =
   | 'node'
   | 'host'
   | 'app'
+  | 'explorer'
   | 'block'
   | 'tx'
   | 'address'

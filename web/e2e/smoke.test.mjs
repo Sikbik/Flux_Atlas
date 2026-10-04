@@ -197,6 +197,9 @@ test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: 
       '/wallet/t1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhyt',
       { role: 'article', name: /^Wallet t1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhyt/ },
     ],
+    // The Explorer landing; each of its sections degrades on its own, so the page renders against the demo server
+    // (which has no daily history or movers) too.
+    ['/explorer', 'Explorer'],
     ['/mempool', 'Mempool'],
     ['/queue', 'Payment queue'],
     ['/queue/stratus', 'Payment queue, stratus'],

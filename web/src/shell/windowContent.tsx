@@ -11,6 +11,7 @@ import {
   AnalyticsView,
   AppView,
   BlockView,
+  ExplorerView,
   HostView,
   MempoolView,
   NodeView,
@@ -36,6 +37,8 @@ export function windowContent(win: WindowState): ReactNode {
       return <HostView ip={k} />;
     case 'app':
       return <AppView name={k} />;
+    case 'explorer':
+      return <ExplorerView />;
     case 'block':
       return <BlockView blockKey={k} />;
     case 'tx':

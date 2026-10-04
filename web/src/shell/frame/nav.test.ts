@@ -26,6 +26,7 @@ describe('isPagePanel', () => {
       '/node/1.2.3.4:16127',
       '/host/1.2.3.4',
       '/app/Fluxtracker',
+      '/explorer',
       '/block/100',
       '/tx/abc',
       '/address/t1abc',
