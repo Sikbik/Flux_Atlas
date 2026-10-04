@@ -2,10 +2,18 @@
 // the health findings), the columns a viewer can pick, the filters, the grouping and the CSV. Pure functions;
 // `tabs/Fleet.tsx` draws them.
 
-import type { SortValue } from '../../../ui';
+import { BLOCK_MS, formatAge, formatDuration } from '../../../lib/format';
+import { type SortState, type SortValue, sortRows } from '../../../ui/table/sorting';
 import { type FleetNode, type FleetState, fleetState } from '../../inspect/derive/operator';
 import { type NodeStatusKind, nodeStatusKind } from '../../inspect/derive/statusKind';
-import type { HealthKind, NodeAttention, NodeRow, PayTier, WalletPayout } from '../types';
+import {
+  type HealthKind,
+  type NodeAttention,
+  type NodeRow,
+  PAY_TIERS,
+  type PayTier,
+  type WalletPayout,
+} from '../types';
 import { type CsvCell, dateTimeStamp } from './csv';
 import { type Severity, worstSeverity } from './health';
 import { flux } from './money';
@@ -153,11 +161,15 @@ export type ColumnId =
 
 export interface ColumnSpec {
   id: ColumnId;
-  /** The header, and the label in the picker. */
+  /** The label in the picker. */
   label: string;
+  /** A shorter header where the label is too long for a narrow column. */
+  short?: string;
   /** The picker's group heading. */
   group: 'Identity' | 'Payments' | 'Place' | 'Software and hardware';
   numeric?: boolean;
+  /** The direction of the first click on the header (numbers sort descending first unless this says otherwise). */
+  firstDir?: 'asc' | 'desc';
   /** What the column sorts by (missing values go last). */
   sort: (r: FleetRow) => SortValue;
 }
@@ -165,18 +177,48 @@ export interface ColumnSpec {
 const STATE_ORDER: Record<Bucket, number> = { down: 0, attention: 1, healthy: 2 };
 
 export const COLUMN_SPECS: readonly ColumnSpec[] = [
+  // The table's order: the node, then when it is paid (a phone has room for these two), then how it is doing.
   { id: 'node', label: 'Node', group: 'Identity', sort: (r) => r.endpoint || null },
+  {
+    id: 'payout',
+    label: 'Next payout',
+    group: 'Payments',
+    numeric: true,
+    firstDir: 'asc',
+    sort: (r) => r.etaMs,
+  },
   {
     id: 'state',
     label: 'State',
     group: 'Identity',
     sort: (r) => STATE_ORDER[bucketOf(r)] * 10 + (r.severity === 'crit' ? 0 : r.severity === 'warn' ? 1 : 2),
   },
-  { id: 'payout', label: 'Next payout', group: 'Payments', numeric: true, sort: (r) => r.etaMs },
-  { id: 'place', label: 'Queue place', group: 'Payments', numeric: true, sort: (r) => r.place },
+  {
+    id: 'place',
+    label: 'Queue place',
+    short: 'Queue',
+    group: 'Payments',
+    numeric: true,
+    firstDir: 'asc',
+    sort: (r) => r.place,
+  },
   { id: 'paid', label: 'Last paid', group: 'Payments', numeric: true, sort: (r) => r.lastPaidHeight },
-  { id: 'checkin', label: 'Check-in age', group: 'Payments', numeric: true, sort: (r) => r.sinceConfirm },
-  { id: 'perDay', label: 'FLUX per day', group: 'Payments', numeric: true, sort: (r) => r.perDay },
+  {
+    id: 'checkin',
+    label: 'Check-in age',
+    short: 'Check-in',
+    group: 'Payments',
+    numeric: true,
+    sort: (r) => r.sinceConfirm,
+  },
+  {
+    id: 'perDay',
+    label: 'FLUX per day',
+    short: 'FLUX a day',
+    group: 'Payments',
+    numeric: true,
+    sort: (r) => r.perDay,
+  },
   { id: 'country', label: 'Country', group: 'Place', sort: (r) => r.country || null },
   { id: 'city', label: 'City', group: 'Place', sort: (r) => r.city || null },
   { id: 'provider', label: 'Provider', group: 'Place', sort: (r) => r.provider || null },
@@ -191,13 +233,20 @@ export const COLUMN_SPECS: readonly ColumnSpec[] = [
   { id: 'ram', label: 'RAM', group: 'Software and hardware', numeric: true, sort: (r) => r.ramGb || null },
   { id: 'ssd', label: 'SSD', group: 'Software and hardware', numeric: true, sort: (r) => r.ssdGb || null },
   { id: 'apps', label: 'Apps', group: 'Software and hardware', numeric: true, sort: (r) => r.appCount },
-  { id: 'age', label: 'Age', group: 'Software and hardware', numeric: true, sort: (r) => r.addedHeight },
+  {
+    id: 'age',
+    label: 'Age',
+    group: 'Software and hardware',
+    numeric: true,
+    // The oldest node has the lowest height, so the first (descending) click lists the oldest first.
+    sort: (r) => (r.addedHeight === null || r.addedHeight <= 0 ? null : -r.addedHeight),
+  },
 ];
 
 export const DEFAULT_COLUMNS: readonly ColumnId[] = [
   'node',
-  'state',
   'payout',
+  'state',
   'paid',
   'country',
   'provider',
@@ -224,6 +273,8 @@ export interface FleetFilter {
   tiers: readonly PayTier[];
   buckets: readonly Bucket[];
   country: string | null;
+  /** `countryCode:city`, the key `groupOf` gives a city (it is only ever set by choosing a city group). */
+  city: string | null;
   provider: string | null;
   version: string | null;
 }
@@ -233,6 +284,7 @@ export const NO_FILTER: FleetFilter = {
   tiers: [],
   buckets: [],
   country: null,
+  city: null,
   provider: null,
   version: null,
 };
@@ -243,18 +295,20 @@ export function isFiltered(f: FleetFilter): boolean {
     f.tiers.length > 0 ||
     f.buckets.length > 0 ||
     f.country !== null ||
+    f.city !== null ||
     f.provider !== null ||
     f.version !== null
   );
 }
 
-/** How many filters are set (the count on the Filters button). */
+/** How many filters are set (the count on the Filters button; the search box has its own field). */
 export function filterCount(f: FleetFilter): number {
   return (
     (f.text.trim() ? 1 : 0) +
     (f.tiers.length ? 1 : 0) +
     (f.buckets.length ? 1 : 0) +
     (f.country !== null ? 1 : 0) +
+    (f.city !== null ? 1 : 0) +
     (f.provider !== null ? 1 : 0) +
     (f.version !== null ? 1 : 0)
   );
@@ -265,6 +319,10 @@ function haystack(r: FleetRow): string {
     .join('\n')
     .toLowerCase();
 }
+
+/** The `countryCode:city` key of a row, or null when its city is unknown. */
+export const cityKey = (r: Pick<FleetRow, 'city' | 'countryCode'>): string | null =>
+  r.city ? `${r.countryCode}:${r.city}` : null;
 
 /** The rows that pass every filter that is set (a filter with nothing chosen passes everything). */
 export function filterFleet(rows: readonly FleetRow[], f: FleetFilter): FleetRow[] {
@@ -277,6 +335,7 @@ export function filterFleet(rows: readonly FleetRow[], f: FleetFilter): FleetRow
       (tiers.size === 0 || tiers.has(r.tier)) &&
       (buckets.size === 0 || buckets.has(bucketOf(r))) &&
       (f.country === null || r.countryCode === f.country) &&
+      (f.city === null || cityKey(r) === f.city) &&
       (f.provider === null || r.provider === f.provider) &&
       (f.version === null || r.version === f.version) &&
       (needle === '' || haystack(r).includes(needle)),
@@ -363,10 +422,10 @@ export function groupOf(r: FleetRow, by: Exclude<GroupBy, 'none'>): [string, str
     }
     case 'country':
       return [r.countryCode || '?', r.country || 'Unknown country'];
-    case 'city':
-      return r.city
-        ? [`${r.countryCode}:${r.city}`, `${r.city}${r.country ? `, ${r.country}` : ''}`]
-        : ['?', 'Unknown city'];
+    case 'city': {
+      const k = cityKey(r);
+      return k ? [k, `${r.city}${r.country ? `, ${r.country}` : ''}`] : ['?', 'Unknown city'];
+    }
     case 'provider':
       return [r.provider || '?', r.provider || 'Unknown provider'];
     case 'version':
@@ -424,6 +483,166 @@ export function groupFleet(rows: readonly FleetRow[], by: GroupBy): FleetGroup[]
   }
   return [...groups.values()].sort((a, b) => b.nodes - a.nodes || a.label.localeCompare(b.label, 'en'));
 }
+
+/** The filter that narrows to one group, or null when the group is "unknown" (there is nothing to match). */
+export function filterForGroup(by: GroupBy, key: string): Partial<FleetFilter> | null {
+  if (by === 'none' || key === '?') return null;
+  switch (by) {
+    case 'tier':
+      return (PAY_TIERS as readonly string[]).includes(key) ? { tiers: [key as PayTier] } : null;
+    case 'state':
+      return (BUCKETS as readonly string[]).includes(key) ? { buckets: [key as Bucket] } : null;
+    case 'country':
+      return { country: key };
+    case 'city':
+      return { city: key };
+    case 'provider':
+      return { provider: key };
+    case 'version':
+      return { version: key };
+  }
+}
+
+/** The group a filter has already narrowed to (the table highlights it), or null. */
+export function groupInFilter(by: GroupBy, f: FleetFilter): string | null {
+  switch (by) {
+    case 'tier':
+      return f.tiers.length === 1 ? (f.tiers[0] ?? null) : null;
+    case 'state':
+      return f.buckets.length === 1 ? (f.buckets[0] ?? null) : null;
+    case 'country':
+      return f.country;
+    case 'city':
+      return f.city;
+    case 'provider':
+      return f.provider;
+    case 'version':
+      return f.version;
+    case 'none':
+      return null;
+  }
+}
+
+// ---- sorting and summary --------------------------------------------------------------------------
+
+/** What the table is sorted by when it opens: the next payment first. */
+export const DEFAULT_SORT: SortState = { id: 'payout', dir: 'asc' };
+
+/** The rows in the order of a sort (`null` keeps their order); a missing value goes last in both directions. */
+export function sortFleet(rows: readonly FleetRow[], sort: SortState | null): FleetRow[] {
+  const spec = sort ? COLUMN_SPECS.find((c) => c.id === sort.id) : undefined;
+  if (!sort || !spec) return [...rows];
+  return sortRows(rows, spec.sort, sort.dir);
+}
+
+export interface RowSummary {
+  nodes: number;
+  healthy: number;
+  attention: number;
+  down: number;
+  tiers: Record<PayTier, number>;
+  /** FLUX per day over the nodes whose payout is known; null when none is. */
+  perDay: number | null;
+  /** The soonest next payment of the set. */
+  next: { etaMs: number; amount: number | null; key: string } | null;
+  /** Nodes with at least one finding from the server. */
+  flagged: number;
+  apps: number;
+  /** Different host addresses: nodes sharing one are one outage away from each other. */
+  hosts: number;
+}
+
+/** The totals of a set of rows: what the strip above the table says about whatever the filters left. */
+export function summarizeRows(rows: readonly FleetRow[]): RowSummary {
+  const out: RowSummary = {
+    nodes: rows.length,
+    healthy: 0,
+    attention: 0,
+    down: 0,
+    tiers: { cumulus: 0, nimbus: 0, stratus: 0 },
+    perDay: null,
+    next: null,
+    flagged: 0,
+    apps: 0,
+    hosts: 0,
+  };
+  const hosts = new Set<string>();
+  for (const r of rows) {
+    const b = bucketOf(r);
+    if (b === 'healthy') out.healthy++;
+    else if (b === 'attention') out.attention++;
+    else out.down++;
+    if (r.tier !== 'unknown') out.tiers[r.tier]++;
+    if (r.perDay !== null) out.perDay = (out.perDay ?? 0) + r.perDay;
+    if (r.etaMs !== null && (out.next === null || r.etaMs < out.next.etaMs))
+      out.next = { etaMs: r.etaMs, amount: r.amount, key: r.key };
+    if (r.issues.length > 0) out.flagged++;
+    out.apps += r.appCount;
+    if (r.ip) hosts.add(r.ip);
+  }
+  out.hosts = hosts.size;
+  return out;
+}
+
+export interface ActiveFilter {
+  id: string;
+  /** The chip's words: `Country: Germany`. */
+  label: string;
+  /** What removing the chip changes. */
+  clear: Partial<FleetFilter>;
+}
+
+const TIER_LABEL: Record<PayTier, string> = { cumulus: 'Cumulus', nimbus: 'Nimbus', stratus: 'Stratus' };
+
+/** The filters that are set, one chip each (a tier or a state chosen twice is two chips), for the row under the toolbar. */
+export function activeFilters(f: FleetFilter, facets: Facets): ActiveFilter[] {
+  const out: ActiveFilter[] = [];
+  const text = f.text.trim();
+  if (text) out.push({ id: 'text', label: `Search: ${text}`, clear: { text: '' } });
+  for (const t of f.tiers)
+    out.push({
+      id: `tier:${t}`,
+      label: `Tier: ${TIER_LABEL[t]}`,
+      clear: { tiers: f.tiers.filter((x) => x !== t) },
+    });
+  for (const b of f.buckets)
+    out.push({
+      id: `state:${b}`,
+      label: `State: ${BUCKET_LABEL[b]}`,
+      clear: { buckets: f.buckets.filter((x) => x !== b) },
+    });
+  const named = (list: readonly Facet[], v: string) => list.find((x) => x.value === v)?.label ?? v;
+  if (f.country !== null)
+    out.push({
+      id: 'country',
+      label: `Country: ${named(facets.country, f.country)}`,
+      clear: { country: null },
+    });
+  if (f.city !== null)
+    out.push({ id: 'city', label: `City: ${f.city.slice(f.city.indexOf(':') + 1)}`, clear: { city: null } });
+  if (f.provider !== null)
+    out.push({
+      id: 'provider',
+      label: `Provider: ${named(facets.provider, f.provider)}`,
+      clear: { provider: null },
+    });
+  if (f.version !== null)
+    out.push({ id: 'version', label: `FluxOS: ${f.version}`, clear: { version: null } });
+  return out;
+}
+
+// ---- block time -----------------------------------------------------------------------------------
+
+/** A span of blocks as short time at one block every 30 seconds: `now`, `12 min`, `5 h`, `4 d`, `1.4 y`. */
+export function blocksText(blocks: number): string {
+  if (!Number.isFinite(blocks)) return '';
+  const ms = Math.max(0, blocks) * BLOCK_MS;
+  const years = ms / (365 * 86_400_000);
+  return years >= 1 ? `${years.toFixed(1)} y` : formatAge(ms);
+}
+
+/** How long a span of blocks is, in two units: `5h 20m`, `4d 6h` (a tooltip's version of `blocksText`). */
+export const blocksLong = (blocks: number): string => formatDuration(Math.max(0, blocks) * BLOCK_MS);
 
 // ---- CSV ------------------------------------------------------------------------------------------
 

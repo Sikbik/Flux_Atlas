@@ -16,6 +16,7 @@ import {
   medianStanding,
   metricValue,
   readConcentration,
+  reasonLabel,
   riskLevel,
   uptimeBands,
   variantOf,
@@ -167,6 +168,19 @@ describe('attention helpers', () => {
     expect(marginText({ value: 480, threshold: 450 }, 'MB/s')).toBe('480 MB/s against 450 MB/s (7% over)');
     expect(marginText({ value: 400, threshold: 450 })).toBe('400 against 450 (11% under)');
     expect(marginText({ value: null, threshold: 450 })).toBeNull();
+  });
+
+  it('names a reason in a few words, splitting the two kinds that say more than one thing', () => {
+    expect(reasonLabel(reason('dos'))).toBe('On the DoS list');
+    expect(reasonLabel(reason('expiring_soon'))).toBe('Close to expiring');
+    expect(reasonLabel(reason('low_headroom', { metric: 'eps', value: 90, threshold: 100 }))).toBe(
+      'Below a tier minimum',
+    );
+    expect(reasonLabel(reason('low_headroom', { metric: 'eps', value: 105, threshold: 100 }))).toBe(
+      'Close to a tier minimum',
+    );
+    expect(reasonLabel(reason('version_outdated', { metric: 'bench' }))).toBe('Behind on fluxbench');
+    expect(reasonLabel(reason('version_outdated', { metric: 'flux_os' }))).toBe('Behind on FluxOS');
   });
 });
 

@@ -185,6 +185,24 @@ export function worstSeverity(reasons: readonly HealthReason[]): Severity | null
   return worst;
 }
 
+const REASON_LABEL: Record<string, string> = {
+  dos: 'On the DoS list',
+  bench_failed: 'Failed the benchmark',
+  expiring_soon: 'Close to expiring',
+  unreachable: 'Not reachable',
+  bench_error: 'Benchmark error',
+  'low_headroom:below': 'Below a tier minimum',
+  'low_headroom:near': 'Close to a tier minimum',
+  'version_outdated:flux_os': 'Behind on FluxOS',
+  'version_outdated:bench': 'Behind on fluxbench',
+};
+
+/** A few words for one reason, for a chip or a tooltip (the issue's own title counts nodes, which a row has one of). */
+export function reasonLabel(r: Pick<HealthReason, 'kind' | 'metric' | 'value' | 'threshold'>): string {
+  const v = variantOf(r);
+  return REASON_LABEL[v ? `${r.kind}:${v}` : r.kind] ?? r.kind.replace(/_/g, ' ');
+}
+
 /** `480 of at least 450 (7% over)`: a measurement against its threshold, when the server sent both. */
 export function marginText(n: Pick<IssueNode, 'value' | 'threshold'>, unit = ''): string | null {
   if (n.value === null || n.threshold === null) return null;

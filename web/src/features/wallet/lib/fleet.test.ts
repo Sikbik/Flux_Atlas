@@ -3,18 +3,25 @@ import { sortRows } from '../../../ui/table/sorting';
 import type { FleetNode } from '../../inspect/derive/operator';
 import type { NodeAttention, NodeRow, WalletPayout } from '../types';
 import {
+  activeFilters,
   BUCKET_LABEL,
+  blocksLong,
+  blocksText,
   bucketOf,
   buildFleetRows,
   COLUMN_SPECS,
+  cityKey,
   columnSpec,
   DEFAULT_COLUMNS,
+  DEFAULT_SORT,
   type FleetFilter,
   type FleetRow,
   facetsOf,
   filterCount,
   filterFleet,
+  filterForGroup,
   groupFleet,
+  groupInFilter,
   groupOf,
   isFiltered,
   isGroupBy,
@@ -22,6 +29,8 @@ import {
   nodesCsvHeader,
   nodesCsvRows,
   normalizeColumns,
+  sortFleet,
+  summarizeRows,
 } from './fleet';
 
 const op = (i: number) => `${String(i).padStart(64, '0')}:0`;
@@ -346,5 +355,182 @@ describe('nodes CSV', () => {
     const header = nodesCsvHeader();
     const row = nodesCsvRows(r)[1] as (string | number | boolean | null)[];
     expect(row[header.indexOf('issues')]).toBe('version_outdated');
+  });
+});
+
+describe('sortFleet', () => {
+  const r = rows();
+  const ids = (list: FleetRow[]) => list.map((x) => x.id);
+
+  it('opens on the next payment, soonest first, with the nodes that are not queued last', () => {
+    expect(DEFAULT_SORT).toEqual({ id: 'payout', dir: 'asc' });
+    expect(ids(sortFleet(r, DEFAULT_SORT))).toEqual([1, 2, 4, 3, 5]);
+  });
+
+  it('puts a missing value last in both directions', () => {
+    expect(ids(sortFleet(r, { id: 'payout', dir: 'desc' }))).toEqual([4, 2, 1, 3, 5]);
+  });
+
+  it('lists the oldest node first when age is sorted from the top', () => {
+    expect(ids(sortFleet(r, { id: 'age', dir: 'desc' }))).toEqual([1, 2, 3, 4, 5]);
+    expect(ids(sortFleet(r, { id: 'age', dir: 'asc' }))).toEqual([5, 4, 3, 2, 1]);
+  });
+
+  it('keeps the order for no sort or a column it does not know, and never hands back the input', () => {
+    expect(ids(sortFleet(r, null))).toEqual([1, 2, 3, 4, 5]);
+    expect(ids(sortFleet(r, { id: 'bogus', dir: 'asc' }))).toEqual([1, 2, 3, 4, 5]);
+    expect(sortFleet(r, null)).not.toBe(r);
+  });
+
+  it('starts the payment columns soonest first and the rest biggest first', () => {
+    expect(columnSpec('payout').firstDir).toBe('asc');
+    expect(columnSpec('place').firstDir).toBe('asc');
+    expect(columnSpec('perDay').firstDir).toBeUndefined();
+  });
+});
+
+describe('summarizeRows', () => {
+  const r = rows();
+
+  it('totals the nodes by health, tier, earning, findings and apps', () => {
+    const s = summarizeRows(r);
+    expect(s.nodes).toBe(5);
+    expect([s.healthy, s.attention, s.down]).toEqual([1, 2, 2]);
+    expect(s.tiers).toEqual({ cumulus: 0, nimbus: 1, stratus: 4 });
+    expect(s.perDay).toBeCloseTo(64, 9);
+    expect(s.flagged).toBe(1);
+    expect(s.apps).toBe(15);
+    expect(s.hosts).toBe(5);
+  });
+
+  it('finds the soonest payment and who it goes to', () => {
+    expect(summarizeRows(r).next).toEqual({ etaMs: 1000, amount: 9, key: op(1) });
+    expect(summarizeRows([r[3] as FleetRow]).next).toEqual({ etaMs: 3000, amount: 3.5, key: op(4) });
+  });
+
+  it('says nothing is known rather than zero', () => {
+    const none = summarizeRows([]);
+    expect(none.nodes).toBe(0);
+    expect(none.perDay).toBeNull();
+    expect(none.next).toBeNull();
+    expect(summarizeRows([r[2] as FleetRow]).next).toBeNull();
+  });
+
+  it('counts nodes on one host address once', () => {
+    const [a, b] = buildFleetRows([node(1), node(2, { ip: '10.0.0.1' })], [], [], []);
+    expect(summarizeRows([a as FleetRow, b as FleetRow]).hosts).toBe(1);
+  });
+});
+
+describe('activeFilters', () => {
+  const r = rows();
+  const facets = facetsOf(r);
+
+  it('is empty when nothing is set', () => {
+    expect(activeFilters(NO_FILTER, facets)).toEqual([]);
+  });
+
+  it('makes one chip per choice, in the order the filters read, each with what removes it', () => {
+    const f: FleetFilter = {
+      text: ' abc ',
+      tiers: ['nimbus', 'stratus'],
+      buckets: ['down'],
+      country: 'FI',
+      city: 'FI:Helsinki',
+      provider: 'Hetzner',
+      version: '8.19.1',
+    };
+    const chips = activeFilters(f, facets);
+    expect(chips.map((c) => c.label)).toEqual([
+      'Search: abc',
+      'Tier: Nimbus',
+      'Tier: Stratus',
+      'State: Down or gone',
+      'Country: Finland',
+      'City: Helsinki',
+      'Provider: Hetzner',
+      'FluxOS: 8.19.1',
+    ]);
+    expect(chips.map((c) => c.clear)).toEqual([
+      { text: '' },
+      { tiers: ['stratus'] },
+      { tiers: ['nimbus'] },
+      { buckets: [] },
+      { country: null },
+      { city: null },
+      { provider: null },
+      { version: null },
+    ]);
+    expect(new Set(chips.map((c) => c.id)).size).toBe(chips.length);
+  });
+
+  it('names a country the facets do not list by its code', () => {
+    expect(activeFilters({ ...NO_FILTER, country: 'XX' }, facets)[0]?.label).toBe('Country: XX');
+  });
+
+  it('counts a city among the filters', () => {
+    expect(filterCount({ ...NO_FILTER, city: 'FI:Helsinki' })).toBe(1);
+    expect(isFiltered({ ...NO_FILTER, city: 'FI:Helsinki' })).toBe(true);
+  });
+});
+
+describe('cities and groups as filters', () => {
+  const r = rows();
+
+  it('keys a city by country so two cities of one name stay apart', () => {
+    expect(cityKey({ city: 'Helsinki', countryCode: 'FI' })).toBe('FI:Helsinki');
+    expect(cityKey({ city: '', countryCode: 'FI' })).toBeNull();
+    expect(groupOf(r[1] as FleetRow, 'city')[0]).toBe('FI:Helsinki');
+  });
+
+  it('filters by city', () => {
+    const ids = filterFleet(r, { ...NO_FILTER, city: 'FI:Helsinki' }).map((x) => x.id);
+    expect(ids).toEqual([2, 4]);
+    expect(filterFleet(r, { ...NO_FILTER, city: 'DE:Helsinki' })).toEqual([]);
+  });
+
+  it('turns a group into the filter that narrows to it', () => {
+    expect(filterForGroup('country', 'FI')).toEqual({ country: 'FI' });
+    expect(filterForGroup('city', 'FI:Helsinki')).toEqual({ city: 'FI:Helsinki' });
+    expect(filterForGroup('provider', 'Hetzner')).toEqual({ provider: 'Hetzner' });
+    expect(filterForGroup('version', '8.20.0')).toEqual({ version: '8.20.0' });
+    expect(filterForGroup('tier', 'stratus')).toEqual({ tiers: ['stratus'] });
+    expect(filterForGroup('state', 'down')).toEqual({ buckets: ['down'] });
+  });
+
+  it('has no filter for an unknown group or a tier or state it does not know', () => {
+    expect(filterForGroup('country', '?')).toBeNull();
+    expect(filterForGroup('tier', 'unknown')).toBeNull();
+    expect(filterForGroup('state', 'sleepy')).toBeNull();
+    expect(filterForGroup('none', 'x')).toBeNull();
+  });
+
+  it('knows which group a filter has narrowed to', () => {
+    expect(groupInFilter('country', { ...NO_FILTER, country: 'FI' })).toBe('FI');
+    expect(groupInFilter('tier', { ...NO_FILTER, tiers: ['nimbus'] })).toBe('nimbus');
+    expect(groupInFilter('tier', { ...NO_FILTER, tiers: ['nimbus', 'stratus'] })).toBeNull();
+    expect(groupInFilter('state', { ...NO_FILTER, buckets: ['down'] })).toBe('down');
+    expect(groupInFilter('provider', NO_FILTER)).toBeNull();
+    expect(groupInFilter('none', { ...NO_FILTER, country: 'FI' })).toBeNull();
+  });
+});
+
+describe('block time', () => {
+  it('writes a span of blocks as short time at 30 seconds a block', () => {
+    expect(blocksText(0)).toBe('now');
+    expect(blocksText(-5)).toBe('now');
+    expect(blocksText(2)).toBe('1 min');
+    expect(blocksText(120)).toBe('1 h');
+    expect(blocksText(2880)).toBe('1 d');
+    expect(blocksText(365 * 2880)).toBe('1.0 y');
+    expect(blocksText(2 * 365 * 2880)).toBe('2.0 y');
+    expect(blocksText(Number.NaN)).toBe('');
+  });
+
+  it('writes it in two units for a tooltip', () => {
+    expect(blocksLong(1)).toBe('30 s');
+    expect(blocksLong(120)).toBe('1h');
+    expect(blocksLong(2880 + 120)).toBe('1d 1h');
+    expect(blocksLong(-3)).toBe('0 s');
   });
 });

@@ -44,6 +44,10 @@ export interface GlobeActions {
   hover: (row: FleetRow | null) => void;
   /** Flies to one node. */
   locate: (row: FleetRow) => void;
+  /** Whether the globe's selection is exactly these rows (their soonest paid, at most `SELECT_LIMIT`). */
+  isShowing: (rows: readonly FleetRow[]) => boolean;
+  /** Puts these rows on the globe, or lets go when they already are. */
+  showRows: (rows: readonly FleetRow[]) => void;
 }
 
 export function useGlobeActions(nodes: readonly FleetNode[], rows: readonly FleetRow[]): GlobeActions {
@@ -83,27 +87,49 @@ export function useGlobeActions(nodes: readonly FleetNode[], rows: readonly Flee
     if (win && s.layout !== 'phone') wm.dispatch({ t: 'resize', id: win.id, rect });
   }, [wm]);
 
-  const fly = useCallback(() => {
-    const c = fleetCentroid(nodes);
-    if (c) void engine?.flyTo(c.lat, c.lon, flyRangeFor(c.spread), { tilt: 0.3 });
-  }, [engine, nodes]);
+  const flyTo = useCallback(
+    (places: readonly { lat: number | null; lon: number | null }[]) => {
+      const c = fleetCentroid(places);
+      if (c) void engine?.flyTo(c.lat, c.lon, flyRangeFor(c.spread), { tilt: 0.3 });
+    },
+    [engine],
+  );
 
-  const toggle = useCallback(() => {
-    void navigate({
-      to: '.',
-      replace: true,
-      search: ((prev: Record<string, unknown>) => ({
-        ...prev,
-        sel: onGlobe ? undefined : endpoints,
-      })) as never,
-    });
-    if (onGlobe) {
-      giveBack();
-      return;
-    }
-    makeRoom();
-    fly();
-  }, [navigate, onGlobe, endpoints, makeRoom, giveBack, fly]);
+  const fly = useCallback(() => flyTo(nodes), [flyTo, nodes]);
+
+  /** The same request for the whole fleet and for any part of it: select, make room, fly there; or let go. */
+  const show = useCallback(
+    (rows: readonly FleetRow[], sel: string) => {
+      const holding = sel !== '' && search.sel === sel;
+      void navigate({
+        to: '.',
+        replace: true,
+        search: ((prev: Record<string, unknown>) => ({
+          ...prev,
+          sel: holding ? undefined : sel,
+        })) as never,
+      });
+      if (holding) {
+        giveBack();
+        return;
+      }
+      makeRoom();
+      flyTo(rows);
+    },
+    [navigate, search.sel, makeRoom, giveBack, flyTo],
+  );
+
+  const toggle = useCallback(() => show(rows, endpoints), [show, rows, endpoints]);
+
+  const isShowing = useCallback(
+    (part: readonly FleetRow[]) => {
+      const sel = selectionOf(part);
+      return sel !== '' && search.sel === sel;
+    },
+    [search.sel],
+  );
+
+  const showRows = useCallback((part: readonly FleetRow[]) => show(part, selectionOf(part)), [show]);
 
   const hover = useCallback(
     (row: FleetRow | null) => {
@@ -152,5 +178,7 @@ export function useGlobeActions(nodes: readonly FleetNode[], rows: readonly Flee
     fly,
     hover,
     locate,
+    isShowing,
+    showRows,
   };
 }
