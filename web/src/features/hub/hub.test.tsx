@@ -179,6 +179,22 @@ function board(over: Partial<Parameters<typeof Leaderboard<Op>>[0]> = {}) {
 }
 
 describe('Leaderboard', () => {
+  it('keeps a track for every column a medium panel still shows: compact columns go, narrow ones stay', () => {
+    const m = mount(
+      board({
+        columns: [
+          { id: 'nodes', header: 'Nodes', width: '72px', cell: (r) => r.nodes },
+          { id: 'share', header: 'Share', width: '96px', hide: 'narrow', cell: (r) => `${r.nodes / 10}%` },
+          { id: 'rate', header: 'Rate', width: '64px', hide: 'compact', cell: (r) => r.nodes * 2 },
+        ],
+      }),
+    );
+    const lb = m.container.querySelector<HTMLElement>('.hub-lb');
+    expect(lb?.style.getPropertyValue('--lb-cols')).toBe('2.25rem minmax(0, 1.5fr) 72px 96px 64px 0px');
+    expect(lb?.style.getPropertyValue('--lb-cols-compact')).toBe('2.25rem minmax(0, 1.5fr) 72px 96px 0px');
+    m.unmount();
+  });
+
   it('is an ordered list named for assistive technology, one item per row', () => {
     const m = mount(board());
     const list = m.container.querySelector('ol');

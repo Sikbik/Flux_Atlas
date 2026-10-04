@@ -59,8 +59,14 @@ export function Leaderboard<T>({
 }: LeaderboardProps<T>) {
   const tail = actions ? 'auto' : '0px';
   const tracks = ['2.25rem', 'minmax(0, 1.5fr)', ...columns.map((c) => c.width), tail];
-  // A medium panel drops the columns marked to hide, and their tracks with them, so the rest still line up.
-  const kept = ['2.25rem', 'minmax(0, 1.5fr)', ...columns.filter((c) => !c.hide).map((c) => c.width), tail];
+  // A medium panel drops the columns marked `compact`, and their tracks with them, so the rest still line up. (A
+  // column marked `narrow` stays until the panel is a phone's, as the CSS has it.)
+  const kept = [
+    '2.25rem',
+    'minmax(0, 1.5fr)',
+    ...columns.filter((c) => c.hide !== 'compact').map((c) => c.width),
+    tail,
+  ];
   const style = { '--lb-cols': tracks.join(' '), '--lb-cols-compact': kept.join(' ') } as CSSProperties;
   return (
     <div className={cx('hub-lb', className)} style={style}>
