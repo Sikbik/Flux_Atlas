@@ -833,6 +833,40 @@ test('the Explorer, Nodes and Apps launchers open their landings; the Explorer l
   assert.deepEqual(pageErrors, []);
 });
 
+test('the Explorer, Nodes and Apps landings do not jump while their data arrives', {
+  timeout: 150_000,
+  skip: skipExternal,
+}, async () => {
+  // A section's loading state has the size of what replaces it, so nothing under it moves when the answer lands.
+  // The layout shifts of the page are recorded from before it loads; only those that moved something inside the
+  // hub count (the shell's own chrome ticks every second and is not the landing's to answer for).
+  const LIMIT = 0.03;
+  for (const path of ['/explorer', '/nodes', '/apps']) {
+    const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+    page.on('pageerror', (e) => pageErrors.push(`${path}: ${e.message}`));
+    await page.addInitScript(() => {
+      window.__hubShifts = [];
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          if (e.hadRecentInput) continue;
+          const inHub = (e.sources ?? []).some((s) =>
+            (s.node?.nodeType === 1 ? s.node : s.node?.parentElement)?.closest('.hub'),
+          );
+          if (inHub) window.__hubShifts.push(e.value);
+        }
+      }).observe({ type: 'layout-shift', buffered: true });
+    });
+    await page.goto(`${base}${path}`, { waitUntil: 'load' });
+    await page.waitForSelector('.hub-hero', { timeout: 60_000 });
+    // Long enough for every section to have asked and been answered (the demo server answers at once).
+    await page.waitForTimeout(8_000);
+    const total = await page.evaluate(() => window.__hubShifts.reduce((a, b) => a + b, 0));
+    assert.ok(total < LIMIT, `${path} moved by ${total.toFixed(4)} while loading (limit ${LIMIT})`);
+    await page.close();
+  }
+  assert.deepEqual(pageErrors, []);
+});
+
 test('watched-node alerts start from the shell once the boot is over and look up what is watched; the Operator launcher opens the watchlist', {
   timeout: 150_000,
 }, async () => {
