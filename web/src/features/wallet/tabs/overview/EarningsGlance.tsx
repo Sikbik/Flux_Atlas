@@ -4,10 +4,11 @@
 
 import { useMemo } from 'react';
 import { formatInt } from '../../../../lib/format';
-import { AnimatedNumber, Delta, Sparkline, Stat, StatGrid } from '../../../../ui';
+import { AnimatedNumber, Delta, Sparkline, StatGrid } from '../../../../ui';
 import { useWalletCtx } from '../../context';
 import { buildDaily, isCompleteDay, parallelRatio, totalsOf } from '../../lib/earnings';
 import { flux } from '../../lib/money';
+import { FitStat } from '../../ui/FitStat';
 import { Panel } from '../../ui/Panel';
 import { formatFlux2 } from './Standing';
 
@@ -55,8 +56,9 @@ export function EarningsGlance() {
       aside={`${formatInt(t.payments)} ${t.payments === 1 ? 'payment' : 'payments'}, UTC`}
     >
       <StatGrid min={140} columns={2}>
-        <Stat
+        <FitStat
           label="Paid"
+          fit={formatFlux2(t.native)}
           value={<AnimatedNumber value={t.native} format={formatFlux2} maxHz={0} />}
           unit="FLUX"
           delta={
@@ -71,8 +73,9 @@ export function EarningsGlance() {
             ) : undefined
           }
         />
-        <Stat
+        <FitStat
           label="A day on average"
+          fit={t.average === null ? null : formatFlux2(t.average)}
           value={
             t.average === null ? null : <AnimatedNumber value={t.average} format={formatFlux2} maxHz={0} />
           }

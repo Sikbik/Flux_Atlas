@@ -9,6 +9,7 @@ import { AnimatedNumber, ShareBar, type ShareSegment, Stat, StatGrid } from '../
 import { useWalletCtx } from '../../context';
 import type { RowSummary } from '../../lib/fleet';
 import { Eta } from '../../ui/Eta';
+import { FitStat } from '../../ui/FitStat';
 import { formatFlux2 } from '../overview/Standing';
 
 const TIER_WORD = { cumulus: 'Cumulus', nimbus: 'Nimbus', stratus: 'Stratus' } as const;
@@ -54,7 +55,7 @@ export function Strip({ s, total }: StripProps) {
   ].filter(Boolean);
 
   return (
-    <StatGrid min={170} className="wl-fstrip">
+    <StatGrid min={140} className="wl-fstrip">
       <Stat
         label="Nodes"
         value={<AnimatedNumber value={s.nodes} format={formatInt} maxHz={0} tint={false} />}
@@ -95,8 +96,9 @@ export function Strip({ s, total }: StripProps) {
           </span>
         }
       />
-      <Stat
+      <FitStat
         label="Earning a day"
+        fit={s.perDay === null ? null : formatFlux2(s.perDay)}
         value={
           s.perDay === null ? null : (
             <AnimatedNumber value={s.perDay} format={formatFlux2} maxHz={0} tint={false} />

@@ -6,7 +6,7 @@
 import { Sprout } from 'lucide-react';
 import { EmptyState } from '../../../ui';
 import { useWalletCtx } from '../context';
-import type { ParallelAssetsDto } from '../types';
+import { isUntouched } from '../lib/parallel';
 import { Panel } from '../ui/Panel';
 import { Chains } from './assets/Chains';
 import { Accrual, ClaimAll } from './assets/ClaimAll';
@@ -14,11 +14,6 @@ import { AssetsSkeleton, Degraded } from './assets/Degraded';
 import { History } from './assets/History';
 import { FusionAge, Summary } from './assets/Summary';
 import './assets.css';
-
-/** An address that has never accrued, claimed or been quoted anything: ten chains of zeros say nothing. */
-export function isUntouched(a: ParallelAssetsDto): boolean {
-  return a.mined <= 0 && a.claimed <= 0 && a.claimable <= 0 && a.claims.length === 0;
-}
 
 export function AssetsTab() {
   const { assets } = useWalletCtx();

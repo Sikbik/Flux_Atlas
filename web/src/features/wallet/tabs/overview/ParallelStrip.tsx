@@ -2,11 +2,12 @@
 // fees, and how much of what the wallet has mined it has already claimed. They come from an external service that can
 // be down on its own, so this strip has its own loading and failed states and never takes the page with it.
 
-import { CloudOff } from 'lucide-react';
+import { CloudOff, Sprout } from 'lucide-react';
 import { formatInt, formatPercent } from '../../../../lib/format';
 import { AnimatedNumber, Button, EmptyState, Meter, Stat, StatGrid } from '../../../../ui';
 import { useWalletCtx } from '../../context';
-import { claimedShare } from '../../lib/parallel';
+import { claimedShare, isUntouched } from '../../lib/parallel';
+import { FitStat } from '../../ui/FitStat';
 import { Panel } from '../../ui/Panel';
 import { formatFlux2 } from './Standing';
 
@@ -39,19 +40,31 @@ export function ParallelStrip() {
     );
   }
 
+  if (isUntouched(a)) {
+    return (
+      <Panel title="Parallel assets" aside="claimed in Flux Fusion">
+        <EmptyState compact icon={Sprout} title="Nothing has accrued yet">
+          Each FLUX a node earns adds a tenth of itself on ten other chains. This address has earned none.
+        </EmptyState>
+      </Panel>
+    );
+  }
+
   const share = claimedShare(a);
   const chains = a.chains.filter((c) => c.active).length;
   return (
     <Panel title="Parallel assets" aside="claimed in Flux Fusion">
       <StatGrid min={150} columns={2}>
-        <Stat
+        <FitStat
           label="Claimable now"
+          fit={formatFlux2(a.multi.claimable)}
           value={<AnimatedNumber value={a.multi.claimable} format={formatFlux2} maxHz={0} />}
           unit="FLUX"
           caption={`${money.text(a.multi.claimable)} across ${formatInt(chains)} chains`}
         />
-        <Stat
+        <FitStat
           label="After claim fees"
+          fit={formatFlux2(a.multi.net)}
           value={<AnimatedNumber value={a.multi.net} format={formatFlux2} maxHz={0} />}
           unit="FLUX"
           caption={`${formatFlux2(a.multi.fees)} FLUX in fees, ${money.text(a.multi.net)} net`}

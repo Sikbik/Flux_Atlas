@@ -17,6 +17,7 @@ import {
   feeShareText,
   GAUGE_STOPS,
   isClaimAll,
+  isUntouched,
   receivingLink,
   safeHttpUrl,
   sortChains,
@@ -230,6 +231,21 @@ describe('claimedShare', () => {
     expect(claimedShare({ mined: 1_500_904, claimed: 1_065_349 })).toBeCloseTo(0.7098, 3);
     expect(claimedShare({ mined: 0, claimed: 0 })).toBeNull();
     expect(claimedShare({ mined: 10, claimed: 12 })).toBe(1);
+  });
+});
+
+describe('isUntouched', () => {
+  const none = { mined: 0, claimed: 0, claimable: 0, claims: [] };
+
+  it('is true for an address that has never accrued, claimed or been quoted anything', () => {
+    expect(isUntouched(none)).toBe(true);
+  });
+
+  it('is false as soon as anything has been mined, claimed, quoted or recorded', () => {
+    expect(isUntouched({ ...none, mined: 0.01 })).toBe(false);
+    expect(isUntouched({ ...none, claimed: 5 })).toBe(false);
+    expect(isUntouched({ ...none, claimable: 3 })).toBe(false);
+    expect(isUntouched({ ...none, claims: [claim()] })).toBe(false);
   });
 });
 

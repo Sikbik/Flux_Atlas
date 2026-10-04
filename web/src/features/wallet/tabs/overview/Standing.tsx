@@ -55,6 +55,8 @@ export function Standing() {
 
   const frac = standingFraction(s.operator_rank, s.operator_count);
   const top = topShareText(s.operator_rank, s.operator_count);
+  // The tiers this wallet runs a node in, the biggest first.
+  const run = PAY_TIERS.filter((t) => dto.tiers[t] > 0).reverse();
   // The balance is the longest figure in the view: the tile sizes it so every digit fits on a phone.
   const fit = (
     balance === null ? {} : { '--wl-em': figureEm(formatFlux2(balance)).toFixed(3) }
@@ -103,8 +105,10 @@ export function Standing() {
                 label="Balance split between collateral and liquid FLUX"
               />
               <p className="wl-note">
-                <Lock size={12} strokeWidth={1.5} aria-hidden="true" className="wl-inline-icon" /> Collateral
-                is locked to your nodes. It counts in the balance, and spending it stops the node.
+                <Lock size={12} strokeWidth={1.5} aria-hidden="true" className="wl-inline-icon" />{' '}
+                {locked > 0
+                  ? 'Collateral is locked to your nodes. It counts in the balance, and spending it stops the node.'
+                  : 'No node collateral is locked here, so the whole balance is liquid.'}
               </p>
             </>
           )}
@@ -142,10 +146,18 @@ export function Standing() {
           <Stat
             label="Operator rank"
             value={s.operator_rank === null ? 'Unranked' : `#${formatInt(s.operator_rank)}`}
-            unit={s.operator_count > 0 ? `of ${formatInt(s.operator_count)}` : undefined}
+            unit={
+              s.operator_rank !== null && s.operator_count > 0
+                ? `of ${formatInt(s.operator_count)}`
+                : undefined
+            }
             caption={
               frac === null ? (
-                'by number of nodes'
+                dto.nodes.length === 0 ? (
+                  'runs no node, so it is not ranked'
+                ) : (
+                  'by number of nodes'
+                )
               ) : (
                 <>
                   <span
@@ -162,12 +174,10 @@ export function Standing() {
           />
         </StatGrid>
 
-        <ul className="wl-shares" aria-label="Share of each tier this wallet runs">
-          {PAY_TIERS.slice()
-            .reverse()
-            .map((t) => {
+        {run.length > 0 ? (
+          <ul className="wl-shares" aria-label="Share of each tier this wallet runs">
+            {run.map((t) => {
               const n = dto.tiers[t];
-              if (n <= 0) return null;
               const share = s.share_of_tier[t] ?? 0;
               return (
                 <li key={t} data-tier={t}>
@@ -183,7 +193,8 @@ export function Standing() {
                 </li>
               );
             })}
-        </ul>
+          </ul>
+        ) : null}
       </div>
     </section>
   );

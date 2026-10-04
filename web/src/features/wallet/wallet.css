@@ -115,6 +115,25 @@
   min-width: 0;
 }
 
+/* A stat tile with a long figure (`FitStat`): the kit sizes a figure by the tile's width alone, so a nine digit amount ran
+   past a 150 px tile on a phone. Here the figure takes the size at which its own digits fit (`--wl-em` is its width in
+   ems, 44 px is the unit beside it), never above the kit's 28 px and never so small that it stops being the figure. */
+.wl .ui-stat[data-fit] .ui-stat__value {
+  font-size: clamp(15px, min(15cqi, calc((100cqi - 44px) / var(--wl-em, 6))), 28px);
+}
+
+/* A change and its period ("-1.0% vs the week before") wrap in a narrow tile instead of running past its edge. */
+.wl .ui-stat__delta {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wl .ui-delta {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+  white-space: normal;
+}
+
 /* ---- layout primitives ------------------------------------------------------------------------- */
 
 .wl-duo {

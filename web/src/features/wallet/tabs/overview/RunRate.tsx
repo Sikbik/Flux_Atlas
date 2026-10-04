@@ -3,11 +3,12 @@
 // run-rate; the last seven days beside it are what was actually paid, so the two can be checked against each other.
 
 import { useMemo, useState } from 'react';
-import { AnimatedNumber, Delta, SegmentedControl, Stat, StatGrid, Switch } from '../../../../ui';
+import { AnimatedNumber, Delta, SegmentedControl, StatGrid, Switch } from '../../../../ui';
 import { useWalletCtx } from '../../context';
 import { wholeDays } from '../../lib/earnings';
 import { flux, MONTH_DAYS, YEAR_DAYS } from '../../lib/money';
 import { useWalletPrefs } from '../../prefs';
+import { FitStat } from '../../ui/FitStat';
 import { Panel } from '../../ui/Panel';
 import { formatFlux2 } from './Standing';
 
@@ -57,7 +58,9 @@ export function RunRate() {
   const weekAvg = whole.count > 0 ? whole.last / whole.count : 0;
   const paceVsWeek = nativeDay > 0 && weekAvg > 0 ? (weekAvg / nativeDay - 1) * 100 : null;
 
-  const none = dto.nodes.length === 0 || (nativeDay === 0 && paDay === 0);
+  const idle = dto.nodes.length === 0;
+  const none = idle || (nativeDay === 0 && paDay === 0);
+  const stored = e.days.length > 0;
 
   return (
     <Panel
@@ -74,28 +77,36 @@ export function RunRate() {
       }
     >
       <StatGrid min={150} columns={2} className="wl-runrate">
-        <Stat
+        <FitStat
           label="Native FLUX"
+          fit={none ? '0.00' : formatFlux2(native)}
           value={none ? '0.00' : <AnimatedNumber value={native} format={formatFlux2} maxHz={0} />}
           unit="FLUX"
           caption={none ? 'No node is earning yet' : money.text(native)}
         />
-        <Stat
+        <FitStat
           label="Parallel assets"
+          fit={none ? '0.00' : formatFlux2(pa)}
           value={none ? '0.00' : <AnimatedNumber value={pa} format={formatFlux2} maxHz={0} />}
           unit="FLUX"
           caption={none ? undefined : includePa ? money.text(pa) : `${money.text(pa)}, not counted below`}
         />
-        <Stat
+        <FitStat
           label={includePa ? 'Total' : 'Total, native only'}
+          fit={none ? '0.00' : formatFlux2(total)}
           value={none ? '0.00' : <AnimatedNumber value={total} format={formatFlux2} maxHz={0} />}
           unit="FLUX"
           caption={none ? undefined : money.text(total)}
         />
-        <Stat
+        <FitStat
           label="Paid, last 7 days"
+          fit={stored ? formatFlux2(week.last) : idle ? '0.00' : null}
           value={
-            e.days.length === 0 ? null : <AnimatedNumber value={week.last} format={formatFlux2} maxHz={0} />
+            stored ? (
+              <AnimatedNumber value={week.last} format={formatFlux2} maxHz={0} />
+            ) : idle ? (
+              '0.00'
+            ) : null
           }
           unit="FLUX"
           delta={
@@ -104,8 +115,10 @@ export function RunRate() {
             )
           }
           caption={
-            e.days.length === 0
-              ? undefined
+            !stored
+              ? idle
+                ? 'No node is paid to this address'
+                : 'No payment is stored yet'
               : paceVsWeek === null
                 ? `${formatFlux2(weekAvg)} FLUX a day`
                 : `${formatFlux2(weekAvg)} a day, ${Math.abs(paceVsWeek).toFixed(1)}% ${paceVsWeek >= 0 ? 'over' : 'under'} the pace`

@@ -158,6 +158,13 @@ export function claimedShare(dto: Pick<ParallelAssetsDto, 'mined' | 'claimed'>):
   return dto.mined > 0 ? Math.min(1, Math.max(0, dto.claimed / dto.mined)) : null;
 }
 
+/** An address that has never accrued, claimed or been quoted anything: ten chains of zeros say nothing. */
+export function isUntouched(
+  dto: Pick<ParallelAssetsDto, 'mined' | 'claimed' | 'claimable' | 'claims'>,
+): boolean {
+  return dto.mined <= 0 && dto.claimed <= 0 && dto.claimable <= 0 && dto.claims.length === 0;
+}
+
 export interface Composition {
   /** Already claimed. */
   claimed: number;

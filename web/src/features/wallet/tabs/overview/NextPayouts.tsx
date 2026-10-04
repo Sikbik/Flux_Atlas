@@ -42,12 +42,22 @@ export function NextPayouts() {
   const horizonSpec = HORIZON[horizon];
   const total = dto.payouts.length;
 
+  // Nothing queued: a ring with nothing on it says less than a sentence, and takes a screen to say it.
+  if (total === 0) {
+    return (
+      <Panel title="Next payouts" aside="nothing queued">
+        <p className="wl-note">
+          No node of this wallet is in a payment queue, so nothing is due. A node joins the queue once it is
+          confirmed.
+        </p>
+      </Panel>
+    );
+  }
+
   return (
     <Panel
       title="Next payouts"
-      aside={
-        total === 0 ? 'nothing queued' : `${formatInt(total)} ${total === 1 ? 'node' : 'nodes'} in the queues`
-      }
+      aside={`${formatInt(total)} ${total === 1 ? 'node' : 'nodes'} in the queues`}
       actions={
         <SegmentedControl
           size="sm"
@@ -87,11 +97,7 @@ export function NextPayouts() {
           ) : null}
 
           {list.length === 0 ? (
-            <p className="wl-note">
-              {total === 0
-                ? 'No node of this wallet is in a payment queue, so nothing is due. A node joins the queue once it is confirmed.'
-                : 'The queue estimates for these nodes are being recomputed.'}
-            </p>
+            <p className="wl-note">The queue estimates for these nodes are being recomputed.</p>
           ) : (
             <>
               <h3 className="wl-sub">Coming up</h3>

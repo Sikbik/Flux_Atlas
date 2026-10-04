@@ -40,7 +40,7 @@ export function Verdict({ healthy, summary }: VerdictProps) {
 
   return (
     <Panel title="Health and risk" aside={headline}>
-      <StatGrid min={170}>
+      <StatGrid min={140}>
         <Stat
           label={
             <span className="wl-sevlabel" data-severity="ok">

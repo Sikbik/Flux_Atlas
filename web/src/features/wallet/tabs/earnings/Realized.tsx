@@ -22,6 +22,7 @@ import {
 import { flux } from '../../lib/money';
 import { useWalletPrefs } from '../../prefs';
 import { PAY_TIERS } from '../../types';
+import { FitStat } from '../../ui/FitStat';
 import { Panel } from '../../ui/Panel';
 import { DailyChart, type Unit } from '../../viz/DailyChart';
 import { formatFlux2 } from '../overview/Standing';
@@ -103,14 +104,16 @@ export function Realized({ unit, onUnit }: { unit: Unit; onUnit: (u: Unit) => vo
       }
     >
       <StatGrid min={150}>
-        <Stat
+        <FitStat
           label="Paid in range"
+          fit={formatFlux2(totals.native)}
           value={<AnimatedNumber value={totals.native} format={formatFlux2} maxHz={0} />}
           unit="FLUX"
           caption={totals.value === null ? undefined : `${money.fmt(totals.value)} at each day's price`}
         />
-        <Stat
+        <FitStat
           label="A day on average"
+          fit={totals.average === null ? null : formatFlux2(totals.average)}
           value={
             totals.average === null ? null : (
               <AnimatedNumber value={totals.average} format={formatFlux2} maxHz={0} />
@@ -123,8 +126,9 @@ export function Realized({ unit, onUnit }: { unit: Unit; onUnit: (u: Unit) => vo
               : `over ${formatInt(totals.completeDays)} whole ${totals.completeDays === 1 ? 'day' : 'days'}`
           }
         />
-        <Stat
+        <FitStat
           label="Best day"
+          fit={totals.best ? formatFlux2(totals.best.native) : null}
           value={
             totals.best ? <AnimatedNumber value={totals.best.native} format={formatFlux2} maxHz={0} /> : null
           }

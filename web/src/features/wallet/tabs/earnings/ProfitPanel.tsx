@@ -11,6 +11,7 @@ import { convertMoney, flux, formatPrice } from '../../lib/money';
 import { factorText, parseCostInput, profitability } from '../../lib/projection';
 import { MAX_COST, useWalletPrefs } from '../../prefs';
 import { PAY_TIERS, type PayTier } from '../../types';
+import { FitStat } from '../../ui/FitStat';
 import { Panel } from '../../ui/Panel';
 
 const TEN = 10;
@@ -156,8 +157,9 @@ export function ProfitPanel({ price, factor }: { price: number | null; factor: n
       </div>
 
       <StatGrid min={150}>
-        <Stat
+        <FitStat
           label="Net per month"
+          fit={profit.net === null ? null : money.fmt(profit.net)}
           value={profit.net === null ? null : <span data-sign={sign}>{money.fmt(profit.net)}</span>}
           caption={
             profit.net === null
@@ -168,8 +170,9 @@ export function ProfitPanel({ price, factor }: { price: number | null; factor: n
           }
           className="wl-profit"
         />
-        <Stat
+        <FitStat
           label="Earned per month"
+          fit={profit.revenue === null ? null : money.fmt(profit.revenue)}
           value={profit.revenue === null ? null : money.fmt(profit.revenue)}
           caption={`${formatInt(Math.round(profit.fluxMonthly))} FLUX${includePa ? ', with parallel assets' : ', native only'}`}
         />
