@@ -22,9 +22,23 @@
   font-size: var(--fs-xs);
   white-space: nowrap;
   translate: calc(var(--aim-x, 50vw) - 50%) var(--gf-y, 0px);
-  transition: translate var(--dur-slower) var(--ease-out);
+  transition:
+    translate var(--dur-slower) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear 0s;
   animation: ui-fade-in var(--dur-base) var(--ease-out);
   pointer-events: auto;
+}
+
+/* A window that covers the globe is up: it steps aside with the aim strip. */
+.globefocus[data-hidden] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    translate var(--dur-slower) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    visibility 0s linear var(--dur-base);
 }
 
 /* Under the aim strip (38 px tall) with 8 px between them. */

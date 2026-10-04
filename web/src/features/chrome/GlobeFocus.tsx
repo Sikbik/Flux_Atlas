@@ -22,6 +22,9 @@ export function GlobeFocus({ inline = false }: { inline?: boolean }) {
   const navigate = useNavigate();
   // Under the aim strip the pill takes the row where the toast stack starts: the stack steps down past it
   // (toasts.css reads the room) for as long as the pill is there.
+  // Where the aim strip steps aside for a window that covers the globe (analytics, About, the time machine,
+  // weather), so does the pill: Esc still clears the focus, and the pill is back with the globe.
+  const hidden = !inline && !aim.allowed;
   const below = !inline && focus !== null && aim.shown;
   useLayoutEffect(() => {
     if (!below) return;
@@ -44,6 +47,8 @@ export function GlobeFocus({ inline = false }: { inline?: boolean }) {
       role="status"
       data-inline={inline || undefined}
       data-below-aim={below ? '' : undefined}
+      data-hidden={hidden ? '' : undefined}
+      inert={hidden || undefined}
       style={inline ? undefined : ({ '--aim-x': `${aim.centre}px` } as React.CSSProperties)}
     >
       <Globe className="globefocus-i" size={14} strokeWidth={1.75} aria-hidden="true" />
