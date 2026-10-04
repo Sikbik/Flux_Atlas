@@ -1,19 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import type { ChainDailyDay, ChainDailyDto } from '../api';
+import type { ChainDailyDto } from '../../../../api/generated/ChainDailyDto';
+import type { ChainDay } from '../../../../api/generated/ChainDay';
 import {
+  BLOCKS_PER_DAY_PON,
+  BLOCKS_PER_DAY_POW,
+  blockSeconds,
   bucketFrame,
+  completeValues,
+  DAILY_RANGES,
   DAY_MS,
   dailySeries,
   drawnSeries,
+  expectedBlocks,
   fluxText,
   hashrateText,
   headline,
   isRunningDay,
   lastKnown,
+  legacyMining,
+  legacyNote,
   logAxisFor,
   logTickText,
   METRICS,
+  PON_ACTIVATION_MS,
   pickBucketSize,
+  rangePhrase,
   resolveScale,
   type SeriesFrame,
   summaryOf,
@@ -22,26 +33,37 @@ import {
 
 const D0 = Date.UTC(2026, 8, 1); // a Tuesday
 
-function day(i: number, over: Partial<ChainDailyDay> = {}): ChainDailyDay {
+function day(i: number, over: Partial<ChainDay> = {}): ChainDay {
   return {
     day_ms: D0 + i * DAY_MS,
     transactions: 40_000 + i,
-    fees: 0.02,
+    blocks: 2880,
+    fees: 0.00004,
+    fees_total: 0.12 + i / 1000,
     outputs: 3_000_000,
     supply: 430_000_000 + i * 40_320,
     difficulty: 0.1,
-    network_hash: null,
+    network_hash: 3.66e10,
     ...over,
   };
 }
 
-function dto(days: ChainDailyDay[], generatedAfterLast = DAY_MS + 60_000): ChainDailyDto {
+/** A payload built `generatedAfterLast` ms after the start of its last day (a day and a minute: the day is over). */
+function dto(days: ChainDay[], generatedAfterLast = DAY_MS + 60_000): ChainDailyDto {
   const last = days.at(-1)?.day_ms ?? D0;
   return { generated_ms: last + generatedAfterLast, first_day_ms: days[0]?.day_ms ?? null, days };
 }
 
+describe('the ranges', () => {
+  it('names the longest range two years, never the whole chain', () => {
+    expect(DAILY_RANGES.map((r) => r.label)).toEqual(['30D', '90D', '1Y', '2Y']);
+    expect(rangePhrase('all')).toBe('the last two years, all that Insight keeps');
+    expect(rangePhrase('all')).not.toMatch(/whole chain|genesis/);
+  });
+});
+
 describe('isRunningDay', () => {
-  it('is true for the day the payload was built in, false once the day is over', () => {
+  it('is true for a day the payload was built in, false once the day is over', () => {
     expect(isRunningDay(D0, D0 + 3 * 3_600_000)).toBe(true);
     expect(isRunningDay(D0, D0 + DAY_MS)).toBe(false);
     expect(isRunningDay(D0, D0 + DAY_MS + 60_000)).toBe(false);
@@ -55,42 +77,54 @@ describe('dailySeries', () => {
     expect(s.t).toEqual(days.map((d) => d.day_ms));
     expect(s.v).toEqual([40_000, null, 40_002]);
     expect(s.span).toBe(1);
+    expect(s.running).toBe(false);
     expect(s.trimmed).toBe(false);
   });
 
-  it('leaves the running day out of a per-day figure, and keeps it for a standing one', () => {
-    const days = [day(0), day(1), day(2)];
-    // Built three hours into the last day.
-    const running = dto(days, 3 * 3_600_000);
-    const tx = dailySeries(running, 'transactions');
-    expect(tx.t).toHaveLength(2);
-    expect(tx.trimmed).toBe(true);
-    const supply = dailySeries(running, 'supply');
-    expect(supply.t).toHaveLength(3);
-    expect(supply.trimmed).toBe(false);
+  it('charts the fees a day from the total, never from the average per block', () => {
+    const s = dailySeries(dto([day(0, { fees: 0.00004231, fees_total: 0.1218 })]), 'fees');
+    expect(s.v).toEqual([0.1218]);
+    expect(METRICS.fees.field).toBe('fees_total');
+  });
+
+  it('flags the day so far on a per-day figure, and not on a standing one', () => {
+    const running = dto([day(0), day(1), day(2)], 3 * 3_600_000);
+    expect(dailySeries(running, 'transactions').running).toBe(true);
+    expect(dailySeries(running, 'blocks').running).toBe(true);
+    expect(dailySeries(running, 'supply').running).toBe(false);
+    expect(dailySeries(running, 'transactions').t).toHaveLength(3);
   });
 
   it('never turns a missing figure into a zero', () => {
-    const s = dailySeries(dto([day(0, { fees: null }), day(1, { fees: Number.NaN })]), 'fees');
+    const s = dailySeries(dto([day(0, { fees_total: null }), day(1, { fees_total: Number.NaN })]), 'fees');
     expect(s.v).toEqual([null, null]);
+  });
+
+  it('gives the whole days of a series with a partial last one', () => {
+    const s = dailySeries(dto([day(0), day(1), day(2)], 3 * 3_600_000), 'transactions');
+    expect(completeValues(s)).toEqual([40_000, 40_001]);
+    const whole = dailySeries(dto([day(0), day(1)]), 'transactions');
+    expect(completeValues(whole)).toEqual([40_000, 40_001]);
   });
 });
 
 describe('pickBucketSize and bucketFrame', () => {
-  it('draws up to 480 days a day, then whole weeks', () => {
+  it('draws up to 800 days a day, which holds the two years the server keeps', () => {
     expect(pickBucketSize(30)).toBe(1);
     expect(pickBucketSize(365)).toBe(1);
-    expect(pickBucketSize(480)).toBe(1);
-    expect(pickBucketSize(481)).toBe(7);
-    expect(pickBucketSize(3100)).toBe(7);
-    expect(pickBucketSize(3400)).toBe(14);
+    expect(pickBucketSize(730)).toBe(1);
+    expect(pickBucketSize(800)).toBe(1);
+    expect(pickBucketSize(801)).toBe(7);
+    expect(pickBucketSize(5000)).toBe(7);
+    expect(pickBucketSize(5700)).toBe(14);
   });
 
-  const frame = (n: number, f: (i: number) => number | null): SeriesFrame => ({
+  const frame = (n: number, f: (i: number) => number | null, running = false): SeriesFrame => ({
     metric: 'transactions',
     t: Array.from({ length: n }, (_, i) => D0 + i * DAY_MS),
     v: Array.from({ length: n }, (_, i) => f(i)),
     span: 1,
+    running,
     trimmed: false,
   });
 
@@ -121,13 +155,17 @@ describe('pickBucketSize and bucketFrame', () => {
     const f = frame(40, (i) => i);
     expect(bucketFrame(f, 1)).toBe(f);
     expect(drawnSeries(f)).toBe(f);
+    const two = frame(730, () => 5, true);
+    expect(drawnSeries(two)).toBe(two);
   });
 
-  it('draws a long history as weekly means, whole', () => {
-    const f = frame(3100, () => 5);
+  it('draws a longer history as weekly means, without the day so far that would pull a week down', () => {
+    const f = frame(3100, () => 5, true);
     const d = drawnSeries(f);
-    expect(d.t.length).toBeLessThanOrEqual(480);
+    expect(d.t.length).toBeLessThanOrEqual(800);
     expect(d.span).toBe(7);
+    expect(d.running).toBe(false);
+    expect(d.trimmed).toBe(true);
     expect(d.v.every((x) => x === 5)).toBe(true);
   });
 });
@@ -153,11 +191,12 @@ describe('thinValues', () => {
 });
 
 describe('resolveScale', () => {
-  const series = (metric: SeriesFrame['metric'], v: (number | null)[]): SeriesFrame => ({
+  const series = (metric: SeriesFrame['metric'], v: (number | null)[], running = false): SeriesFrame => ({
     metric,
     t: v.map((_, i) => D0 + i * DAY_MS),
     v,
     span: 1,
+    running,
     trimmed: false,
   });
   const geometric = (n: number, from: number, to: number) =>
@@ -165,15 +204,22 @@ describe('resolveScale', () => {
 
   it('goes to log by itself when a series spans orders of magnitude', () => {
     expect(resolveScale(series('transactions', geometric(60, 500, 45_000)), 'auto')).toBe('log');
-    expect(resolveScale(series('difficulty', geometric(60, 0.08, 100_000)), 'auto')).toBe('log');
+    expect(resolveScale(series('fees', geometric(60, 0.001, 0.9)), 'auto')).toBe('log');
   });
 
   it('stays linear for a series that stays within a few times its size', () => {
     expect(resolveScale(series('transactions', geometric(60, 38_000, 47_000)), 'auto')).toBe('linear');
   });
 
-  it('never takes the supply to log by itself, nor a short or gappy series', () => {
+  it('does not let the day so far, low by nature, take a steady series to log', () => {
+    const v = [...geometric(59, 40_000, 44_000), 900];
+    expect(resolveScale(series('transactions', v, true), 'auto')).toBe('linear');
+    expect(resolveScale(series('transactions', v, false), 'auto')).toBe('log');
+  });
+
+  it('never takes the supply or the block count to log by itself, nor a short or gappy series', () => {
     expect(resolveScale(series('supply', geometric(60, 1_000, 430_000_000)), 'auto')).toBe('linear');
+    expect(resolveScale(series('blocks', geometric(60, 10, 2880)), 'auto')).toBe('linear');
     expect(resolveScale(series('transactions', geometric(6, 10, 90_000)), 'auto')).toBe('linear');
     const gappy = geometric(60, 500, 45_000).map((x, i) => (i % 4 === 0 ? 0 : x));
     expect(resolveScale(series('transactions', gappy), 'auto')).toBe('linear');
@@ -218,7 +264,7 @@ describe('logAxisFor', () => {
 });
 
 describe('headline', () => {
-  it('reads the newest value of a per-day figure against the seven days before it', () => {
+  it('reads the newest whole day of a per-day figure against the seven days before it', () => {
     const f = dailySeries(
       dto(Array.from({ length: 12 }, (_, i) => day(i, { transactions: i === 11 ? 55_000 : 40_000 }))),
       'transactions',
@@ -226,38 +272,43 @@ describe('headline', () => {
     const h = headline(f);
     expect(h.value).toBe(55_000);
     expect(h.at).toBe(D0 + 11 * DAY_MS);
-    expect(h.lapsed).toBe(false);
     expect(h.change?.kind).toBe('percent');
     expect(h.change?.value).toBeCloseTo(37.5);
   });
 
-  it('says what the supply gained over thirty days', () => {
+  it('skips the day so far: yesterday is the newest day with a whole figure', () => {
+    const days = Array.from({ length: 12 }, (_, i) => day(i, { transactions: i === 11 ? 3_000 : 40_000 }));
+    const f = dailySeries(dto(days, 2 * 3_600_000), 'transactions');
+    const h = headline(f);
+    expect(h.value).toBe(40_000);
+    expect(h.at).toBe(D0 + 10 * DAY_MS);
+    expect(h.change?.value).toBeCloseTo(0);
+  });
+
+  it('says what the supply gained since the range began', () => {
     const f = dailySeries(
       dto(Array.from({ length: 40 }, (_, i) => day(i, { supply: 400_000_000 + i * 40_000 }))),
       'supply',
     );
     const h = headline(f);
     expect(h.value).toBe(400_000_000 + 39 * 40_000);
-    expect(h.change).toEqual({ kind: 'amount', value: 30 * 40_000, period: '30 days' });
+    expect(h.change).toEqual({ kind: 'amount', value: 39 * 40_000, period: '39 days' });
   });
 
-  it('keeps the last value of a figure that went unknown and says it lapsed', () => {
-    const days = Array.from({ length: 10 }, (_, i) => day(i, { network_hash: i < 6 ? 1.5e8 + i : null }));
-    const h = headline(dailySeries(dto(days), 'network_hash'));
-    expect(h.value).toBe(1.5e8 + 5);
-    expect(h.at).toBe(D0 + 5 * DAY_MS);
-    expect(h.lapsed).toBe(true);
-    expect(h.change).toBeNull();
+  it('offers no supply comparison for a range of under a week', () => {
+    const f = dailySeries(dto([day(0), day(1), day(2)]), 'supply');
+    expect(headline(f).change).toBeNull();
+  });
+
+  it('offers no comparison for the block count, which is a schedule, and none from too few days', () => {
+    const days = Array.from({ length: 12 }, (_, i) => day(i));
+    expect(headline(dailySeries(dto(days), 'blocks')).change).toBeNull();
+    expect(headline(dailySeries(dto([day(0), day(1), day(2)]), 'transactions')).change).toBeNull();
   });
 
   it('has nothing to say about a series with no figure', () => {
-    const h = headline(dailySeries(dto([day(0, { fees: null })]), 'fees'));
-    expect(h).toEqual({ value: null, at: null, lapsed: false, change: null });
-  });
-
-  it('offers no comparison for difficulty, and none from too few days', () => {
-    expect(headline(dailySeries(dto([day(0), day(1), day(2)]), 'difficulty')).change).toBeNull();
-    expect(headline(dailySeries(dto([day(0), day(1), day(2)]), 'transactions')).change).toBeNull();
+    const h = headline(dailySeries(dto([day(0, { fees_total: null })]), 'fees'));
+    expect(h).toEqual({ value: null, at: null, change: null });
   });
 });
 
@@ -280,20 +331,68 @@ describe('summaryOf', () => {
     expect(s).not.toContain('log scale');
   });
 
-  it('says the scale is log, a mean of weeks, and what was left out', () => {
+  it('says the scale is log, a mean of weeks, and what was drawn partial or left out', () => {
     const weeks = { ...f, span: 7, trimmed: true };
     const s = summaryOf(weeks, 'log', 'all');
     expect(s).toContain('as means of weeks');
-    expect(s).toContain('over the whole chain');
+    expect(s).toContain('over the last two years, all that Insight keeps');
     expect(s).toContain('Drawn on a log scale.');
     expect(s).toContain('The day still running is left out.');
+    expect(summaryOf({ ...f, running: true }, 'linear', '30')).toContain('today so far');
   });
 
   it('puts units on FLUX figures and handles a series with no figure', () => {
-    const fees = dailySeries(dto([day(0), day(1)]), 'fees');
+    const fees = dailySeries(dto([day(0, { fees_total: 0.02 }), day(1, { fees_total: 0.02 })]), 'fees');
     expect(summaryOf(fees, 'linear', '30')).toContain('0.020 FLUX');
-    const none = dailySeries(dto([day(0, { fees: null })]), 'fees');
+    const none = dailySeries(dto([day(0, { fees_total: null })]), 'fees');
     expect(summaryOf(none, 'linear', '90')).toBe('Fees paid a day: no figures for the last 90 days.');
+  });
+});
+
+describe('blocks a day', () => {
+  it('reads the seconds between blocks off the count, and nothing off an unknown one', () => {
+    expect(blockSeconds(2880)).toBeCloseTo(30);
+    expect(blockSeconds(2700)).toBeCloseTo(32);
+    expect(blockSeconds(0)).toBeNull();
+    expect(blockSeconds(null)).toBeNull();
+  });
+
+  it('expects 720 blocks on the days of 120 second blocks and 2,880 since Proof of Node', () => {
+    expect(expectedBlocks(PON_ACTIVATION_MS - 2 * DAY_MS)).toBe(BLOCKS_PER_DAY_POW);
+    expect(expectedBlocks(PON_ACTIVATION_MS + 2 * DAY_MS)).toBe(BLOCKS_PER_DAY_PON);
+  });
+});
+
+describe('the mining years', () => {
+  const pow = (i: number, over: Partial<ChainDay> = {}) =>
+    day(0, {
+      day_ms: PON_ACTIVATION_MS - (10 - i) * DAY_MS,
+      difficulty: 50_000 + i,
+      network_hash: 3e6 + i,
+      ...over,
+    });
+
+  it('finds the last day of mining the payload holds, and none when the range starts later', () => {
+    const l = legacyMining(dto([pow(0), pow(1), day(0), day(1)]));
+    expect(l?.difficulty).toBe(50_001);
+    expect(l?.networkHash).toBe(3e6 + 1);
+    expect(l && l.dayMs + DAY_MS <= PON_ACTIVATION_MS).toBe(true);
+    expect(legacyMining(dto([day(0), day(1)]))).toBeNull();
+    expect(legacyMining(dto([]))).toBeNull();
+  });
+
+  it('skips a mining day with neither figure', () => {
+    const l = legacyMining(dto([pow(0), pow(1, { difficulty: null, network_hash: null })]));
+    expect(l?.difficulty).toBe(50_000);
+  });
+
+  it('tells the story without charting it', () => {
+    const none = legacyNote(null);
+    expect(none).toMatch(/Mining ended when Proof of Node began on 25 Oct 2025/);
+    expect(none).toMatch(/no longer measure mining work/);
+    const l = legacyNote(legacyMining(dto([pow(0), pow(1)])));
+    expect(l).toMatch(/the last whole day of mining in this range/);
+    expect(l).toMatch(/Msol\/s/);
   });
 });
 
@@ -306,17 +405,17 @@ describe('formats', () => {
     expect(fluxText(0)).toBe('0');
   });
 
-  it('writes a hash rate in the biggest unit above 1', () => {
-    expect(hashrateText(950)).toBe('950 H/s');
-    expect(hashrateText(1.48e8)).toBe('148 MH/s');
-    expect(hashrateText(1.5234e9)).toBe('1.52 GH/s');
+  it('writes a solution rate in the biggest unit above 1', () => {
+    expect(hashrateText(950)).toBe('950 sol/s');
+    expect(hashrateText(1.48e8)).toBe('148 Msol/s');
+    expect(hashrateText(3.66e10)).toBe('36.6 Gsol/s');
   });
 
   it('reads every figure of the metrics table', () => {
     expect(METRICS.transactions.value(43_210.4)).toBe('43,210');
     expect(METRICS.supply.value(430_806_540.5)).toBe('430,806,541');
     expect(METRICS.supply.short(430_806_540.5)).toBe('430.8M');
-    expect(METRICS.difficulty.value(0.0749)).toBe('0.075');
+    expect(METRICS.blocks.value(2879.6)).toBe('2,880');
     expect(lastKnown([1, null, 3, null])).toBe(2);
     expect(lastKnown([null])).toBe(-1);
   });

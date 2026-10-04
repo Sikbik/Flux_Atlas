@@ -3,20 +3,18 @@
 // snapshot of the ranking a day; with fewer than two there is nothing to compare, and that state is a designed one
 // (tracking), never an empty list. Pure.
 
+import type { RichConcentration } from '../../../../api/generated/RichConcentration';
+import type { RichEntered } from '../../../../api/generated/RichEntered';
+import type { RichLeft } from '../../../../api/generated/RichLeft';
+import type { RichMove } from '../../../../api/generated/RichMove';
+import type { RichMoversDto } from '../../../../api/generated/RichMoversDto';
+import type { RichMoversWindow } from '../../../../api/generated/RichMoversWindow';
 import { fluxToNumber, formatCompact } from '../../../../lib/format';
 import { type KnownEntity, knownEntity } from '../../lib/entities';
-import type {
-  MoversWindow,
-  RichConcentrationPoint,
-  RichEntered,
-  RichLeft,
-  RichMove,
-  RichMoversDto,
-} from '../api';
 import { DAY_MS } from './daily';
 
 export interface MoverWindowOption {
-  id: MoversWindow;
+  id: RichMoversWindow;
   label: string;
   /** "a day", "a week", "a month": for sentences. */
   phrase: string;
@@ -29,7 +27,7 @@ export const MOVER_WINDOWS: readonly MoverWindowOption[] = [
   { id: '30d', label: '30D', phrase: 'a month', ms: 30 * DAY_MS },
 ];
 
-export const windowOption = (w: MoversWindow): MoverWindowOption =>
+export const windowOption = (w: string): MoverWindowOption =>
   MOVER_WINDOWS.find((o) => o.id === w) ?? (MOVER_WINDOWS[1] as MoverWindowOption);
 
 // ---- rank shifts ------------------------------------------------------------------------------------------------
@@ -164,7 +162,7 @@ export interface ConcentrationTrend {
 
 /** The share held by the largest 10 (or 100, or 1,000) addresses day by day; null with fewer than two days. */
 export function concentrationTrend(
-  points: readonly RichConcentrationPoint[] | undefined,
+  points: readonly RichConcentration[] | undefined,
   key: ConcentrationKey = 'top10_pct',
 ): ConcentrationTrend | null {
   const ok = (points ?? [])
@@ -202,7 +200,7 @@ export type MoversView =
     }
   | {
       state: 'ready';
-      window: MoversWindow;
+      window: RichMoversWindow;
       fromMs: number;
       toMs: number;
       /** The days the comparison really spans. */
@@ -236,7 +234,7 @@ export function moversView(dto: RichMoversDto, topN = 3): MoversView {
   const asked = windowOption(dto.window).ms;
   return {
     state: 'ready',
-    window: dto.window,
+    window: windowOption(dto.window).id,
     fromMs: dto.from_ms,
     toMs: dto.to_ms,
     spanDays: Math.max(1, Math.round(spanMs / DAY_MS)),

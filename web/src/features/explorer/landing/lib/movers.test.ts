@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { RichMove } from '../../../../api/generated/RichMove';
+import type { RichMoversDto } from '../../../../api/generated/RichMoversDto';
 import { DEV_FUND_ADDRESS } from '../../lib/entities';
-import type { RichMove, RichMoversDto } from '../api';
 import { DAY_MS } from './daily';
 import {
   concentrationTrend,
