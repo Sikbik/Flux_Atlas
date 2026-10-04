@@ -13,6 +13,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod body;
+pub mod chain_daily;
 pub mod chain_history;
 pub mod config;
 pub mod derived;
@@ -26,6 +27,7 @@ pub mod live;
 pub mod metrics;
 pub mod net;
 pub mod proxy;
+pub mod richlist;
 pub mod routes;
 pub mod search;
 pub mod sources;
@@ -172,6 +174,7 @@ pub async fn serve_on(
     );
     let engine = Engine::start(engine_cfg, store.clone(), clients);
     let state = AppState::new(engine.clone(), cfg.server.clone());
+    state.start_background();
     let app = router(state.clone());
     let addr = listener.local_addr().context("listener address")?;
     tracing::info!(

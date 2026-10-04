@@ -3,9 +3,9 @@
 //! `GET /prices` (CoinGecko).
 //!
 //! - **`/wallet`** is computed from memory (the published nodes, the payout ledger, the hosted
-//!   apps, the fleet ledger) plus the node events of the fleet, and two cached explorer lookups
-//!   (balance, rich list) that are waited for at most [`UPSTREAM_WAIT`] (`null` after that; they
-//!   keep filling the explorer cache behind the answer). One computation per address per 30 s,
+//!   apps, the fleet ledger) plus the node events of the fleet, the cached explorer balance and
+//!   the shared rich list (`crate::richlist`), both waited for at most [`UPSTREAM_WAIT`] (`null`
+//!   after that; they keep filling behind the answer). One computation per address per 30 s,
 //!   shared by concurrent requests; a miss is charged to the client's compute budget.
 //! - **`/parallel-assets`** asks Fusion three things at once on the interactive lane and keeps
 //!   the answer 10 minutes per address; the fee table and the active chains are kept 12 hours
@@ -104,8 +104,11 @@ async fn standing_upstream(s: &AppState, ip: IpAddr, addr: &str) -> (Option<Amou
     });
     let (s2, a2) = (s.clone(), addr.to_owned());
     let rank = tokio::spawn(async move {
-        let rows = s2.explorer.richlist(Some(ip)).await.ok()?;
-        rows.rows
+        let copy = crate::richlist::shared(&s2, Duration::from_secs(60))
+            .await
+            .ok()?;
+        copy.rows
+            .rows
             .iter()
             .position(|r| r.address == a2)
             .map(|i| i as u32 + 1)

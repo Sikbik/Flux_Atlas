@@ -2,6 +2,16 @@
 import type { RichListEntry } from "./RichListEntry";
 
 /**
- * `GET /richlist`.
+ * `GET /richlist`: the explorer's top 1,000 addresses (one shared copy, refreshed every 30
+ * minutes).
  */
-export type RichListDto = { updated_ms: number, entries: Array<RichListEntry>, };
+export type RichListDto = { 
+/**
+ * When this copy was fetched from the explorer.
+ */
+updated_ms: number, 
+/**
+ * The explorer failed the last refresh (or the copy is over an hour old): this is the last
+ * good copy.
+ */
+stale: boolean, entries: Array<RichListEntry>, };

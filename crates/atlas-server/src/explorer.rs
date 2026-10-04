@@ -12,7 +12,7 @@ use atlas_flux::Clients;
 use atlas_flux::decode::decode_block;
 use atlas_flux::models::apps::APP_PAYMENT_ADDRESS;
 use atlas_flux::models::daemon::DaemonBlock;
-use atlas_flux::models::insight::{InsightAddrSummary, InsightTx, RichListRow};
+use atlas_flux::models::insight::{InsightAddrSummary, InsightTx};
 
 use crate::config::{ClientLimits, ProxyTtls};
 use crate::error::ApiError;
@@ -58,14 +58,6 @@ pub struct Explorer {
     pub utxos: TtlCache<String, Vec<UtxoDto>>,
     pub mempool: TtlCache<(), MempoolSnapshot>,
     pub supply: TtlCache<(), SupplyInfo>,
-    pub richlist: TtlCache<(), RichRows>,
-}
-
-/// Rich-list rows with their fetch time.
-#[derive(Debug, Clone)]
-pub struct RichRows {
-    pub rows: Vec<RichListRow>,
-    pub fetched_ms: u64,
 }
 
 impl Weigh for BlockView {
@@ -89,18 +81,7 @@ impl Weigh for MempoolSnapshot {
     }
 }
 
-impl Weigh for RichRows {
-    fn weigh(&self) -> usize {
-        size_of::<Self>()
-            + self
-                .rows
-                .iter()
-                .map(|r| size_of::<RichListRow>() + r.address.len())
-                .sum::<usize>()
-    }
-}
-
-/// Byte bounds of the explorer proxy caches (about 56 MiB in all; measured weights of real
+/// Byte bounds of the explorer proxy caches (62 MiB in all; measured weights of real
 /// answers: a decoded tx about 1 to 3 KiB, a block view about 4 to 40 KiB).
 pub mod cache_bytes {
     const MIB: u64 = 1 << 20;
@@ -110,9 +91,10 @@ pub mod cache_bytes {
     pub const ADDRS: u64 = 4 * MIB;
     pub const ADDR_TXS: u64 = 12 * MIB;
     pub const UTXOS: u64 = 4 * MIB;
-    /// One-entry caches (mempool, supply, rich list).
+    /// One-entry caches (mempool, supply). The rich list is one shared copy outside the
+    /// proxy (`crate::richlist`).
     pub const SINGLE: u64 = 4 * MIB;
-    pub const TOTAL: u64 = TXS + BLOCKS + HEADERS + ADDRS + ADDR_TXS + UTXOS + 3 * SINGLE;
+    pub const TOTAL: u64 = TXS + BLOCKS + HEADERS + ADDRS + ADDR_TXS + UTXOS + 2 * SINGLE;
 }
 
 impl Explorer {
@@ -130,7 +112,6 @@ impl Explorer {
             utxos: TtlCache::new("address utxos", b::UTXOS),
             mempool: TtlCache::new("mempool", b::SINGLE),
             supply: TtlCache::new("supply", b::SINGLE),
-            richlist: TtlCache::new("rich list", b::SINGLE),
         }
     }
 
@@ -164,7 +145,6 @@ impl Explorer {
             row!("utxos", self.utxos),
             row!("mempool", self.mempool),
             row!("supply", self.supply),
-            row!("richlist", self.richlist),
         ]
     }
 
@@ -414,32 +394,6 @@ impl Explorer {
                         updated_ms: now_ms(),
                     },
                     ttl.supply,
-                ))
-            }),
-        )
-        .await
-    }
-
-    pub async fn richlist(&self, ip: Option<IpAddr>) -> Result<Arc<RichRows>, ApiError> {
-        let ttl = self.ttl;
-        guarded(
-            &self.guard,
-            &self.richlist,
-            ip,
-            (),
-            Box::pin(async move {
-                let rows = self
-                    .clients
-                    .insight
-                    .richest()
-                    .await
-                    .map_err(|e| ApiError::from_flux("rich list", &e))?;
-                Ok(Fetch::Found(
-                    RichRows {
-                        rows,
-                        fetched_ms: now_ms(),
-                    },
-                    ttl.richlist,
                 ))
             }),
         )

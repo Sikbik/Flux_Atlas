@@ -533,6 +533,12 @@ byte. Large blobs are **zstd**-compressed.
 | `app_events` | `(&str name, u64 ts, u32 seq)` | AppEvent | spec updates, instance moves |
 | `geo_cache` | `IpAddr bytes` | (Geo, fetched_ms) | enrichment cache (TTL 7 d) |
 
+> **Rich-list history (B12): `rich_snapshots`** (`u64` UTC day -> `[1] ++ zstd(postcard(RichSnapshot {day_ms,
+> fetched_ms, supply, rows: [{address, balance}]}))`, the explorer's top 1,000 once a day, rank implied by order), 26
+> tables in all. Written through the reducer (`Obs::RichSnapshot`, the server's snapshot task hands it over with
+> `EngineHandle::store_rich_snapshot`), kept 400 days (`HistoryRetention::rich_snapshots_ms`), and pruned oldest-first
+> with the other history by the budget guard. Added without a migration like the tables below.
+>
 > **Chain history (B10): `chain_points`** (`u32 height` -> `[1] ++ postcard(ChainPoint {time_s, difficulty})`, about
 > 15 bytes of value) and **`chain_daily`** (`u64` UTC day -> `f64` difficulty from Insight's daily series), 25 tables
 > in all. They were added without a migration: tables are created idempotently on open, and the `blocks` layout is
@@ -590,6 +596,7 @@ the 31 minutes after the backfill finished (2,832 blocks a day at 30 s spacing).
 | Chain history | `chain_points`, `chain_daily` | per block and the 120-block samples 31 d, then the 720-block sample grid forever; daily 2 y (upstream's span) | `/network/chain-history` | 45 / 22 | 2,880 per block + 24 samples; 4 grid | 0.13 | 4.0 MB per-block window + 32 KB of 120-block samples (at most 720 off the deep grid) + 0.07 MB a year of grid rows (0.19 MB for the whole chain so far; measured on 3130: 10,251 rows in 0.44 MiB) |
 | App history | `app_messages`(+`_by_app`) | forever | app spec history (from the six-year bootstrap) | 768 + 91 | ~190 | 0.16 | 58 MB, +60 MB a year |
 | App timelines | `app_events` | forever | app timelines | 175 | 2,300 | 0.4 | +150 MB a year |
+| Rich list (B12) | `rich_snapshots` | 400 d | `/richlist/movers` (movers, concentration) | about 32 KB (31 KB stored, measured) | 1 | 0.03 | 13 MB |
 
 **The guard.** `ATLAS_DISK_BUDGET_MB` (default 6,144 MiB. The 10 GB volume is 9.3 GiB, a little less after
 ext4 metadata; the budget leaves about 3 GiB for redb's copy-on-write pages between commits, its growth steps,
@@ -652,7 +659,9 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. `limit` is 1 to 1,000 (B7, was 100; default 20); page with `before = next_before`. A full, gapless page wholly below the finality window is immutable and served from a cache keyed by `(before, limit)` (10 min); a page that reaches the tip is built once per tip block hash (10 s). Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations). An app payment (`kind: app_message`) carries `app_ref` (B7, typed optional): `{name, display_name, kind: register\|update, spec_version, message_hash, height, paid}` from the permanent message its OP_RETURN names, or from the pending message while it is unmined (`height` and `paid` null). Absent when the tx is no app payment or the message is not known yet. `/address/{addr}/txs` items carry it too |
 | `GET /address/{addr}` · `/address/{addr}/txs?cursor` · `/address/{addr}/nodes` | explorer address views, plus nodes owned/paid to it |
-| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket transfers in real time, node txs from the 20 s reconcile, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream |
+| `GET /mempool` · `GET /supply` · `GET /richlist` | explorer extras. With live ingest, `/mempool` serves the engine's mempool (socket transfers in real time, node txs from the 20 s reconcile, classified with the block classifier; see MempoolStream in 3.2) with no upstream call per request; `bytes` sums the known sizes. Offline (`ATLAS_INGEST=0`), it falls back to the gateway set joined with the live stream. `/richlist` (B12) serves the one shared rich-list copy (see Explorer analytics below): `{updated_ms, stale, entries}`, the last good copy with `stale: true` while the explorer fails |
+| `GET /richlist/movers?window` | rich-list movers (B12): `RichMoversDto`, the newest daily rich-list snapshot against the stored one closest to `window` before it (`1d`, `7d` (default) or `30d`; anything else is a 400 `bad_request`), see Explorer analytics below |
+| `GET /chain/daily?days` | Insight's daily chain statistics joined by UTC day (B12): `ChainDailyDto`. `days` is `30`, `90`, `365` (default) or `all`; anything else is a 400 `bad_request`. See Explorer analytics below |
 | `GET /search?q=` | ranked typed hits `[{kind, key, label, sublabel}]` |
 | `GET /timeline` · `GET /timeline/state?t=` (binary, §7 format) | time-machine index and state at t (nearest keyframe + event replay via `timemachine::state_at`). `t` is floored to 10 s within a day of now and to 60 s before that (B8, X1 M7), and that instant is what is answered: header `seq` = 0, `generated_ms` = the floored t; one reconstruction per instant however many requests arrive (cached 60 s). **Honest bounds (B9):** the index's `first_ms` is the first keyframe (the earliest `t` with a whole network state; `null` before any keyframe), and a `t` before it answers **404 `no_history`** with "no data before <time>" instead of a partial globe built from the events alone. A reconstruction replays at most **50,000 events** after its keyframe; a `t` that would need more (keyframes missing for many hours) also answers 404 `no_history`. The file carries ORIGIN (its node ids are this instance's) and OUTPOINTS. Keyframes (snapshot format 2) record tier, status, endpoint, geo with city, FluxOS version, hardware, last payment, app count, ArcaneOS and first-seen time, replayed through the node events. **Columns the state does not know are left out of the file, never zero-filled** (§7): `rank` always (the queue is not replayable exactly), and `last_paid`, `app_count`, `flags` when the keyframe is format 1 (written before B4) or missing. Per row the usual unknown encodings apply (0 cores, version index 0, empty city); the `enterprise` flag bit is not recorded and stays clear |
 | `GET /operator/{address}` | operator dashboard: owned nodes, earnings, next payment ETAs. Earnings (B7) are address-level sums over the stored blocks' payouts, see Operator earnings below: `earned_24h`, `earned_7d`, `earned_30d` (`null` when the stored blocks do not cover the whole window), `earnings_from_height` / `earnings_from_ms` (start of the contiguous stored block history used, at most 30 days back) and `earned_covered` (the sum from there to the tip) |
@@ -719,9 +728,9 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > **Wallet (B11).** `GET /wallet/{addr}` is one call for the wallet dashboard except parallel assets
 > (`WalletDto`, `crates/atlas-server/src/wallet/`). It is computed from memory (published nodes, the payout ledger,
 > the hosted apps, the fleet ledger) plus the fleet's node events, once per address per 30 s (concurrent requests share
-> the computation; a miss is charged to the client's compute budget and computes in a compute slot). Two explorer
-> lookups (balance, rich list) are waited for at most 6 s and are `null` after that; they keep filling the explorer
-> cache. Measured on 3130 against mainnet: a 208-node wallet 1.7 s cold (the Insight balance of an address with
+> the computation; a miss is charged to the client's compute budget and computes in a compute slot). Two upstream
+> lookups (the explorer balance, and the rich-list position from the shared rich-list copy, B12) are waited for at most
+> 6 s and are `null` after that; they keep filling behind the answer. Measured on 3130 against mainnet: a 208-node wallet 1.7 s cold (the Insight balance of an address with
 > 148,000 transactions), under 1 ms warm, 298 KB (25 KB brotli); a 424-node wallet 0.6 s cold, 454 KB (39 KB); a
 > one-node wallet 0.19 s, 28 KB (2.7 KB); 1,500 nodes compute in 80 ms (debug build).
 > - **Standing:** Insight balance, `collateral_locked` (every listed node; rewards go to the address holding the
@@ -814,6 +823,60 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 > - **Caching**: one computation per window per reuse period (30 s for 24 h, 60 s for 7 d, 2 min for 30 d, 10 min
 >   for 1 y and all; concurrent identical requests share it), served with an ETag (304 on `If-None-Match`) and
 >   `Cache-Control: public, max-age=30` (24 h, 7 d), `60` (30 d) or `600` (1 y, all).
+>
+> **Explorer analytics (B12).** The Explorer landing page reads three endpoints that never cause an upstream call of
+> their own: we run no indexer, Insight (explorer.runonflux.io) is the indexer, so every Insight answer is fetched
+> once, kept, and shared by all visitors (`crates/atlas-server/src/chain_daily.rs`, `richlist.rs`).
+> - **`GET /chain/daily?days`** (`ChainDailyDto {generated_ms, first_day_ms, days: [{day_ms, transactions, blocks,
+>   fees, fees_total, outputs, supply, difficulty, network_hash}]}`, oldest first). Insight's six
+>   `statistics/<kind>?days=all` series (transactions, fees, outputs, supply, difficulty, network-hash) are fetched one
+>   after another on the bulk lane, 2 s apart, every 12 hours, first right after a start (the fill takes 25 to 40 s:
+>   Insight needs 4 to 5 s per series); a request that arrives before the first copy waits at most 10 s, then gets 503
+>   with `Retry-After: 5`. The copy is a `KeepGood` (stale while revalidate; a failed refresh keeps the last good copy
+>   and is retried after 10 minutes; a series that fails alone keeps that series from the previous copy, or is `null`
+>   without one; every series failing with no copy is 503 / 502 `upstream_unavailable`). The windows (`30`, `90`,
+>   `365`, `all` days ending today) are cut from that one copy and prebuilt as bodies with ETags (`Cache-Control:
+>   public, max-age=600`), so a window adds no call. Joined by UTC day: a series without a value for a day leaves
+>   `null` there, never 0. **Units, checked against mainnet and this server's stored blocks:** `transactions` and
+>   `blocks` are counts (`transactions` includes coinbase and node confirmations: 41,786 txs in 2,878 blocks on
+>   2026-09-30, exactly the stored blocks' sums); `fees` is Insight's **average fee per block** in FLUX, not the day's
+>   total (0.00004231 that day = the stored 0.12178 FLUX over 2,878 blocks), so `fees_total = fees x blocks` is added;
+>   `outputs` is an **amount** (FLUX of all outputs created that day, coinbase and change included: 0.5M to 117M a
+>   day), not a count; `supply` is the total coin supply (transparent and shielded) at the day's end; `difficulty`
+>   follows one block rather than the day's mean (since Proof of Node it jumps between the 0.00195 floor and about
+>   0.6; before it, up to about 57,000); `network_hash` is Insight's sol/s (about 8e5 before PoN, a flat 3.66e10 since,
+>   where it measures no mining). `days=all` is everything Insight serves: **the last 730 days** (from 2024-10-05 on
+>   2026-10-04), not the whole chain. The last row is today so far.
+> - **`GET /richlist`** reads one shared copy of Insight's `statistics/richest-addresses-list` (top 1,000, about 90 KB
+>   upstream) on the bulk lane: refreshed after 30 minutes (`ProxyTtls::richlist`) in the background while the old
+>   copy is served, concurrent first requests share one fill (waited for at most 20 s), a failed refresh keeps the copy
+>   and is retried after 60 s. `stale` is true when the last refresh failed or the copy is over an hour old;
+>   `updated_ms` is when the copy was fetched. The wallet view's rich-list rank reads the same copy. It replaced the
+>   per-client explorer-proxy cache that errored once its 30 minutes ran out while Insight was down.
+> - **Daily snapshots:** a server task stores the shared copy once per UTC day through the engine's writer
+>   (`rich_snapshots`): 30 s after a start when today's is missing, then 2 minutes after each UTC midnight (a copy
+>   from the previous day waits for its refresh, retried every 5 minutes). The circulating supply of that moment
+>   (Insight's figure, else the transparent supply) is stored with it; right after a start the task waits up to 15
+>   minutes for the engine to know it.
+> - **`GET /richlist/movers?window`** (`RichMoversDto {window, to_ms, from_ms, snapshots, gainers, losers, entered,
+>   left, concentration}`) compares the newest snapshot with the stored one closest to `window` before it (the exact
+>   day when stored, the older one on a tie); `to_ms` / `from_ms` are their fetch times (`to_ms` 0 without any
+>   snapshot). Gainers and losers are the addresses in both lists with the largest balance change each way (at most 15,
+>   largest first; `rank` and `prev_rank` are always set today), `entered` the addresses new in the top 1,000 by rank,
+>   `left` those that dropped out by previous rank (their balance now is below the cutoff, so unknown). `node_count`
+>   is the address's confirmed nodes now. `concentration` has a row per stored snapshot, oldest first: the share of the
+>   circulating supply held by the top 10, 100 and 1,000 (the supply stored with the snapshot, else today's). With
+>   fewer than two snapshots every list is empty and `from_ms` is `null` (the UI hides the section). One computation
+>   per window and newest snapshot, reused 10 minutes (`Cache-Control: public, max-age=60`).
+> - **Measured on 3130 against mainnet (release build, a copy of 3100's data), 2026-10-04:** `/richlist` 2.6 s cold
+>   (one Insight call), 5 to 9 ms warm, 136 KB (49 KB brotli). `/chain/daily`: the first fill took 25 to 38 s (six
+>   calls), then every window answers in under 1 ms from its prebuilt body: 30 days 6.5 KB (1.6 KB brotli), 365 days
+>   78 KB (18 KB), all 156 KB (39 KB). `/richlist/movers` 0.3 to 3 ms, 250 bytes with one snapshot. 400 concurrent
+>   requests across the eight URLs made **no** upstream call (the explorer host's request counter did not move); a
+>   whole run made one rich-list call and six statistics calls. The snapshot was stored 30 s after the first start
+>   (one row, 31 KB in `rich_snapshots`), not again after a restart the same day; on a fresh copy it waited for the
+>   supply and stored 420,894,010 FLUX with it. Concentration that day: the top 10 held 59.1% of the circulating
+>   supply, the top 100 76.0%, the top 1,000 92.1%.
 
 ## 7. Binary node snapshot — `nodes.bin` (format v1)
 

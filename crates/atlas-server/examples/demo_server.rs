@@ -24,6 +24,12 @@
 //!   Proof of Node target change, so 7 d, 30 d and all are partly indexed), plus a row per demo
 //!   block
 //!
+//! - the explorer's analytics answer from the same fixed sources: `/chain/daily` (Insight-like
+//!   daily series from 2018, `network_hash` starting 400 days later so the window shows its
+//!   `null`s), `/richlist` (a deterministic top 1,000 whose balances drift day to day; about ranks 2
+//!   to 41 are fixture operators, so they run nodes) and `/richlist/movers` (41 seeded
+//!   daily snapshots, today included, so every window has gainers, losers, entries and exits)
+//!
 //! - the wallet views (`/wallet/{addr}`, `/wallet/{addr}/parallel-assets`, `/prices`) answer
 //!   from fixed market sources (`sources::FixedSources`: Fusion-like parallel assets for any
 //!   address, the October 2026 CoinGecko prices and a year of history). The demo wallet is
@@ -63,7 +69,7 @@ use atlas_server::sources::{FixedSources, MarketSources};
 use atlas_server::views::node_ref;
 use atlas_server::watch::WatchHooks;
 use atlas_server::{AppState, ServerConfig, router};
-use atlas_store::{ChainPoint, Store, WriteBatch};
+use atlas_store::{ChainPoint, RichHolding, RichSnapshot, Store, WriteBatch};
 use tokio::sync::watch;
 use tokio::time::sleep_until;
 
@@ -1192,6 +1198,38 @@ fn seed_wallet_history(f: &Fixture, store: &Store) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Daily rich-list snapshots seeded for the movers (today and the 40 days before it, so the
+/// 30-day window has its exact day).
+const RICH_DAYS: u64 = 40;
+
+/// Seeds [`RICH_DAYS`] + 1 daily rich-list snapshots from the fixed rich list
+/// (`FixedSources::richest_on`), today's being what `/richlist` serves, with a circulating
+/// supply that grows by about a day's emission per day.
+fn seed_rich_history(store: &Store) -> anyhow::Result<()> {
+    const DAY_MS: u64 = 86_400_000;
+    let now = now_ms();
+    let today = now / DAY_MS * DAY_MS;
+    let mut batch = WriteBatch::new();
+    for back in 0..=RICH_DAYS {
+        let day_ms = today - back * DAY_MS;
+        let rows = FixedSources::richest_on(day_ms)
+            .into_iter()
+            .map(|r| RichHolding {
+                balance: Amount::from_flux_f64(r.balance).unwrap_or(Amount::ZERO),
+                address: r.address,
+            })
+            .collect();
+        batch.put_rich_snapshot(&RichSnapshot {
+            day_ms,
+            fetched_ms: (day_ms + 300_000).min(now),
+            supply: Some(Amount::from_flux(420_590_294 - back as i64 * 40_000)),
+            rows,
+        })?;
+    }
+    store.commit_durable(batch)?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let filter = tracing_subscriber::EnvFilter::try_from_env("ATLAS_LOG")
@@ -1232,7 +1270,10 @@ async fn main() -> anyhow::Result<()> {
             ..EngineConfig::default()
         },
         fixture,
-        |store| seed_wallet_history(&history, store),
+        |store| {
+            seed_wallet_history(&history, store)?;
+            seed_rich_history(store)
+        },
     )?;
     drop(history);
     tracing::info!(
@@ -1247,6 +1288,8 @@ async fn main() -> anyhow::Result<()> {
     let hooks: Arc<dyn WatchHooks> = Arc::new(engine.clone());
     let sources: Arc<dyn MarketSources> = Arc::new(FixedSources::default());
     let state = AppState::with_parts(engine.clone(), cfg, hooks, Some(sources));
+    // The daily chain series (fixed answers) and the rich-list snapshot task, as in production.
+    state.start_background();
     tracing::info!(
         wallet = %fixtures::operator_address(fixtures::DEMO_WALLET_OPERATOR),
         "demo wallet (/api/v1/wallet/<address>)"

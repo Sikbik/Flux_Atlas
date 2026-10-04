@@ -70,6 +70,8 @@ fn api(state: &AppState) -> Router<AppState> {
         .route("/mempool", get(explorer::mempool))
         .route("/supply", get(explorer::supply))
         .route("/richlist", get(explorer::richlist))
+        .route("/richlist/movers", get(crate::richlist::movers_handler))
+        .route("/chain/daily", get(crate::chain_daily::handler))
         // Wallet intelligence (computes on a miss and asks upstream; charged inside).
         .route("/wallet/{addr}", get(crate::wallet::wallet))
         .route(

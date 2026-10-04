@@ -1,16 +1,21 @@
-//! Third-party market sources of the wallet views: Flux Fusion (parallel assets) and CoinGecko
-//! (prices). Production asks them over HTTP ([`LiveSources`]: Fusion on the interactive lane,
-//! CoinGecko on the bulk lane); the demo server and tests plug in fixed answers
+//! Third-party sources of the wallet and explorer views: Flux Fusion (parallel assets),
+//! CoinGecko (prices) and Insight's statistics (the daily chain series and the rich list).
+//! Production asks them over HTTP ([`LiveSources`]: Fusion on the interactive lane, CoinGecko
+//! and Insight's statistics on the bulk lane); the demo server and tests plug in fixed answers
 //! ([`MarketSources`] is a trait object on `AppState`).
 
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 use atlas_core::api::PricePoint;
 use atlas_core::now_ms;
 use atlas_flux::models::fusion::{Claimed, CoinbaseSummary, FusionFees, MultiAvailable};
-use atlas_flux::{FluxError, FusionClient};
+use atlas_flux::models::insight::{RichListRow, StatPoint};
+use atlas_flux::{FluxError, FusionClient, InsightClient};
+
+use crate::chain_daily::StatKind;
 
 /// A boxed upstream answer.
 pub type SourceFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, FluxError>> + Send + 'a>>;
@@ -59,13 +64,27 @@ pub trait MarketSources: Send + Sync + 'static {
     fn spot(&self) -> SourceFuture<'_, Spot>;
     /// Daily USD prices of the last [`HISTORY_DAYS`] days, oldest first, one per UTC day.
     fn history(&self) -> SourceFuture<'_, Vec<PricePoint>>;
+    /// Insight's whole daily series of `kind` (`statistics/<kind>?days=all`).
+    fn stat_series(&self, kind: StatKind) -> SourceFuture<'_, Vec<StatPoint>>;
+    /// Insight's top 1,000 addresses (`statistics/richest-addresses-list`).
+    fn richest(&self) -> SourceFuture<'_, Vec<RichListRow>>;
+    /// Pause between two of the daily series calls (none for fixed answers).
+    fn pace(&self) -> Duration {
+        Duration::ZERO
+    }
 }
+
+/// Pause between the six daily series calls to Insight, on top of the bulk lane's one request
+/// a second.
+pub const SERIES_PACE: Duration = Duration::from_secs(2);
 
 /// The HTTP sources.
 #[derive(Debug, Clone)]
 pub struct LiveSources {
     pub fusion: FusionClient,
     pub coingecko: atlas_flux::clients::CoinGeckoClient,
+    /// Insight on the bulk lane (statistics and the rich list).
+    pub insight: InsightClient,
 }
 
 impl MarketSources for LiveSources {
@@ -126,6 +145,18 @@ impl MarketSources for LiveSources {
             Ok(days)
         })
     }
+
+    fn stat_series(&self, kind: StatKind) -> SourceFuture<'_, Vec<StatPoint>> {
+        Box::pin(async move { self.insight.stats_series(kind.path(), "all").await })
+    }
+
+    fn richest(&self) -> SourceFuture<'_, Vec<RichListRow>> {
+        Box::pin(async move { self.insight.richest().await })
+    }
+
+    fn pace(&self) -> Duration {
+        SERIES_PACE
+    }
 }
 
 const DAY_MS: u64 = 86_400_000;
@@ -141,8 +172,11 @@ const DAY_MS: u64 = 86_400_000;
 pub struct FixedSources {
     /// When set, every call fails like an unreachable upstream.
     pub fail: std::sync::atomic::AtomicBool,
-    /// Calls answered so far: Fusion wallet, Fusion meta, spot, history.
-    pub calls: [std::sync::atomic::AtomicU32; 4],
+    /// Calls answered so far: Fusion wallet, Fusion meta, spot, history, daily series (one per
+    /// kind), rich list.
+    pub calls: [std::sync::atomic::AtomicU32; 6],
+    /// When set, only the daily series of these kinds fail (on top of [`Self::fail`]).
+    pub fail_series: std::sync::Mutex<Vec<StatKind>>,
 }
 
 /// Fusion's claim fees per chain (`/fees` `mining`, October 2026).
@@ -193,7 +227,7 @@ impl FixedSources {
     }
 
     /// Calls answered (or failed) of one kind: 0 Fusion wallet, 1 Fusion meta, 2 spot,
-    /// 3 history.
+    /// 3 history, 4 daily series, 5 rich list.
     pub fn count(&self, which: usize) -> u32 {
         self.calls[which].load(std::sync::atomic::Ordering::SeqCst)
     }
@@ -307,6 +341,161 @@ impl FixedSources {
     }
 }
 
+/// First day of the fixed daily series (UTC midnight, 2018-01-01).
+pub const FIXED_SERIES_FROM_MS: u64 = 1_514_764_800_000;
+/// First day of the fixed `network-hash` series: it starts later than the others, so the demo
+/// shows the `null` of a series without a row for a day.
+pub const FIXED_HASH_FROM_MS: u64 = FIXED_SERIES_FROM_MS + 400 * DAY_MS;
+/// Proof of Node: 30 s blocks and near-zero difficulty from this UTC day (2025-10-25).
+const FIXED_PON_DAY_MS: u64 = 1_761_350_400_000;
+/// Rich-list fixture: addresses in the pool (the top 1,000 of them make the list).
+const FIXED_RICH_POOL: usize = 1_150;
+
+/// A deterministic unit value in `[0, 1)` from a tag and an index.
+fn unit(tag: &str, i: u64) -> f64 {
+    let h = blake3::hash(format!("{tag}-{i}").as_bytes());
+    let b = h.as_bytes();
+    let n = u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
+    (n >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// `YYYY-MM-DD` of the UTC day starting at `day_ms`.
+fn date_of(day_ms: u64) -> String {
+    // Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm).
+    let z = (day_ms / DAY_MS) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+impl FixedSources {
+    /// The fixed Insight daily series of `kind`, newest first like Insight, from
+    /// [`FIXED_SERIES_FROM_MS`] (`network-hash` from [`FIXED_HASH_FROM_MS`]) to the UTC day of
+    /// `now_ms`. Today's counters are partial (the elapsed share of the day).
+    pub fn series_until(kind: StatKind, now_ms: u64) -> Vec<StatPoint> {
+        let today = now_ms / DAY_MS * DAY_MS;
+        let from = if kind == StatKind::NetworkHash {
+            FIXED_HASH_FROM_MS
+        } else {
+            FIXED_SERIES_FROM_MS
+        };
+        let elapsed = (now_ms - today) as f64 / DAY_MS as f64;
+        let round8 = |x: f64| (x * 1e8).round() / 1e8;
+        let mut out = Vec::new();
+        let mut day = today;
+        while day >= from {
+            let n = (day - FIXED_SERIES_FROM_MS) / DAY_MS;
+            let d = n as f64;
+            let pon = day >= FIXED_PON_DAY_MS;
+            let share = if day == today { elapsed } else { 1.0 };
+            let swing = 1.0 + 0.08 * (d / 6.0).sin() + 0.04 * (d / 1.7).cos();
+            let blocks = if pon { 2_880.0 } else { 720.0 };
+            let mut p = StatPoint {
+                date: date_of(day),
+                ..StatPoint::default()
+            };
+            match kind {
+                StatKind::Transactions => {
+                    let per_block = if pon { 14.8 } else { 2.0 + d / 900.0 };
+                    p.transaction_count = Some((blocks * per_block * swing * share) as u64);
+                    p.block_count = Some((blocks * share) as u64);
+                }
+                StatKind::Fees => {
+                    p.fee = Some(round8((0.000_02 + 0.000_6 * unit("fee", n)) * share));
+                }
+                StatKind::Outputs => {
+                    p.sum = Some(round8((1.5e6 + 2.5e7 * unit("out", n).powi(3)) * share));
+                }
+                StatKind::Supply => {
+                    // About 150M at the start, 430.8M on 2026-10-04.
+                    p.sum = Some(round8(150_000_000.0 + 280_800_000.0 * d / 3_198.0));
+                }
+                StatKind::Difficulty => {
+                    p.sum = Some(if pon {
+                        0.002 + 0.6 * unit("diff", n).powi(4)
+                    } else {
+                        20_000.0 + 30_000.0 * swing * (1.0 + d / 1_000.0)
+                    });
+                }
+                StatKind::NetworkHash => {
+                    p.sum = Some(if pon {
+                        3.6e10 * swing
+                    } else {
+                        2.0e6 * swing * (1.0 + d / 800.0)
+                    });
+                }
+            }
+            out.push(p);
+            day -= DAY_MS;
+        }
+        out
+    }
+
+    /// Address `k` of the rich-list fixture: `k` 1 to 40 are the fixture's operators 0 to 39
+    /// (they run nodes; the demo wallet is operator 1), the others a mix of t1 and t3
+    /// addresses (`k` 0 is a t3, the large locked holding at the top of the real list).
+    pub fn rich_address(k: usize) -> String {
+        if (1..=40).contains(&k) {
+            return crate::fixtures::operator_address(k - 1);
+        }
+        let mut h = [0u8; 20];
+        h.copy_from_slice(&blake3::hash(format!("rich-{k}").as_bytes()).as_bytes()[..20]);
+        if k.is_multiple_of(5) {
+            let mut p = vec![0x1c, 0xbd];
+            p.extend_from_slice(&h);
+            crate::search::base58check_encode(&p)
+        } else {
+            crate::search::t1_address(h)
+        }
+    }
+
+    /// The fixed rich list of the UTC day of `day_ms`: the 1,000 largest of a pool of 1,150
+    /// addresses whose balances drift smoothly from day to day (so addresses near the cutoff
+    /// enter and leave), and a few that move a fifth of their balance once a week. The top
+    /// address holds 160M FLUX and never moves.
+    pub fn richest_on(day_ms: u64) -> Vec<RichListRow> {
+        let day = day_ms / DAY_MS;
+        let week = day / 7;
+        let d = day as f64;
+        let mut rows: Vec<RichListRow> = (0..FIXED_RICH_POOL)
+            .map(|k| {
+                let base = if k == 0 {
+                    160_000_000.0
+                } else {
+                    2.4e7 / ((k + 1) as f64).powf(1.08) + 9_000.0
+                };
+                let rate = 0.05 + 0.3 * unit("rate", k as u64);
+                let phase = 6.3 * unit("phase", k as u64);
+                // The locked holding at the top never moves.
+                let swing = if k == 0 { 0.0 } else { 0.06 };
+                let mut balance = base * (1.0 + swing * (d * rate + phase).sin());
+                let key = week * 10_000 + k as u64;
+                if k > 0 && unit("move", key) < 1.0 / 60.0 {
+                    balance *= if unit("dir", key) < 0.5 { 0.8 } else { 1.25 };
+                }
+                RichListRow {
+                    address: Self::rich_address(k),
+                    blocks_mined: 0,
+                    balance: (balance * 1e8).round() / 1e8,
+                }
+            })
+            .collect();
+        rows.sort_by(|a, b| {
+            b.balance
+                .total_cmp(&a.balance)
+                .then_with(|| a.address.cmp(&b.address))
+        });
+        rows.truncate(1_000);
+        rows
+    }
+}
+
 impl MarketSources for FixedSources {
     fn fusion_wallet<'a>(&'a self, address: &'a str) -> SourceFuture<'a, FusionWallet> {
         Box::pin(async move {
@@ -352,6 +541,31 @@ impl MarketSources for FixedSources {
         Box::pin(async move {
             self.call(3)?;
             Ok(Self::history_until(now_ms()))
+        })
+    }
+
+    fn stat_series(&self, kind: StatKind) -> SourceFuture<'_, Vec<StatPoint>> {
+        Box::pin(async move {
+            self.call(4)?;
+            let failing = self
+                .fail_series
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains(&kind);
+            if failing {
+                return Err(FluxError::Transport {
+                    url: "fixed".into(),
+                    message: format!("fixed {} series set to fail", kind.path()),
+                });
+            }
+            Ok(Self::series_until(kind, now_ms()))
+        })
+    }
+
+    fn richest(&self) -> SourceFuture<'_, Vec<RichListRow>> {
+        Box::pin(async move {
+            self.call(5)?;
+            Ok(Self::richest_on(now_ms()))
         })
     }
 }
@@ -406,6 +620,41 @@ mod tests {
         assert_eq!(h.len(), 365);
         assert_eq!(h.last().unwrap().day_ms, 1_791_072_000_000);
         assert!(h.iter().all(|p| p.usd > 0.0));
+    }
+
+    #[test]
+    fn fixed_rich_list_drifts_and_churns() {
+        let day = 1_791_072_000_000;
+        let key = |v: &[RichListRow]| -> Vec<(String, u64)> {
+            v.iter()
+                .map(|r| (r.address.clone(), r.balance.to_bits()))
+                .collect()
+        };
+        let a = FixedSources::richest_on(day);
+        assert_eq!(
+            key(&a),
+            key(&FixedSources::richest_on(day + 3_600_000)),
+            "one list per day"
+        );
+        assert_eq!(a.len(), 1_000);
+        assert!(a.windows(2).all(|w| w[0].balance >= w[1].balance));
+        assert_ne!(key(&a), key(&FixedSources::richest_on(day - DAY_MS)));
+        let b = FixedSources::richest_on(day - 7 * DAY_MS);
+        let now: std::collections::HashSet<&str> = a.iter().map(|r| r.address.as_str()).collect();
+        let entered = b
+            .iter()
+            .filter(|r| !now.contains(r.address.as_str()))
+            .count();
+        assert!(entered > 0 && entered < 150, "{entered}");
+        for r in a.iter().take(50) {
+            assert!(matches!(
+                crate::search::classify_address(&r.address),
+                crate::search::AddressClass::Transparent { valid: true, .. }
+            ));
+        }
+        let s = FixedSources::series_until(StatKind::Supply, day + 1_000);
+        assert_eq!(s[0].date, "2026-10-04");
+        assert_eq!(s.last().unwrap().date, "2018-01-01");
     }
 
     #[test]
