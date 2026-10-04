@@ -674,7 +674,10 @@
   min-width: 0;
 }
 
-@container (min-width: 760px) {
+/* The hero is a container itself, so an unnamed query on its children is answered with the hero's own width (the
+   window's, less the margins) while the same query on the hero is answered with the window's. Named, all of them are
+   answered by the window: a window 760 to 807 px wide would otherwise get two columns with the figures left in the first. */
+@container hub (min-width: 760px) {
   .hub-hero[data-visual] {
     grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
     grid-template-areas:
