@@ -87,7 +87,10 @@ let view: Mounted | null = null;
 
 beforeEach(() => {
   useUi.getState().setMotion('off');
-  qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Number.POSITIVE_INFINITY } } });
+  // The rich list keeps its own retry rule (it asks again while the server fills); retries here are immediate.
+  qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, retryDelay: 0, gcTime: Number.POSITIVE_INFINITY } },
+  });
 });
 
 afterEach(() => {

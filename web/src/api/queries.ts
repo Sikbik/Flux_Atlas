@@ -19,6 +19,7 @@ import {
   type NodesParams,
   type RangeParams,
 } from './endpoints';
+import { retryWhileFilling } from './http';
 import { qk } from './queryKeys';
 
 const SEC = 1000;
@@ -220,6 +221,9 @@ export const queries = {
       queryKey: qk.richList(),
       queryFn: ({ signal }) => api.richList({ signal }),
       staleTime: 10 * MIN,
+      // The shares need the supply, which a server reads a little after it starts: until then it answers 503 with
+      // `Retry-After`, and the list is asked for again at that pace rather than shown as an error.
+      retry: (count, error: Error) => retryWhileFilling(count, error),
     }),
   search: (q: string) =>
     queryOptions({

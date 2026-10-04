@@ -11,28 +11,17 @@ import type { AppsOverviewDto } from '../../api/generated/AppsOverviewDto';
 import type { NodesOverviewDto } from '../../api/generated/NodesOverviewDto';
 import type { OperatorsBy } from '../../api/generated/OperatorsBy';
 import type { OperatorsDto } from '../../api/generated/OperatorsDto';
-import { getJson, isApiError } from '../../api/http';
+import { getJson, retryWhileFilling } from '../../api/http';
 import { qk } from '../../api/queryKeys';
+
+// The fill rule is shared with the rest of the client (the rich list fills too); the hubs' panels import it from here.
+export { FILL_RETRIES, isFilling, retryWhileFilling } from '../../api/http';
 
 /** A hub query as a panel receives it from its view: the error is whatever the server's answer made of it. */
 export type HubQuery<T> = UseQueryResult<T, unknown>;
 
 /** The answers are built once per publish of the node snapshot (about every 90 s): asking more often repeats them. */
 const HUB_STALE_MS = 60_000;
-
-/** How many times a start-up 503 is asked again before it counts as a failure (5 s apart: a minute in all). */
-export const FILL_RETRIES = 12;
-
-/** True for the answer a server gives before it knows the chain tip: 503, with `Retry-After`. */
-export function isFilling(error: unknown): boolean {
-  return isApiError(error) && error.status === 503;
-}
-
-/** The retry rule for an endpoint that fills: keep asking while the server says to wait, a few times otherwise. */
-export function retryWhileFilling(count: number, error: unknown): boolean {
-  if (isFilling(error)) return count < FILL_RETRIES;
-  return count < 3 && (!isApiError(error) || error.retryable);
-}
 
 // ---- the operators -------------------------------------------------------------------------------------------
 

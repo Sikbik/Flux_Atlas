@@ -621,7 +621,8 @@ pub async fn supply(
 }
 
 /// `GET /richlist`: the shared copy (`crate::richlist`), no upstream call of its own; while the
-/// explorer fails the last good copy is served with `stale: true`.
+/// explorer fails the last good copy is served with `stale: true`. Until the supply is known
+/// (shortly after a start) it answers 503 with `Retry-After`.
 pub async fn richlist(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
     let copy = crate::richlist::shared(&s, crate::richlist::RICH_WAIT).await?;
     let rows = &copy.rows;
@@ -631,6 +632,12 @@ pub async fn richlist(State(s): State<AppState>, headers: HeaderMap) -> ApiResul
         None => s.explorer.supply(None).await.ok().map(|a| (*a).clone()),
     };
     let total = supply.map_or(0.0, |x| x.transparent.to_flux_f64());
+    // The shares need the supply, which the engine first reads about 30 s after a start. Until then (with the
+    // explorer's copy failing too) the list is not ready: a 503 that clients ask again, never shares of 0% that a
+    // client would keep for as long as it caches the list.
+    if total <= 0.0 {
+        return Err(ApiError::unavailable("the supply is not known yet").with_retry_after(5));
+    }
     let entries = rows
         .rows
         .iter()
@@ -639,11 +646,7 @@ pub async fn richlist(State(s): State<AppState>, headers: HeaderMap) -> ApiResul
             rank: i as u32 + 1,
             address: r.address.clone(),
             balance: Amount::from_flux_f64(r.balance).unwrap_or(Amount::ZERO),
-            share_pct: if total > 0.0 {
-                r.balance * 100.0 / total
-            } else {
-                0.0
-            },
+            share_pct: r.balance * 100.0 / total,
             node_count: crate::richlist::active_nodes(&v, &r.address),
         })
         .collect();

@@ -41,6 +41,23 @@ export function isApiError(e: unknown): e is ApiError {
   return e instanceof ApiError;
 }
 
+/** How many times a start-up 503 is asked again before it counts as a failure (5 s apart: a minute in all). */
+export const FILL_RETRIES = 12;
+
+/**
+ * True for the answer a server gives while it is still filling what was asked for (the chain tip, the supply, a
+ * first copy from upstream): 503, with `Retry-After`.
+ */
+export function isFilling(error: unknown): boolean {
+  return isApiError(error) && error.status === 503;
+}
+
+/** The retry rule for an endpoint that fills: keep asking while the server says to wait, a few times otherwise. */
+export function retryWhileFilling(count: number, error: unknown): boolean {
+  if (isFilling(error)) return count < FILL_RETRIES;
+  return count < 3 && (!isApiError(error) || error.retryable);
+}
+
 export function isAbortError(e: unknown): boolean {
   return e instanceof DOMException
     ? e.name === 'AbortError'
