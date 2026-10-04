@@ -99,10 +99,10 @@ function Card({ c }: { c: WalletConcentration }) {
       aria-label={`Concentration by ${title.toLowerCase()}`}
       data-level={read.level}
     >
-      <header className="wl-conc__head">
+      <div className="wl-conc__head">
         <h3 className="wl-sub">By {title.toLowerCase()}</h3>
         <StatusChip status={lv.status} label={lv.word} size="sm" />
-      </header>
+      </div>
       <p className="wl-conc__headline">{read.headline}</p>
       {read.level === 'unknown' ? null : (
         <>

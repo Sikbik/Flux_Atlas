@@ -39,14 +39,14 @@ export function Panel({
       aria-labelledby={id}
       {...rest}
     >
-      <header className="wl-panel__head">
+      <div className="wl-panel__head">
         <h2 className="wl-panel__title" id={id}>
           {Icon ? <Icon size={15} strokeWidth={1.5} aria-hidden="true" /> : null}
           <span>{title}</span>
         </h2>
         {aside ? <div className="wl-panel__aside">{aside}</div> : null}
         {actions ? <div className="wl-panel__actions">{actions}</div> : null}
-      </header>
+      </div>
       <div className="wl-panel__body">{children}</div>
     </Card>
   );

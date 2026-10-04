@@ -101,7 +101,7 @@ function ChainCard({
 
   return (
     <li className="wl-chaincard" data-tone={view.tone} data-inactive={!chain.active || undefined}>
-      <header className="wl-chaincard__head">
+      <div className="wl-chaincard__head">
         <ChainBadge chain={chain.chain} inactive={!chain.active} />
         <div className="wl-chaincard__id">
           <strong>{chain.name}</strong>
@@ -110,7 +110,7 @@ function ChainCard({
           </span>
         </div>
         <StatusChip status={STATUS_OF[eff.verdict]} label={view.label} size="sm" />
-      </header>
+      </div>
 
       <div className="wl-chaincard__figure">
         <span className="wl-chaincard__big ui-mono">
