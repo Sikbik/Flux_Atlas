@@ -1,0 +1,949 @@
+/* The hub family: the Explorer, Nodes and Apps landings share one frame. A hub is a window, so every breakpoint is a
+   container query on the window's own width (three panel columns when wide, two when medium, one on a phone), never
+   a viewport query. Surfaces are the kit's recipes (a lit rim at the top left, one ink step above the slab), the
+   hero takes the hexagon chamfer of the kit's hero stat, and the only motion is a quiet fade-in and a one-time draw
+   of the bars. Tokens only; classes are prefixed hub-. */
+
+.hub {
+  container: hub / inline-size;
+  min-width: 0;
+  padding-bottom: var(--space-9);
+}
+
+.hub__stack {
+  --hub-gap: var(--space-5);
+  display: grid;
+  gap: var(--hub-gap);
+  min-width: 0;
+  padding: var(--space-5) var(--space-6) 0;
+}
+
+@container hub (min-width: 600px) {
+  .hub__stack {
+    --hub-gap: var(--space-6);
+    padding-inline: var(--space-8);
+  }
+}
+
+@container hub (max-width: 399px) {
+  .hub__stack {
+    padding-inline: var(--space-5);
+  }
+}
+
+/* ---- the grid of panels --------------------------------------------------------------------------------- */
+
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--hub-gap, var(--space-5));
+  min-width: 0;
+}
+
+.hub-grid > [data-span="full"] {
+  grid-column: 1 / -1;
+}
+
+.hub-grid > [data-span="twothirds"] {
+  grid-column: span 4;
+}
+
+.hub-grid > [data-span="half"] {
+  grid-column: span 3;
+}
+
+.hub-grid > [data-span="third"] {
+  grid-column: span 2;
+}
+
+@container hub (max-width: 899px) {
+  .hub-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hub-grid > [data-span="full"],
+  .hub-grid > [data-span="twothirds"] {
+    grid-column: 1 / -1;
+  }
+
+  .hub-grid > [data-span="half"],
+  .hub-grid > [data-span="third"] {
+    grid-column: span 1;
+  }
+}
+
+@container hub (max-width: 599px) {
+  .hub-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hub-grid > [data-span] {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---- a panel -------------------------------------------------------------------------------------------- */
+
+.hub-panel {
+  container: hubpanel / inline-size;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hub-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  min-height: 28px;
+  padding: var(--space-5) var(--space-6) 0;
+}
+
+.hub-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-md) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.hub-panel__title > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hub-panel__icon {
+  flex: none;
+  color: var(--accent-400);
+}
+
+.hub-panel__side {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.hub-panel__aside {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.hub-panel__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+  /* A figure that replaces the loading bars fades in; nothing pops. */
+  animation: ui-fade-in var(--dur-base) var(--ease-out) both;
+}
+
+.hub-panel[data-flush] > .hub-panel__body {
+  padding-inline: 0;
+  padding-bottom: 0;
+}
+
+.hub-panel__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--line-1);
+}
+
+@container hubpanel (max-width: 399px) {
+  .hub-panel__head {
+    padding-inline: var(--space-5);
+  }
+
+  .hub-panel__body {
+    padding-inline: var(--space-5);
+  }
+
+  .hub-panel__foot {
+    padding-inline: var(--space-5);
+  }
+
+  .hub-panel__aside {
+    display: none;
+  }
+}
+
+/* ---- the links that go deeper --------------------------------------------------------------------------- */
+
+.hub-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--hit-min);
+  border-radius: var(--r-sm);
+  color: var(--accent-300);
+  font: var(--fw-medium) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.hub-link:hover {
+  color: var(--text-1);
+}
+
+.hub-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.hub-link__icon {
+  flex: none;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .hub-link:hover .hub-link__icon {
+    transform: translateX(2px);
+  }
+}
+
+@media (pointer: coarse) {
+  .hub-link {
+    min-height: var(--touch-min);
+  }
+}
+
+/* ---- the go-to tiles ------------------------------------------------------------------------------------ */
+
+.hub-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 178px), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hub-tiles__item {
+  display: flex;
+  min-width: 0;
+}
+
+.hub-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--hot) 2.4%, var(--ink-1)), var(--ink-1) 52%) padding-box,
+    var(--ui-rim) border-box;
+  box-shadow: var(--ui-lit), var(--ui-contact);
+  color: var(--text-1);
+  text-decoration: none;
+  isolation: isolate;
+}
+
+.hub-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--hot) 4%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .hub-tile:hover::after {
+    opacity: 1;
+  }
+}
+
+.hub-tile:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.hub-tile__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--accent-400) 13%, transparent);
+  color: var(--accent-400);
+}
+
+/* The tile the reader came for glows a little more: lit rim and a filled glyph. */
+.hub-tile[data-emphasis] {
+  background:
+    linear-gradient(160deg, color-mix(in oklab, var(--accent-500) 14%, var(--ink-1)), var(--ink-1) 70%)
+    padding-box,
+    var(--ui-rim-hot) border-box;
+}
+
+.hub-tile[data-emphasis] .hub-tile__icon {
+  background: var(--accent-600);
+  color: var(--text-on-accent);
+}
+
+.hub-tile__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.hub-tile__title {
+  overflow: hidden;
+  font: var(--fw-semibold) var(--fs-sm) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-tile__caption {
+  overflow: hidden;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / var(--lh-snug) var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-tile__go {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-3);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+@media (pointer: coarse) {
+  .hub-tile__go {
+    opacity: 0.7;
+    transform: none;
+  }
+}
+
+@media (hover: hover) {
+  .hub-tile:hover .hub-tile__go {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.hub-tile:focus-visible .hub-tile__go {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---- the nav of a hub's views --------------------------------------------------------------------------- */
+
+.hub-nav {
+  min-width: 0;
+}
+
+.hub-nav__list {
+  display: flex;
+  gap: var(--space-3);
+  /* Room for the focus ring; the row scrolls sideways on a phone instead of wrapping. */
+  padding: 3px;
+  margin: -3px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.hub-nav__list::-webkit-scrollbar {
+  display: none;
+}
+
+.hub-nav__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 26px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .hub-nav__link:hover {
+    background: var(--ink-2);
+    color: var(--text-1);
+  }
+}
+
+.hub-nav__link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.hub-nav__link[aria-current="page"] {
+  border-color: color-mix(in oklab, var(--accent-500) 55%, transparent);
+  background: color-mix(in oklab, var(--accent-500) 16%, transparent);
+  color: var(--text-1);
+}
+
+@media (pointer: coarse) {
+  .hub-nav__link {
+    height: 36px;
+  }
+}
+
+/* ---- the hero ------------------------------------------------------------------------------------------- */
+
+/* Chamfered at the hexagon angle, with the lit rim running along three sides and a short diagonal across the cut
+   (the same recipe as the kit's hero stat, sized for a wider slab). The figure scales with the slab's own width. */
+.hub-hero {
+  container-type: inline-size;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6) var(--space-9);
+  min-width: 0;
+  padding: var(--space-7) var(--space-8) var(--space-6);
+  clip-path: var(--clip-chamfer-md);
+  background:
+    radial-gradient(
+      60% 130% at 100% 0%,
+      color-mix(in oklab, var(--accent-500) 12%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--accent, var(--accent-500)) 11%, var(--ink-1)),
+      var(--ink-1) 70%
+    );
+}
+
+.hub-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  padding: 1px;
+  clip-path: inherit;
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--hot) 50%, transparent),
+    color-mix(in oklab, var(--accent-300) 14%, transparent) 38%,
+    transparent 66%,
+    color-mix(in oklab, var(--accent-400) 26%, transparent)
+  );
+  -webkit-mask:
+    linear-gradient(var(--ink-0) 0 0) content-box,
+    linear-gradient(var(--ink-0) 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(var(--ink-0) 0 0) content-box,
+    linear-gradient(var(--ink-0) 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.hub-hero::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  inline-size: var(--chamfer-md-x);
+  block-size: var(--chamfer-md);
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.7px),
+    color-mix(in oklab, var(--hot) 45%, transparent) calc(50% - 0.7px) calc(50% + 0.7px),
+    transparent calc(50% + 0.7px)
+  );
+  pointer-events: none;
+}
+
+.hub-hero__lead {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.hub-hero__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  min-height: 24px;
+}
+
+.hub-hero__label {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+  letter-spacing: 0.01em;
+}
+
+.hub-hero__aside {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hub-hero__value {
+  --ui-number-weight: var(--fw-light);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  min-height: 1em;
+  color: var(--text-1);
+  font: var(--fw-light) clamp(40px, 7.4cqi, 74px) / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+  /* The figure fades in when it replaces the loading bar. */
+  animation: ui-fade-in var(--dur-base) var(--ease-out) both;
+}
+
+.hub-hero__unit {
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+.hub-hero__caption {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}
+
+.hub-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.hub-hero__visual {
+  position: relative;
+  min-width: 0;
+}
+
+/* The hexagon lattice behind the graphic, faded by a radial mask so it never reaches an edge. */
+.hub-hero__visual::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--space-6) * -1) calc(var(--space-8) * -1);
+  z-index: -1;
+  background-image: var(--pattern-hex);
+  background-size: var(--pattern-hex-size);
+  background-position: center;
+  -webkit-mask: radial-gradient(70% 80% at 55% 55%, var(--ink-0) 0, transparent 100%);
+  mask: radial-gradient(70% 80% at 55% 55%, var(--ink-0) 0, transparent 100%);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.hub-hero__figs {
+  min-width: 0;
+}
+
+@container (min-width: 760px) {
+  .hub-hero[data-visual] {
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    grid-template-areas:
+      "lead visual"
+      "figs figs";
+  }
+
+  .hub-hero[data-visual] .hub-hero__lead {
+    grid-area: lead;
+  }
+
+  .hub-hero[data-visual] .hub-hero__visual {
+    grid-area: visual;
+    align-self: stretch;
+  }
+
+  .hub-hero[data-visual] .hub-hero__figs {
+    grid-area: figs;
+  }
+}
+
+@container (max-width: 479px) {
+  .hub-hero {
+    padding: var(--space-6) var(--space-5) var(--space-5);
+  }
+}
+
+.hub-figs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: var(--space-5) var(--space-7);
+  margin: 0;
+  padding: var(--space-5) 0 0;
+  border-top: 1px solid var(--line-1);
+}
+
+.hub-fig {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.hub-fig > dd {
+  margin: 0;
+}
+
+.hub-fig__label {
+  overflow: hidden;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-fig__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-height: 1.2em;
+  color: var(--text-1);
+  font: var(--fw-medium) clamp(18px, 3.3cqi, 26px) / 1.15 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hub-fig__unit {
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+.hub-fig__note {
+  min-height: 16px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+/* ---- a leaderboard -------------------------------------------------------------------------------------- */
+
+.hub-lb {
+  container: lb / inline-size;
+  min-width: 0;
+}
+
+.hub-lb__head,
+.hub-lb__row {
+  display: grid;
+  grid-template-columns: var(--lb-cols);
+  align-items: center;
+  column-gap: var(--space-5);
+}
+
+.hub-lb__head {
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / var(--lh-snug) var(--font-sans);
+}
+
+.hub-lb__head > [data-align="end"] {
+  text-align: right;
+}
+
+.hub-lb__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hub-lb__row {
+  position: relative;
+  min-height: 52px;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--line-1);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.hub-lb__row:last-child {
+  border-bottom: 0;
+}
+
+@media (hover: hover) {
+  .hub-lb__row:hover {
+    background: color-mix(in oklab, var(--hot) 3%, transparent);
+  }
+}
+
+.hub-lb__row:has(.hub-lb__link:focus-visible) {
+  background: color-mix(in oklab, var(--accent-500) 8%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent-400);
+}
+
+.hub-lb__rank {
+  color: var(--text-3);
+  font: var(--fw-semibold) var(--fs-sm) / 1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-lb__row[data-top] .hub-lb__rank {
+  color: var(--accent-300);
+}
+
+.hub-lb__who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The name's link covers the whole row, so the row is one big target; links beside it sit above. */
+.hub-lb__link {
+  overflow: hidden;
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-lb__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.hub-lb__link:focus-visible {
+  outline: none;
+}
+
+.hub-lb__sub {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-lb__cells {
+  display: contents;
+}
+
+.hub-lb__cell {
+  min-width: 0;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-lb__cell[data-align="end"] {
+  text-align: right;
+}
+
+.hub-lb__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hub-lb__acts a,
+.hub-lb__acts button {
+  position: relative;
+  z-index: 1;
+}
+
+/* The share bar in a cell: the figure on top, a thin comparison bar under it. */
+.hub-lbbar {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hub-lbbar__text {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-lbbar__track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+}
+
+.hub-lbbar__track > i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-600), var(--accent-400));
+  transform: scaleX(var(--frac, 0));
+  transform-origin: left;
+  animation: hub-bar-grow var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes hub-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@container lb (max-width: 859px) {
+  .hub-lb__head,
+  .hub-lb__row {
+    grid-template-columns: var(--lb-cols-compact, var(--lb-cols));
+  }
+
+  .hub-lb [data-hide="compact"] {
+    display: none;
+  }
+}
+
+@container lb (max-width: 619px) {
+  .hub-lb__head {
+    display: none;
+  }
+
+  .hub-lb__row {
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      "rank who acts"
+      ". cells cells";
+    row-gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+  }
+
+  .hub-lb__rank {
+    grid-area: rank;
+  }
+
+  .hub-lb__who {
+    grid-area: who;
+  }
+
+  .hub-lb__acts {
+    grid-area: acts;
+  }
+
+  .hub-lb__cells {
+    display: flex;
+    flex-wrap: wrap;
+    grid-area: cells;
+    gap: var(--space-3) var(--space-7);
+    min-width: 0;
+  }
+
+  .hub-lb__cell {
+    flex: 0 1 auto;
+    min-width: 5rem;
+  }
+
+  .hub-lb__cell[data-align="end"] {
+    text-align: left;
+  }
+
+  .hub-lb [data-hide] {
+    display: none;
+  }
+}
+
+/* ---- search in place ------------------------------------------------------------------------------------ */
+
+.hub-search {
+  --pal-row-h: 46px;
+  --pal-hl: linear-gradient(90deg, rgb(79 122 212 / 0.24), rgb(79 122 212 / 0.06));
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.hub-search__idle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-6);
+}
+
+.hub-search__hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.hub-search__examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hub-search__results {
+  max-height: min(52vh, 420px);
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-lg);
+  background: var(--ink-1);
+  animation: ui-fade-in var(--dur-fast) var(--ease-out) both;
+}
+
+.hub-search__group .pal-gh {
+  margin: 0;
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .hub-lbbar__track > i,
+  :root:not([data-motion="full"]) .hub-panel__body,
+  :root:not([data-motion="full"]) .hub-hero__value,
+  :root:not([data-motion="full"]) .hub-search__results {
+    animation: none;
+  }
+
+  :root:not([data-motion="full"]) .hub-link__icon,
+  :root:not([data-motion="full"]) .hub-tile__go {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .hub-lbbar__track > i,
+:root:is([data-motion="reduced"], [data-motion="off"]) .hub-panel__body,
+:root:is([data-motion="reduced"], [data-motion="off"]) .hub-hero__value,
+:root:is([data-motion="reduced"], [data-motion="off"]) .hub-search__results {
+  animation: none;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .hub-link__icon,
+:root:is([data-motion="reduced"], [data-motion="off"]) .hub-tile__go {
+  transition: none;
+}
