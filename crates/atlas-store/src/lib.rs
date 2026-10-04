@@ -12,7 +12,7 @@
 //! `snapshots`, `metrics_1m`, `metrics_1h`, `blocks`, `block_hash`, `block_payouts`, `payments`,
 //! `node_txs`, `node_txs_by_node`, `apps`, `app_events`, `app_messages`, `app_messages_by_app`,
 //! `pending_app_messages`, `mesh_edges`, `mesh_events`, `geo_cache`, `chain_points`,
-//! `chain_daily`.
+//! `chain_daily`, `rich_snapshots`.
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 mod batch;
@@ -23,6 +23,7 @@ mod error;
 mod read;
 mod records;
 mod retention;
+mod rich;
 mod stats;
 mod store;
 mod tables;
@@ -36,7 +37,7 @@ pub use error::{Result, StoreError};
 pub use records::{
     CHAIN_DENSE_BLOCKS, CHAIN_DENSE_GRID, CHAIN_SAMPLE_GRID, ChainPoint, CommitStats, DAY_MS,
     EventKey, HOUR_MS, MINUTE_MS, MeshChangeRecord, MeshEdgeRecord, MeshReporter, MetricsRow,
-    Order, Resolution,
+    Order, RICH_SNAPSHOT_FORMAT_VERSION, Resolution, RichHolding, RichSnapshot,
 };
 pub use retention::{RetentionPolicy, RetentionReport};
 pub use stats::{DbStats, FileUsage, TableSize, db_stats_at, dir_usage};

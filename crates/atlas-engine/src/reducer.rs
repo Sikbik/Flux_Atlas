@@ -706,6 +706,11 @@ impl Reducer {
                     tick.batch.put_chain_daily(day_ms, d);
                 }
             }
+            Obs::RichSnapshot(snap) => {
+                if let Err(e) = tick.batch.put_rich_snapshot(&snap) {
+                    tracing::warn!(error = %e, day_ms = snap.day_ms, "rich list snapshot not stored");
+                }
+            }
             Obs::Meta { key, value } => {
                 tick.batch.set_meta_u64(key, value);
             }

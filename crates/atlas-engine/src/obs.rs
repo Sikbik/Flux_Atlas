@@ -125,6 +125,8 @@ pub enum Obs {
     ChainPoints(Vec<(u32, atlas_store::ChainPoint)>),
     /// Insight's daily difficulty series: `(UTC day start ms, difficulty)`.
     ChainDaily(Vec<(u64, f64)>),
+    /// The explorer's rich list of one UTC day (the server's daily rich-list snapshot).
+    RichSnapshot(Box<atlas_store::RichSnapshot>),
     /// Sets a meta key (backfill cursors) through the single writer.
     Meta {
         key: &'static str,

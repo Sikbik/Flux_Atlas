@@ -338,6 +338,31 @@ impl ChainPoint {
     }
 }
 
+/// Format version byte of `rich_snapshots` blobs (`[version] ++ zstd(postcard(RichSnapshot))`).
+pub const RICH_SNAPSHOT_FORMAT_VERSION: u8 = 1;
+
+/// The explorer's rich list (top 1,000 addresses) as fetched on one UTC day
+/// (`rich_snapshots`, keyed by `day_ms`). One per day, about 30 KB compressed.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct RichSnapshot {
+    /// Start of the UTC day, unix ms (the key).
+    pub day_ms: u64,
+    /// When the list was fetched, unix ms.
+    pub fetched_ms: u64,
+    /// Circulating supply when the list was fetched (the explorer's figure, else the transparent
+    /// supply); `None` when not known yet.
+    pub supply: Option<Amount>,
+    /// Holdings by rank: `rows[0]` is rank 1.
+    pub rows: Vec<RichHolding>,
+}
+
+/// One address of a [`RichSnapshot`].
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct RichHolding {
+    pub address: String,
+    pub balance: Amount,
+}
+
 /// One overlay mesh edge between two nodes. Stored under `(a, b)` with `a < b`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct MeshEdgeRecord {

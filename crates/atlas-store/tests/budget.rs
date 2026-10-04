@@ -8,7 +8,8 @@ use atlas_core::event::{AppMessageKind, Event, EventEnvelope};
 use atlas_core::ids::{Hash32, NodeId, Outpoint};
 use atlas_core::node::Tier;
 use atlas_store::{
-    DAY_MS, DiskBudget, HistoryRetention, Store, StoreOptions, WriteBatch, db_stats_at,
+    DAY_MS, DiskBudget, HistoryRetention, RichHolding, RichSnapshot, Store, StoreOptions,
+    WriteBatch, db_stats_at,
 };
 
 /// Blocks per simulated day (keeps the test fast; heights still advance 2,880 per day so the
@@ -143,12 +144,28 @@ fn filled() -> (tempfile::TempDir, Store, u64) {
         }
         let t = time_of(height_of(day, 0));
         b.put_snapshot(t, &vec![day; 2_000]).unwrap();
+        b.put_rich_snapshot(&rich(t)).unwrap();
         msg += 1;
         b.put_app_message(app_msg(height_of(day, 1), msg));
         store.commit(b).unwrap();
     }
     let now = time_of(height_of(DAYS, 0));
     (dir, store, now)
+}
+
+/// A small rich list taken at `t`.
+fn rich(t: u64) -> RichSnapshot {
+    RichSnapshot {
+        day_ms: t,
+        fetched_ms: t + 60_000,
+        supply: Some(Amount::from_flux(420_000_000)),
+        rows: (0..20)
+            .map(|i| RichHolding {
+                address: format!("t1rich{i}"),
+                balance: Amount::from_flux(1_000_000 - i64::from(i)),
+            })
+            .collect(),
+    }
 }
 
 fn rows(store: &Store, table: &str) -> u64 {
@@ -172,6 +189,7 @@ fn retention_tiers_cut_each_table_at_its_age() {
         app_messages_ms: None,
         app_events_ms: None,
         chain_blocks_ms: None,
+        rich_snapshots_ms: Some(25 * DAY_MS),
     };
     let removed = store.prune_history(now, &tiers).unwrap();
     let got = |t: &str| removed.iter().find(|r| r.0 == t).map_or(0, |r| r.1);
@@ -183,6 +201,10 @@ fn retention_tiers_cut_each_table_at_its_age() {
     assert_eq!(got("node_txs"), u64::from(30 * SAMPLE * 4));
     assert_eq!(got("node_txs_by_node"), u64::from(30 * SAMPLE * 4));
     assert_eq!(got("snapshots"), 20);
+    assert_eq!(got("rich_snapshots"), 15);
+    let days = store.rich_snapshot_days().unwrap();
+    assert_eq!(days.len(), 25);
+    assert_eq!(days[0], time_of(height_of(15, 0)), "the newest days stay");
     assert_eq!(got("app_messages"), 0);
     assert_eq!(
         rows(&store, "blocks"),
@@ -268,6 +290,7 @@ fn guard_prunes_oldest_first_and_keeps_the_minimum_history() {
     assert_eq!(blocks.len(), (7 * SAMPLE) as usize);
     assert!(blocks.iter().all(|b| b.time_ms >= now - 7 * DAY_MS));
     assert_eq!(rows(&store, "snapshots"), 7);
+    assert_eq!(rows(&store, "rich_snapshots"), 7);
     assert_eq!(rows(&store, "app_messages"), 7);
 
     drop(store);
@@ -290,6 +313,7 @@ fn guard_measures_before_pruning_a_slack_file() {
                 app_messages_ms: None,
                 app_events_ms: None,
                 chain_blocks_ms: None,
+                rich_snapshots_ms: None,
             },
         )
         .unwrap();

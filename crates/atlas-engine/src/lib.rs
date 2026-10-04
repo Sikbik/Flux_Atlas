@@ -1038,6 +1038,21 @@ impl EngineHandle {
         }
     }
 
+    /// Hands the rich list of one UTC day to the single writer (the reducer stores it with its
+    /// next tick). False once the engine is shutting down.
+    pub async fn store_rich_snapshot(&self, snapshot: atlas_store::RichSnapshot) -> bool {
+        let tx = self
+            .inner
+            .obs_tx
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        match tx {
+            Some(tx) => tx.send(Obs::RichSnapshot(Box::new(snapshot))).await.is_ok(),
+            None => false,
+        }
+    }
+
     /// Stops the ingest jobs, flushes the store durably, then stops the reducer. The handle
     /// stays readable.
     pub async fn shutdown(&self) {
