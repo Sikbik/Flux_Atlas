@@ -102,7 +102,7 @@ pub fn geo(nodes: &[NodeRecord]) -> GeoBreakdownDto {
 }
 
 /// Provider grouping key: the ASN when known, else the normalized org name.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ProviderKey {
     Asn(u32),
     Org(String),
@@ -304,7 +304,7 @@ pub fn hhi(counts: &[u32], total: u32) -> f64 {
 }
 
 /// Operator identity: the ZelID when known, else the payment address.
-fn operator_key(n: &NodeRecord) -> &str {
+pub(crate) fn operator_key(n: &NodeRecord) -> &str {
     n.zelid
         .as_deref()
         .filter(|z| !z.is_empty())

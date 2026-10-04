@@ -655,6 +655,7 @@ Error shape: `{"error":{"code":"not_found","message":"…"}}`. CORS is open for 
 | `GET /network/summary` · `/network/geo` · `/network/providers` · `/network/versions` · `/network/capacity` · `/network/decentralization?top` | analytics aggregates. The summary's counts are defined under Node counts below. Decentralization (B7): `top` (1 to 5,000, default 25) is the number of `top_operators` rows; `operator_count` counts every operator and `operator_sizes` is the whole distribution as `[{nodes, operators}]` (ascending by `nodes`: how many operators run exactly that many confirmed nodes), so the long tail needs no long list |
 | `GET /network/app-economy?days&top` | app economy (B7), see App economy below |
 | `GET /network/chain-history?window` | block difficulty and time per block (B10), see Chain history below. `window` is `24h`, `7d`, `30d` (default), `1y` or `all`; anything else is a 400 `bad_request` |
+| `GET /network/operators?limit&by` · `/network/nodes-overview` · `/network/apps-overview` | network hubs (B13): the operator leaderboard by ZelID or payment address, the nodes overview (benchmark spread, ages, newest, churn, health) and the apps overview (owners, instance countries, resources, deployments per day, newest, expiring, enterprise), see Network hubs below |
 | `GET /metrics?series=a,b&from&to&step` | time series (columnar JSON: `{from_ms, to_ms, step_ms, t:[…], series:{a:[…], b:[…]}}`). **A value that was not recorded is `null`, never 0** (product rule: unknown is never zero): backfilled history rows carry only `node_count` and the tier counts, and a live row records a series only once its source has reported. A bucket with no known sample is `null`. `step` is one of `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1d` (= `24h`), `7d` (= `1w`), case-insensitive, or a whole number of milliseconds that is a multiple of 60000; anything else is a 400 `bad_request` that lists the accepted steps. Omitted, the step is picked for about 500 points |
 | `GET /blocks?before&limit` · `GET /blocks/{height\|hash}` | block summaries / block detail with txs. `limit` is 1 to 1,000 (B7, was 100; default 20); page with `before = next_before`. A full, gapless page wholly below the finality window is immutable and served from a cache keyed by `(before, limit)` (10 min); a page that reaches the tip is built once per tip block hash (10 s). Each `TxLite.size` is the serialized size in bytes, computed from the decoded `getblock` verbosity 2 fields (which carry no per-tx size or hex; the shapes are verified against Insight sizes: Sapling v4, fluxnode start v5/v6 incl. P2SH, confirm v5), or `null` when it cannot be computed (legacy v1-v3, JoinSplits, delegate starts, or the store fallback when upstream is down). Never 0 |
 | `GET /tx/{txid}` | decoded tx (inputs with prevout values/addresses, outputs, Flux tx type annotations). An app payment (`kind: app_message`) carries `app_ref` (B7, typed optional): `{name, display_name, kind: register\|update, spec_version, message_hash, height, paid}` from the permanent message its OP_RETURN names, or from the pending message while it is unmined (`height` and `paid` null). Absent when the tx is no app payment or the message is not known yet. `/address/{addr}/txs` items carry it too |
@@ -877,6 +878,64 @@ Everything else serves the embedded web app (SPA fallback to `index.html`, immut
 >   (one row, 31 KB in `rich_snapshots`), not again after a restart the same day; on a fresh copy it waited for the
 >   supply and stored 420,894,010 FLUX with it. Concentration that day: the top 10 held 59.1% of the circulating
 >   supply, the top 100 76.0%, the top 1,000 92.1%.
+
+> **Network hubs (B13).** The dock's Nodes and Apps hubs read three endpoints (`crates/atlas-server/src/hubs.rs`,
+> DTOs in `crates/atlas-core/src/api_hubs.rs`). They are computed from memory (published nodes and apps, the wallet's
+> per-publish network figures, the hosted-apps map, the app-message ledger) plus one store scan for the churn, and
+> make no upstream call. Each answer is built once per publish and shared by every request reading that publish (a
+> `tokio::sync::OnceCell` on the views; concurrent requests wait for the one computation); the request that builds
+> it is charged to its client's compute budget and computes in a compute slot. All three answer 503 `unavailable`
+> (`Retry-After: 5`) until the chain tip is known; `Cache-Control: public, max-age=5`, ETag and 304 as usual.
+> - **`GET /network/operators?limit=100&by=zelid`** (`limit` 1 to 500, `by` `zelid` (default) or `address`; anything
+>   else is a 400): `OperatorsDto {generated_ms, by, total_operators, total_nodes, operators}`. `by=zelid` groups by
+>   the operator identity of `/network/decentralization` (the ZelID, else the payment address: such a row has
+>   `key_kind: "address"`); `by=address` by payment address. Operators with at least one confirmed node, ranked by
+>   confirmed nodes, then key (`rank` is the 1-based position). Per row, over confirmed nodes: `nodes`, `share` (of the
+>   network's confirmed nodes), `tiers`, `countries` and `top_country {code, name, nodes}`, `providers` (ASN, else
+>   org) and `top_provider {key, label, nodes}` (label: the org spelling most of those nodes report), `addresses` and
+>   `top_address`, `native_per_day` (the wallet's run rate: per tier, nodes x tier payout x 2,880 / queue length),
+>   `app_instances` (running instances on them), `first_active_ms`, `at_risk`, `unreachable`. `collateral_locked`
+>   counts every listed node (confirmed, started, DOS), as the wallet does; `dos` counts DOS nodes and `healthy_pct` is
+>   healthy confirmed nodes over confirmed plus DOS nodes. Ties (top country, provider, address) go to the smaller
+>   key. One ranked table per grouping and publish; a body per `limit`.
+> - **`GET /network/nodes-overview`**: `benchmarks` (per tier and metric any confirmed node measured: the network's
+>   p10 / p50 / p90 from the wallet's figures, the tier minimum, `nodes` measured); `age` (confirmed nodes by days
+>   since `active_since`, fluxd's confirmation time: `<7d` 0 to 7, `7-30d`, `1-6mo` 30 to 182, `6-12mo` 182 to 365,
+>   `1-2y` 365 to 730, `2y+` from 730 (`max_days: null`); `min_days` inclusive, `max_days` exclusive) and
+>   `age_unknown`; `newest` (the 10 most recently confirmed nodes); `churn` (`24h`, `7d`); `status`.
+>   **Health** (shared with the leaderboard): `at_risk` is a confirmed node 560 or more blocks past its last
+>   confirmation (the engine's `node_at_risk` rule and the `at_risk_count` series), `expiring_soon` fewer than 120
+>   blocks before the deadline (the wallet's rule; every at-risk node is also expiring soon), `unreachable` the last
+>   crawl failed (unknown is not unreachable), `healthy` confirmed and neither at risk nor unreachable, `dos` the DOS
+>   list, plus `confirmed` and `started`. **Churn:** `joined` counts distinct nodes with an initial confirmation
+>   (`NodeConfirmed`) in the window or a confirmed node whose `active_since` is in it (a server that was down misses
+>   the confirmation events: the reconcile after the gap adopts those nodes without one, and the records keep them);
+>   `left` counts distinct nodes removed from the list (expired, collateral spent, missing; DOS moves aside), at
+>   the event time, else when this server learned it, so removals learned after a gap land in the 24 h window.
+>   `complete` is true only when the minute metrics rows run through the whole window without a gap over 10 minutes
+>   (the server ran throughout). The scan reads the window's events in pages of 20,000 and the minute rows; it is kept
+>   in a slot rebuilt in the background at most every minute (5 minutes at most old), so only the first request
+>   after a start waits for it.
+> - **`GET /network/apps-overview`**: `owners` (the 25 owners with most running instances, then apps:
+>   `{owner, apps, instances, cores, ram_gb, ssd_gb}`, resources = per-instance spec x running instances) and
+>   `total_owners`; `countries` (the running instances of the hosted-apps map, i.e. the stored app locations, by
+>   their node's country, most first) and `unlocated_instances`; `resources {used, network}` with exactly the
+>   `/network/capacity` definitions: `used` = `apps_locked` (per-instance spec x running instances over the app
+>   index; RAM in GiB = MB / 1024, SSD = the spec's `hdd_gb`), `network` = `total` (benchmarked cores, RAM and SSD of
+>   confirmed nodes); `deployments` (registrations and updates per UTC day, the last 90 days oldest first, today
+>   partial: the app economy's rows); `history_complete` (the permanent-message backfill finished); `newest` (the 10
+>   most recent registrations, one per app, with the block time estimated from the height and the running instances,
+>   0 once the app left the index); `expiring` (the 10 apps whose expiry is soonest above the tip, with
+>   `blocks_left` and `expire_ms`); `enterprise {apps, instances}`. A day the server did not follow the chain holds
+>   only the messages a later backfill brought in.
+> - **Measured on 3132 against mainnet (release build, a copy of 3100's data 2.7 days stale, so the server jumped
+>   the chain gap on start), 2026-10-04:** cold (the request that builds the publish's answer) operators 2 to 10 ms
+>   (283 KB raw, 44 KB brotli at `limit=500`; 57 KB, 11 KB brotli at 100), nodes overview 165 ms on the first request
+>   after the start (the 7-day event scan) and under 1 ms once the churn slot is filled (5.5 KB, 1.6 KB brotli),
+>   apps overview 2 to 8 ms (13.6 KB, 3.3 KB brotli); warm 0.1 to 0.5 ms. 1,205 operators by ZelID and 847 by
+>   address over 6,848 confirmed nodes; the top ZelID ran 424 nodes (6.2%), the top address too, and the
+>   decentralization view's top five match the leaderboard's. Churn after the gap: 899 joined and 279 left in 7 days
+>   (889 nodes with `active_since` under 7 days), `complete: false`.
 
 ## 7. Binary node snapshot — `nodes.bin` (format v1)
 

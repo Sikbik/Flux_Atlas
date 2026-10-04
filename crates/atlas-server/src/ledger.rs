@@ -437,6 +437,26 @@ impl AppLedger {
     }
 }
 
+impl AppLedger {
+    /// The newest registrations at or below `tip`, one per app (its latest), newest first, at
+    /// most `n`: `(key, display name, height)` (network hubs, B13).
+    pub fn recent_registrations(&self, tip: u32, n: usize) -> Vec<(&str, &str, u32)> {
+        let upto = self.msgs.partition_point(|m| m.height <= tip);
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for m in self.msgs[..upto].iter().rev() {
+            if out.len() >= n {
+                break;
+            }
+            if m.register && seen.insert(m.app) {
+                let (key, display) = &self.names[m.app as usize];
+                out.push((key.as_str(), display.as_str(), m.height));
+            }
+        }
+        out
+    }
+}
+
 /// Milliseconds per block before the PoN fork.
 const POW_BLOCK_MS: u64 = 120_000;
 

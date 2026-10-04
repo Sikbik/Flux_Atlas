@@ -24,6 +24,8 @@ pub struct WalletNetwork {
     /// Benchmark percentiles per tier and metric (`BenchMetric::ALL` order); `None` when no
     /// node of the tier measured the metric.
     pub bench: [[Option<Percentiles>; 7]; 3],
+    /// Confirmed nodes that measured each metric, per tier (same order as `bench`).
+    pub bench_nodes: [[u32; 7]; 3],
 }
 
 impl WalletNetwork {
@@ -58,10 +60,12 @@ impl WalletNetwork {
         let mut operator_counts: Vec<u32> = by_address.into_values().collect();
         operator_counts.sort_unstable_by(|a, b| b.cmp(a));
         let mut bench: [[Option<Percentiles>; 7]; 3] = Default::default();
+        let mut bench_nodes = [[0u32; 7]; 3];
         for (t, per_tier) in values.iter_mut().enumerate() {
             for (m, vals) in per_tier.iter_mut().enumerate() {
                 vals.sort_by(f64::total_cmp);
                 bench[t][m] = percentiles(vals);
+                bench_nodes[t][m] = vals.len() as u32;
             }
         }
         Self {
@@ -71,6 +75,7 @@ impl WalletNetwork {
             dominant_flux_os: dominant(flux_os),
             dominant_bench: dominant(bench_v),
             bench,
+            bench_nodes,
         }
     }
 

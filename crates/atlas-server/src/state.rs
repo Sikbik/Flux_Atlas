@@ -92,6 +92,8 @@ pub struct Inner {
     /// `/richlist/movers` bodies keyed by `(window, newest snapshot day, snapshots)` (10 min).
     pub movers_cache:
         moka::future::Cache<(atlas_core::api::RichMoversWindow, u64, u32), Arc<CachedBody>>,
+    /// Network hub state kept across publishes (the churn count).
+    pub hubs: crate::hubs::HubState,
 }
 
 /// Node id to the apps with an instance on it.
@@ -263,6 +265,7 @@ impl AppState {
                     .max_capacity(16)
                     .time_to_live(crate::richlist::MOVERS_TTL)
                     .build(),
+                hubs: crate::hubs::HubState::default(),
             }),
         };
         let weak = Arc::downgrade(&state.inner);

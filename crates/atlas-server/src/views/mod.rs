@@ -169,6 +169,8 @@ pub struct Views {
     pub(crate) mesh: OnceLock<Arc<Adjacency>>,
     pub(crate) search: OnceLock<Arc<analytics::SearchCatalog>>,
     pub(crate) wallet: OnceLock<Arc<crate::wallet::network::WalletNetwork>>,
+    /// Network hub answers (operators, nodes and apps overviews).
+    pub(crate) hubs: crate::hubs::HubViews,
 }
 
 impl Views {
@@ -191,6 +193,7 @@ impl Views {
             mesh: OnceLock::new(),
             search: OnceLock::new(),
             wallet: OnceLock::new(),
+            hubs: crate::hubs::HubViews::default(),
         }
     }
 

@@ -21,6 +21,7 @@ pub mod error;
 pub mod explorer;
 pub mod extract;
 pub mod fixtures;
+pub mod hubs;
 pub mod keep;
 pub mod ledger;
 pub mod live;
