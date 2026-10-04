@@ -3,6 +3,16 @@
 
 import { lazy } from 'react';
 
+/** The Nodes hub (`/nodes`): the network's nodes and operators at a glance. What the dock's Nodes launcher opens. */
+export const NodesView = lazy(() =>
+  import('../features/hub/nodes/NodesView').then((m) => ({ default: m.NodesView })),
+);
+
+/** The Apps hub (`/apps`): the app network at a glance. What the dock's Apps launcher opens. */
+export const AppsView = lazy(() =>
+  import('../features/hub/apps/AppsView').then((m) => ({ default: m.AppsView })),
+);
+
 export const NodeView = lazy(() =>
   import('../features/inspect/node/NodeView').then((m) => ({ default: m.NodeView })),
 );

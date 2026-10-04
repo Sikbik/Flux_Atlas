@@ -25,8 +25,10 @@ import { TierGlyph } from '../../ui';
 import type { WindowType } from './types';
 
 export const WINDOW_ICON: Record<WindowType, LucideIcon | null> = {
+  nodes: Server,
   node: Server,
   host: Network,
+  apps: Boxes,
   app: Boxes,
   explorer: Blocks,
   block: Blocks,
@@ -48,8 +50,10 @@ export const WINDOW_ICON: Record<WindowType, LucideIcon | null> = {
 
 /** The accent a window type wears by default (a Flux blue tone or white; node windows take their tier). */
 export const WINDOW_ACCENT: Record<WindowType, string> = {
+  nodes: 'operator',
   node: 'operator',
   host: 'operator',
+  apps: 'app',
   app: 'app',
   explorer: 'chain',
   block: 'chain',

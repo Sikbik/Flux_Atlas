@@ -200,6 +200,10 @@ test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: 
     // The Explorer landing; each of its sections degrades on its own, so the page renders against the demo server
     // (which has no daily history or movers) too.
     ['/explorer', 'Explorer'],
+    // The Nodes and Apps hubs, the same way: every section degrades on its own against a server that lacks the
+    // operators, nodes overview and apps overview endpoints.
+    ['/nodes', 'Nodes'],
+    ['/apps', 'Apps'],
     ['/mempool', 'Mempool'],
     ['/queue', 'Payment queue'],
     ['/queue/stratus', 'Payment queue, stratus'],

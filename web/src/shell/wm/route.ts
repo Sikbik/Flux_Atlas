@@ -57,6 +57,8 @@ export function windowForPath(pathname: string): WindowRef | null {
       if (parts.length > 2) return null;
       return { type: head, key: seg(a) };
     case 'explorer':
+    case 'nodes':
+    case 'apps':
     case 'mempool':
     case 'supply':
     case 'richlist':

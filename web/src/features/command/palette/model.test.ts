@@ -273,6 +273,31 @@ describe('finding the explorer and the rich list', () => {
   });
 });
 
+describe('finding the Nodes and Apps hubs', () => {
+  it('finds Nodes and Apps by name, as pages that open /nodes and /apps', () => {
+    // The word is also a prefix, so the palette first teaches the prefix; the page is one row below it.
+    expect(ids(run('nodes'))).toContain('action:view.nodes');
+    expect(rowsOf(run('nodes')).find((r) => r.id === 'action:view.nodes')?.action).toEqual({
+      type: 'go',
+      target: { to: '/nodes' },
+    });
+    expect(ids(run('apps'))).toContain('action:view.apps');
+    expect(rowsOf(run('apps')).find((r) => r.id === 'action:view.apps')?.action).toEqual({
+      type: 'go',
+      target: { to: '/apps' },
+    });
+  });
+
+  it('finds the top node operators, which opens the operators section of the Nodes hub', () => {
+    for (const q of ['operators', 'top operators', 'zelid', 'leaderboard'])
+      expect(ids(run(q)), q).toContain('action:view.operators');
+    expect(rowsOf(run('operators')).find((r) => r.id === 'action:view.operators')?.action).toEqual({
+      type: 'go',
+      target: { to: '/nodes', fragment: 'operators' },
+    });
+  });
+});
+
 describe('actions and prefixes', () => {
   it('hoists an exact command above weaker groups', () => {
     const m = run('ambient');

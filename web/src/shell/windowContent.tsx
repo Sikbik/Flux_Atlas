@@ -9,11 +9,13 @@ import {
   AboutView,
   AddressView,
   AnalyticsView,
+  AppsView,
   AppView,
   BlockView,
   ExplorerView,
   HostView,
   MempoolView,
+  NodesView,
   NodeView,
   OperatorView,
   QueueView,
@@ -31,10 +33,14 @@ import type { WindowState } from './wm/types';
 export function windowContent(win: WindowState): ReactNode {
   const k = win.key ?? '';
   switch (win.type) {
+    case 'nodes':
+      return <NodesView />;
     case 'node':
       return <NodeView nodeKey={k} />;
     case 'host':
       return <HostView ip={k} />;
+    case 'apps':
+      return <AppsView />;
     case 'app':
       return <AppView name={k} />;
     case 'explorer':

@@ -23,12 +23,14 @@ import {
   AmbientView,
   AnalyticsView,
   AppHistoryView,
+  AppsView,
   AppView,
   BlockView,
   ExplorerView,
   GlobeHome,
   HostView,
   MempoolView,
+  NodesView,
   NodeView,
   OperatorView,
   QueueView,
@@ -147,6 +149,9 @@ const indexRoute = createRoute({
   },
   component: GlobeHome,
 });
+
+const nodesRoute = createRoute({ getParentRoute: () => rootRoute, path: '/nodes', component: NodesView });
+const appsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/apps', component: AppsView });
 
 const nodeRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -389,6 +394,8 @@ const devKitRoute = createRoute({
 
 export const routeTree = rootRoute.addChildren([
   indexRoute,
+  nodesRoute,
+  appsRoute,
   nodeRoute,
   hostRoute,
   appRoute,

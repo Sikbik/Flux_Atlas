@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LAUNCHERS, type LauncherId, PALETTE_SEED, runLauncher } from './launchers';
+import { LAUNCHERS, type LauncherId, runLauncher } from './launchers';
 import type { ShellNav } from './nav';
 
-function env(open: { id: string; type: string; key: string | null; binding: string } | null = null) {
+function env(
+  open: { id: string; type: string; key: string | null; binding: string } | null = null,
+  front: string | null = null,
+) {
   const palette = vi.fn();
   const open_ = vi.fn();
   const focus = vi.fn();
@@ -19,28 +22,50 @@ function env(open: { id: string; type: string; key: string | null; binding: stri
       nav,
       openWindowOfType: () => open as never,
       focus,
+      isFront: (windowId) => windowId === front,
     });
   return { run, palette, open: open_, focus };
 }
 
-describe('the launchers that need a subject', () => {
-  it('open the palette on their kind: the apps prefix lists apps, the node prefix the next payees', () => {
+describe('the hub launchers', () => {
+  it('open the hub of their kind, not the palette: Nodes the node hub, Apps the app hub', () => {
     const e = env();
-    e.run('apps');
     e.run('nodes');
-    expect(e.palette.mock.calls).toEqual([['app '], ['node ']]);
+    e.run('apps');
+    expect(e.open.mock.calls).toEqual([[{ type: 'nodes', key: null }], [{ type: 'apps', key: null }]]);
+    expect(e.palette).not.toHaveBeenCalled();
   });
 
   it('raise the window instead when one is open', () => {
     const e = env({ id: 'w1', type: 'app', key: 'Fluxtracker', binding: 'primary' });
     e.run('apps');
-    expect(e.palette).not.toHaveBeenCalled();
+    expect(e.open).not.toHaveBeenCalled();
     expect(e.focus).toHaveBeenCalledWith('w1');
   });
 
-  it('seed only the kinds that need a subject', () => {
-    expect(Object.keys(PALETTE_SEED).sort()).toEqual(['apps', 'nodes']);
-    for (const seed of Object.values(PALETTE_SEED)) expect(seed).toMatch(/^[a-z]+ $/);
+  it('go home to the hub when the open window is already in front, which raising would not change', () => {
+    const e = env({ id: 'node:abc', type: 'node', key: 'abc', binding: 'primary' }, 'node:abc');
+    e.run('nodes');
+    expect(e.focus).not.toHaveBeenCalled();
+    expect(e.open).toHaveBeenCalledWith({ type: 'nodes', key: null });
+  });
+
+  it('leave the hub where it is when the hub itself is the window in front', () => {
+    const e = env({ id: 'nodes:', type: 'nodes', key: null, binding: 'primary' }, 'nodes:');
+    e.run('nodes');
+    expect(e.focus).toHaveBeenCalledWith('nodes:');
+    expect(e.open).not.toHaveBeenCalled();
+  });
+
+  it('bring a hub that rides in ?w= to the front by opening it', () => {
+    const e = env({ id: 'apps:', type: 'apps', key: null, binding: 'extra' });
+    e.run('apps');
+    expect(e.open).toHaveBeenCalledWith({ type: 'apps', key: null });
+  });
+
+  it('stand for the hub and the inspectors in the dock', () => {
+    expect(LAUNCHERS.nodes.types).toEqual(['nodes', 'node', 'host']);
+    expect(LAUNCHERS.apps.types).toEqual(['apps', 'app']);
   });
 });
 
@@ -79,6 +104,16 @@ describe('the Explorer launcher', () => {
     e.run('explorer');
     expect(e.focus).toHaveBeenCalledWith('block:2998000');
     expect(e.open).not.toHaveBeenCalled();
+  });
+
+  it('goes home to the landing when the block in front is the only explorer window open', () => {
+    const e = env(
+      { id: 'block:2998000', type: 'block', key: '2998000', binding: 'primary' },
+      'block:2998000',
+    );
+    e.run('explorer');
+    expect(e.focus).not.toHaveBeenCalled();
+    expect(e.open).toHaveBeenCalledWith({ type: 'explorer', key: null });
   });
 
   it('brings an explorer window that rides in ?w= to the front by opening it', () => {
