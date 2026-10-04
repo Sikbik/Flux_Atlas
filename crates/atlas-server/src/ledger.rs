@@ -161,6 +161,17 @@ impl PayoutLedger {
         })
     }
 
+    /// An empty ledger covering `[from, tip]` (block times estimated back from `tip_ms`).
+    #[cfg(test)]
+    pub fn for_tests(tip: u32, from: u32, tip_ms: u64) -> Self {
+        Self {
+            tip: Some(tip),
+            from: Some(from),
+            from_ms: Some(est_time(from, tip, tip_ms)),
+            by_address: HashMap::new(),
+        }
+    }
+
     /// Payouts to `address`, ascending by height.
     pub fn payouts(&self, address: &str) -> &[PayoutEntry] {
         self.by_address.get(address).map_or(&[], Vec::as_slice)

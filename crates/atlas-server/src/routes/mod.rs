@@ -70,6 +70,13 @@ fn api(state: &AppState) -> Router<AppState> {
         .route("/mempool", get(explorer::mempool))
         .route("/supply", get(explorer::supply))
         .route("/richlist", get(explorer::richlist))
+        // Wallet intelligence (computes on a miss and asks upstream; charged inside).
+        .route("/wallet/{addr}", get(crate::wallet::wallet))
+        .route(
+            "/wallet/{addr}/parallel-assets",
+            get(crate::wallet::parallel_assets),
+        )
+        .route("/prices", get(crate::wallet::prices))
         // Time machine.
         .route("/timeline", get(timeline::index))
         // Live and ops (also mounted at the root).

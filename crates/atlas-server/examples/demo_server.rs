@@ -24,6 +24,14 @@
 //!   Proof of Node target change, so 7 d, 30 d and all are partly indexed), plus a row per demo
 //!   block
 //!
+//! - the wallet views (`/wallet/{addr}`, `/wallet/{addr}/parallel-assets`, `/prices`) answer
+//!   from fixed market sources (`sources::FixedSources`: Fusion-like parallel assets for any
+//!   address, the October 2026 CoinGecko prices and a year of history). The demo wallet is
+//!   operator 1 (`fixtures::DEMO_WALLET_OPERATOR`, address logged at startup): all three tiers,
+//!   a weak benchmark, a failed one, an older FluxOS, an unreachable node, hosted apps, three
+//!   days of payments with one missed, node events, and ten daily keyframes in which the fleet
+//!   grows
+//!
 //! It also serves `web/dist` (the SPA) when it exists. Env: `ATLAS_DEMO_BIND`,
 //! `ATLAS_DEMO_BLOCK_MS`, `ATLAS_DEMO_SEED`, `ATLAS_LOG`.
 
@@ -37,21 +45,25 @@ use atlas_core::app::AppInstance;
 use atlas_core::chain::{BlockKind, BlockSummary, Payout, TxKind};
 use atlas_core::codec::nodes_bin::NodeBinInput;
 use atlas_core::emission;
-use atlas_core::event::AppMessageKind;
+use atlas_core::event::{AppMessageKind, Event, EventEnvelope};
 use atlas_core::live::{
     AppInstallingMsg, AppInstancesDelta, AppPendingMsg, AppPendingResolvedMsg, AppsDelta, BlockMsg,
     DeltaCause, FeedItem, FeedKind, FeedRef, LiveBody, MeshDelta, NextPayeeDto, NextPayeesMsg,
     NodeChange, NodeLite, NodesDelta,
 };
 use atlas_core::net::NodeEndpoint;
+use atlas_core::node::{BenchStatus, Versions};
 use atlas_core::{
     Amount, Collateral, Hash32, NodeId, NodeRecord, NodeStatus, Outpoint, Tier, now_ms,
 };
+use atlas_engine::timemachine::{NetworkSnapshot, SnapNode};
 use atlas_engine::{EngineConfig, EngineHandle, IngestConfig};
 use atlas_server::fixtures::{self, Fixture, FixtureSpec};
+use atlas_server::sources::{FixedSources, MarketSources};
 use atlas_server::views::node_ref;
+use atlas_server::watch::WatchHooks;
 use atlas_server::{AppState, ServerConfig, router};
-use atlas_store::{ChainPoint, WriteBatch};
+use atlas_store::{ChainPoint, Store, WriteBatch};
 use tokio::sync::watch;
 use tokio::time::sleep_until;
 
@@ -971,6 +983,215 @@ impl Demo {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The demo wallet
+// ---------------------------------------------------------------------------------------------
+
+/// Days of block history seeded below the fixture's blocks (payments of every node, phased
+/// like the payment queue).
+const WALLET_DAYS: u32 = 3;
+/// Daily keyframes seeded before today (the wallet's fleet history).
+const KEYFRAME_DAYS: u64 = 10;
+const DAY_MS: u64 = 86_400_000;
+
+/// Node indices of the demo wallet.
+fn wallet_nodes() -> std::ops::Range<usize> {
+    let k = fixtures::DEMO_WALLET_OPERATOR * fixtures::NODES_PER_OPERATOR;
+    k..k + fixtures::NODES_PER_OPERATOR
+}
+
+/// Gives the demo wallet something to look at: measured disk speeds, an EPS close to the
+/// Cumulus minimum, a failed benchmark and an unreachable node (the fixture already gives
+/// node 9 an older FluxOS and every node some apps).
+fn adjust_wallet(f: &mut Fixture) {
+    let r = wallet_nodes();
+    for (j, i) in r.clone().enumerate() {
+        let n = &mut f.nodes[i];
+        if let Some(hw) = n.hw.as_mut() {
+            hw.disk_write_mbs = 480.0 + 35.0 * j as f32;
+            hw.bench_time_ms = f.now_ms - 3_600_000 * (j as u64 + 1);
+        }
+        // Recently confirmed, except node 14, which is close to its confirmation deadline.
+        if j != 6 {
+            n.last_confirmed_height = Some(f.tip - 20 * j as u32);
+        }
+    }
+    if let Some(hw) = f.nodes[r.start + 2].hw.as_mut() {
+        hw.eps = 252.0;
+        hw.disk_write_mbs = 191.0;
+    }
+    if let Some(hw) = f.nodes[r.start + 3].hw.as_mut() {
+        hw.bench_status = BenchStatus::Failed;
+        hw.bench_tier = Tier::Unknown;
+        hw.disk_write_mbs = 142.0;
+        hw.bench_error = Some("disk write speed below the Cumulus minimum".into());
+    }
+    f.nodes[r.start + 4].reachable = Some(false);
+}
+
+fn event(ts_ms: u64, event: Event) -> EventEnvelope {
+    EventEnvelope {
+        seq: 0,
+        observed_ms: ts_ms,
+        event_ms: Some(ts_ms),
+        event,
+    }
+}
+
+/// Seeds the wallet's history: [`WALLET_DAYS`] of blocks below the fixture's (each tier's rank
+/// `r` paid at the heights `tip + 1 + r` modulo the queue length, as the queue does; the demo
+/// wallet misses one payment), its node events, and [`KEYFRAME_DAYS`] daily keyframes in
+/// which its fleet grows from five nodes to eight.
+fn seed_wallet_history(f: &Fixture, store: &Store) -> anyhow::Result<()> {
+    let wallet: Vec<usize> = wallet_nodes().collect();
+    let first = f.blocks.first().map_or(f.tip + 1, |b| b.height);
+    let from = first.saturating_sub(WALLET_DAYS * 2_880);
+    let mut queues: [Vec<(u32, usize)>; 3] = Default::default();
+    for (i, n) in f.nodes.iter().enumerate() {
+        if let (Some(t), Some(r), true) =
+            (n.tier.index(), n.rank, n.status == NodeStatus::Confirmed)
+        {
+            queues[t].push((r, i));
+        }
+    }
+    for q in &mut queues {
+        q.sort_unstable();
+    }
+    let time_of = |h: u32| f.tip_time_ms - u64::from(f.tip - h) * 30_000;
+    let miss = wallet[5];
+    let mut missed = false;
+    let mut batch = WriteBatch::with_capacity((first - from) as usize + 64);
+    for h in from..first {
+        let mut payouts = Vec::with_capacity(3);
+        for (t, tier) in Tier::ALL.iter().enumerate() {
+            let queue = &queues[t];
+            if queue.is_empty() {
+                continue;
+            }
+            let len = queue.len() as i64;
+            let slot = (i64::from(h) - i64::from(f.tip) - 1).rem_euclid(len) as usize;
+            let mut payee = queue[slot].1;
+            if payee == miss && !missed {
+                // The demo wallet's node 13 misses this payment: the next node is paid.
+                missed = true;
+                payee = queue[(slot + 1) % queue.len()].1;
+            }
+            let n = &f.nodes[payee];
+            let amount = emission::tier_payout(h, *tier).unwrap_or(Amount::ZERO);
+            payouts.push(Payout {
+                tier: *tier,
+                address: n.payment_address.clone(),
+                amount,
+                node: Some(n.id),
+            });
+            if wallet.contains(&payee) {
+                batch.push_event(event(
+                    time_of(h),
+                    Event::NodePaid {
+                        node: Some(n.id),
+                        tier: *tier,
+                        address: n.payment_address.clone(),
+                        amount,
+                        height: h,
+                    },
+                ));
+            }
+        }
+        batch.put_block(BlockSummary {
+            height: h,
+            hash: fixtures::block_hash(h),
+            prev_hash: fixtures::block_hash(h - 1),
+            time_ms: time_of(h),
+            size: 4000,
+            tx_count: 3,
+            kind: BlockKind::Pon,
+            version: 100,
+            producer_collateral: None,
+            producer: None,
+            payouts: payouts.into_iter().collect(),
+            dev_fund: Amount(50_000_000),
+            fees: Amount::ZERO,
+            reward: emission::pon_subsidy(h).unwrap_or(Amount::ZERO),
+            value_out: Amount::from_flux(12),
+            confirm_count: 0,
+            start_count: 0,
+            transfer_count: 1,
+        });
+    }
+    // Node events of the wallet.
+    let id = |j: usize| f.nodes[wallet[j]].id;
+    let now = f.now_ms;
+    for (j, days_ago) in [(5usize, 6u64), (6, 6), (7, 2)] {
+        batch.push_event(event(
+            now - days_ago * DAY_MS,
+            Event::NodeConfirmed {
+                node: id(j),
+                height: f.tip - (days_ago as u32) * 2_880,
+                txid: Hash32(*blake3::hash(format!("demo-confirm-{j}").as_bytes()).as_bytes()),
+            },
+        ));
+    }
+    batch.push_event(event(
+        now - 2 * DAY_MS + 3_600_000,
+        Event::NodeVersionChanged {
+            node: id(1),
+            versions: Box::new(Versions {
+                flux_os: Some("8.19.1".into()),
+                daemon: Some("9.1.0".into()),
+                bench: Some("5.1.0".into()),
+                ..Versions::default()
+            }),
+        },
+    ));
+    if let Some(hw) = f.nodes[wallet[3]].hw.clone() {
+        batch.push_event(event(
+            now - 5 * 3_600_000,
+            Event::NodeHardwareChanged {
+                node: id(3),
+                hardware: Box::new(hw),
+            },
+        ));
+    }
+    batch.push_event(event(
+        now - 2 * 3_600_000,
+        Event::NodeAtRisk {
+            node: id(0),
+            blocks_since_confirm: 560,
+        },
+    ));
+    batch.push_event(event(
+        now - 40 * 60_000,
+        Event::NodeUnreachable { node: id(4) },
+    ));
+    // Daily keyframes: nodes 13 and 14 joined six days ago, node 15 two days ago.
+    let today = now / DAY_MS * DAY_MS;
+    for d in 1..=KEYFRAME_DAYS {
+        let ts_ms = today - d * DAY_MS + 23 * 3_600_000;
+        let absent: &[usize] = match d {
+            7.. => &wallet[5..],
+            3..=6 => &wallet[7..],
+            _ => &[],
+        };
+        let nodes = f
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !absent.contains(i))
+            .map(|(_, n)| SnapNode::from_record(n))
+            .collect();
+        batch.put_snapshot(
+            ts_ms,
+            &NetworkSnapshot {
+                ts_ms,
+                tip_height: f.tip - (d as u32) * 2_880,
+                nodes,
+            },
+        )?;
+    }
+    store.commit_durable(batch)?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let filter = tracing_subscriber::EnvFilter::try_from_env("ATLAS_LOG")
@@ -999,7 +1220,10 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&dir)?;
     let db = dir.join("atlas-demo.redb");
     let t0 = Instant::now();
-    let (engine, f) = fixtures::fixture_engine(
+    let mut fixture = Fixture::build(FixtureSpec::MAINNET);
+    adjust_wallet(&mut fixture);
+    let history = fixture.clone();
+    let (engine, f) = fixtures::fixture_engine_from(
         &db,
         fixtures::offline_clients(None),
         // Synthetic stream only: never ingest from the real network.
@@ -1007,8 +1231,10 @@ async fn main() -> anyhow::Result<()> {
             ingest: IngestConfig::disabled(),
             ..EngineConfig::default()
         },
-        FixtureSpec::MAINNET,
+        fixture,
+        |store| seed_wallet_history(&history, store),
     )?;
+    drop(history);
     tracing::info!(
         nodes = f.nodes.len(),
         apps = f.apps.len(),
@@ -1018,7 +1244,13 @@ async fn main() -> anyhow::Result<()> {
 
     let mut cfg = ServerConfig::default();
     cfg.ws.max_per_ip = 1_000;
-    let state = AppState::new(engine.clone(), cfg);
+    let hooks: Arc<dyn WatchHooks> = Arc::new(engine.clone());
+    let sources: Arc<dyn MarketSources> = Arc::new(FixedSources::default());
+    let state = AppState::with_parts(engine.clone(), cfg, hooks, Some(sources));
+    tracing::info!(
+        wallet = %fixtures::operator_address(fixtures::DEMO_WALLET_OPERATOR),
+        "demo wallet (/api/v1/wallet/<address>)"
+    );
     let hub = Arc::clone(&state.hub);
     let conns = Arc::clone(&state.listener);
     let app = router(state);

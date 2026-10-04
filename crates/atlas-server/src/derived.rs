@@ -53,6 +53,12 @@ impl DerivedGuard {
 
     /// Charges the client and waits for a compute slot.
     pub async fn enter(&self, ip: IpAddr) -> Result<SemaphorePermit<'_>, ApiError> {
+        self.charge(ip)?;
+        self.slot().await
+    }
+
+    /// Charges one computation to the client (429 with `Retry-After` when its budget is spent).
+    pub fn charge(&self, ip: IpAddr) -> Result<(), ApiError> {
         let key = crate::net::trust::client_key(ip);
         if let Err(not_until) = self.limiter.check_key(&key) {
             self.rate_limited.fetch_add(1, Ordering::Relaxed);
@@ -61,6 +67,12 @@ impl DerivedGuard {
                 wait.as_secs_f64().ceil().max(1.0) as u64
             ));
         }
+        Ok(())
+    }
+
+    /// Waits for a global compute slot (503 when none frees up in time). A handler that also
+    /// waits on upstream takes the slot only for its computation.
+    pub async fn slot(&self) -> Result<SemaphorePermit<'_>, ApiError> {
         if let Ok(Ok(p)) =
             tokio::time::timeout(self.limits.queue_timeout, self.permits.acquire()).await
         {
