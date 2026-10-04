@@ -15,6 +15,7 @@ export type WindowType =
   | 'queue'
   | 'analytics'
   | 'operator'
+  | 'wallet'
   | 'terminal'
   | 'time'
   | 'weather'

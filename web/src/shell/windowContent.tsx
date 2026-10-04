@@ -22,6 +22,7 @@ import {
   TerminalView,
   TimeMachineView,
   TxView,
+  WalletView,
   WeatherView,
 } from '../views';
 import type { WindowState } from './wm/types';
@@ -59,6 +60,8 @@ export function windowContent(win: WindowState): ReactNode {
       );
     case 'operator':
       return <OperatorView addr={k} />;
+    case 'wallet':
+      return <WalletView addr={k} />;
     case 'terminal':
       return <TerminalView />;
     case 'time':

@@ -38,6 +38,7 @@ import {
   TerminalView,
   TimeMachineView,
   TxView,
+  WalletView,
   WeatherView,
 } from '../views';
 import { useNetwork, useRuntime } from './context';
@@ -52,6 +53,7 @@ import {
   validateOperatorSearch,
   validateTerminalSearch,
   validateTimeSearch,
+  validateWalletSearch,
 } from './search';
 import { routeForHit } from './searchRoutes';
 import { canonicalNodeLocation, isUnresolvableLegacyKey, selectionKeys } from './selection';
@@ -124,7 +126,26 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   errorComponent: RouteError,
 });
 
-const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: GlobeHome });
+/**
+ * `/?wallet=<address>` is the link form other wallet tools use: it lands on the workspace (`/wallet/<address>`)
+ * with the rest of the search kept, and the `wallet` parameter itself gone, so the address bar is the real route.
+ */
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  beforeLoad: ({ search }) => {
+    const { wallet, ...rest } = search as { wallet?: string } & Record<string, unknown>;
+    if (wallet) {
+      throw redirect({
+        to: '/wallet/$addr',
+        params: { addr: wallet },
+        search: rest as never,
+        replace: true,
+      });
+    }
+  },
+  component: GlobeHome,
+});
 
 const nodeRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -271,6 +292,17 @@ const operatorRoute = createRoute({
   },
 });
 
+const walletRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/wallet/$addr',
+  validateSearch: validateWalletSearch,
+  component: function WalletRoute() {
+    const { addr } = walletRoute.useParams();
+    const { tab } = walletRoute.useSearch();
+    return <WalletView addr={addr} tab={tab} routed />;
+  },
+});
+
 const timeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/time',
@@ -365,6 +397,7 @@ export const routeTree = rootRoute.addChildren([
   analyticsRoute,
   analyticsTabRoute,
   operatorRoute,
+  walletRoute,
   timeRoute,
   weatherRoute,
   terminalRoute,

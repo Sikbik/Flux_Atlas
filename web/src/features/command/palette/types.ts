@@ -67,6 +67,7 @@ export type RowKind =
   | 'block'
   | 'tx'
   | 'address'
+  | 'wallet'
   | 'operator'
   | 'country'
   | 'city'
@@ -86,6 +87,7 @@ export type IconId =
   | 'block'
   | 'tx'
   | 'address'
+  | 'wallet'
   | 'operator'
   | 'country'
   | 'city'
@@ -200,7 +202,17 @@ export interface RowGroup {
   more: number;
 }
 
-export type Prefix = 'node' | 'app' | 'block' | 'tx' | 'addr' | 'operator' | 'goto' | 'layer' | 'filter';
+export type Prefix =
+  | 'node'
+  | 'app'
+  | 'block'
+  | 'tx'
+  | 'addr'
+  | 'wallet'
+  | 'operator'
+  | 'goto'
+  | 'layer'
+  | 'filter';
 
 export const PREFIXES: readonly { id: Prefix; hint: string; example: string; summary: string }[] = [
   {
@@ -213,6 +225,7 @@ export const PREFIXES: readonly { id: Prefix; hint: string; example: string; sum
   { id: 'block', hint: 'block <height or hash>', example: 'block tip', summary: 'Open a block' },
   { id: 'tx', hint: 'tx <txid>', example: 'tx 8aa97365', summary: 'Open a transaction' },
   { id: 'addr', hint: 'addr <address>', example: 'addr t1cz5PE2Q', summary: 'Open an address' },
+  { id: 'wallet', hint: 'wallet <address>', example: 'wallet t1cz5P', summary: 'Open a wallet workspace' },
   {
     id: 'operator',
     hint: 'operator <address or ZelID>',

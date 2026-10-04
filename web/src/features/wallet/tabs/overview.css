@@ -1,0 +1,377 @@
+/* The Overview tab: the standing, the run-rate, the payout dial with its queue, the fleet's health, the month's
+   earnings and the parallel assets. Tokens only; the layout follows the width of the window (`wl` container). */
+
+/* ---- the top: standing beside the run-rate ----------------------------------------------------- */
+
+.wl-top {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container wl (min-width: 900px) {
+  .wl-top {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.wl-standing {
+  display: grid;
+  gap: var(--space-6);
+  align-content: start;
+  min-width: 0;
+}
+
+.wl-standing__main {
+  display: grid;
+  gap: var(--space-5);
+}
+
+/* The balance is the longest figure of the view. It takes the kit's hero size where the tile has room, and the size at
+   which its own digits fit where it does not (`--wl-em` is the figure's width in ems; 44 px is the unit beside it). */
+.wl-standing__main .ui-stat[data-hero] .ui-stat__value {
+  font-size: clamp(22px, min(17cqi, calc((100cqi - 44px) / var(--wl-em, 7.3))), 58px);
+}
+
+.wl-split {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.wl-split .wl-note {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.wl-inline-icon {
+  flex: none;
+  align-self: center;
+  color: var(--text-3);
+}
+
+.wl-standing__side {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+/* where an operator stands among all of them: a hairline from the smallest to the largest, and a mark */
+.wl-ruler {
+  position: relative;
+  flex: 1 0 100%;
+  display: block;
+  height: 14px;
+  margin-bottom: 2px;
+}
+
+.wl-ruler::before {
+  content: "";
+  position: absolute;
+  inset: 6px 0 auto;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--ink-4), var(--accent-600));
+}
+
+.wl-ruler i {
+  position: absolute;
+  top: 1px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--hot);
+  box-shadow:
+    0 0 0 3px var(--ink-1),
+    0 0 12px color-mix(in oklab, var(--accent-400) 60%, transparent);
+}
+
+/* the share of each tier: a bar against the whole tier, so it reads as a share and never as a score */
+.wl-shares {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-lg);
+  list-style: none;
+}
+
+.wl-shares li {
+  display: grid;
+  grid-template-columns: 14px 64px minmax(40px, 1fr) 54px;
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: 2px;
+}
+
+.wl-shares__name {
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+}
+
+.wl-shares__bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+}
+
+.wl-shares__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tier-ink);
+}
+
+.wl-shares__val {
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  text-align: right;
+}
+
+.wl-shares__n {
+  grid-column: 2 / -1;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+.wl-runrate {
+  --ui-stat-min: 150px;
+}
+
+/* ---- next payouts ------------------------------------------------------------------------------ */
+
+.wl-payouts {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@container wl (min-width: 860px) {
+  .wl-payouts {
+    grid-template-columns: minmax(320px, 500px) minmax(0, 1fr);
+  }
+}
+
+.wl-payouts__side {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+  max-width: 580px;
+}
+
+.wl-sub {
+  margin: 0;
+  color: var(--text-2);
+  font: var(--fw-semibold) var(--fs-sm) / 1.2 var(--font-display);
+}
+
+.wl-queue {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-1);
+}
+
+.wl-queue li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto 76px;
+  align-items: center;
+  column-gap: var(--space-4);
+  min-height: 34px;
+  border-bottom: 1px solid var(--line-1);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.wl-queue li:hover,
+.wl-queue li:focus-within {
+  background: var(--ink-2);
+}
+
+.wl-queue__node {
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-queue__amt {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.wl-queue__eta {
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* in a list the unit is as big as the figure, only quieter */
+.wl-queue__eta .wl-unit {
+  margin-left: 1px;
+  font-size: 1em;
+}
+
+/* a payment that landed while the page was open */
+.wl-landed {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wl-landed li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid color-mix(in oklab, var(--status-ok) 34%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--status-ok) 9%, transparent);
+  color: var(--status-ok);
+}
+
+.wl-landed li[data-fresh] {
+  animation: wl-landed-in var(--dur-slow) var(--ease-out) both;
+}
+
+.wl-landed__text {
+  display: grid;
+  min-width: 0;
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+}
+
+.wl-landed__text i {
+  color: var(--text-3);
+  font-style: normal;
+}
+
+@keyframes wl-landed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* ---- fleet health ------------------------------------------------------------------------------ */
+
+.wl-grid {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.wl-grid .ix-fgrid {
+  min-width: 0;
+}
+
+.wl-issues {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wl-issues li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--r-md);
+  background: var(--ink-2);
+}
+
+.wl-issues li svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.wl-issues li > span {
+  display: grid;
+  min-width: 0;
+}
+
+.wl-issues li b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.wl-issues li b em {
+  margin-left: var(--space-3);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-style: normal;
+  font-weight: var(--fw-regular);
+}
+
+.wl-issues li i {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-style: normal;
+  text-wrap: pretty;
+}
+
+.wl-issues li[data-severity="crit"] svg {
+  color: var(--status-crit);
+}
+
+.wl-issues li[data-severity="warn"] svg {
+  color: var(--status-warn);
+}
+
+.wl-issues li[data-severity="info"] svg {
+  color: var(--status-pending);
+}
+
+.wl-risk {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.wl-stack {
+  display: grid;
+  gap: var(--space-6);
+  align-content: start;
+  min-width: 0;
+}
+
+/* ---- the loading skeleton ---------------------------------------------------------------------- */
+
+.wl-skel-head {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--wl-pad) var(--space-4);
+}
+
+.wl-skel-tabs {
+  display: flex;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--wl-pad) 0;
+  overflow: hidden;
+}
+
+.wl-skel-dial {
+  display: grid;
+  place-items: center;
+  padding: var(--space-6) 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .wl-landed li[data-fresh] {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .wl-landed li[data-fresh] {
+  animation: none;
+}

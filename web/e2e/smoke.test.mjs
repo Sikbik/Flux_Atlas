@@ -192,6 +192,11 @@ test('every IA route renders, and unknown routes 404', { timeout: 90_000, skip: 
     ['/app/kadenanode', 'App kadenanode'],
     ['/app/kadenanode/history/2', 'Revision 2'],
     ['/block/2996914', 'Block 2996914'],
+    // The wallet workspace for the demo server's wallet: its article names itself by the address once it has loaded.
+    [
+      '/wallet/t1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhyt',
+      { role: 'article', name: /^Wallet t1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhyt/ },
+    ],
     ['/mempool', 'Mempool'],
     ['/queue', 'Payment queue'],
     ['/queue/stratus', 'Payment queue, stratus'],

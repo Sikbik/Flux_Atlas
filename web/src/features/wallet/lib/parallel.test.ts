@@ -1,0 +1,344 @@
+import { describe, expect, it } from 'vitest';
+import type { PaChain, PaClaim } from '../types';
+import {
+  chainName,
+  chainTicker,
+  chainTotals,
+  claimAllSaving,
+  claimChainLabel,
+  claimEfficiency,
+  claimedShare,
+  claimHistoryTotals,
+  claimLink,
+  composition,
+  daysToWorth,
+  explorerUrl,
+  feeGaugePos,
+  feeShareText,
+  GAUGE_STOPS,
+  isClaimAll,
+  isUntouched,
+  receivingLink,
+  safeHttpUrl,
+  sortChains,
+  verdictView,
+  waitText,
+} from './parallel';
+
+const claim = (over: Partial<PaClaim> = {}): PaClaim => ({
+  chain: 'eth',
+  amount: 100,
+  txid: '0xabc',
+  to: '0xdef',
+  explorer_url: 'https://etherscan.io/tx/0xabc',
+  time_ms: 1_700_000_000_000,
+  main_txid: null,
+  fee: 2,
+  ...over,
+});
+
+const MAIN = 'a'.repeat(64);
+
+const chain = (id: string, over: Partial<PaChain> = {}): PaChain => ({
+  chain: id,
+  name: id.toUpperCase(),
+  active: true,
+  mined: 150_000,
+  claimed: 106_000,
+  received: 106_000,
+  fees_paid: 40,
+  claimable: 43_555.5,
+  claim_fee: 10,
+  explorer_tx: `https://explorer.example/${id}/tx/{txid}`,
+  explorer_address: null,
+  ...over,
+});
+
+describe('claimEfficiency', () => {
+  it('calls a huge claim against a small fee worth it', () => {
+    const e = claimEfficiency(chain('kda'));
+    expect(e.gross).toBe(43_555.5);
+    expect(e.net).toBe(43_545.5);
+    expect(e.feeShare).toBeCloseTo(10 / 43_555.5, 12);
+    expect(e.verdict).toBe('worth');
+  });
+
+  it('grades by the fee as a share of the claim', () => {
+    expect(claimEfficiency(chain('a', { claimable: 1000, claim_fee: 10 })).verdict).toBe('worth');
+    expect(claimEfficiency(chain('a', { claimable: 500, claim_fee: 10 })).verdict).toBe('fair');
+    expect(claimEfficiency(chain('a', { claimable: 200, claim_fee: 31 })).verdict).toBe('wait');
+    expect(claimEfficiency(chain('a', { claimable: 20, claim_fee: 31 })).verdict).toBe('underwater');
+    expect(claimEfficiency(chain('a', { claimable: 31, claim_fee: 31 })).verdict).toBe('underwater');
+  });
+
+  it('never goes below zero net, and names the claim size where a fee is one percent', () => {
+    const e = claimEfficiency(chain('a', { claimable: 20, claim_fee: 31 }));
+    expect(e.net).toBe(0);
+    expect(e.worthAt).toBeCloseTo(3100, 9);
+  });
+
+  it('has nothing to say about an empty chain, and nothing at all about an ended one', () => {
+    const none = claimEfficiency(chain('a', { claimable: 0 }));
+    expect(none.verdict).toBe('nothing');
+    expect(none.feeShare).toBeNull();
+    const ended = claimEfficiency(chain('erg', { active: false }));
+    expect(ended.verdict).toBe('inactive');
+    expect(ended.gross).toBe(43_555.5);
+  });
+
+  it('treats a negative figure from a bad feed as zero', () => {
+    const e = claimEfficiency(chain('a', { claimable: -5, claim_fee: -1 }));
+    expect(e.gross).toBe(0);
+    expect(e.fee).toBe(0);
+  });
+
+  it('does not call a claim worth it when the chain published no fee', () => {
+    // The server sends 0 for a chain whose fee Fusion did not list.
+    const e = claimEfficiency(chain('a', { claimable: 5_000, claim_fee: 0 }));
+    expect(e.feeKnown).toBe(false);
+    expect(e.feeShare).toBeNull();
+    expect(e.verdict).toBe('unknown');
+    expect(verdictView('unknown')).toEqual({ label: 'Fee not published', tone: 'off' });
+    expect(claimEfficiency(chain('a', { claimable: 5_000, claim_fee: 10 })).feeKnown).toBe(true);
+  });
+});
+
+describe('verdictView and feeShareText', () => {
+  it('gives every verdict a word and a role', () => {
+    expect(verdictView('worth')).toEqual({ label: 'Worth claiming', tone: 'ok' });
+    expect(verdictView('underwater').tone).toBe('crit');
+    expect(verdictView('inactive').label).toBe('Ended in Fusion');
+  });
+
+  it('writes a share the way it reads', () => {
+    expect(feeShareText(0.0002296)).toBe('0.02%');
+    expect(feeShareText(0.000001)).toBe('under 0.01%');
+    expect(feeShareText(0.014)).toBe('1.4%');
+    expect(feeShareText(0.155)).toBe('15.5%');
+    expect(feeShareText(1.7)).toBe('over 100%');
+    expect(feeShareText(null)).toBe('Unknown');
+  });
+});
+
+describe('sortChains and chainTotals', () => {
+  const chains = [
+    chain('erg', { active: false, claimable: 90_000 }),
+    chain('kda', { claimable: 100 }),
+    chain('eth', { claimable: 5_000 }),
+    chain('bsc', { claimable: 5_000, name: 'BNB Smart Chain' }),
+  ];
+
+  it('puts active chains first, then the biggest claim, then by name', () => {
+    expect(sortChains(chains).map((c) => c.chain)).toEqual(['bsc', 'eth', 'kda', 'erg']);
+  });
+
+  it('does not mutate the input', () => {
+    const copy = [...chains];
+    sortChains(chains);
+    expect(chains).toEqual(copy);
+  });
+
+  it('adds up only the chains that can be claimed', () => {
+    const t = chainTotals(chains);
+    expect(t).toEqual({ claimable: 10_100, fees: 30, net: 10_070, active: 3, inactive: 1 });
+  });
+});
+
+describe('composition and claim-all savings', () => {
+  const chains = [
+    chain('kda', { claimed: 100, claimable: 40, claim_fee: 10 }),
+    chain('eth', { claimed: 50, claimable: 60, claim_fee: 12 }),
+    chain('erg', { active: false, claimed: 70, claimable: 90, claim_fee: 10 }),
+  ];
+
+  it('splits what was mined into claimed, claimable now and stuck on an ended chain', () => {
+    expect(composition(chains)).toEqual({ claimed: 220, claimable: 100, stuck: 90 });
+    expect(composition([])).toEqual({ claimed: 0, claimable: 0, stuck: 0 });
+  });
+
+  it('never counts a negative figure', () => {
+    expect(composition([chain('a', { claimed: -5, claimable: -9 })])).toEqual({
+      claimed: 0,
+      claimable: 0,
+      stuck: 0,
+    });
+  });
+
+  it('saves the difference between claiming each chain and claiming all', () => {
+    // 10 + 12 on their own (the ended chain is not claimable), 15 for the claim-all.
+    expect(claimAllSaving(chains, { claimable: 100, fees: 15 })).toBe(7);
+  });
+
+  it('saves nothing when claiming all is not cheaper, or there is no quote', () => {
+    expect(claimAllSaving(chains, { claimable: 100, fees: 30 })).toBe(0);
+    expect(claimAllSaving(chains, { claimable: 0, fees: 0 })).toBe(0);
+  });
+});
+
+describe('how long until a claim is worth it', () => {
+  it('counts the days to a claim whose fee is one percent', () => {
+    // A fee of 31 is one percent of 3,100; 100 are waiting and 300 accrue a day.
+    const e = claimEfficiency(chain('matic', { claimable: 100, claim_fee: 31 }));
+    expect(e.worthAt).toBeCloseTo(3100, 9);
+    expect(daysToWorth(e, 300)).toBeCloseTo(10, 9);
+  });
+
+  it('is zero once it is, and unknown without a pace or a fee', () => {
+    expect(daysToWorth(claimEfficiency(chain('a', { claimable: 5000, claim_fee: 10 })), 300)).toBe(0);
+    expect(daysToWorth(claimEfficiency(chain('a', { claimable: 100, claim_fee: 10 })), 0)).toBeNull();
+    expect(daysToWorth(claimEfficiency(chain('a', { claimable: 100, claim_fee: 0 })), 300)).toBeNull();
+  });
+
+  it('writes a wait the way it reads', () => {
+    expect(waitText(0.4)).toBe('under a day');
+    expect(waitText(1)).toBe('about 1 day');
+    expect(waitText(3.2)).toBe('about 3 days');
+    expect(waitText(35)).toBe('about 5 weeks');
+    expect(waitText(150)).toBe('about 5 months');
+    expect(waitText(500)).toBe('over a year');
+  });
+});
+
+describe('the fee gauge', () => {
+  it('runs from a thousandth of the claim to all of it on a log scale', () => {
+    expect(feeGaugePos(0.001)).toBe(0);
+    expect(feeGaugePos(0.0001)).toBe(0);
+    expect(feeGaugePos(1)).toBe(1);
+    expect(feeGaugePos(3)).toBe(1);
+    expect(feeGaugePos(0.0316227766)).toBeCloseTo(0.5, 6);
+  });
+
+  it('puts the one percent and five percent stops where the advice changes', () => {
+    expect(GAUGE_STOPS.worth).toBeCloseTo(1 / 3, 12);
+    expect(GAUGE_STOPS.fair).toBeCloseTo((Math.log10(0.05) + 3) / 3, 12);
+    expect(GAUGE_STOPS.worth).toBeLessThan(GAUGE_STOPS.fair);
+    expect(feeGaugePos(0.0002296) as number).toBe(0);
+    expect(feeGaugePos(0.005) as number).toBeLessThan(GAUGE_STOPS.worth);
+    expect(feeGaugePos(0.03) as number).toBeGreaterThan(GAUGE_STOPS.worth);
+    expect(feeGaugePos(0.03) as number).toBeLessThan(GAUGE_STOPS.fair);
+    expect(feeGaugePos(0.2) as number).toBeGreaterThan(GAUGE_STOPS.fair);
+  });
+
+  it('has no position for no share', () => {
+    expect(feeGaugePos(null)).toBeNull();
+    expect(feeGaugePos(Number.NaN)).toBeNull();
+    expect(feeGaugePos(-1)).toBeNull();
+  });
+});
+
+describe('claimedShare', () => {
+  it('is the share of what was mined that was claimed', () => {
+    expect(claimedShare({ mined: 1_500_904, claimed: 1_065_349 })).toBeCloseTo(0.7098, 3);
+    expect(claimedShare({ mined: 0, claimed: 0 })).toBeNull();
+    expect(claimedShare({ mined: 10, claimed: 12 })).toBe(1);
+  });
+});
+
+describe('isUntouched', () => {
+  const none = { mined: 0, claimed: 0, claimable: 0, claims: [] };
+
+  it('is true for an address that has never accrued, claimed or been quoted anything', () => {
+    expect(isUntouched(none)).toBe(true);
+  });
+
+  it('is false as soon as anything has been mined, claimed, quoted or recorded', () => {
+    expect(isUntouched({ ...none, mined: 0.01 })).toBe(false);
+    expect(isUntouched({ ...none, claimed: 5 })).toBe(false);
+    expect(isUntouched({ ...none, claimable: 3 })).toBe(false);
+    expect(isUntouched({ ...none, claims: [claim()] })).toBe(false);
+  });
+});
+
+describe('links', () => {
+  it('accepts a web address and nothing else', () => {
+    expect(safeHttpUrl('https://etherscan.io/tx/0xabc')).toBe('https://etherscan.io/tx/0xabc');
+    expect(safeHttpUrl('http://example.com')).toBe('http://example.com/');
+    expect(safeHttpUrl('javascript:alert(1)')).toBeNull();
+    expect(safeHttpUrl('data:text/html,<b>')).toBeNull();
+    expect(safeHttpUrl('not a url')).toBeNull();
+    expect(safeHttpUrl(null)).toBeNull();
+  });
+
+  it('fills a template with an encoded value', () => {
+    expect(explorerUrl('https://x.io/tx/{txid}', { txid: 'abc123' })).toBe('https://x.io/tx/abc123');
+    expect(explorerUrl('https://x.io/tx/{txid}', { txid: 'a b/c' })).toBe('https://x.io/tx/a%20b%2Fc');
+    expect(explorerUrl(null, { txid: 'a' })).toBeNull();
+    expect(explorerUrl('javascript:{txid}', { txid: 'a' })).toBeNull();
+  });
+
+  it("prefers the server's own link, then the chain's template", () => {
+    const chains = [chain('eth', { explorer_tx: 'https://etherscan.io/tx/{txid}' })];
+    const own = claim({ amount: 1, explorer_url: 'https://etherscan.io/tx/0xabc?x=1', time_ms: 1 });
+    expect(claimLink(own, chains)).toBe('https://etherscan.io/tx/0xabc?x=1');
+    expect(claimLink({ ...own, explorer_url: null }, chains)).toBe('https://etherscan.io/tx/0xabc');
+    expect(claimLink({ ...own, explorer_url: 'javascript:1' }, chains)).toBe('https://etherscan.io/tx/0xabc');
+    expect(claimLink({ ...own, explorer_url: null, chain: 'zzz' }, chains)).toBeNull();
+  });
+});
+
+describe('claim-all and history', () => {
+  const chains = [
+    chain('eth', { name: 'Ethereum', explorer_address: 'https://etherscan.io/address/{address}' }),
+    chain('kda', { name: 'Kadena', explorer_address: null }),
+  ];
+  const all = claim({
+    chain: 'flux',
+    txid: `flux:${MAIN}`,
+    main_txid: MAIN,
+    to: 't3abc',
+    explorer_url: `https://explorer.runonflux.io/tx/${MAIN}`,
+    amount: 5_000,
+    fee: 20,
+    time_ms: 1_790_000_000_000,
+  });
+
+  it('tells a claim-all from a claim on one chain', () => {
+    expect(isClaimAll(all)).toBe(true);
+    expect(isClaimAll(claim())).toBe(false);
+    expect(claimChainLabel(all, chains)).toBe('All chains');
+    expect(claimChainLabel(claim(), chains)).toBe('Ethereum');
+    expect(claimChainLabel(claim({ chain: 'zzz' }), chains)).toBe('ZZZ');
+  });
+
+  it('links a claim-all to the Flux explorer the server named', () => {
+    expect(claimLink(all, chains)).toBe(`https://explorer.runonflux.io/tx/${MAIN}`);
+  });
+
+  it("finds where a chain's claims went, from its newest claim on that chain", () => {
+    const list = [all, claim({ to: '0xnewest' }), claim({ to: '0xolder', time_ms: 1 })];
+    expect(receivingLink(chains[0] as PaChain, list)).toEqual({
+      address: '0xnewest',
+      url: 'https://etherscan.io/address/0xnewest',
+    });
+    // A claim-all is not a claim on that chain; a chain with no template or no claim has no link.
+    expect(receivingLink(chains[0] as PaChain, [all])).toBeNull();
+    expect(receivingLink(chains[1] as PaChain, [claim({ chain: 'kda', to: 'k:abc' })])).toBeNull();
+    expect(receivingLink(chains[0] as PaChain, [])).toBeNull();
+  });
+
+  it('adds up the history and finds its newest claim', () => {
+    expect(
+      claimHistoryTotals([all, claim({ amount: 10, fee: 1, time_ms: 5 }), claim({ time_ms: null })]),
+    ).toEqual({
+      count: 3,
+      amount: 5_110,
+      fees: 23,
+      lastMs: 1_790_000_000_000,
+    });
+    expect(claimHistoryTotals([])).toEqual({ count: 0, amount: 0, fees: 0, lastMs: null });
+  });
+});
+
+describe('tickers and names', () => {
+  it('has a ticker for each chain and a fallback for a new one', () => {
+    expect(chainTicker('kda')).toBe('KDA');
+    expect(chainTicker('matic')).toBe('MATIC');
+    expect(chainTicker('newchain')).toBe('NEWCH');
+  });
+
+  it('names a chain from its card, else by its ticker', () => {
+    const chains = [chain('kda', { name: 'Kadena' })];
+    expect(chainName('kda', chains)).toBe('Kadena');
+    expect(chainName('sol', chains)).toBe('SOL');
+  });
+});

@@ -18,6 +18,7 @@ import {
   SquareTerminal,
   UserRoundCheck,
   Wallet,
+  WalletCards,
 } from 'lucide-react';
 import { FluxMarkWhite } from '../../features/chrome/brand';
 import { TierGlyph } from '../../ui';
@@ -36,6 +37,7 @@ export const WINDOW_ICON: Record<WindowType, LucideIcon | null> = {
   queue: Coins,
   analytics: ChartNoAxesCombined,
   operator: UserRoundCheck,
+  wallet: WalletCards,
   terminal: SquareTerminal,
   time: History,
   weather: CloudRain,
@@ -57,6 +59,7 @@ export const WINDOW_ACCENT: Record<WindowType, string> = {
   queue: 'chain',
   analytics: 'analytics',
   operator: 'operator',
+  wallet: 'operator',
   terminal: 'terminal',
   time: 'time',
   weather: 'time',

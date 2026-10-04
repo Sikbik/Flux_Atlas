@@ -1,0 +1,266 @@
+/* The wallet workspace: the shell every tab stands in (the head, the tabs, the panels and the layout primitives).
+   Every class is prefixed `wl-`; colour, type, space and motion come from the design tokens. The layout follows the
+   width of the window the view is in (a container query on `.wl`), never the viewport, so it is right docked,
+   floating, maximized and on a phone alike.
+
+   Local custom properties, all prefixed `--wl-`:
+     --wl-pad   side padding of a block that is not a kit Section (the same 16 px as a Section) */
+
+.wl {
+  --wl-pad: var(--space-6);
+  container: wl / inline-size;
+  position: relative;
+  min-height: 100%;
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal, 1.45);
+}
+
+.wl *,
+.wl *::before,
+.wl *::after {
+  box-sizing: border-box;
+}
+
+.shell[data-layout="phone"] .wl {
+  font-size: var(--fs-md);
+}
+
+/* ---- the head ---------------------------------------------------------------------------------- */
+
+.wl-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.wl .ui-vh__kind {
+  align-self: center;
+}
+
+.wl-head-chips {
+  display: contents;
+}
+
+/* The tab strip and the panel under it. */
+.wl-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: var(--space-4) var(--wl-pad) 0;
+  background: linear-gradient(var(--slab-bg-solid, var(--ink-0)) 82%, transparent);
+}
+
+.wl-pagewrap {
+  padding: var(--space-6) var(--wl-pad) var(--space-10);
+}
+
+.wl-page {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* ---- panels ------------------------------------------------------------------------------------ */
+
+.wl-panel {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.wl-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  min-height: 28px;
+}
+
+.wl-panel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-md) / var(--lh-snug) var(--font-display);
+  letter-spacing: -0.005em;
+}
+
+.wl-panel__title svg {
+  color: var(--text-3);
+}
+
+.wl-panel__aside {
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.wl-panel__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.wl-panel__body {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+/* A stat tile with a long figure (`FitStat`): the kit sizes a figure by the tile's width alone, so a nine digit amount ran
+   past a 150 px tile on a phone. Here the figure takes the size at which its own digits fit (`--wl-em` is its width in
+   ems, 44 px is the unit beside it), never above the kit's 28 px and never so small that it stops being the figure. */
+.wl .ui-stat[data-fit] .ui-stat__value {
+  font-size: clamp(15px, min(15cqi, calc((100cqi - 44px) / var(--wl-em, 6))), 28px);
+}
+
+/* A change and its period ("-1.0% vs the week before") wrap in a narrow tile instead of running past its edge. */
+.wl .ui-stat__delta {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wl .ui-delta {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+  white-space: normal;
+}
+
+/* ---- layout primitives ------------------------------------------------------------------------- */
+
+.wl-duo {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container wl (min-width: 860px) {
+  .wl-duo {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .wl-duo[data-lean="left"] {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+
+  .wl-duo[data-lean="right"] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  }
+}
+
+.wl-muted {
+  color: var(--text-3);
+}
+
+.wl-note {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}
+
+.wl-note b {
+  color: var(--text-2);
+  font-weight: var(--fw-medium);
+}
+
+.wl-note a,
+.wl-link {
+  color: var(--accent-400);
+  text-decoration: none;
+}
+
+.wl-note a:hover,
+.wl-link:hover {
+  color: var(--accent-300);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wl-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* a quiet text button that reads as a link: the way from a glance to its tab */
+.wl-more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-400);
+  font: var(--fw-medium) var(--fs-xs) / 1.2 var(--font-sans);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+}
+
+.wl-more:hover {
+  color: var(--accent-300);
+}
+
+.wl-more:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ---- chain badge ------------------------------------------------------------------------------- */
+
+.wl-chain {
+  --wl-chain-size: 34px;
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--wl-chain-size);
+  height: calc(var(--wl-chain-size) * 1.1547);
+  background: var(--line-3);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+.wl-chain::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  background: linear-gradient(160deg, var(--ink-3), var(--ink-2));
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+.wl-chain[data-size="sm"] {
+  --wl-chain-size: 26px;
+}
+
+.wl-chain[data-size="lg"] {
+  --wl-chain-size: 44px;
+}
+
+.wl-chain__text {
+  position: relative;
+  color: var(--text-1);
+  font-size: calc(var(--wl-chain-size) * 0.3);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0;
+}
+
+.wl-chain[data-long] .wl-chain__text {
+  font-size: calc(var(--wl-chain-size) * 0.25);
+}
+
+.wl-chain[data-inactive] {
+  background: var(--line-2);
+}
+
+.wl-chain[data-inactive] .wl-chain__text {
+  color: var(--text-3);
+}

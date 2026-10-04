@@ -1,0 +1,70 @@
+/* The Activity tab: the filters above the feed, and the second line of a feed row. Classes are prefixed `wl-`; colour,
+   type, space and motion come from the design tokens, and the layout follows the width of the window (the `wl`
+   container), never the viewport. The charts have their own styles (`viz/plot.css`); the thread, the gutter and the
+   markers are the kit's Timeline. */
+
+.wl-afilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+}
+
+.wl-afilters__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* the number of events a filter holds, on its chip */
+.wl-afilters__n {
+  margin-left: var(--space-2);
+  color: var(--text-3);
+  font: var(--fw-regular) 11px / 1 var(--font-mono);
+}
+
+/* the search box is the kit's `.ui-search` wrapper (a class on the field goes to the box inside it), so the wrapper is
+   the flex item that takes the room */
+.wl-afilters > .ui-search {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 420px;
+  margin-left: auto;
+}
+
+@container wl (max-width: 560px) {
+  .wl-afilters > .ui-search {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
+/* a row's second line: the node it is about, with its tier, and what a payment is worth */
+.wl-evmeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+
+.wl-evmeta a {
+  font-size: var(--fs-xs);
+}
+
+.wl-evmeta__value {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1.2 var(--font-mono);
+}
+
+.wl-afeed__more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+}

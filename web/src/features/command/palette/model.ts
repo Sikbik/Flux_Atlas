@@ -8,6 +8,7 @@
 import type { SearchHit } from '../../../api/generated/SearchHit';
 import { formatInt } from '../../../lib/format';
 import type { NetworkStore } from '../../../store/network';
+import { isWalletAddress } from '../../wallet/lib/address';
 import { activeFilters, describeFilters, type FilterLookup, parseFilterExpr } from '../filters';
 import { countryPlace, matchPlaces } from '../places';
 import { ACTIONS, type ActionEnv, actionById, actionRow, actionRows } from './actions';
@@ -35,6 +36,7 @@ import {
   providerRow,
   txRow,
   versionRow,
+  walletRow,
 } from './rowFactory';
 import {
   GROUP_LABEL,
@@ -72,6 +74,8 @@ const PREFIX_WORDS: Readonly<Record<string, Prefix>> = {
   operator: 'operator',
   op: 'operator',
   zelid: 'operator',
+  wallet: 'wallet',
+  wallets: 'wallet',
   goto: 'goto',
   go: 'goto',
   fly: 'goto',
@@ -261,10 +265,13 @@ export function buildModel(inp: ModelInput): PaletteModel {
         collectTx(c, text);
         break;
       case 'addr':
-        collectAddress(c, text, false);
+        collectAddress(c, text, 'addr');
+        break;
+      case 'wallet':
+        collectAddress(c, text, 'wallet');
         break;
       case 'operator':
-        collectAddress(c, text, true);
+        collectAddress(c, text, 'operator');
         break;
       case 'goto':
         collectPlaces(c, store, index, text, 12);
@@ -545,14 +552,20 @@ function collectTx(c: Collector, text: string): void {
   else if (shape.kind === 'outpoint') c.add(txRow(shape.txid, `Collateral output ${shape.vout}`, 100));
 }
 
-function collectAddress(c: Collector, text: string, operator: boolean): void {
+/**
+ * The rows of an address typed after a prefix: `addr` shows all three ways in, `wallet` and `operator` only their own.
+ * A ZelID has no wallet (the server answers one only for a `t1` or `t3` address), so it gets the other two.
+ */
+function collectAddress(c: Collector, text: string, prefix: 'addr' | 'wallet' | 'operator'): void {
   const shape = classifyText(text);
-  if (shape.kind === 'address') {
-    if (operator) c.add(operatorRow(shape.addr, undefined, 100));
-    else {
-      c.add(addressRow(shape.addr, undefined, 100));
-      c.add(operatorRow(shape.addr, undefined, 80));
-    }
+  if (shape.kind !== 'address') return;
+  if (prefix === 'operator') c.add(operatorRow(shape.addr, undefined, 100));
+  else if (prefix === 'wallet') {
+    if (isWalletAddress(shape.addr)) c.add(walletRow(shape.addr, undefined, 100));
+  } else {
+    c.add(addressRow(shape.addr, undefined, 100));
+    if (isWalletAddress(shape.addr)) c.add(walletRow(shape.addr, undefined, 90));
+    c.add(operatorRow(shape.addr, undefined, 80));
   }
 }
 
@@ -726,6 +739,7 @@ function collectGeneral(
     }
     case 'address':
       c.add(addressRow(shape.addr, undefined, 100));
+      if (isWalletAddress(shape.addr)) c.add(walletRow(shape.addr, undefined, 90));
       c.add(operatorRow(shape.addr, undefined, 80));
       break;
     default:
@@ -783,6 +797,12 @@ function mergeHits(
     // The server lists hits best first but does not say how good they are: only an exact hit may score
     // high enough to move its group to the top.
     const score = isExactHit(hit, input.text) ? 100 : Math.max(40, 82 - Math.min(rank, 42));
+    // An address that pays nodes is also a wallet: the workspace row says how many (it is the same address, so
+    // it is its own row, kept or dropped by the prefix like any other).
+    if (hit.kind === 'operator' && isWalletAddress(hit.key)) {
+      const wallet = walletRow(hit.key, hit.sublabel ?? undefined, 90);
+      if (!input.prefix || prefixAccepts(input.prefix, wallet)) c.replace(wallet);
+    }
     const row = hitRow(hit, store, index.total, score);
     if (!row) return;
     // The prefix narrows what is shown to the kinds it names.
@@ -806,7 +826,11 @@ function prefixAccepts(prefix: Prefix, row: PaletteRow): boolean {
     case 'tx':
       return row.kind === 'tx';
     case 'addr':
-      return row.kind === 'address' || row.kind === 'operator' || row.kind === 'shielded';
+      return (
+        row.kind === 'address' || row.kind === 'wallet' || row.kind === 'operator' || row.kind === 'shielded'
+      );
+    case 'wallet':
+      return row.kind === 'wallet';
     case 'operator':
       return row.kind === 'operator';
     default:

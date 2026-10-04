@@ -1,0 +1,307 @@
+/* The Parallel assets tab: the claim-all quote, the chain cards, the claim history. Tokens only. Layout follows the
+   width of the wallet window (the `wl` container), never the viewport. */
+
+.wl-pa-stale {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-5);
+  color: var(--status-warn);
+}
+
+/* ---- claim everything at once ------------------------------------------------------------------- */
+
+.wl-claimall__bar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+}
+
+.wl-claimall__bar i {
+  display: block;
+  min-width: 3px;
+  height: 100%;
+}
+
+.wl-claimall__bar [data-part="net"] {
+  background: linear-gradient(90deg, var(--accent-600), var(--accent-400));
+}
+
+.wl-claimall__bar [data-part="fee"] {
+  background: var(--status-warn);
+}
+
+.wl-claimall__rows {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  border-top: 1px solid var(--line-1);
+}
+
+.wl-claimall__rows > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-5);
+  min-height: 38px;
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.wl-claimall__rows dt {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.wl-claimall__rows dd {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+  text-align: right;
+}
+
+.wl-claimall__rows small {
+  margin-left: var(--space-2);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.wl-claimall__money {
+  display: block;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+}
+
+.wl-claimall__never {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line-1);
+}
+
+/* ---- the chains --------------------------------------------------------------------------------- */
+
+.wl-chains {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 286px), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wl-chaincard {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-lg);
+  background: var(--ink-1);
+  transition: border-color var(--dur-base) var(--ease-out);
+}
+
+.wl-chaincard:hover {
+  border-color: var(--line-2);
+}
+
+.wl-chaincard[data-inactive] {
+  border-style: dashed;
+  background: transparent;
+}
+
+.wl-chaincard--skeleton {
+  min-height: 188px;
+  gap: var(--space-5);
+}
+
+.wl-chaincard__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.wl-chaincard__id {
+  display: grid;
+  min-width: 0;
+}
+
+.wl-chaincard__id strong {
+  overflow: hidden;
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-md) / var(--lh-snug) var(--font-display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-chaincard__fee {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.wl-chaincard__figure {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.wl-chaincard__big {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  color: var(--text-1);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-light);
+  letter-spacing: -0.01em;
+}
+
+.wl-chaincard__big small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+}
+
+.wl-chaincard[data-inactive] .wl-chaincard__big {
+  color: var(--text-3);
+}
+
+.wl-chaincard__sub {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.wl-chaincard__read {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.wl-chaincard__read b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.wl-chaincard__advice {
+  margin-top: calc(var(--space-2) * -1);
+}
+
+.wl-chaincard__facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-1);
+}
+
+.wl-chaincard__facts dt {
+  color: var(--text-3);
+  font-size: var(--fs-2xs, 11px);
+  letter-spacing: 0.02em;
+}
+
+.wl-chaincard__facts dd {
+  margin: var(--space-1) 0 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-chaincard__facts small {
+  margin-left: var(--space-2);
+  color: var(--text-4);
+  font-size: 10px;
+}
+
+/* after the other `dd` rules: the total row is the one that reads larger */
+.wl-claimall__rows [data-total] dd {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.wl-chaincard__bar {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+}
+
+.wl-chaincard__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--seq-3);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+
+.wl-chaincard__to {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* ---- links out of Atlas, and the history rows ---------------------------------------------------- */
+
+.wl-out {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-3);
+  border-radius: var(--r-xs);
+  text-decoration: none;
+}
+
+.wl-out:hover {
+  color: var(--accent-300);
+}
+
+.wl-out:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.wl-claimrow__chain,
+.wl-claimrow__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.wl-claimrow__amount small {
+  margin-left: var(--space-2);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.wl-claimempty,
+.wl-claimfoot {
+  padding: var(--space-5) var(--space-6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .wl-chaincard,
+  :root:not([data-motion="full"]) .wl-chaincard__bar i {
+    transition: none;
+  }
+}
+
+:root[data-motion="reduced"] .wl-chaincard,
+:root[data-motion="reduced"] .wl-chaincard__bar i,
+:root[data-motion="off"] .wl-chaincard,
+:root[data-motion="off"] .wl-chaincard__bar i {
+  transition: none;
+}
