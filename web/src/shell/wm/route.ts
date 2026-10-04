@@ -40,7 +40,8 @@ export function windowForPath(pathname: string): WindowRef | null {
     case 'block':
     case 'tx':
     case 'address':
-    case 'operator': {
+    case 'operator':
+    case 'wallet': {
       const key = seg(a);
       return key && parts.length === 2 ? { type: head, key } : null;
     }
@@ -80,6 +81,7 @@ export function pathForWindow(type: WindowType, key: string | null): string | nu
     case 'tx':
     case 'address':
     case 'operator':
+    case 'wallet':
       return k ? `/${type}/${k}` : null;
     case 'queue':
     case 'analytics':

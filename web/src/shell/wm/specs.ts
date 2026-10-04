@@ -103,6 +103,9 @@ export const WINDOW_SPECS: Record<WindowType, WindowSpec> = {
   host: spec('host', named('Host'), docked(420, { tether: 'cluster' })),
   app: spec('app', named('App'), docked(452, { key: 'A' })),
   operator: spec('operator', named('Operator'), docked(440, { key: 'O' })),
+  // The wallet workspace: a wide analytics-style window (maximizable), opened from the operator panel, an address,
+  // the palette or `/?wallet=`. It rides on the Operator launcher, which is the operator's door.
+  wallet: spec('wallet', named('Wallet'), { float: { x: 118, y: 'top', w: 1180, h: 'fill' } }),
   about: spec('about', () => 'About Flux', docked(464, { tether: 'moon', key: 'M' })),
   block: spec('block', named('Block'), { key: 'E' }),
   tx: spec('tx', named('Transaction'), { key: 'E' }),

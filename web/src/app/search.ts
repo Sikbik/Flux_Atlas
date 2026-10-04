@@ -61,6 +61,8 @@ export interface GlobalSearch {
   /** Palette text. */
   q?: string;
   popout?: boolean;
+  /** `/?wallet=<address>` opens the wallet workspace (the link form other tools use); the index route redirects it. */
+  wallet?: string;
 }
 
 export function validateGlobalSearch(s: Record<string, unknown>): GlobalSearch {
@@ -79,6 +81,7 @@ export function validateGlobalSearch(s: Record<string, unknown>): GlobalSearch {
     w: str(s.w),
     q: text(s.q),
     popout: flag(s.popout),
+    wallet: str(s.wallet),
   });
 }
 
@@ -99,6 +102,21 @@ export interface OperatorSearch {
 
 export function validateOperatorSearch(s: Record<string, unknown>): OperatorSearch {
   return compact({ addr: str(s.addr) });
+}
+
+export const WALLET_TABS = ['overview', 'earnings', 'assets', 'fleet', 'health', 'apps', 'activity'] as const;
+export type WalletTab = (typeof WALLET_TABS)[number];
+
+export interface WalletSearch {
+  /** The workspace tab; absent is the overview. */
+  tab?: WalletTab;
+}
+
+export function validateWalletSearch(s: Record<string, unknown>): WalletSearch {
+  const tab = str(s.tab);
+  return compact({
+    tab: (WALLET_TABS as readonly string[]).includes(tab ?? '') ? (tab as WalletTab) : undefined,
+  });
 }
 
 export interface TerminalSearch {

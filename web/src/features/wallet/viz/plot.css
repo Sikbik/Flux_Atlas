@@ -1,0 +1,96 @@
+/* The wallet's plots: the marks (stacked bars, areas, lines, the reward-cut marker) on the shared plot, grid, axis,
+   crosshair and tooltip styles of the Chain charts. Tokens only; the colour of a mark arrives as the `--c` custom
+   property so text never wears a data colour. At rest nothing moves. */
+
+.wl-plot {
+  gap: var(--space-2);
+}
+
+.wl-plot__note {
+  padding-inline: var(--space-2);
+}
+
+/* a stacked bar: one segment of a day, a tier or the parallel assets */
+.wl-bar {
+  fill: var(--c, var(--viz-1));
+  shape-rendering: geometricPrecision;
+}
+
+/* the parallel assets are an estimate: a hatch, so it never reads as measured */
+.wl-bar[data-estimate] {
+  fill: url(#wl-hatch);
+  stroke: var(--c, var(--viz-1));
+  stroke-width: 1;
+  stroke-opacity: 0.8;
+}
+
+.wl-bar-hot {
+  fill: var(--hot);
+  fill-opacity: 0.1;
+}
+
+.wl-area {
+  fill: var(--c, var(--viz-1));
+  fill-opacity: 0.16;
+  stroke: none;
+}
+
+.wl-line {
+  fill: none;
+  stroke: var(--c, var(--viz-1));
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.wl-line[data-dashed] {
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.wl-end {
+  fill: var(--c, var(--viz-1));
+  stroke: var(--ink-0);
+  stroke-width: 2;
+}
+
+/* a marker on the time axis: where the reward is cut, with its name */
+.wl-mark line {
+  stroke: var(--text-2);
+  stroke-opacity: 0.7;
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  shape-rendering: crispEdges;
+}
+
+.wl-mark text {
+  fill: var(--text-2);
+  font: var(--fw-medium) 10.5px var(--font-mono);
+  paint-order: stroke;
+  stroke: var(--ink-1);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* the running day is not finished: its bar is outlined, not filled */
+.wl-bar[data-running] {
+  fill-opacity: 0.55;
+}
+
+/* a legend entry that only names a series */
+.cp-legend-static {
+  cursor: default;
+}
+
+.cp-legend-static:hover {
+  background: transparent;
+  color: var(--text-2);
+}
+
+.wl-reference {
+  stroke: var(--text-3);
+  stroke-opacity: 0.6;
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  shape-rendering: crispEdges;
+}

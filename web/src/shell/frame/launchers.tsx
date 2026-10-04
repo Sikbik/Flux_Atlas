@@ -85,7 +85,7 @@ export const LAUNCHERS: Record<LauncherId, Launcher> = {
     label: 'Operator',
     key: 'O',
     icon: UserRoundCheck,
-    types: ['operator'],
+    types: ['operator', 'wallet'],
     accent: 'operator',
   },
   terminal: {

@@ -7,3 +7,4 @@ export * from './command';
 export * from './explorer';
 export * from './frame';
 export * from './inspect';
+export * from './wallet';
