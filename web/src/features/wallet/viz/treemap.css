@@ -1,0 +1,148 @@
+/* The apps treemap: cells laid out by the squarified algorithm and moved by transform, so they glide when the apps
+   change and nothing reflows. Tokens only. At rest nothing moves; the cells assemble once when the tab opens, and they
+   hold still while the window is being resized so the picture never lags behind the pointer. */
+
+.wl-treefig {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: 0;
+}
+
+.wl-tree {
+  position: relative;
+  width: 100%;
+  height: clamp(260px, 30cqi, 360px);
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--r-md);
+}
+
+@container wl (max-width: 560px) {
+  .wl-tree {
+    height: clamp(280px, 74cqi, 340px);
+  }
+}
+
+.wl-tree__cell {
+  --wl-c: var(--viz-1);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--wl-c) 26%, var(--ink-2));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--wl-c) 55%, transparent);
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: wl-tree-in var(--dur-slow) var(--ease-out) both;
+  animation-delay: calc(var(--i) * 16ms);
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    width var(--dur-slow) var(--ease-out),
+    height var(--dur-slow) var(--ease-out),
+    background var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.wl-tree__cell:hover:not([data-other]) {
+  background-color: color-mix(in oklab, var(--wl-c) 40%, var(--ink-2));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--wl-c) 85%, transparent);
+}
+
+.wl-tree__cell:focus-visible {
+  outline: 2px solid var(--accent-300);
+  outline-offset: -2px;
+}
+
+.wl-tree__cell[data-selected] {
+  background: color-mix(in oklab, var(--wl-c) 48%, var(--ink-2));
+  box-shadow:
+    inset 0 0 0 2px var(--wl-c),
+    0 0 20px color-mix(in oklab, var(--wl-c) 38%, transparent);
+}
+
+/* choosing an app quiets the rest, so the chosen one is the only bright thing in the picture */
+.wl-tree[data-selecting] .wl-tree__cell:not([data-selected]) {
+  opacity: 0.5;
+}
+
+/* the folded tail: a field of dots rather than a colour, since it stands for many small things */
+.wl-tree__cell[data-other] {
+  background-color: var(--ink-2);
+  background-image: radial-gradient(circle at center, var(--ink-4) 1px, transparent 1.6px);
+  background-size: 10px 10px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* a button centres its content even when that overflows, so the text sits in a box that cannot */
+.wl-tree__in {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.wl-tree[data-resizing] .wl-tree__cell {
+  transition: none;
+}
+
+.wl-tree__name {
+  overflow: hidden;
+  font: var(--fw-medium) var(--fs-xs) / 1.25 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-tree__n {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+.wl-tree__share {
+  color: var(--text-3);
+}
+
+.wl-tree__tip {
+  display: grid;
+  gap: 2px;
+}
+
+.wl-tree__tip b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+@keyframes wl-tree-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .wl-tree__cell {
+    animation: none;
+    transition: none;
+  }
+}
+
+:root[data-motion="reduced"] .wl-tree__cell,
+:root[data-motion="off"] .wl-tree__cell {
+  animation: none;
+  transition: none;
+}

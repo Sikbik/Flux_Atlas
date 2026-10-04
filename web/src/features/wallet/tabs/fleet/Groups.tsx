@@ -77,7 +77,7 @@ export function Groups({ by, groups, filter, onPick }: GroupsProps) {
         cell: (g) => (
           <span className="wl-gname">
             {by === 'tier' ? <TierGlyph tier={g.key as PayTier} size={14} /> : null}
-            <span>{g.label}</span>
+            <span className="wl-gname__text">{g.label}</span>
           </span>
         ),
       },

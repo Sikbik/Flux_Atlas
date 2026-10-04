@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitsLabel, foldTail, squarify, type TreemapItem } from './treemap';
+import { cellLimit, fitsLabel, foldTail, OTHER_ID, squarify, type TreemapItem } from './treemap';
 
 const items = (values: number[]): TreemapItem[] =>
   values.map((value, i) => ({ id: `a${i}`, label: `App ${i}`, value }));
@@ -81,8 +81,8 @@ describe('squarify', () => {
 describe('foldTail', () => {
   it('keeps what fits, and folds the rest into one cell with their sum', () => {
     const out = foldTail(items([10, 9, 8, 7, 6, 5]), 4, (n) => `${n} more`);
-    expect(out.map((i) => i.id)).toEqual(['a0', 'a1', 'a2', '__other']);
-    expect(out[3]).toEqual({ id: '__other', label: '3 more', value: 18 });
+    expect(out.map((i) => i.id)).toEqual(['a0', 'a1', 'a2', OTHER_ID]);
+    expect(out[3]).toEqual({ id: OTHER_ID, label: '3 more', value: 18 });
   });
 
   it('changes nothing when it already fits', () => {
@@ -92,6 +92,20 @@ describe('foldTail', () => {
 
   it('drops empty items before it counts', () => {
     expect(foldTail(items([3, 0, 1]), 5, (n) => `${n}`)).toHaveLength(2);
+  });
+});
+
+describe('cellLimit', () => {
+  it('gives each cell room to be pointed at: about a 30 px square', () => {
+    expect(cellLimit(660, 350)).toBe(256);
+    expect(cellLimit(300, 300)).toBe(100);
+  });
+
+  it('never goes below the floor, and has one for a box with no size yet', () => {
+    expect(cellLimit(60, 60)).toBe(12);
+    expect(cellLimit(0, 0)).toBe(12);
+    expect(cellLimit(Number.NaN, 100)).toBe(12);
+    expect(cellLimit(60, 60, 900, 5)).toBe(5);
   });
 });
 

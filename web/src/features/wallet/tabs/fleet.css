@@ -158,8 +158,9 @@
   border-radius: var(--r-md);
 }
 
+/* a block, so the endpoint takes the cell's width and an ellipsis can cut it, rather than the cell cutting it off */
 .wl-nodecell {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
@@ -309,11 +310,18 @@
 /* ---- the group table --------------------------------------------------------------------------- */
 
 .wl-gname {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
   color: var(--text-1);
+}
+
+.wl-gname__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wl-gnodes,

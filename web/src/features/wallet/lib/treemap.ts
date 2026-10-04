@@ -99,6 +99,18 @@ function inset(b: Box, gap: number): Box {
   return { x: b.x + gx, y: b.y + gy, w: b.w - 2 * gx, h: b.h - 2 * gy };
 }
 
+/** The id of the item `foldTail` makes out of the long tail. */
+export const OTHER_ID = '__other';
+
+/**
+ * How many cells a box can hold before they are too small to point at: each gets at least `minArea` px squared (the
+ * default is a 30 px square), and never fewer than `floor`, so even a small box shows its biggest items.
+ */
+export function cellLimit(width: number, height: number, minArea = 900, floor = 12): number {
+  if (!(width > 0) || !(height > 0)) return floor;
+  return Math.max(floor, Math.floor((width * height) / minArea));
+}
+
 /**
  * The items to draw: the biggest `limit`, with the rest folded into one "other" item so the picture stays legible
  * (a hundred slivers are not information). The fold is left out when it would hold a single item.
@@ -114,7 +126,7 @@ export function foldTail(
   const tail = sorted.slice(limit - 1);
   return [
     ...head,
-    { id: '__other', label: otherLabel(tail.length), value: tail.reduce((s, i) => s + i.value, 0) },
+    { id: OTHER_ID, label: otherLabel(tail.length), value: tail.reduce((s, i) => s + i.value, 0) },
   ];
 }
 
