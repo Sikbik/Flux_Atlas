@@ -8,10 +8,10 @@ import { useMemo } from 'react';
 import { queries } from '../../../api/queries';
 import { useChainBlocks } from '../../../app/context';
 import type { ChainBlock } from '../../../store/network';
-import { mergeTapeBlocks } from './lib/tape';
+import { mergeTapeBlocks, TAPE_MAX_BARS } from './lib/tape';
 
-/** How many of the newest blocks the history asks for. */
-export const TAPE_HISTORY = 64;
+/** How many of the newest blocks the history asks for: as many as the widest tape draws. */
+export const TAPE_HISTORY = TAPE_MAX_BARS;
 
 export interface TapeBlocks {
   /** Newest first. */

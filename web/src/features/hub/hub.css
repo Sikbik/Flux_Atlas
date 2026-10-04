@@ -650,13 +650,43 @@
   }
 }
 
+/* The columns are the component's choice for the number of figures (--figs-s, --figs-m, --figs-l: two, up to three,
+   up to five), so five figures are five across, or three and two, and never four and one. The hero is the container
+   here. In two columns an odd last figure takes the whole row instead of standing beside a hole. */
 .hub-figs {
+  --figs-gap: var(--space-5);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
-  gap: var(--space-5) var(--space-7);
+  grid-template-columns: repeat(var(--figs-s, 2), minmax(0, 1fr));
+  gap: var(--space-5) var(--figs-gap);
   margin: 0;
   padding: var(--space-5) 0 0;
   border-top: 1px solid var(--line-1);
+}
+
+.hub-figs > .hub-fig:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+@container (min-width: 480px) {
+  .hub-figs {
+    grid-template-columns: repeat(var(--figs-m, 3), minmax(0, 1fr));
+  }
+
+  .hub-figs > .hub-fig:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+}
+
+@container (min-width: 740px) {
+  .hub-figs {
+    grid-template-columns: repeat(var(--figs-l, 5), minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 900px) {
+  .hub-figs {
+    --figs-gap: var(--space-7);
+  }
 }
 
 .hub-fig {

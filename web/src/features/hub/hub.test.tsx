@@ -6,6 +6,7 @@ import { Box } from 'lucide-react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/http';
 import { click, mount } from '../../ui/internal/testing';
+import { balancedColumns, HubFigure, HubFigures, HubHero } from './HubHero';
 import { HubButton, HubLink, HubTile, HubTiles } from './HubLink';
 import { HubNav } from './HubNav';
 import { HubPanel } from './HubPanel';
@@ -381,5 +382,110 @@ describe('HubLink, HubTile and HubButton', () => {
     if (a) click(a);
     expect(nav.open).toHaveBeenCalledWith({ type: 'block', key: '3007909' });
     m.unmount();
+  });
+});
+
+describe('balancedColumns', () => {
+  it('lays five figures five across, or three and two, never four and one', () => {
+    expect(balancedColumns(5, 5)).toBe(5);
+    expect(balancedColumns(5, 4)).toBe(3);
+    expect(balancedColumns(5, 3)).toBe(3);
+  });
+
+  it('lays four figures four across, or two and two', () => {
+    expect(balancedColumns(4, 5)).toBe(4);
+    expect(balancedColumns(4, 3)).toBe(2);
+  });
+
+  it('keeps the wider layout of two that leave the same holes', () => {
+    expect(balancedColumns(6, 3)).toBe(3);
+    expect(balancedColumns(7, 5)).toBe(4);
+    expect(balancedColumns(3, 2)).toBe(2);
+  });
+
+  it('never goes past the columns that fit, or past the figures there are', () => {
+    expect(balancedColumns(2, 5)).toBe(2);
+    expect(balancedColumns(3, 5)).toBe(3);
+    expect(balancedColumns(12, 5)).toBeLessThanOrEqual(5);
+  });
+
+  it('is one column for one figure or none', () => {
+    expect(balancedColumns(1, 5)).toBe(1);
+    expect(balancedColumns(0, 5)).toBe(1);
+  });
+});
+
+describe('HubHero', () => {
+  const NAMES = ['Block time', 'Transactions', 'Fees', 'Pending', 'Nodes', 'Peers', 'Uptime'];
+  const figures = (n: number) =>
+    NAMES.slice(0, n).map((name) => <HubFigure key={name} label={name} value={name.length} />);
+
+  it('hands the figure list the columns it should have at each width, from how many figures there are', () => {
+    const m = mount(<HubFigures>{figures(5)}</HubFigures>);
+    const dl = m.container.querySelector<HTMLElement>('dl.hub-figs');
+    expect(dl?.style.getPropertyValue('--figs-s')).toBe('2');
+    expect(dl?.style.getPropertyValue('--figs-m')).toBe('3');
+    expect(dl?.style.getPropertyValue('--figs-l')).toBe('5');
+    m.unmount();
+    const four = mount(<HubFigures>{figures(4)}</HubFigures>);
+    const dl4 = four.container.querySelector<HTMLElement>('dl.hub-figs');
+    expect(dl4?.style.getPropertyValue('--figs-m')).toBe('2');
+    expect(dl4?.style.getPropertyValue('--figs-l')).toBe('4');
+    four.unmount();
+  });
+
+  it('does not count a figure that is not drawn', () => {
+    const m = mount(
+      <HubFigures>
+        {figures(3)}
+        {false}
+        {null}
+      </HubFigures>,
+    );
+    expect(m.container.querySelector<HTMLElement>('dl.hub-figs')?.style.getPropertyValue('--figs-l')).toBe(
+      '3',
+    );
+    m.unmount();
+  });
+
+  it('a figure that is not known says Unknown, never zero', () => {
+    const m = mount(
+      <HubFigures>
+        <HubFigure label="Nodes" value={null} />
+        <HubFigure label="Pending" value={0} />
+      </HubFigures>,
+    );
+    const values = Array.from(m.container.querySelectorAll('.hub-fig__value')).map((e) => e.textContent);
+    expect(values).toEqual(['Unknown', '0']);
+    m.unmount();
+  });
+
+  it('shows the label and the figure, and a bar in place of the figure while it loads', () => {
+    const m = mount(
+      <HubHero label="Chain height" value="3,007,909" caption="Block 3,007,909 was mined 11 s ago.">
+        <HubFigures>{figures(2)}</HubFigures>
+      </HubHero>,
+    );
+    expect(m.container.querySelector('.hub-hero__label')?.textContent).toBe('Chain height');
+    expect(m.container.querySelector('.hub-hero__value')?.textContent).toBe('3,007,909');
+    expect(m.container.querySelector('section')?.getAttribute('aria-busy')).toBeNull();
+    m.rerender(
+      <HubHero label="Chain height" value="3,007,909" loading>
+        <HubFigures>{figures(2)}</HubFigures>
+      </HubHero>,
+    );
+    expect(m.container.querySelector('.hub-hero__value')?.textContent).toBe('');
+    expect(m.container.querySelector('section')?.getAttribute('aria-busy')).toBe('true');
+    m.unmount();
+  });
+
+  it('has a visual slot only when it is given one', () => {
+    const plain = mount(<HubHero label="Nodes" value="6,841" />);
+    expect(plain.container.querySelector('section')?.hasAttribute('data-visual')).toBe(false);
+    plain.unmount();
+    const withVisual = mount(<HubHero label="Nodes" value="6,841" visual={<div data-testid="vis" />} />);
+    expect(withVisual.container.querySelector('section')?.hasAttribute('data-visual')).toBe(true);
+    expect(withVisual.container.querySelector('.hub-hero__visual [data-testid="vis"]')).not.toBeNull();
+    withVisual.unmount();
   });
 });

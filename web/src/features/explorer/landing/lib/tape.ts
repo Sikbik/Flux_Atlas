@@ -80,10 +80,13 @@ export function mergeTapeBlocks(
   return older.length === 0 ? live : [...live, ...older];
 }
 
-/** How many bars fit a row of `width` px: about 9 px each, between 20 and 60. */
+/** The most bars a tape draws: the live ring holds this many blocks (about fifty minutes). */
+export const TAPE_MAX_BARS = 100;
+
+/** How many bars fit a row of `width` px: about 9 px each, between 20 and `TAPE_MAX_BARS`. */
 export function tapeCount(width: number): number {
   if (!Number.isFinite(width) || width <= 0) return 40;
-  return Math.max(20, Math.min(60, Math.floor(width / 9)));
+  return Math.max(20, Math.min(TAPE_MAX_BARS, Math.floor(width / 9)));
 }
 
 /** The words for a bar, for its tooltip and a screen reader. */

@@ -6,6 +6,7 @@ import {
   LATE_AFTER_S,
   MIN_SCALE_TX,
   mergeTapeBlocks,
+  TAPE_MAX_BARS,
   tapeBars,
   tapeCount,
   tapeFacts,
@@ -89,10 +90,13 @@ describe('tapeBars', () => {
 });
 
 describe('tapeCount', () => {
-  it('fits about 9 px a bar, between 20 and 60', () => {
+  it('fits about 9 px a bar, between 20 and the hundred blocks the ring holds', () => {
     expect(tapeCount(360)).toBe(40);
     expect(tapeCount(120)).toBe(20);
-    expect(tapeCount(900)).toBe(60);
+    expect(tapeCount(580)).toBe(64);
+    expect(tapeCount(900)).toBe(100);
+    expect(tapeCount(1005)).toBe(TAPE_MAX_BARS);
+    expect(tapeCount(2400)).toBe(TAPE_MAX_BARS);
     expect(tapeCount(0)).toBe(40);
   });
 });

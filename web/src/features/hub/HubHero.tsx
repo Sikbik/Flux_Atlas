@@ -1,7 +1,7 @@
 // The hero of a hub: the one big figure of the window, chamfered at the hexagon angle with a lit rim like the kit's
 // hero stat, a graphic of the thing it counts on the right, and a row of supporting figures under a hairline.
 
-import type { ComponentPropsWithoutRef, ReactNode } from 'react';
+import { Children, type ComponentPropsWithoutRef, type CSSProperties, type ReactNode } from 'react';
 import { cx, Skeleton } from '../../ui';
 import './hub.css';
 
@@ -69,9 +69,41 @@ export function HubHero({
   );
 }
 
-/** The supporting figures of a hero, as a list of terms and values. */
-export function HubFigures({ className, ...rest }: ComponentPropsWithoutRef<'dl'>) {
-  return <dl className={cx('hub-figs', className)} {...rest} />;
+/**
+ * The number of columns, no more than `max`, that lays `n` figures out with the fewest holes in the last row. Five
+ * figures are five across or three and two, never four and one; four are four across or two and two.
+ */
+export function balancedColumns(n: number, max: number): number {
+  if (n <= 1) return 1;
+  let best = 1;
+  let holes = Number.POSITIVE_INFINITY;
+  for (let c = Math.min(n, Math.max(1, max)); c >= 2; c--) {
+    const left = Math.ceil(n / c) * c - n;
+    // Strictly fewer holes wins, so of two equal layouts the wider one is kept.
+    if (left < holes) {
+      best = c;
+      holes = left;
+    }
+  }
+  return best;
+}
+
+/**
+ * The supporting figures of a hero, as a list of terms and values. The columns follow the hero's own width (a
+ * container query) and are chosen by how many figures there are, so the last row is never one figure beside a hole.
+ */
+export function HubFigures({ className, style, children, ...rest }: ComponentPropsWithoutRef<'dl'>) {
+  const n = Children.toArray(children).length;
+  const columns = {
+    '--figs-s': Math.max(1, Math.min(n, 2)),
+    '--figs-m': balancedColumns(n, 3),
+    '--figs-l': balancedColumns(n, 5),
+  } as CSSProperties;
+  return (
+    <dl className={cx('hub-figs', className)} style={{ ...columns, ...style }} {...rest}>
+      {children}
+    </dl>
+  );
 }
 
 export interface HubFigureProps {
