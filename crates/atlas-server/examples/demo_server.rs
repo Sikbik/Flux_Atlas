@@ -37,6 +37,12 @@
 //!   a weak benchmark, a failed one, an older FluxOS, an unreachable node, hosted apps, three
 //!   days of payments with one missed, node events, and ten daily keyframes in which the fleet
 //!   grows
+//! - the network hubs (`/network/operators`, `/network/nodes-overview`,
+//!   `/network/apps-overview`): a ZelID running 60 operators' nodes over three addresses, one
+//!   running 30 on one address, an address of ten operators without a ZelID; node ages from
+//!   today to four years; confirmations and removals over the last 7 days; varied app owners,
+//!   enterprise apps, expiries from 200 blocks out, and 360 registrations (90 updates) over the
+//!   last 89 days. The demo records no minute metrics, so the churn reads `complete: false`
 //!
 //! It also serves `web/dist` (the SPA) when it exists. Env: `ATLAS_DEMO_BIND`,
 //! `ATLAS_DEMO_BLOCK_MS`, `ATLAS_DEMO_SEED`, `ATLAS_LOG`.
