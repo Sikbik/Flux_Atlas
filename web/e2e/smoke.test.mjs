@@ -654,12 +654,12 @@ test('Off draws the block timer as steps: no animation runs, and the state moves
         fill: scale('[data-testid="tip-chip"] .sb-prog i'),
       };
     });
-  // Sampled every 100 ms for 2.4 s, the drawn state takes only the values of whole seconds.
+  // Sampled every 100 ms for 2.4 s by the clock (a loaded machine takes fewer samples, never a longer window), the
+  // drawn state takes only the values of whole seconds.
   const seen = [];
-  for (let i = 0; i < 24; i++) {
-    const s = await drawn();
-    // A block can land mid-way and restart the interval: only compare within one.
-    seen.push(s);
+  const end = Date.now() + 2400;
+  while (Date.now() < end) {
+    seen.push(await drawn());
     await page.waitForTimeout(100);
   }
   for (const s of seen) {
@@ -670,8 +670,17 @@ test('Off draws the block timer as steps: no animation runs, and the state moves
       `the fill stands at ${s.sec} s: ${s.fill}`,
     );
   }
-  const secs = new Set(seen.map((s) => s.sec));
-  assert.ok(secs.size <= 4, `whole seconds only (${[...secs].join(', ')})`);
+  // A block can land mid-way and restart the interval: count the seconds within each interval (2.4 s cross at most
+  // three whole-second steps, so four values).
+  const runs = [[]];
+  seen.forEach((s, i) => {
+    if (i > 0 && s.sec < seen[i - 1].sec) runs.push([]);
+    runs[runs.length - 1].push(s.sec);
+  });
+  for (const run of runs) {
+    const secs = new Set(run);
+    assert.ok(secs.size <= 4, `whole seconds only (${[...secs].join(', ')})`);
+  }
   await page.close();
   assert.deepEqual(pageErrors, []);
 });
