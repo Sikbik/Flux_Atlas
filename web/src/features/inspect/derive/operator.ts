@@ -10,6 +10,7 @@ import { STATUS_CODES } from '../../../api/nodesBin';
 import { formatInt, parseEndpoint } from '../../../lib/format';
 import { localNodeId } from '../../../store/nodeKeys';
 import { type NodeTable, Reach } from '../../../store/nodeTable';
+import { isWalletAddress } from '../../wallet/lib/address';
 import { countryName } from './appSpec';
 import { blocksSinceConfirm, CHECKIN, isAtRisk } from './expiry';
 import { fluxPerDay, positionOf, QUEUE_TIERS, type QueueSnapshot, type QueueTier } from './queue';
@@ -499,6 +500,42 @@ export function versionCounts(nodes: readonly FleetNode[]): { version: string; c
       if (a.version === 'Unknown' || b.version === 'Unknown') return a.version === 'Unknown' ? 1 : -1;
       return b.count - a.count || b.version.localeCompare(a.version, 'en', { numeric: true });
     });
+}
+
+// ---- wallets ----------------------------------------------------------------------------------------
+
+/** A payment address of the fleet and how many of its nodes are paid to it. */
+export interface FleetWallet {
+  address: string;
+  nodes: number;
+}
+
+/**
+ * The wallets the fleet is paid to, most nodes first (then by address). Only `t1` and `t3` addresses count,
+ * the ones the wallet workspace opens; a node whose address is not known yet is left out.
+ */
+export function fleetWallets(nodes: readonly FleetNode[]): FleetWallet[] {
+  const by = new Map<string, number>();
+  for (const n of nodes) {
+    if (isWalletAddress(n.paymentAddress)) {
+      const a = n.paymentAddress as string;
+      by.set(a, (by.get(a) ?? 0) + 1);
+    }
+  }
+  return [...by]
+    .map(([address, count]) => ({ address, nodes: count }))
+    .sort((a, b) => b.nodes - a.nodes || a.address.localeCompare(b.address));
+}
+
+/**
+ * How much of a watchlist one wallet is paid for: "All 12 watched nodes", "3 of 12 watched nodes". A share
+ * is only claimed when the address of every watched node is known (`known`); before that, the count alone.
+ */
+export function walletCaption(nodes: number, total: number, known: number): string {
+  const word = (n: number) => (n === 1 ? 'watched node' : 'watched nodes');
+  if (known < total) return `${formatInt(nodes)} ${word(nodes)}`;
+  if (nodes === total) return total === 1 ? 'Your watched node' : `All ${formatInt(total)} watched nodes`;
+  return `${formatInt(nodes)} of ${formatInt(total)} ${word(total)}`;
 }
 
 // ---- hardware ---------------------------------------------------------------------------------------

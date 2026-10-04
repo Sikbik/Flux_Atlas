@@ -194,6 +194,50 @@ describe('BarList interaction', () => {
   });
 });
 
+describe('BarList disclosure', () => {
+  it('opens a row in place with renderOpen, several at once, and closes it again', () => {
+    const m = mount(
+      <BarList items={items} renderOpen={(item) => <p className="opened">Inside {String(item.label)}</p>} />,
+    );
+    const buttons = () =>
+      Array.from(m.container.querySelectorAll<HTMLButtonElement>('button.ui-barlist__row'));
+    expect(buttons()).toHaveLength(5);
+    expect(buttons()[0]?.getAttribute('aria-expanded')).toBe('false');
+    expect(m.container.querySelector('.opened')).toBeNull();
+
+    click(buttons()[0] as HTMLElement);
+    click(buttons()[2] as HTMLElement);
+    const open = Array.from(m.container.querySelectorAll('.opened')).map((n) => n.textContent);
+    expect(open).toEqual(['Inside United States', 'Inside France']);
+    const first = buttons()[0] as HTMLButtonElement;
+    expect(first.getAttribute('aria-expanded')).toBe('true');
+    const panel = m.container.querySelector(`#${CSS.escape(first.getAttribute('aria-controls') ?? '')}`);
+    expect(panel?.textContent).toBe('Inside United States');
+    expect(panel?.getAttribute('aria-label')).toBe('United States');
+
+    click(first);
+    expect(first.getAttribute('aria-expanded')).toBe('false');
+    expect(first.hasAttribute('aria-controls')).toBe(false);
+    expect(Array.from(m.container.querySelectorAll('.opened')).map((n) => n.textContent)).toEqual([
+      'Inside France',
+    ]);
+    m.unmount();
+  });
+
+  it('turns link rows into disclosures rather than following the link', () => {
+    const m = mount(
+      <BarList
+        items={[{ id: 'n', label: 'Node 1', value: 3, to: { kind: 'node', value: '1' } }]}
+        renderOpen={() => <p className="opened">apps</p>}
+      />,
+    );
+    expect(m.container.querySelector('a.ui-barlist__row')).toBeNull();
+    click(m.container.querySelector('button.ui-barlist__row') as HTMLElement);
+    expect(m.container.querySelector('.opened')?.textContent).toBe('apps');
+    m.unmount();
+  });
+});
+
 describe('BarList limit', () => {
   it('shows the limit and a Show all toggle that expands and collapses', () => {
     const m = mount(<BarList items={items} limit={3} />);

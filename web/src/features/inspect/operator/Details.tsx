@@ -1,12 +1,26 @@
 // What sits behind the lead: FluxOS versions, hardware, apps and the address. Each is a folded section
 // whose one-line summary already answers "is it fine?", so the view stays short until a reader asks.
 
-import { AppWindow, Cpu, Fingerprint, GitBranch } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { AppWindow, Cpu, Fingerprint, GitBranch, RotateCw } from 'lucide-react';
+import { useMemo } from 'react';
 import { useNetworkVersions } from '../../../api/queries';
 import { formatInt } from '../../../lib/format';
-import { Amount, BarList, type BarListItem, Endpoint, EntityLink, Hash, KeyValue, Row } from '../../../ui';
+import {
+  Amount,
+  BarList,
+  type BarListItem,
+  Button,
+  Endpoint,
+  EntityLink,
+  Hash,
+  KeyValue,
+  Row,
+  Skeleton,
+} from '../../../ui';
 import { type FleetNode, hardwareMix, stragglers, type TierMix, versionCounts } from '../derive/operator';
 import { latestVersion } from '../derive/versions';
+import { watchNodeQuery } from '../sources/watchRoster';
 import { Fold } from '../ui/fold';
 import type { OpenSet } from '../ui/openset';
 
@@ -94,15 +108,60 @@ export function HardwareFold({ nodes, open }: { nodes: readonly FleetNode[]; ope
   );
 }
 
+/** Rows shown before "Show all": the busiest nodes. */
+const APPS_SHOWN = 8;
+
+/**
+ * What runs on one node, read from its detail record when its row opens. The record is the watchlist's own
+ * (same query), so a watched node is never asked for twice.
+ */
+function NodeApps({ node }: { node: FleetNode }) {
+  const q = useQuery({ ...watchNodeQuery(node.id), enabled: node.present });
+  const link = node.outpoint || node.endpoint || String(node.id);
+  if (!node.present) return <p className="ix-cap">This node has left the network.</p>;
+  if (q.isPending) return <Skeleton h={26} w="70%" />;
+  if (q.isError || !q.data) {
+    return (
+      <p className="ix-cap ix-node-apps-error">
+        Its apps did not load.{' '}
+        <Button size="sm" variant="ghost" icon={RotateCw} onClick={() => void q.refetch()}>
+          Try again
+        </Button>
+      </p>
+    );
+  }
+  const apps = q.data.apps;
+  return (
+    <div className="ix-node-apps">
+      {apps.length ? (
+        <div className="ix-links">
+          {apps.map((a) => (
+            <EntityLink key={a.name} kind="app" value={a.name} icon>
+              {a.display_name || a.name}
+            </EntityLink>
+          ))}
+        </div>
+      ) : (
+        <p className="ix-cap">No apps run on this node now.</p>
+      )}
+      <EntityLink kind="node" value={link} className="ix-node-apps-open">
+        Open the node
+      </EntityLink>
+    </div>
+  );
+}
+
 export function AppsFold({ nodes, open }: { nodes: readonly FleetNode[]; open: OpenSet }) {
-  const hosting = nodes.filter((n) => n.appCount > 0);
+  const hosting = useMemo(
+    () => nodes.filter((n) => n.appCount > 0).sort((a, b) => b.appCount - a.appCount || a.id - b.id),
+    [nodes],
+  );
+  const byId = useMemo(() => new Map(hosting.map((n) => [String(n.id), n])), [hosting]);
   const total = hosting.reduce((a, n) => a + n.appCount, 0);
-  const top = [...hosting].sort((a, b) => b.appCount - a.appCount || a.id - b.id).slice(0, 8);
-  const items: BarListItem[] = top.map((n) => ({
+  const items: BarListItem[] = hosting.map((n) => ({
     id: String(n.id),
     label: n.endpoint || `Node ${n.id}`,
     value: n.appCount,
-    to: n.present ? { kind: 'node', value: n.outpoint || n.endpoint || String(n.id) } : undefined,
     color: n.tier === 'unknown' ? undefined : `var(--tier-${n.tier})`,
   }));
   return (
@@ -120,14 +179,15 @@ export function AppsFold({ nodes, open }: { nodes: readonly FleetNode[]; open: O
       <BarList
         label="Apps per node"
         items={items}
+        limit={APPS_SHOWN}
         labelWidth={150}
         emptyText="No node of this fleet runs an app."
+        renderOpen={(item) => {
+          const n = byId.get(item.id);
+          return n ? <NodeApps node={n} /> : null;
+        }}
       />
-      {hosting.length > top.length ? (
-        <p className="ix-cap">
-          The {formatInt(top.length)} busiest of {formatInt(hosting.length)} nodes. Open a node for its apps.
-        </p>
-      ) : null}
+      {hosting.length > 0 ? <p className="ix-cap">Expand a node to list its apps.</p> : null}
     </Fold>
   );
 }

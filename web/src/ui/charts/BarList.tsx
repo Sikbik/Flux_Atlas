@@ -1,5 +1,5 @@
 import { useRouter } from '@tanstack/react-router';
-import { ChartNoAxesColumn, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChartNoAxesColumn, ChevronDown, ChevronRight, ChevronUp } from 'lucide-react';
 import {
   type ComponentPropsWithoutRef,
   type CSSProperties,
@@ -60,6 +60,11 @@ export interface BarListProps extends Omit<ComponentPropsWithoutRef<'div'>, 'chi
   limit?: number;
   /** Called when a row without its own `onSelect` or link is pressed; makes every row a button. */
   onSelect?: (item: BarListItem) => void;
+  /**
+   * Rows open in place: what an open row shows under it. Every row becomes a disclosure button (its `to`
+   * and `onSelect` are not used) and any number can be open at once. The content mounts when its row opens.
+   */
+  renderOpen?: (item: BarListItem) => ReactNode;
   /** Show skeleton rows instead of data. */
   loading?: boolean;
   /** How many skeleton rows to draw (default the `limit`, else 5). */
@@ -95,14 +100,21 @@ interface RowProps {
   selected: boolean;
   hasDetail: boolean;
   onSelect?: (item: BarListItem) => void;
+  /** A disclosure row: whether it is open, its toggle and what it shows when open. */
+  disclosure?: {
+    open: boolean;
+    toggle: (item: BarListItem) => void;
+    render: (item: BarListItem) => ReactNode;
+  };
 }
 
-function Row({ item, fraction, selected, hasDetail, onSelect }: RowProps) {
+function Row({ item, fraction, selected, hasDetail, onSelect, disclosure }: RowProps) {
   const router = useRouter({ warn: false });
+  const panelId = useId();
   const unknown = item.value === null || !Number.isFinite(item.value);
   const text = item.title ?? (typeof item.label === 'string' ? item.label : undefined);
   const press = item.onSelect ?? onSelect;
-  const kind = item.to ? 'link' : press ? 'button' : 'plain';
+  const kind = disclosure ? 'button' : item.to ? 'link' : press ? 'button' : 'plain';
   const style = {
     '--ui-bl-frac': fraction,
     ...(item.color ? { '--ui-bl-c': item.color } : null),
@@ -110,6 +122,15 @@ function Row({ item, fraction, selected, hasDetail, onSelect }: RowProps) {
   const body = (
     <>
       <span className="ui-barlist__label" title={text}>
+        {disclosure ? (
+          <ChevronRight
+            className="ui-barlist__chev"
+            data-open={disclosure.open || undefined}
+            size={12}
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+        ) : null}
         {item.label}
       </span>
       <span className="ui-barlist__track" data-unknown={unknown || undefined} aria-hidden="true">
@@ -128,7 +149,20 @@ function Row({ item, fraction, selected, hasDetail, onSelect }: RowProps) {
   };
 
   let row: ReactNode;
-  if (item.to) {
+  if (disclosure) {
+    row = (
+      <button
+        type="button"
+        {...common}
+        aria-expanded={disclosure.open}
+        aria-controls={disclosure.open ? panelId : undefined}
+        onClick={() => disclosure.toggle(item)}
+        {...pressHandlers<HTMLButtonElement>()}
+      >
+        {body}
+      </button>
+    );
+  } else if (item.to) {
     const props = { ...common, 'aria-current': selected ? ('true' as const) : undefined };
     row = router ? (
       <RouterRow to={item.to} {...props}>
@@ -155,8 +189,13 @@ function Row({ item, fraction, selected, hasDetail, onSelect }: RowProps) {
     row = <div {...common}>{body}</div>;
   }
   return (
-    <li className="ui-barlist__item" style={style}>
+    <li className="ui-barlist__item" style={style} data-open={disclosure?.open || undefined}>
       {row}
+      {disclosure?.open ? (
+        <section id={panelId} className="ui-barlist__open" aria-label={text}>
+          {disclosure.render(item)}
+        </section>
+      ) : null}
     </li>
   );
 }
@@ -167,8 +206,9 @@ const SKELETON_BAR = [100, 82, 66, 52, 40, 32, 26, 20];
 /**
  * Ranked horizontal bars (top countries, providers, versions): a quiet gradient bar with a rounded
  * data end, the value in Plex Mono, the label truncating with a title. Rows can be real links
- * (`to`), buttons (`onSelect`) or plain; `limit` adds a "Show all" toggle; loading and empty are
- * built in. Bars slide to new lengths when the data changes; reduced motion is instant.
+ * (`to`), buttons (`onSelect`), disclosures that open in place (`renderOpen`) or plain; `limit` adds a
+ * "Show all" toggle; loading and empty are built in. Bars slide to new lengths when the data changes;
+ * reduced motion is instant.
  */
 export function BarList({
   items,
@@ -177,6 +217,7 @@ export function BarList({
   selectedId,
   limit,
   onSelect,
+  renderOpen,
   loading,
   skeletonRows,
   emptyText,
@@ -189,7 +230,14 @@ export function BarList({
   ...rest
 }: BarListProps) {
   const [expanded, setExpanded] = useState(false);
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   const listId = useId();
+  const toggleOpen = (item: BarListItem) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(item.id)) next.add(item.id);
+      return next;
+    });
   const listRef = useRef<HTMLUListElement>(null);
 
   const shown = visibleItems(items, limit, expanded);
@@ -269,6 +317,9 @@ export function BarList({
             selected={selectedId === item.id}
             hasDetail={hasDetail}
             onSelect={onSelect}
+            disclosure={
+              renderOpen ? { open: openIds.has(item.id), toggle: toggleOpen, render: renderOpen } : undefined
+            }
           />
         ))}
       </ul>

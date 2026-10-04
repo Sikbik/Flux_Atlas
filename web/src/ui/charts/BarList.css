@@ -163,6 +163,32 @@
   white-space: nowrap;
 }
 
+/* Disclosure rows (`renderOpen`): a chevron leads the label and turns a quarter when the row is open; the
+   open content sits under the row, indented to the label text, and fades in like any replaced placeholder. */
+.ui-barlist__chev {
+  display: inline-block;
+  margin: 0 var(--space-2) 0 calc(var(--space-1) * -1);
+  color: var(--text-3);
+  vertical-align: -1px;
+  transition:
+    rotate var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.ui-barlist__chev[data-open] {
+  rotate: 90deg;
+  color: var(--text-1);
+}
+
+.ui-barlist__item[data-open] > .ui-barlist__row {
+  background: var(--ink-2);
+}
+
+.ui-barlist__open {
+  padding: var(--space-3) var(--space-4) var(--space-4) calc(var(--space-4) + 16px);
+  animation: ui-fade-in var(--dur-base) var(--ease-out);
+}
+
 .ui-barlist__more {
   display: flex;
   min-height: 32px;
@@ -177,15 +203,22 @@
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .ui-barlist__fill,
   :root:not([data-motion="full"]) .ui-barlist__row,
-  :root:not([data-motion="full"]) .ui-barlist__label {
+  :root:not([data-motion="full"]) .ui-barlist__label,
+  :root:not([data-motion="full"]) .ui-barlist__chev {
     transition: none;
   }
 }
 
 :root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__fill,
 :root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__row,
-:root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__label {
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__label,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ui-barlist__chev {
   transition: none;
+}
+
+/* The open content's fade is opacity only, which Reduced keeps; Off drops it too. */
+:root[data-motion="off"] .ui-barlist__open {
+  animation: none;
 }
 
 /* Touch: rows that act are 44 px tall. */

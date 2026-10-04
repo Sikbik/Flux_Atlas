@@ -67,6 +67,14 @@
   color: var(--text-3);
 }
 
+/* Related things as a wrapping row of links (a node's apps, its co-hosted nodes). */
+.ix-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-7);
+  font-size: var(--fs-sm);
+}
+
 /* A small explanatory paragraph under a block. */
 .ix-cap {
   margin: var(--space-5) 0 0;

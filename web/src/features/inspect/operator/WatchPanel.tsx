@@ -1,6 +1,9 @@
-import { BellRing } from 'lucide-react';
+import { ArrowRight, BellRing, ChevronDown, WalletCards } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useUi } from '../../../store/ui';
-import { Section, Switch } from '../../../ui';
+import { Button, Hash, Section, Switch } from '../../../ui';
+import { useOpenWallet } from '../../wallet/hooks/useOpenWallet';
+import { type FleetNode, fleetWallets, walletCaption } from '../derive/operator';
 import { ALERT_KINDS, ALERT_LABELS } from '../derive/watch';
 import { announceWatch } from '../sources/hooks';
 import { NodeFinder } from '../ui/NodeFinder';
@@ -24,6 +27,67 @@ export function WatchAdd() {
         announceWatch(h.endpoint);
       }}
     />
+  );
+}
+
+/** Wallets shown before "Show all". */
+const WALLETS_SHOWN = 3;
+
+/**
+ * The wallets the watched nodes are paid to, each one press into the wallet workspace. A watchlist usually
+ * follows one operator's nodes, so this is usually a single row: that operator's wallet.
+ */
+export function WatchWallets({ nodes }: { nodes: readonly FleetNode[] }) {
+  const wallets = useMemo(() => fleetWallets(nodes), [nodes]);
+  const known = useMemo(() => nodes.filter((n) => n.paymentAddress).length, [nodes]);
+  const openWallet = useOpenWallet();
+  const [all, setAll] = useState(false);
+  if (wallets.length === 0) return null;
+  const shown = all ? wallets : wallets.slice(0, WALLETS_SHOWN);
+  return (
+    <div className="ix-pad ix-gap-top">
+      <ul
+        className="ix-wallets"
+        aria-label={wallets.length === 1 ? 'Wallet of the watched nodes' : 'Wallets of the watched nodes'}
+      >
+        {shown.map((w) => {
+          const caption = walletCaption(w.nodes, nodes.length, known);
+          return (
+            <li key={w.address}>
+              <button
+                type="button"
+                className="ix-wallet"
+                aria-label={`Open wallet ${w.address} in the wallet workspace. ${caption}.`}
+                title="Earnings, payments, fleet, health and apps of this address, in the wallet workspace"
+                onClick={() => openWallet(w.address)}
+              >
+                <span className="ix-wallet-i" aria-hidden="true">
+                  <WalletCards size={16} strokeWidth={1.5} />
+                </span>
+                <span className="ix-wallet-t">
+                  <Hash value={w.address} head={6} tail={5} copy={false} className="ix-wallet-addr" />
+                  <span>{caption}</span>
+                </span>
+                <span className="ix-wallet-go" aria-hidden="true">
+                  Open wallet <ArrowRight size={14} strokeWidth={1.75} />
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {wallets.length > shown.length ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={ChevronDown}
+          className="ix-wallets-more"
+          onClick={() => setAll(true)}
+        >
+          Show all {wallets.length} wallets
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

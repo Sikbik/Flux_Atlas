@@ -28,7 +28,7 @@ import { FleetGrid, STATE_WORDS } from './FleetGrid';
 import { FleetTable } from './FleetTable';
 import { FleetHeader } from './Header';
 import { EarningsSection, FleetStats } from './Lead';
-import { AlertsFold, WatchAdd } from './WatchPanel';
+import { AlertsFold, WatchAdd, WatchWallets } from './WatchPanel';
 import '../ui/parts.css';
 import './operator.css';
 
@@ -216,9 +216,12 @@ export function OperatorView({ addr }: { addr: string }) {
         onToggleWatch={watching.toggle}
       />
       {watchlist ? (
-        <div className="ix-pad ix-gap-top">
-          <WatchAdd />
-        </div>
+        <>
+          <WatchWallets nodes={nodes} />
+          <div className="ix-pad ix-gap-top">
+            <WatchAdd />
+          </div>
+        </>
       ) : null}
       <AttentionCallouts groups={groups} />
       <Section>

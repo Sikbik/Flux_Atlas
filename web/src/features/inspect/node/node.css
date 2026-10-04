@@ -54,13 +54,6 @@
 
 /* ---- related things ------------------------------------------------------------------------------- */
 
-.ix-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3) var(--space-7);
-  font-size: var(--fs-sm);
-}
-
 .ix-link-tier {
   display: inline-flex;
   align-items: center;

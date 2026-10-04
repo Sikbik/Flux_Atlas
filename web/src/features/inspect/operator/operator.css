@@ -20,6 +20,134 @@
   font-size: var(--fs-xs);
 }
 
+/* ---- wallets of the watchlist ------------------------------------------------------------------- */
+
+.ix-wallets {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A wallet is one press into the wallet workspace: icon tile, address, how much of the watchlist it pays. */
+.ix-wallet {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+/* The kit card's press language: a veil of light on hover, deeper while pressed; nothing moves. */
+@media (hover: hover) {
+  .ix-wallet:hover {
+    background: color-mix(in oklab, var(--hot) 4%, transparent);
+  }
+}
+
+.ix-wallet:active {
+  background: color-mix(in oklab, var(--hot) 7%, transparent);
+}
+
+.ix-wallet:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ix-wallet-i {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent-500);
+}
+
+.ix-wallet-t {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.ix-wallet-addr {
+  min-width: 0;
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+
+.ix-wallet-t > span {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ix-wallet-go {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .ix-wallet:hover .ix-wallet-go {
+    color: var(--text-1);
+  }
+}
+
+.ix-wallets-more {
+  justify-self: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ix-wallet,
+  :root:not([data-motion="full"]) .ix-wallet-go {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ix-wallet,
+:root:is([data-motion="reduced"], [data-motion="off"]) .ix-wallet-go {
+  transition: none;
+}
+
+/* ---- apps per node ------------------------------------------------------------------------------ */
+
+.ix-node-apps {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+}
+
+.ix-node-apps .ix-links {
+  font-size: var(--fs-xs);
+}
+
+.ix-node-apps-open {
+  font-size: var(--fs-xs);
+}
+
+.ix-node-apps-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+}
+
 /* Three stat tiles: three across when the grid is wide enough for each to hold a figure with its unit,
    else two, with the third taking the whole row so no cell is left empty. */
 @container (max-width: 483px) {

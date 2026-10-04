@@ -12,6 +12,7 @@ import {
   fleetCentroid,
   fleetPlace,
   fleetState,
+  fleetWallets,
   flyRangeFor,
   hardwareMix,
   rowFromDetail,
@@ -21,6 +22,7 @@ import {
   summarizeFleet,
   tierMix,
   versionCounts,
+  walletCaption,
 } from './operator';
 import { buildQueues } from './queue';
 
@@ -417,5 +419,39 @@ describe('fleetPlace', () => {
 
   it('says so when no location is known', () => {
     expect(fleetPlace([node(1, { country: '' })]).lead).toBe('Location unknown');
+  });
+});
+
+describe('wallets of a fleet', () => {
+  const A = 't3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ';
+  const B = 't1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhyt';
+
+  it('groups nodes by payment address, most nodes first, and leaves out unknowns and ZelIDs', () => {
+    const fleet = [
+      node(1, { paymentAddress: B }),
+      node(2, { paymentAddress: A }),
+      node(3, { paymentAddress: A }),
+      node(4, { paymentAddress: null }),
+      node(5, { paymentAddress: '1ZelIdLikeAddressNotAWallet0000000' }),
+    ];
+    expect(fleetWallets(fleet)).toEqual([
+      { address: A, nodes: 2 },
+      { address: B, nodes: 1 },
+    ]);
+    expect(fleetWallets([])).toEqual([]);
+  });
+
+  it('breaks ties by address so the order is stable', () => {
+    const fleet = [node(1, { paymentAddress: B }), node(2, { paymentAddress: A })];
+    expect(fleetWallets(fleet).map((w) => w.address)).toEqual([B, A].sort());
+  });
+
+  it('claims a share of the watchlist only when every address is known', () => {
+    expect(walletCaption(20, 20, 20)).toBe('All 20 watched nodes');
+    expect(walletCaption(1, 1, 1)).toBe('Your watched node');
+    expect(walletCaption(3, 20, 20)).toBe('3 of 20 watched nodes');
+    expect(walletCaption(1, 20, 20)).toBe('1 of 20 watched nodes');
+    expect(walletCaption(64, 208, 64)).toBe('64 watched nodes');
+    expect(walletCaption(1, 208, 64)).toBe('1 watched node');
   });
 });
