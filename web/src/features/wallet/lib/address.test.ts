@@ -19,6 +19,11 @@ describe('isWalletAddress', () => {
     expect(isWalletAddress('t1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhyt ')).toBe(false);
   });
 
+  it('wants exactly the 35 characters the server checks', () => {
+    expect(isWalletAddress('t1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhy')).toBe(false);
+    expect(isWalletAddress('t1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhyta')).toBe(false);
+  });
+
   it('refuses what is too short, too long or missing', () => {
     expect(isWalletAddress('t1')).toBe(false);
     expect(isWalletAddress(`t1${'a'.repeat(40)}`)).toBe(false);
