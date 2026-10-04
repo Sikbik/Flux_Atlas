@@ -99,6 +99,11 @@
   cursor: pointer;
 }
 
+/* The borders setting sits under the look cards, as part of the same Globe section. */
+.set-art-grid + .set-field {
+  margin-top: var(--space-5);
+}
+
 .set-art input {
   position: absolute;
   inset: 0;
