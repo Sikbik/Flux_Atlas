@@ -1,5 +1,5 @@
 // Art direction "neon": wireframe. A near-black body with a hatched land fill, a 15 degree
-// graticule, glowing coastlines and borders drawn as screen-space ribbons, and the terminator as a soft
+// graticule, glowing coastlines drawn as screen-space ribbons, and the terminator as a soft
 // band of twilight in Flux blue. The night side lights up brighter than the day side, as a vector display would.
 
 import * as THREE from 'three';
@@ -102,17 +102,18 @@ uniform float uProjScale;
 uniform vec3 uSunDir;
 uniform float uTerminator;
 uniform vec3 uCoast;
-uniform vec3 uBorder;
 in vec3 aA;
 in vec3 aB;
-in float aKind;
 out vec2 vUv;
 out vec3 vCol;
 void main() {
   float y = position.y;
-  vec3 a = aA * 1.0012;
-  vec3 b = aB * 1.0012;
-  // Boot reveal: coastlines and borders beyond the wave's front are not drawn.
+  // The line rides just above the ground: far away the facets of the sphere need 0.0012 of clearance, up
+  // close almost none, so a tilted close view does not float the coast off the land beneath it.
+  float lift = 1.0 + clamp(0.0012 * length(cameraPosition - normalize(aA + aB)), 0.00004, 0.0012);
+  vec3 a = aA * lift;
+  vec3 b = aB * lift;
+  // Boot reveal: coastlines beyond the wave's front are not drawn.
   if (revealMask(normalize(a + b)) < 0.02) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec3(0.0); vUv = vec2(0.0); return; }
   vec4 ca = projectionMatrix * viewMatrix * vec4(a, 1.0);
   vec4 cb = projectionMatrix * viewMatrix * vec4(b, 1.0);
@@ -123,7 +124,7 @@ void main() {
   float len = length(d);
   vec2 t = len > 1e-4 ? d / len : vec2(1.0, 0.0);
   vec2 perp = vec2(-t.y, t.x);
-  float width = (aKind < 0.5 ? 1.25 : 0.8) * uPxScale;
+  float width = 1.25 * uPxScale;
   vec4 c = mix(ca, cb, position.x * 0.5 + 0.5);
   float cap = width * 0.5;
   vec2 offPx = perp * position.y * width * 0.5 + t * position.x * (len * 0.0 + cap);
@@ -134,9 +135,9 @@ void main() {
   vec3 sun = uTerminator > 0.5 ? uSunDir : normalize(cameraPosition);
   float mu = dot(mid, sun);
   float night = 1.0 - smoothstep(-0.05, 0.15, mu);
-  vec3 base = aKind < 0.5 ? uCoast : uBorder;
+  vec3 base = uCoast;
   float tw = 0.85 + 0.15 * sin(uTime * 1.3 + dot(mid, vec3(31.7, 17.3, 53.1)));
-  // Coastlines and borders keep their line but give way to the markers as the camera comes down (a
+  // Coastlines keep their line but give way to the markers as the camera comes down (a
   // cyan coastline is the very colour of a Cumulus marker), most of all at the focus point.
   float L = lensZoom(length(cameraPosition - mid), uProjScale / max(uPxScale, 1e-4));
   vCol = base * mix(0.55, 1.35, night) * tw * (1.0 - 0.6 * L) + waveGlow(mid) * 1.6;
@@ -207,7 +208,6 @@ export class NeonBody implements GlobeBody {
         uSunDir: u.uSunDir,
         uTerminator: u.uTerminator,
         uCoast: { value: new THREE.Color() },
-        uBorder: { value: new THREE.Color() },
         uProjScale: u.uProjScale,
         uShock: u.uShock,
         uShockHot: u.uShockHot,
@@ -240,36 +240,28 @@ export class NeonBody implements GlobeBody {
     b.uTermCol!.value.set(t.terminator);
     const l = this.lineMat.uniforms;
     l.uCoast!.value.set(t.coast).multiplyScalar(1.5);
-    l.uBorder!.value.set(t.land).multiplyScalar(0.55);
   }
 
+  /** The coastline only: country borders and state lines are the shared border layer's (layers/borders.ts). */
   private build(): void {
     const br = this.assets.borders;
     if (!br) return;
-    const coastN = br.coast.length / 4;
-    const borderN = br.border.length / 4;
-    const total = coastN + borderN;
+    const total = br.coast.length / 4;
     const a = new Float32Array(total * 3);
     const b = new Float32Array(total * 3);
-    const kind = new Float32Array(total);
-    const put = (src: Float32Array, n: number, off: number, k: number): void => {
-      for (let i = 0; i < n; i++) {
-        const la0 = src[i * 4]! * DEG;
-        const lo0 = src[i * 4 + 1]! * DEG;
-        const la1 = src[i * 4 + 2]! * DEG;
-        const lo1 = src[i * 4 + 3]! * DEG;
-        const o = (off + i) * 3;
-        a[o] = Math.cos(la0) * Math.sin(lo0);
-        a[o + 1] = Math.sin(la0);
-        a[o + 2] = Math.cos(la0) * Math.cos(lo0);
-        b[o] = Math.cos(la1) * Math.sin(lo1);
-        b[o + 1] = Math.sin(la1);
-        b[o + 2] = Math.cos(la1) * Math.cos(lo1);
-        kind[off + i] = k;
-      }
-    };
-    put(br.coast, coastN, 0, 0);
-    put(br.border, borderN, coastN, 1);
+    for (let i = 0; i < total; i++) {
+      const la0 = br.coast[i * 4]! * DEG;
+      const lo0 = br.coast[i * 4 + 1]! * DEG;
+      const la1 = br.coast[i * 4 + 2]! * DEG;
+      const lo1 = br.coast[i * 4 + 3]! * DEG;
+      const o = i * 3;
+      a[o] = Math.cos(la0) * Math.sin(lo0);
+      a[o + 1] = Math.sin(la0);
+      a[o + 2] = Math.cos(la0) * Math.cos(lo0);
+      b[o] = Math.cos(la1) * Math.sin(lo1);
+      b[o + 1] = Math.sin(la1);
+      b[o + 2] = Math.cos(la1) * Math.cos(lo1);
+    }
     const geo = new THREE.InstancedBufferGeometry();
     // Quad: x along the segment (-1 = start, +1 = end), y across (-1..1).
     geo.setAttribute(
@@ -279,7 +271,6 @@ export class NeonBody implements GlobeBody {
     geo.setIndex([0, 1, 2, 0, 2, 3]);
     geo.setAttribute('aA', new THREE.InstancedBufferAttribute(a, 3));
     geo.setAttribute('aB', new THREE.InstancedBufferAttribute(b, 3));
-    geo.setAttribute('aKind', new THREE.InstancedBufferAttribute(kind, 1));
     geo.instanceCount = total;
     this.lineGeo?.dispose();
     this.lineGeo = geo;

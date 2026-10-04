@@ -8,10 +8,12 @@ import {
   buildLandMask,
   joinUrl,
   type LandMask,
+  loadAdmin1,
   loadBorders,
   loadImage,
   textureFromImage,
 } from './assets';
+import type { Admin1Lines } from './borders';
 
 function placeholder(r: number, g: number, b: number, srgb = true): THREE.DataTexture {
   const t = new THREE.DataTexture(
@@ -38,8 +40,11 @@ export class AssetStore {
   dayImg: HTMLImageElement | null = null;
   nightImg: HTMLImageElement | null = null;
   borders: BorderSegments | null = null;
+  /** The state and province lines: fetched only when the camera comes down (`requestAdmin1`). */
+  admin1: Admin1Lines | null = null;
   ready: Promise<void>;
-  loaded = { day: false, night: false, clouds: false, mask: false, borders: false };
+  loaded = { day: false, night: false, clouds: false, mask: false, borders: false, admin1: false };
+  private admin1Started = false;
   private disposed = false;
 
   constructor(
@@ -103,6 +108,24 @@ export class AssetStore {
     this.version++;
   }
 
+  /**
+   * Starts fetching the state and province lines, once. Called when the camera first comes down far
+   * enough to want them; never on the low tier. A failure is logged and not retried until the next load.
+   */
+  requestAdmin1(): void {
+    if (this.admin1Started || this.disposed) return;
+    this.admin1Started = true;
+    loadAdmin1(this.base).then(
+      (lines) => {
+        if (this.disposed) return;
+        this.admin1 = lines;
+        this.loaded.admin1 = true;
+        this.version++;
+      },
+      (e) => console.warn('[globe] state lines failed:', e),
+    );
+  }
+
   /** Nearest-sample land coverage (0..255) at lat/lon degrees. Returns 255 if the mask is missing. */
   landAt(lat: number, lon: number): number {
     if (!this.maskData) return 255;
@@ -124,5 +147,6 @@ export class AssetStore {
     this.dayImg = null;
     this.nightImg = null;
     this.borders = null;
+    this.admin1 = null;
   }
 }

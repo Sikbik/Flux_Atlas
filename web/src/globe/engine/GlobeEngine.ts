@@ -16,6 +16,7 @@ import { computeFraming, DEFAULT_FRAMING, type Framing, type FramingSpec, type R
 import { Fx } from './fx';
 import { Atmosphere } from './layers/atmosphere';
 import type { GlobeBody } from './layers/body';
+import { BorderLayer } from './layers/borders';
 import { DotMatrixBody } from './layers/dotmatrix';
 import { MarbleBody } from './layers/marble';
 import { NeonBody } from './layers/neon';
@@ -47,6 +48,7 @@ import { defaultTokens, type GlobeTokens } from './tokens';
 import { Traffic } from './traffic';
 import {
   type ArtDirection,
+  type BordersMode,
   type CameraInfo,
   DEFAULT_EFFECTS,
   type EffectToggles,
@@ -161,6 +163,8 @@ export class GlobeEngine {
   private readonly post: Post;
   private readonly sky: Sky;
   private readonly atmosphere: Atmosphere;
+  /** Country borders and state lines, in whichever look is on (layers/borders.ts). */
+  readonly borders: BorderLayer;
   private readonly bodies: Partial<Record<ArtDirection, GlobeBody>> = {};
   private readonly controls: Controls;
   private readonly listeners = new Map<keyof EngineEvents, Set<Listener<keyof EngineEvents>>>();
@@ -397,6 +401,16 @@ export class GlobeEngine {
     this.scene.add(this.sky.group);
 
     this.ensureBody(this.artDirection);
+    // The low tier (the lite level, the governor's last step, software GL) draws country borders only.
+    this.borders = new BorderLayer(
+      this.assets,
+      this.u,
+      this.tokens,
+      this.artDirection,
+      opts.borders ?? 'states',
+      this.profile.name !== 'low',
+    );
+    this.scene.add(this.borders.group);
     this.atmosphere = new Atmosphere(this.u, this.tokens, this.profile.atmoSteps);
     this.scene.add(this.atmosphere.mesh);
 
@@ -550,7 +564,13 @@ export class GlobeEngine {
     for (const k of Object.keys(this.bodies) as ArtDirection[]) this.bodies[k]?.setVisible(k === art);
     body.setVisible(true);
     this.moon?.setArt(art);
+    this.borders?.setArt(art);
     this.setTokens({});
+  }
+
+  /** Country borders, or those with state and province lines, or neither. State lines never draw on the low tier. */
+  setBorders(mode: BordersMode): void {
+    this.borders.setMode(mode);
   }
 
   /** Feeds the design system's tokens (the `--globe-*` group). The active art direction keeps its own look where it needs to. */
@@ -565,6 +585,7 @@ export class GlobeEngine {
     this.sky.setTokens(this.tokens);
     this.atmosphere.setTokens(this.tokens);
     this.moon?.setTokens(this.tokens);
+    this.borders?.setTokens(this.tokens);
     for (const k of Object.keys(this.bodies) as ArtDirection[]) this.bodies[k]?.setTokens(this.tokens);
     this.layoutFan = -1;
   }
@@ -593,6 +614,7 @@ export class GlobeEngine {
     this.profile = resolveQuality(level);
     this.moon.set({ lite: this.profile.moonLite });
     this.atmosphere.setSteps(this.profile.atmoSteps);
+    this.borders.setStatesAllowed(this.profile.name !== 'low');
     this.renderScale = 1;
     this.resizeDirty = true;
   }
@@ -2794,6 +2816,7 @@ export class GlobeEngine {
       return;
     }
     for (const k of Object.keys(this.bodies) as ArtDirection[]) this.bodies[k]?.dispose();
+    this.borders.dispose();
     this.nodeLayer.dispose();
     this.clusterLayer.dispose();
     this.arcs.dispose();
@@ -2983,7 +3006,10 @@ export class GlobeEngine {
     if (this.effects.atmosphere) this.u.uAtmo.value = this.ambientBoost.atmo;
 
     u.uFan.value = fan;
-    this.lensNow = lensAtDistance(this.rig.projScale, Math.max(0.004, this.rig.distance - 1));
+    const surf = Math.max(0.004, this.rig.distance - 1);
+    this.lensNow = lensAtDistance(this.rig.projScale, surf);
+    // Political lines: the pixels per radian at the nearest ground decides which of them are worth a draw.
+    this.borders.update(dt, this.rig.projScale / surf, this.reducedMotion);
     // The markers' dark halo has nothing to do until the lens opens: no draw at the global view.
     this.nodeLayer.knock.visible = this.lensNow > 0.002;
     u.uZoomGain.value = 0.55 + 0.45 * smoothstep(2.9, 1.0, range);
@@ -3141,6 +3167,7 @@ export class GlobeEngine {
         this.profile = PROFILES[next];
         this.moon.set({ lite: this.profile.moonLite });
         this.atmosphere.setSteps(this.profile.atmoSteps);
+        this.borders.setStatesAllowed(this.profile.name !== 'low');
         this.renderScale = 0.8;
         this.slowT = 0;
         this.lastDowngrade = this.time;

@@ -2,6 +2,7 @@
 // segments. A small TopoJSON decoder lives here so the engine has no dependencies besides three.
 
 import * as THREE from 'three';
+import { type Admin1Lines, decodeAdmin1Async } from './borders';
 
 export interface TopoTopology {
   type: 'Topology';
@@ -156,13 +157,15 @@ export interface BorderSegments {
   coast: Float32Array;
   /** Same layout for interior borders. */
   border: Float32Array;
+  /** For each border segment, the length in radians of its arc up to the segment's start and end (two floats). */
+  borderArc: Float32Array;
 }
 
-/** Extracts every arc of the country topology once, split into coastline and shared border. */
-export async function loadBorders(base: string, fine = true): Promise<BorderSegments> {
-  const topo = await loadJson<TopoTopology>(
-    join(base, fine ? 'data/countries-50m.json' : 'data/countries-110m.json'),
-  );
+/**
+ * Splits a country topology into coastline (an arc used by one country) and shared border (an arc two
+ * countries use). The two sets never overlap: every arc goes to exactly one of them.
+ */
+export function splitBorders(topo: TopoTopology): BorderSegments {
   const arcs = decodeArcs(topo);
   const uses = new Uint8Array(arcs.length);
   const rings: number[][] = [];
@@ -178,21 +181,52 @@ export async function loadBorders(base: string, fine = true): Promise<BorderSegm
   });
   const coast = new Float32Array(coastN * 4);
   const border = new Float32Array(borderN * 4);
+  const borderArc = new Float32Array(borderN * 2);
+  const rad = Math.PI / 180;
   let ci = 0;
   let bi = 0;
   arcs.forEach((a, i) => {
-    const target = uses[i]! >= 2 ? border : coast;
-    let o = uses[i]! >= 2 ? bi : ci;
+    const isBorder = uses[i]! >= 2;
+    const target = isBorder ? border : coast;
+    let o = isBorder ? bi : ci;
+    let run = 0;
     for (let k = 0; k < a.length / 2 - 1; k++) {
-      target[o++] = a[k * 2 + 1]!;
-      target[o++] = a[k * 2]!;
-      target[o++] = a[k * 2 + 3]!;
-      target[o++] = a[k * 2 + 2]!;
+      const lon0 = a[k * 2]!;
+      const lat0 = a[k * 2 + 1]!;
+      const lon1 = a[k * 2 + 2]!;
+      const lat1 = a[k * 2 + 3]!;
+      if (isBorder) {
+        // The arc's length so far, by the flat approximation: all a dotted line needs, and cheap.
+        const at = (o / 4) * 2;
+        borderArc[at] = run;
+        run += Math.hypot(lat1 - lat0, (lon1 - lon0) * Math.cos(((lat0 + lat1) / 2) * rad)) * rad;
+        borderArc[at + 1] = run;
+      }
+      target[o++] = lat0;
+      target[o++] = lon0;
+      target[o++] = lat1;
+      target[o++] = lon1;
     }
-    if (uses[i]! >= 2) bi = o;
+    if (isBorder) bi = o;
     else ci = o;
   });
-  return { coast, border };
+  return { coast, border, borderArc };
+}
+
+/** Fetches the country topology and splits it (see `splitBorders`). */
+export async function loadBorders(base: string, fine = true): Promise<BorderSegments> {
+  const topo = await loadJson<TopoTopology>(
+    join(base, fine ? 'data/countries-50m.json' : 'data/countries-110m.json'),
+  );
+  return splitBorders(topo);
+}
+
+/** Fetches and decodes the state and province lines (borders.ts; scripts/borders-admin1.mjs builds the file). */
+export async function loadAdmin1(base: string): Promise<Admin1Lines> {
+  const url = join(base, 'data/admin1-lines.bin');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  return decodeAdmin1Async(await res.arrayBuffer());
 }
 
 export interface EarthImages {
