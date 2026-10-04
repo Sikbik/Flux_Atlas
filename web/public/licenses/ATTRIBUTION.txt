@@ -38,13 +38,13 @@ use does not suggest NASA's endorsement (https://www.nasa.gov/nasa-brand-center/
 No NASA insignia is used in this project.
 
 
-2. Coastlines and borders (public/data/land-*.json, countries-*.json)
---------------------------------------------------------------------
+2. Coastlines, borders and state lines (public/data/land-*, countries-*, admin1-lines.bin)
+------------------------------------------------------------------------------------------
 
-Natural Earth (https://www.naturalearthdata.com/), 1:110m and 1:50m land and countries. Natural Earth
-is in the public domain: "Made with Natural Earth. Free vector and raster map data at
-naturalearthdata.com." The boundaries are Natural Earth's de facto lines and take no position on
-disputed territory.
+Natural Earth (https://www.naturalearthdata.com/), 1:110m and 1:50m land and countries, and 1:10m
+state and province lines. Natural Earth is in the public domain: "Made with Natural Earth. Free vector
+and raster map data at naturalearthdata.com." The boundaries are Natural Earth's de facto lines and take
+no position on disputed territory.
 
 The files are the TopoJSON conversions published in the npm package world-atlas 2.0.2
 (https://github.com/topojson/world-atlas), whose own packaging is licensed ISC, Copyright 2013-2019
@@ -63,6 +63,23 @@ Michael Bostock:
 
 The files are copied unchanged from labs/globe/public/data (labs/globe/scripts/build-textures.mjs
 downloads them).
+
+admin1-lines.bin
+  The state and province boundaries the globe draws once the camera is down in a region: Natural Earth
+  1:10m "Admin 1 - States, Provinces", the lines file (ne_10m_admin_1_states_provinces_lines), release
+  v5.1.2 of the official vector repository, commit f1890d9f152c896d250a77557a5751a93d494776.
+  Data page: https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-admin-1-states-provinces/
+  Source file: https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_1_states_provinces_lines.geojson
+  (SHA-256 1a1f30ccaaf4cc9c4bde34266f0b8cbb955d3a4cf254b756912255f2ec7c75b6; 21 MB, not part of this
+  repository.)
+  Changes: the lines are internal boundaries only, so the stretches that run along a coastline or a country
+  border the globe already draws are cut away; parts of one boundary are joined; each line is sorted into
+  one of four detail levels from Natural Earth's own MIN_ZOOM; lines are simplified (Douglas-Peucker,
+  0.004 to 0.014 degrees by level), rounded to 0.001 degree and packed as delta-coded varints (312 KB, about
+  277 KB gzip). web/scripts/borders-admin1.mjs rebuilds the file: it downloads the pinned release, checks
+  the hash above and writes the same bytes every run. The file is fetched only when the camera comes down
+  and never on the Lite level.
+  Terms: public domain, as above.
 
 
 3. Fonts (src/styles/fonts)
