@@ -409,6 +409,7 @@
 }
 
 .hub-nav__list {
+  position: relative;
   display: flex;
   gap: var(--space-3);
   /* Room for the focus ring; the row scrolls sideways on a phone instead of wrapping. */
