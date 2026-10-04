@@ -1,0 +1,385 @@
+// @vitest-environment jsdom
+// The shared frame of the hub windows: the panel and its four states, the leaderboard, the nav and the links. The
+// links open windows through the shell's navigation, which is stubbed here so no router is needed.
+
+import { Box } from 'lucide-react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../../api/http';
+import { click, mount } from '../../ui/internal/testing';
+import { HubButton, HubLink, HubTile, HubTiles } from './HubLink';
+import { HubNav } from './HubNav';
+import { HubPanel } from './HubPanel';
+import { LbBar, Leaderboard } from './Leaderboard';
+
+const nav = vi.hoisted(() => ({
+  open: vi.fn(),
+  go: vi.fn(),
+}));
+
+vi.mock('../../shell/frame/nav', () => ({ useShellNav: () => nav }));
+
+afterEach(() => {
+  nav.open.mockReset();
+  nav.go.mockReset();
+});
+
+describe('HubPanel', () => {
+  it('is a labelled section: the title is its heading and the body is its children', () => {
+    const m = mount(
+      <HubPanel title="Latest blocks" icon={Box} aside="newest first">
+        <div data-testid="rows" />
+      </HubPanel>,
+    );
+    const section = m.container.querySelector('section');
+    const heading = m.container.querySelector('h2');
+    expect(heading?.textContent).toBe('Latest blocks');
+    expect(section?.getAttribute('aria-labelledby')).toBe(heading?.id);
+    expect(section?.getAttribute('data-state')).toBe('ready');
+    expect(section?.getAttribute('aria-busy')).toBeNull();
+    expect(m.container.querySelector('.hub-panel__aside')?.textContent).toBe('newest first');
+    expect(m.container.querySelector('.hub-panel__body [data-testid="rows"]')).not.toBeNull();
+    m.unmount();
+  });
+
+  it('takes its place in the grid from span and fill, and its heading level from level', () => {
+    const m = mount(
+      <HubPanel title="Mempool" span="third" fill="row" level={3}>
+        x
+      </HubPanel>,
+    );
+    const section = m.container.querySelector('section');
+    expect(section?.getAttribute('data-span')).toBe('third');
+    expect(section?.getAttribute('data-fill')).toBe('row');
+    expect(m.container.querySelector('h3')?.textContent).toBe('Mempool');
+    expect(m.container.querySelector('h2')).toBeNull();
+    m.unmount();
+  });
+
+  it('loading: busy, the skeleton instead of the body, and no footer', () => {
+    const m = mount(
+      <HubPanel
+        title="Operators"
+        state="loading"
+        skeleton={<div data-testid="skel" />}
+        footer={<a href="/x">Open</a>}
+      >
+        <div data-testid="rows" />
+      </HubPanel>,
+    );
+    expect(m.container.querySelector('section')?.getAttribute('aria-busy')).toBe('true');
+    expect(m.container.querySelector('[data-testid="skel"]')).not.toBeNull();
+    expect(m.container.querySelector('[data-testid="rows"]')).toBeNull();
+    expect(m.container.querySelector('.hub-panel__foot')).toBeNull();
+    expect(m.container.querySelector('h2')?.textContent).toBe('Operators');
+    m.unmount();
+  });
+
+  it('error: the heading stays, the failure is announced, and Retry asks again', () => {
+    const onRetry = vi.fn();
+    const m = mount(
+      <HubPanel
+        title="Operators"
+        state="error"
+        error={new ApiError('upstream', 'behind', 502, '/api/v1/network/operators')}
+        onRetry={onRetry}
+        footer={<a href="/x">Open</a>}
+      >
+        <div data-testid="rows" />
+      </HubPanel>,
+    );
+    expect(m.container.querySelector('h2')?.textContent).toBe('Operators');
+    expect(m.container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(m.container.querySelector('[data-testid="rows"]')).toBeNull();
+    const retry = Array.from(m.container.querySelectorAll('button')).find((b) => b.textContent === 'Retry');
+    expect(retry).toBeDefined();
+    if (retry) click(retry);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    m.unmount();
+  });
+
+  it('error: the words of the caller replace the derived ones', () => {
+    const m = mount(
+      <HubPanel
+        title="Movers"
+        state="error"
+        errorTitle="Movers could not be read"
+        errorText="Try again soon."
+      >
+        x
+      </HubPanel>,
+    );
+    expect(m.container.querySelector('[role="alert"]')?.textContent).toContain('Movers could not be read');
+    expect(m.container.querySelector('[role="alert"]')?.textContent).toContain('Try again soon.');
+    m.unmount();
+  });
+
+  it('empty: says what is missing instead of a blank body', () => {
+    const m = mount(
+      <HubPanel
+        title="Expiring"
+        state="empty"
+        emptyTitle="Nothing expires soon"
+        emptyText="All apps are renewed."
+      >
+        <div data-testid="rows" />
+      </HubPanel>,
+    );
+    expect(m.container.querySelector('section')?.getAttribute('data-state')).toBe('empty');
+    expect(m.container.textContent).toContain('Nothing expires soon');
+    expect(m.container.textContent).toContain('All apps are renewed.');
+    expect(m.container.querySelector('[data-testid="rows"]')).toBeNull();
+    m.unmount();
+  });
+
+  it('keeps the footer under a body that is there, and flushes a table to the edges', () => {
+    const m = mount(
+      <HubPanel title="Newest" flush footer={<a href="/x">Open the list</a>}>
+        <div data-testid="rows" />
+      </HubPanel>,
+    );
+    expect(m.container.querySelector('section')?.getAttribute('data-flush')).toBe('true');
+    expect(m.container.querySelector('.hub-panel__foot a')?.textContent).toBe('Open the list');
+    m.unmount();
+  });
+});
+
+interface Op {
+  id: string;
+  name: string;
+  nodes: number;
+}
+
+const OPS: Op[] = [
+  { id: 'a', name: 'Alpha', nodes: 424 },
+  { id: 'b', name: 'Bravo', nodes: 310 },
+  { id: 'c', name: 'Charlie', nodes: 120 },
+  { id: 'd', name: 'Delta', nodes: 40 },
+];
+
+function board(over: Partial<Parameters<typeof Leaderboard<Op>>[0]> = {}) {
+  return (
+    <Leaderboard<Op>
+      label="Top operators"
+      rows={OPS}
+      rowKey={(r) => r.id}
+      rank={(_, i) => i + 1}
+      identity={(r) => r.name}
+      identitySub={(r) => `${r.nodes} nodes`}
+      to={(r) => ({ type: 'operator', key: r.id })}
+      linkLabel={(r) => `Open operator ${r.name}`}
+      columns={[
+        { id: 'nodes', header: 'Nodes', width: '72px', align: 'end', cell: (r) => r.nodes },
+        { id: 'share', header: 'Share', width: '96px', hide: 'compact', cell: (r) => `${r.nodes / 10}%` },
+      ]}
+      {...over}
+    />
+  );
+}
+
+describe('Leaderboard', () => {
+  it('is an ordered list named for assistive technology, one item per row', () => {
+    const m = mount(board());
+    const list = m.container.querySelector('ol');
+    expect(list?.getAttribute('aria-label')).toBe('Top operators');
+    expect(m.container.querySelectorAll('li.hub-lb__row')).toHaveLength(4);
+    expect(Array.from(m.container.querySelectorAll('.hub-lb__rank')).map((e) => e.textContent)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+    ]);
+    m.unmount();
+  });
+
+  it('makes each row a real link that says its rank and what it opens', () => {
+    const m = mount(board());
+    const links = Array.from(m.container.querySelectorAll<HTMLAnchorElement>('a.hub-lb__link'));
+    expect(links.map((a) => a.getAttribute('aria-label'))).toEqual([
+      '1. Open operator Alpha',
+      '2. Open operator Bravo',
+      '3. Open operator Charlie',
+      '4. Open operator Delta',
+    ]);
+    expect(links[0]?.textContent).toBe('Alpha');
+    expect(links[0]?.getAttribute('href')).toContain('operator');
+    m.unmount();
+  });
+
+  it('opens the row as a window on a plain click, and leaves a modified click to the browser', () => {
+    const m = mount(board());
+    const link = m.container.querySelector<HTMLAnchorElement>('a.hub-lb__link');
+    if (!link) throw new Error('no link');
+    click(link);
+    expect(nav.open).toHaveBeenCalledWith({ type: 'operator', key: 'a' });
+    nav.open.mockReset();
+    // jsdom cannot navigate: cancel what the browser would have done after the handler has had its say.
+    const stop = (e: Event) => e.preventDefault();
+    document.addEventListener('click', stop);
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+    document.removeEventListener('click', stop);
+    expect(nav.open).not.toHaveBeenCalled();
+    m.unmount();
+  });
+
+  it('gives every figure its column name for a screen reader', () => {
+    const m = mount(board());
+    const first = m.container.querySelector('li.hub-lb__row');
+    const cells = Array.from(first?.querySelectorAll('.hub-lb__cell') ?? []).map((c) => c.textContent);
+    expect(cells).toEqual(['Nodes: 424', 'Share: 42.4%']);
+    expect(first?.querySelector('.hub-lb__sub')?.textContent).toBe('424 nodes');
+    m.unmount();
+  });
+
+  it('marks the podium, and only the podium', () => {
+    const m = mount(board());
+    const tops = Array.from(m.container.querySelectorAll('li.hub-lb__row')).map((r) =>
+      r.getAttribute('data-top'),
+    );
+    expect(tops).toEqual(['1', '2', '3', null]);
+    m.unmount();
+  });
+
+  it('lays the columns on one grid, and drops the hidden ones with their tracks in a medium panel', () => {
+    const m = mount(board());
+    const root = m.container.querySelector<HTMLElement>('.hub-lb');
+    expect(root?.style.getPropertyValue('--lb-cols')).toBe('2.25rem minmax(0, 1.5fr) 72px 96px 0px');
+    expect(root?.style.getPropertyValue('--lb-cols-compact')).toBe('2.25rem minmax(0, 1.5fr) 72px 0px');
+    m.unmount();
+  });
+
+  it('adds a track for the extra links when a row has them, and renders them beside the row', () => {
+    const m = mount(board({ actions: (r) => <a href={`/w/${r.id}`}>Wallet {r.name}</a> }));
+    const root = m.container.querySelector<HTMLElement>('.hub-lb');
+    expect(root?.style.getPropertyValue('--lb-cols')).toBe('2.25rem minmax(0, 1.5fr) 72px 96px auto');
+    expect(m.container.querySelectorAll('.hub-lb__acts a')).toHaveLength(4);
+    expect(m.container.querySelector('.hub-lb__acts a')?.textContent).toBe('Wallet Alpha');
+    m.unmount();
+  });
+
+  it('keeps the header row out of the reading order: the cells carry the names', () => {
+    const m = mount(board());
+    expect(m.container.querySelector('.hub-lb__head')?.getAttribute('aria-hidden')).toBe('true');
+    m.unmount();
+  });
+
+  it('shows no rows for an empty list, but stays a list', () => {
+    const m = mount(board({ rows: [] }));
+    expect(m.container.querySelector('ol')?.children).toHaveLength(0);
+    m.unmount();
+  });
+});
+
+describe('LbBar', () => {
+  const frac = (m: ReturnType<typeof mount>) =>
+    m.container.querySelector<HTMLElement>('.hub-lbbar__track i')?.style.getPropertyValue('--frac');
+
+  it('shows the figure as text and the comparison as a bar that is hidden from a screen reader', () => {
+    const m = mount(<LbBar value={0.25} text="25%" />);
+    expect(m.container.querySelector('.hub-lbbar__text')?.textContent).toBe('25%');
+    expect(m.container.querySelector('.hub-lbbar__track')?.getAttribute('aria-hidden')).toBe('true');
+    expect(frac(m)).toBe('0.25');
+    m.unmount();
+  });
+
+  it('measures against max, and stays inside the track', () => {
+    const half = mount(<LbBar value={50} max={200} text="50" />);
+    expect(frac(half)).toBe('0.25');
+    half.unmount();
+    const over = mount(<LbBar value={3} max={2} text="3" />);
+    expect(frac(over)).toBe('1');
+    over.unmount();
+    const under = mount(<LbBar value={-1} text="-1" />);
+    expect(frac(under)).toBe('0');
+    under.unmount();
+  });
+
+  it('is empty, not broken, against a max of zero', () => {
+    const m = mount(<LbBar value={5} max={0} text="5" />);
+    expect(frac(m)).toBe('0');
+    m.unmount();
+  });
+});
+
+describe('HubNav', () => {
+  const items = [
+    { id: 'explorer', label: 'Explorer', to: { type: 'explorer', key: null } as const },
+    { id: 'latest', label: 'Latest block', to: { type: 'block', key: '3007909' } as const, hidden: true },
+    { id: 'mempool', label: 'Mempool', to: { type: 'mempool', key: null } as const },
+    { id: 'richlist', label: 'Rich list', to: '/richlist' },
+  ];
+
+  it('is a labelled list of real links', () => {
+    const m = mount(<HubNav label="Explorer" items={items} current="mempool" />);
+    expect(m.container.querySelector('nav')?.getAttribute('aria-label')).toBe('Explorer');
+    const links = Array.from(m.container.querySelectorAll<HTMLAnchorElement>('a'));
+    expect(links.map((a) => a.textContent)).toEqual(['Explorer', 'Mempool', 'Rich list']);
+    expect(links.every((a) => a.getAttribute('href')?.startsWith('/'))).toBe(true);
+    m.unmount();
+  });
+
+  it('marks the page you are on, and only that one', () => {
+    const m = mount(<HubNav label="Explorer" items={items} current="mempool" />);
+    const current = Array.from(m.container.querySelectorAll('a[aria-current]'));
+    expect(current).toHaveLength(1);
+    expect(current[0]?.textContent).toBe('Mempool');
+    expect(current[0]?.getAttribute('aria-current')).toBe('page');
+    m.unmount();
+  });
+
+  it('marks nothing when the page is none of them, and leaves out the links that have nowhere to go', () => {
+    const m = mount(<HubNav label="Explorer" items={items} />);
+    expect(m.container.querySelector('a[aria-current]')).toBeNull();
+    expect(m.container.textContent).not.toContain('Latest block');
+    m.unmount();
+  });
+});
+
+describe('HubLink, HubTile and HubButton', () => {
+  it('HubLink is a link with a trailing glyph that a screen reader skips', () => {
+    const m = mount(<HubLink to="/richlist">Open the rich list</HubLink>);
+    const a = m.container.querySelector('a');
+    expect(a?.textContent).toBe('Open the rich list');
+    expect(a?.getAttribute('href')).toBe('/richlist');
+    expect(a?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    m.unmount();
+  });
+
+  it('HubTiles is a named nav of tiles; a tile is a link with a live line, and can be the emphasised one', () => {
+    const m = mount(
+      <HubTiles label="Quick links">
+        <HubTile icon={Box} title="Latest block" caption="Block 3,007,909" to="/block/3007909" />
+        <HubTile icon={Box} title="Rich list" caption="Top 10 hold 56%" to="/richlist" emphasis />
+      </HubTiles>,
+    );
+    expect(m.container.querySelector('nav')?.getAttribute('aria-label')).toBe('Quick links');
+    const tiles = Array.from(m.container.querySelectorAll('a.hub-tile'));
+    expect(tiles).toHaveLength(2);
+    expect(tiles[0]?.querySelector('.hub-tile__title')?.textContent).toBe('Latest block');
+    expect(tiles[0]?.querySelector('.hub-tile__caption')?.textContent).toBe('Block 3,007,909');
+    expect(tiles[0]?.getAttribute('data-emphasis')).toBeNull();
+    expect(tiles[1]?.getAttribute('data-emphasis')).toBe('true');
+    m.unmount();
+  });
+
+  it('a tile without a caption has no empty line under its title', () => {
+    const m = mount(<HubTile icon={Box} title="Supply" to="/supply" />);
+    expect(m.container.querySelector('.hub-tile__caption')).toBeNull();
+    m.unmount();
+  });
+
+  it('HubButton wears the kit button and still goes where the window manager says', () => {
+    const m = mount(
+      <HubButton variant="primary" icon={Box} to={{ type: 'block', key: '3007909' }}>
+        Latest block
+      </HubButton>,
+    );
+    const a = m.container.querySelector('a');
+    expect(a?.className).toContain('ui-button');
+    expect(a?.getAttribute('data-variant')).toBe('primary');
+    expect(a?.getAttribute('data-size')).toBe('md');
+    expect(a?.querySelector('.ui-button__label')?.textContent).toBe('Latest block');
+    if (a) click(a);
+    expect(nav.open).toHaveBeenCalledWith({ type: 'block', key: '3007909' });
+    m.unmount();
+  });
+});
