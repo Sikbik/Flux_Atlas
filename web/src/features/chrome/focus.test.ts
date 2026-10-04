@@ -24,6 +24,7 @@ describe('focusLabel', () => {
   it('names what is on the globe', () => {
     expect(focusLabel({ fleet: 0, watched: true }, 20)).toBe('Your 20 watched nodes on the globe');
     expect(focusLabel({ fleet: 0, watched: true }, 1)).toBe('Your watched node on the globe');
+    expect(focusLabel({ fleet: 0, watched: true }, 0)).toBe('Your watchlist on the globe');
     expect(focusLabel({ fleet: 50, watched: false }, 0)).toBe('A fleet of 50 nodes on the globe');
     expect(focusLabel({ fleet: 12, watched: true }, 3)).toBe(
       'Your 3 watched nodes and a fleet of 12 nodes on the globe',

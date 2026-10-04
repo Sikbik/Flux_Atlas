@@ -24,8 +24,15 @@ export function globeFocus(search: { sel?: unknown; watched?: unknown }): GlobeF
 /** What the pill says: "Your 20 watched nodes on the globe", "A fleet of 50 nodes on the globe". */
 export function focusLabel(f: GlobeFocus, watchedCount: number): string {
   const parts: string[] = [];
-  if (f.watched)
-    parts.push(watchedCount === 1 ? 'Your watched node' : `Your ${formatInt(watchedCount)} watched nodes`);
+  if (f.watched) {
+    parts.push(
+      watchedCount === 0
+        ? 'Your watchlist'
+        : watchedCount === 1
+          ? 'Your watched node'
+          : `Your ${formatInt(watchedCount)} watched nodes`,
+    );
+  }
   if (f.fleet > 0) parts.push(`${parts.length ? 'a' : 'A'} fleet of ${formatInt(f.fleet)} nodes`);
   return `${parts.join(' and ')} on the globe`;
 }

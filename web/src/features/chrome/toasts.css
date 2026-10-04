@@ -15,8 +15,9 @@
   gap: 10px;
   width: 352px;
   pointer-events: none;
-  /* A docked window owns the right edge: the stack steps in beside it (a transform, never `right`). */
-  translate: calc(var(--toast-shift) * -1) 0;
+  /* A docked window owns the right edge: the stack steps in beside it (a transform, never `right`). A globe
+     focus pill under the aim strip (GlobeFocus.tsx) takes the stack's first row: it steps down past it. */
+  translate: calc(var(--toast-shift) * -1) var(--globe-focus-room, 0px);
   transition: translate var(--dur-slower) var(--ease-out);
 }
 

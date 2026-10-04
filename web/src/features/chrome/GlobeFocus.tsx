@@ -4,12 +4,15 @@
 
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Globe, X } from 'lucide-react';
-import { useMemo } from 'react';
+import { useLayoutEffect, useMemo } from 'react';
 import { useUi } from '../../store/ui';
 import { Kbd } from '../../ui';
 import { useAimPlacement } from './AimStrip';
 import { focusLabel, globeFocus } from './focus';
 import './globefocus.css';
+
+/** How far the toast stack steps down while the pill sits under the aim strip: its 34 px and 8 px of air. */
+const FOCUS_ROOM = 42;
 
 export function GlobeFocus({ inline = false }: { inline?: boolean }) {
   const search = useRouterState({ select: (s) => s.location.search as { sel?: unknown; watched?: unknown } });
@@ -17,6 +20,17 @@ export function GlobeFocus({ inline = false }: { inline?: boolean }) {
   const watchedCount = useUi((s) => s.watched.length);
   const aim = useAimPlacement();
   const navigate = useNavigate();
+  // Under the aim strip the pill takes the row where the toast stack starts: the stack steps down past it
+  // (toasts.css reads the room) for as long as the pill is there.
+  const below = !inline && focus !== null && aim.shown;
+  useLayoutEffect(() => {
+    if (!below) return;
+    const root = document.documentElement;
+    root.style.setProperty('--globe-focus-room', `${FOCUS_ROOM}px`);
+    return () => {
+      root.style.removeProperty('--globe-focus-room');
+    };
+  }, [below]);
   if (!focus) return null;
   const clear = () =>
     void navigate({
@@ -29,7 +43,7 @@ export function GlobeFocus({ inline = false }: { inline?: boolean }) {
       className="globefocus"
       role="status"
       data-inline={inline || undefined}
-      data-below-aim={!inline && aim.shown ? '' : undefined}
+      data-below-aim={below ? '' : undefined}
       style={inline ? undefined : ({ '--aim-x': `${aim.centre}px` } as React.CSSProperties)}
     >
       <Globe className="globefocus-i" size={14} strokeWidth={1.75} aria-hidden="true" />
