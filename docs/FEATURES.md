@@ -61,6 +61,20 @@ typical), with no layout jank.
 
 ## 3. Node inspector
 
+**Landing (`/nodes`, what the Nodes launcher opens):** the network node by node in one window, maximizable and phone
+friendly. Search in place for a node, a host or a provider (the palette's resolver). A hero with the confirmed count,
+one hexagon for each percent of the nodes cut by tier, and the health of the network (healthy, at risk, unreachable)
+over a row of figures (hosts, countries, providers, nodes waiting to confirm, nodes on the DoS list). Then the **top
+node operators** leaderboard (also at `/nodes#operators`), ranked by ZelID or by payment address: nodes and share,
+the tier mix, countries and providers with where most of the nodes sit, FLUX a day as an estimate, health with the
+problems in words, and a link to the wallet most of the nodes are paid to. Live activity (nodes joined and left over
+a day and a week, marked "at least" while the server has only been counting since it started, and the latest node
+events); the payment queue at a glance (the next node, a turn's length and a day's yield per tier); where the nodes
+are, who hosts them and which FluxOS they run, each with a way into analytics; how decentralized the network is (the
+Nakamoto coefficient for countries, providers and operators, and the concentration index, said in words); node age;
+how the nodes benchmark per tier; and the newest nodes. Each section loads, fails, waits for the server's first fill
+and empties on its own, and holds its size while it does.
+
 Identity (collateral outpoint, IP:port, tier, payment address → operator view, ZelID, pubkey), location (city,
 region, country, provider/ASN, hosting flags, mini-map), **payment queue** (position in tier, ETA to next payout,
 last paid, payment history from our blocks, earnings/day estimate), **lifecycle** (started, joined, heartbeat
@@ -73,6 +87,16 @@ instances, co-hosted nodes (same IP), blocks produced by this node, recent event
 node in WatchProbe and raises its events above the animation budget.
 
 ## 4. App inspector
+
+**Landing (`/apps`, what the Apps launcher opens):** the app network in one window, maximizable and phone friendly.
+Search for an app in place. A hero with the number of apps and what they lock of the network's CPU, memory and storage
+(a floor, because enterprise apps keep their size private), over instances running, owners, enterprise apps,
+countries and apps per owner. The biggest apps as a treemap by instances running or by footprint beside the ranked
+list; the top owners (a row opens in place with the owner's biggest apps); where the instances run, by country, with a
+way to show a country's nodes on the globe; the apps registered and updated each day for 90 days (with its numbers as
+a table); what apps pay for their register and update messages over a day, a week and a month; the newest apps; and
+the apps about to expire (the time is an estimate, the block count is exact). Each section loads, fails, waits for the
+server's first fill and empties on its own, and holds its size while it does.
 
 Header (name, description, owner, spec version, registered height/date, expiry countdown with the PoN block
 conversion, instances running / target, enterprise flag), constellation on the globe (instances linked, with a
@@ -87,6 +111,16 @@ correct across versions v2–v8; the constellation animates live instance change
 
 ## 5. Explorer
 
+- **Landing (`/explorer`, what the Explorer launcher opens):** the chain live in one window, maximizable and phone
+  friendly. A hero with the height and its pace (block time, transactions and fees so far today against the same hours
+  yesterday, pending, nodes) over a tape of the last hundred blocks (each bar cut by kind, late blocks marked, the next
+  block filling as the 30 seconds pass) with a clear "Latest block" action; the latest blocks; the mempool now; who
+  holds the supply (the share of the top ten, the five largest addresses with their labels, and the movers over a day,
+  a week or a month) with a way to the whole rich list; the long view from `GET /chain/daily` (transactions, fees,
+  FLUX moved, blocks and supply over 30 days to two years, linear or log, with the numbers as a table); the supply; search
+  in place with the palette's resolver; quick links. Each section loads, fails, waits for the server's first fill and
+  empties on its own, and every chart has its numbers as text. The explorer views share a small nav in their headers
+  so the rich list, the mempool and the supply are one click apart.
 - **Search omnibox** (ARCHITECTURE section 6 `/search`): height, block hash, txid, t1/t3 address, shielded address
   (explained), IP(:port), collateral outpoint (any form), app name, country, provider, and version. Typed result
   chips; Enter goes to the best hit.
@@ -133,6 +167,8 @@ Three rings (one per tier), nodes ordered by queue position, a cursor sweeping o
 next payee, the paid node animating to the back. Search or click any node to see its position and ETA.
 
 ## 8. Operator view & watchlist
+
+The top operators leaderboard on the Nodes landing opens any operator here.
 
 Enter one or more addresses/ZelIDs (stored locally; shareable URL) → fleet map highlight, status grid,
 next payouts with ETAs, earnings (24 h / 7 d / 30 d), expiry-risk alerts, version stragglers, hardware mix, apps
