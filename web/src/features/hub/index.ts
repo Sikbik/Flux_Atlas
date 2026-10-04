@@ -1,5 +1,17 @@
 // The hub family: the shared layout of the Explorer, Nodes and Apps landings. See Hub.tsx.
 
+export {
+  appsOverviewQuery,
+  FILL_RETRIES,
+  isFilling,
+  nodesOverviewQuery,
+  OPERATORS_LIMIT,
+  operatorsQuery,
+  retryWhileFilling,
+  useAppsOverview,
+  useNodesOverview,
+  useOperators,
+} from './api';
 export { Hub, HubGrid, type HubSpan, HubStack } from './Hub';
 export { HubFigure, type HubFigureProps, HubFigures, HubHero, type HubHeroProps } from './HubHero';
 export {

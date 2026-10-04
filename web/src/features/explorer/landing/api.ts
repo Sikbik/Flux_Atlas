@@ -7,8 +7,11 @@ import type { ChainDailyDto } from '../../../api/generated/ChainDailyDto';
 import type { RichListDto } from '../../../api/generated/RichListDto';
 import type { RichMoversDto } from '../../../api/generated/RichMoversDto';
 import type { RichMoversWindow } from '../../../api/generated/RichMoversWindow';
-import { getJson, isApiError } from '../../../api/http';
+import { getJson } from '../../../api/http';
 import { qk } from '../../../api/queryKeys';
+import { isFilling, retryWhileFilling } from '../../hub/api';
+
+export { isFilling };
 
 const SEC = 1000;
 const MIN = 60 * SEC;
@@ -24,14 +27,6 @@ export type DailyRange = '30' | '90' | '365' | 'all';
 /** The server refreshes the series every 12 hours: asking more than once in a while only repeats the answer. */
 const DAILY_STALE_MS = 30 * MIN;
 
-/** How many times a start-up 503 is asked again (the server says to wait 5 s, and fills in about 30 s). */
-const FILL_RETRIES = 12;
-
-/** True for the answer a server gives before its first fill of the daily series: 503 with `Retry-After`. */
-export function isFilling(error: unknown): boolean {
-  return isApiError(error) && error.status === 503;
-}
-
 export const chainDailyKey = (range: DailyRange) => [...qk.all(), 'chain-daily', range] as const;
 
 export const chainDailyQuery = (range: DailyRange) =>
@@ -41,8 +36,7 @@ export const chainDailyQuery = (range: DailyRange) =>
     staleTime: DAILY_STALE_MS,
     // Before its first fill the server answers 503 and a Retry-After of 5 s: that is waiting, not failing, so the
     // query keeps asking (at the pace the server names) and the panel says the history is being read.
-    retry: (count, error) =>
-      isFilling(error) ? count < FILL_RETRIES : count < 3 && (!isApiError(error) || error.retryable),
+    retry: retryWhileFilling,
     // A new range keeps the last chart on screen, dimmed, until its answer arrives.
     placeholderData: keepPreviousData,
   });
