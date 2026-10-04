@@ -126,7 +126,6 @@ called out in the hand-back.
   - `node_ids` and `node_ids_rev` are never pruned (about +80 MB a year), and `app_events` is kept forever (about +150 MB a year).
 - **Visual QA (Q1, deferred).** The moon dips under the block rail at high-latitude poses; the phone "You" tab IA and the aim strip during archive; About link placeholders; the palette's height jump on first open.
 - **Outpoints.** Search hits are still keyed by numeric id, and `PayoutDto.node` and app instances carry no outpoint. A fresh instance shows start-list diffs, and its mesh shrinks.
-- **e2e hygiene.** Close each test's page in a `finally`. A failed route check otherwise leaves a SwiftShader globe rendering, which slows every later test up to five times and can time out the context-loss test.
 - **Wallet follow-ups.** A multi-wallet portfolio (several addresses in localStorage) was not built. Not verified: Safari and Firefox, a real-GPU "high" tier. The explorer address hero clips a 10M balance on a phone (pre-existing).
 - **Hub follow-ups.** Move the hub queries (`hub/api.ts`, `hub/apps/api.ts`, the Explorer landing hooks) into `api/endpoints.ts` and `queries.ts`; fold `nodes/Redact` and `apps/ghost` into one part; the Versions panel grows about 30 px on a phone past three versions. Live joins, leaves and new apps arriving are covered by unit tests only.
 - **Deploy (needs the user's go-ahead).** Re-read the live spec, build `deploy/Dockerfile`, push `littlestache/flux-atlas:latest`, and update the `atlas` app.

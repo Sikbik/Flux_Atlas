@@ -19,7 +19,7 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { after, before, test } from 'node:test';
+import { after, afterEach, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
@@ -143,6 +143,12 @@ after(async () => {
   await browser?.close();
   stop(preview);
   stop(demo);
+});
+
+// A test that fails before its own close leaves its page open, and a SwiftShader globe left rendering slows every
+// later test up to five times (enough to time out the context-loss test). Whatever a test leaves open is closed here.
+afterEach(async () => {
+  for (const c of browser?.contexts() ?? []) await c.close().catch(() => {});
 });
 
 async function open(path) {
@@ -705,8 +711,12 @@ test('the boot veil says so when Atlas does not answer: Retry gets through once 
     assert.deepEqual(buttons, ['Retry', 'Continue without data']);
     // The shell waits behind the veil: nothing under it takes focus.
     assert.equal(await page.locator('.shell').getAttribute('data-boot'), 'running');
+    // Atlas's own reconnect can get through the moment the server is back and take the veil, Retry with it, away
+    // first. So Retry is made ready while the server still refuses, and pressed the instant it answers.
+    const retry = page.locator('.boot-fail .boot-btn:not([data-quiet])');
+    await retry.click({ trial: true });
     state.blocked = false;
-    await page.click('.boot-fail .boot-btn:not([data-quiet])');
+    await retry.click({ force: true });
     await page.waitForFunction(() => globalThis.__atlas?.store?.loaded === true, null, { timeout: 60_000 });
     await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
       timeout: 20_000,
