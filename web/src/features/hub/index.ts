@@ -3,6 +3,7 @@
 export {
   appsOverviewQuery,
   FILL_RETRIES,
+  type HubQuery,
   isFilling,
   nodesOverviewQuery,
   OPERATORS_LIMIT,

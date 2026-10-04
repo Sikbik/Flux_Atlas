@@ -6,8 +6,9 @@ import { Box } from 'lucide-react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/http';
 import { click, mount } from '../../ui/internal/testing';
-import { balancedColumns, HubFigure, HubFigures, HubHero } from './HubHero';
-import { HubButton, HubLink, HubTile, HubTiles } from './HubLink';
+import { balancedColumns, rowPlan } from './columns';
+import { HubFigure, HubFigures, HubHero } from './HubHero';
+import { HubButton, HubLink, HubTile, HubTiles, tileLayout } from './HubLink';
 import { HubNav } from './HubNav';
 import { HubPanel } from './HubPanel';
 import { LbBar, Leaderboard } from './Leaderboard';
@@ -385,6 +386,69 @@ describe('HubLink, HubTile and HubButton', () => {
   });
 });
 
+describe('HubTiles', () => {
+  const FIVE = ['One', 'Two', 'Three', 'Four', 'Five'];
+
+  it('hands the list its columns and each tile its span, and does not count one that is not drawn', () => {
+    const m = mount(
+      <HubTiles label="Quick links">
+        <HubTile icon={Box} title="One" to="/a" />
+        <HubTile icon={Box} title="Two" to="/b" />
+        {null}
+        <HubTile icon={Box} title="Three" to="/c" />
+        <HubTile icon={Box} title="Four" to="/d" />
+        <HubTile icon={Box} title="Five" to="/e" />
+      </HubTiles>,
+    );
+    const ul = m.container.querySelector<HTMLElement>('ul.hub-tiles');
+    expect(ul?.style.getPropertyValue('--tiles-s')).toBe('2');
+    expect(ul?.style.getPropertyValue('--tiles-l')).toBe('6');
+    expect(ul?.style.getPropertyValue('--tiles-xl')).toBe('5');
+    const items = [...m.container.querySelectorAll<HTMLElement>('li.hub-tiles__item')];
+    expect(items).toHaveLength(5);
+    expect(items.map((li) => li.style.getPropertyValue('--span-m'))).toEqual(['2', '2', '2', '3', '3']);
+    expect(items.map((li) => li.style.getPropertyValue('--span-s'))).toEqual(['1', '1', '1', '1', '2']);
+    expect(items.map((li) => li.style.getPropertyValue('--span-xl'))).toEqual(['1', '1', '1', '1', '1']);
+    m.unmount();
+  });
+
+  it('puts the first tile first on a phone when it is the emphasised one', () => {
+    const m = mount(
+      <HubTiles label="Quick links">
+        {FIVE.map((title, i) => (
+          <HubTile key={title} icon={Box} title={title} to={`/${i}`} emphasis={i === 0} />
+        ))}
+      </HubTiles>,
+    );
+    const items = [...m.container.querySelectorAll<HTMLElement>('li.hub-tiles__item')];
+    expect(items.map((li) => li.style.getPropertyValue('--span-s'))).toEqual(['2', '1', '1', '1', '1']);
+    m.unmount();
+  });
+
+  it('keeps the tiles in a list of items, each holding its own link', () => {
+    const m = mount(
+      <HubTiles label="Quick links">
+        <HubTile icon={Box} title="One" to="/a" />
+        <HubTile icon={Box} title="Two" to="/b" />
+      </HubTiles>,
+    );
+    const items = m.container.querySelectorAll('ul > li.hub-tiles__item > a.hub-tile');
+    expect(items).toHaveLength(2);
+    expect(m.container.querySelector('nav')?.getAttribute('aria-label')).toBe('Quick links');
+    m.unmount();
+  });
+
+  it("puts a space between a tile's title and its line so a screen reader does not read them as one word", () => {
+    const m = mount(
+      <HubTiles label="Quick links">
+        <HubTile icon={Box} title="Top owners" caption="47 owners" to="/apps#owners" />
+      </HubTiles>,
+    );
+    expect(m.container.querySelector('.hub-tile__text')?.textContent).toBe('Top owners 47 owners');
+    m.unmount();
+  });
+});
+
 describe('balancedColumns', () => {
   it('lays five figures five across, or three and two, never four and one', () => {
     expect(balancedColumns(5, 5)).toBe(5);
@@ -412,6 +476,75 @@ describe('balancedColumns', () => {
   it('is one column for one figure or none', () => {
     expect(balancedColumns(1, 5)).toBe(1);
     expect(balancedColumns(0, 5)).toBe(1);
+  });
+});
+
+describe('rowPlan', () => {
+  it('is one row of equal things when they all fit across', () => {
+    expect(rowPlan(5, 5)).toEqual({ sub: 5, spans: [1, 1, 1, 1, 1] });
+    expect(rowPlan(3, 3)).toEqual({ sub: 3, spans: [1, 1, 1] });
+  });
+
+  it('shares a last row of fewer things evenly: three over two is a grid of six', () => {
+    expect(rowPlan(5, 3)).toEqual({ sub: 6, spans: [2, 2, 2, 3, 3] });
+    expect(rowPlan(7, 4)).toEqual({ sub: 12, spans: [3, 3, 3, 3, 4, 4, 4] });
+  });
+
+  it('fills a last row of one thing, and puts it last by default', () => {
+    expect(rowPlan(5, 2)).toEqual({ sub: 2, spans: [1, 1, 1, 1, 2] });
+  });
+
+  it('puts the single thing first when asked to lead, and only in two columns', () => {
+    expect(rowPlan(5, 2, true)).toEqual({ sub: 2, spans: [2, 1, 1, 1, 1] });
+    expect(rowPlan(4, 2, true)).toEqual({ sub: 2, spans: [1, 1, 1, 1] });
+    expect(rowPlan(5, 3, true)).toEqual({ sub: 6, spans: [2, 2, 2, 3, 3] });
+  });
+
+  it('is empty for nothing and one column for one thing', () => {
+    expect(rowPlan(0, 3)).toEqual({ sub: 1, spans: [] });
+    expect(rowPlan(1, 3)).toEqual({ sub: 1, spans: [1] });
+  });
+
+  it('fills every row at every count and width: each row spans the whole grid', () => {
+    for (let n = 1; n <= 12; n++) {
+      for (let max = 1; max <= 6; max++) {
+        for (const lead of [false, true]) {
+          const plan = rowPlan(n, balancedColumns(n, max), lead);
+          expect(plan.spans).toHaveLength(n);
+          let row = 0;
+          for (const span of plan.spans) {
+            row += span;
+            expect(row).toBeLessThanOrEqual(plan.sub);
+            if (row === plan.sub) row = 0;
+          }
+          expect(row).toBe(0);
+        }
+      }
+    }
+  });
+});
+
+describe('tileLayout', () => {
+  const band = (layout: ReturnType<typeof tileLayout>, id: string) => layout.find((b) => b.band === id);
+
+  it('lays five tiles three over two where five do not fit, and five across where they do', () => {
+    const layout = tileLayout(5);
+    expect(band(layout, 's')).toEqual({ band: 's', sub: 2, spans: [1, 1, 1, 1, 2] });
+    expect(band(layout, 'm')).toEqual({ band: 'm', sub: 6, spans: [2, 2, 2, 3, 3] });
+    expect(band(layout, 'l')).toEqual({ band: 'l', sub: 6, spans: [2, 2, 2, 3, 3] });
+    expect(band(layout, 'xl')).toEqual({ band: 'xl', sub: 5, spans: [1, 1, 1, 1, 1] });
+    expect(band(layout, 'xxl')).toEqual({ band: 'xxl', sub: 5, spans: [1, 1, 1, 1, 1] });
+  });
+
+  it('lays four tiles two and two where they cannot be four across', () => {
+    const layout = tileLayout(4);
+    expect(band(layout, 'm')?.sub).toBe(2);
+    expect(band(layout, 'l')?.sub).toBe(4);
+  });
+
+  it('leads with the first tile on a phone when it is the one the reader came for', () => {
+    expect(band(tileLayout(5, true), 's')?.spans).toEqual([2, 1, 1, 1, 1]);
+    expect(band(tileLayout(5, true), 'm')?.spans).toEqual([2, 2, 2, 3, 3]);
   });
 });
 

@@ -3,6 +3,7 @@
 
 import { Children, type ComponentPropsWithoutRef, type CSSProperties, type ReactNode } from 'react';
 import { cx, Skeleton } from '../../ui';
+import { balancedColumns } from './columns';
 import './hub.css';
 
 export interface HubHeroProps extends Omit<ComponentPropsWithoutRef<'section'>, 'title'> {
@@ -67,25 +68,6 @@ export function HubHero({
       {children ? <div className="hub-hero__figs">{children}</div> : null}
     </section>
   );
-}
-
-/**
- * The number of columns, no more than `max`, that lays `n` figures out with the fewest holes in the last row. Five
- * figures are five across or three and two, never four and one; four are four across or two and two.
- */
-export function balancedColumns(n: number, max: number): number {
-  if (n <= 1) return 1;
-  let best = 1;
-  let holes = Number.POSITIVE_INFINITY;
-  for (let c = Math.min(n, Math.max(1, max)); c >= 2; c--) {
-    const left = Math.ceil(n / c) * c - n;
-    // Strictly fewer holes wins, so of two equal layouts the wider one is kept.
-    if (left < holes) {
-      best = c;
-      holes = left;
-    }
-  }
-  return best;
 }
 
 /**

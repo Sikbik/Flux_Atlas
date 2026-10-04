@@ -223,9 +223,13 @@
 
 /* ---- the go-to tiles ------------------------------------------------------------------------------------ */
 
+/* HubTiles hands the grid its columns as custom properties, one set per band of the hub's width: how many columns the
+   grid is cut into (`--tiles-*`), and how many of them each tile spans (`--span-*`, on the item). They are chosen by
+   how many tiles there are so no row is one tile beside a hole: five tiles are three over two, the two sharing the
+   row evenly. A tile is at least 178 px wide, which is what the band edges leave it. */
 .hub-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 178px), 1fr));
+  grid-template-columns: repeat(var(--tiles-s, 2), minmax(0, 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
@@ -234,7 +238,48 @@
 
 .hub-tiles__item {
   display: flex;
+  grid-column: span var(--span-s, 1);
   min-width: 0;
+}
+
+@container hub (min-width: 600px) {
+  .hub-tiles {
+    grid-template-columns: repeat(var(--tiles-m, 3), minmax(0, 1fr));
+  }
+
+  .hub-tiles__item {
+    grid-column: span var(--span-m, 1);
+  }
+}
+
+@container hub (min-width: 784px) {
+  .hub-tiles {
+    grid-template-columns: repeat(var(--tiles-l, 4), minmax(0, 1fr));
+  }
+
+  .hub-tiles__item {
+    grid-column: span var(--span-l, 1);
+  }
+}
+
+@container hub (min-width: 970px) {
+  .hub-tiles {
+    grid-template-columns: repeat(var(--tiles-xl, 5), minmax(0, 1fr));
+  }
+
+  .hub-tiles__item {
+    grid-column: span var(--span-xl, 1);
+  }
+}
+
+@container hub (min-width: 1156px) {
+  .hub-tiles {
+    grid-template-columns: repeat(var(--tiles-xxl, 6), minmax(0, 1fr));
+  }
+
+  .hub-tiles__item {
+    grid-column: span var(--span-xxl, 1);
+  }
 }
 
 .hub-tile {
@@ -357,8 +402,8 @@
   transform: none;
 }
 
-/* On a phone two tiles share a row: the arrow gives way, the glyph and the padding shrink, the words may wrap, and an
-   odd tile out takes the whole row instead of leaving a gap. */
+/* On a phone two tiles share a row: the arrow gives way, the glyph and the padding shrink, and the words may wrap
+   (an odd tile out takes the whole row: see the columns above). */
 @container hub (max-width: 599px) {
   .hub-tiles {
     gap: var(--space-3);
@@ -383,10 +428,6 @@
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
-  }
-
-  .hub-tiles__item:nth-child(odd):last-child {
-    grid-column: 1 / -1;
   }
 }
 
