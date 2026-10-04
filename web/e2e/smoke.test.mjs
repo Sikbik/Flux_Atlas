@@ -787,6 +787,52 @@ test('Skip to content is the first tab stop, hidden until focused, and lands in 
   assert.deepEqual(pageErrors, []);
 });
 
+test('the Explorer, Nodes and Apps launchers open their landings; the Explorer leads on to the latest block and the rich list', {
+  timeout: 150_000,
+  skip: skipExternal,
+}, async () => {
+  const page = await open('/');
+  await page.waitForFunction(globeReady, null, { timeout: 60_000 });
+  await page.waitForFunction(() => document.querySelector('.shell')?.dataset.boot === 'done', null, {
+    timeout: 30_000,
+  });
+  const path = () => page.evaluate(() => location.pathname);
+  const count = (type) => page.locator(`.wm-window[data-window-type="${type}"]`).count();
+
+  // The dock's Explorer launcher opens the landing, not a block.
+  await page.click('.dk[data-launcher="explorer"]');
+  await page.waitForFunction(() => location.pathname === '/explorer', null, { timeout: 10_000 });
+  await page.waitForSelector('.wm-window[data-window-type="explorer"] .hub-hero', { timeout: 60_000 });
+  assert.equal(await count('block'), 0, 'no block window opened');
+  // Its sections load on their own against the demo server; the rich list card has the way to the whole list.
+  await page.waitForSelector('.wm-window[data-window-type="explorer"] #ex-rich', { timeout: 30_000 });
+  await page.waitForSelector('.wm-window[data-window-type="explorer"] .ex-blk', { timeout: 30_000 });
+
+  // "Latest block" opens the tip beside the landing, which stays.
+  await page.click('.wm-window[data-window-type="explorer"] .hub-hero a.hub-button');
+  await page.waitForSelector('.wm-window[data-window-type="block"]', { timeout: 15_000 });
+  assert.equal(await count('explorer'), 1, 'the landing stays open beside the block');
+
+  // The block is in front now, so the launcher raises the landing.
+  await page.click('.dk[data-launcher="explorer"]');
+  await page.waitForFunction(() => location.pathname === '/explorer', null, { timeout: 10_000 });
+
+  // The rich list is one click from the landing (it is the lit tile).
+  await page.click('.wm-window[data-window-type="explorer"] .hub-tile[data-emphasis]');
+  await page.waitForSelector('.wm-window[data-window-type="richlist"]', { timeout: 15_000 });
+  assert.match(await path(), /^\/richlist/);
+
+  // Nodes and Apps open their own landings.
+  await page.click('.dk[data-launcher="nodes"]');
+  await page.waitForFunction(() => location.pathname === '/nodes', null, { timeout: 10_000 });
+  await page.waitForSelector('.wm-window[data-window-type="nodes"] .hub-hero', { timeout: 60_000 });
+  await page.click('.dk[data-launcher="apps"]');
+  await page.waitForFunction(() => location.pathname === '/apps', null, { timeout: 10_000 });
+  await page.waitForSelector('.wm-window[data-window-type="apps"] .hub-hero', { timeout: 60_000 });
+  await page.close();
+  assert.deepEqual(pageErrors, []);
+});
+
 test('watched-node alerts start from the shell once the boot is over and look up what is watched; the Operator launcher opens the watchlist', {
   timeout: 150_000,
 }, async () => {
