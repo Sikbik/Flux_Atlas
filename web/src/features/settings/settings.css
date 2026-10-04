@@ -100,8 +100,15 @@
 }
 
 /* The borders setting sits under the look cards, as part of the same Globe section. */
-.set-art-grid + .set-field {
+.set-art-grid + .set-field,
+.set-art-note + .set-field {
   margin-top: var(--space-5);
+}
+
+/* Why the globe shows Holo when another look is chosen (the governor stepped down to keep up). */
+.set-art-note {
+  margin-top: var(--space-4);
+  text-wrap: pretty;
 }
 
 .set-art input {

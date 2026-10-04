@@ -242,8 +242,11 @@ export interface EngineEvents {
   frame: EngineStats;
   /** The camera came to rest on a new cluster hub list. Used by hub labels. */
   ready: undefined;
-  /** Quality was changed by the auto governor. */
-  quality: { level: string; dpr: number; scale: number };
+  /**
+   * Quality was changed by the auto governor (or it was reset). `forcedLite`: it stepped down to the lowest tier from a
+   * higher one, where the globe draws its lite look whatever the art style says.
+   */
+  quality: { level: string; dpr: number; scale: number; forcedLite: boolean };
   /** Something in the event feed was suppressed by the visual budget. */
   budget: { suppressed: number };
   /** A payout beam landed on its payee. */

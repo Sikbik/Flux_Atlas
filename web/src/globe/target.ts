@@ -65,6 +65,10 @@ export interface GlobeTarget {
   readonly reduced: boolean;
   /** The home zoom: the camera range (globe radii) of the home view for this viewport. */
   readonly homeRange: number;
+  /** The quality governor has stepped down to the lite tier from a higher one: the lite look is drawn for now. */
+  readonly forcedLite: boolean;
+  /** Starts the quality governor over from the device's ceiling (a look the viewer picks is honored at once). */
+  resetGovernor(): void;
 
   // ---- data ----
   setNodes(cols: NodeColumns, opts?: { animate?: boolean; intro?: boolean }): void;

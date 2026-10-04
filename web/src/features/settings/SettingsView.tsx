@@ -8,6 +8,7 @@ import { useRouter, useRouterState } from '@tanstack/react-router';
 import { Bell, BellOff, Play } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useConnection, useRuntime } from '../../app/context';
+import { useGlobeEngine } from '../../globe';
 import { formatUtcTime } from '../../lib/format';
 import { useNow } from '../../lib/useClock';
 import {
@@ -81,9 +82,23 @@ function GlobeBorders() {
   );
 }
 
+/** Whether the governor has stepped the globe down to its lite look (auto performance, a device that fell behind). */
+function useForcedLite(): boolean {
+  const engine = useGlobeEngine();
+  const [forced, setForced] = useState(() => engine?.forcedLite ?? false);
+  useEffect(() => {
+    if (!engine) return;
+    setForced(engine.forcedLite);
+    return engine.on('quality', (q) => setForced(q.forcedLite));
+  }, [engine]);
+  return forced;
+}
+
 function GlobeArt() {
   const art = useUi((s) => s.globeArt);
   const setArt = useUi((s) => s.setGlobeArt);
+  const engine = useGlobeEngine();
+  const forcedLite = useForcedLite();
   const choose = useCallback(
     (a: GlobeArtPref) => {
       setArt(a);
@@ -100,7 +115,15 @@ function GlobeArt() {
             {/* The picture lights its edge under the pointer (the motion language's Charge); the radio sits
                 inside it, so a hover and the keyboard land on the same thing. */}
             <span className="set-art-frame" data-fx="charge">
-              <input type="radio" name="globe-art" value={a} checked={art === a} onChange={() => choose(a)} />
+              {/* A click on the look already chosen still counts: it brings that look back from the lite one. */}
+              <input
+                type="radio"
+                name="globe-art"
+                value={a}
+                checked={art === a}
+                onChange={() => choose(a)}
+                onClick={() => engine?.resetGovernor()}
+              />
               <img src={ARTS[a].src} alt="" width={176} height={110} loading="lazy" draggable={false} />
             </span>
             <span className="set-art-name">{ARTS[a].name}</span>
@@ -108,6 +131,12 @@ function GlobeArt() {
           </label>
         ))}
       </fieldset>
+      {forcedLite && art !== 'holo' ? (
+        <p className="set-field-hint set-art-note" role="status">
+          Holo for now: the globe stepped down to keep up with this device. {ARTS[art].name} comes back once
+          frames are steady, or pick a look to switch now.
+        </p>
+      ) : null}
       <GlobeBorders />
     </Section>
   );

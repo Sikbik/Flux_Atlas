@@ -14,6 +14,7 @@ import { Controls } from './controls';
 import { type EffectSink, Effects } from './effects';
 import { computeFraming, DEFAULT_FRAMING, type Framing, type FramingSpec, type Rect } from './framing';
 import { Fx } from './fx';
+import { Governor, type Tier } from './governor';
 import { Atmosphere } from './layers/atmosphere';
 import type { GlobeBody } from './layers/body';
 import { BorderLayer } from './layers/borders';
@@ -242,6 +243,8 @@ export class GlobeEngine {
   private cssH = 1;
   private dpr = 1;
   private renderScale = 1;
+  /** Steps the render scale and the tier on sustained slow frames, and back (auto quality only; governor.ts). */
+  private readonly governor: Governor;
   private resizeDirty = true;
   private readonly ro: ResizeObserver | null;
 
@@ -277,9 +280,6 @@ export class GlobeEngine {
   };
   private fpsFrames = 0;
   private fpsT = 0;
-  private slowT = 0;
-  private calmT = 0;
-  private lastDowngrade = -99;
   private fade = 0;
   /** The director's own fade (reduced-motion ambient cross-fades between still compositions), 0 black .. 1 clear. */
   private sceneFade = 1;
@@ -352,6 +352,7 @@ export class GlobeEngine {
     this.artDirection = opts.artDirection ?? 'marble';
     this.qualityLevel = opts.quality ?? 'auto';
     this.profile = resolveQuality(this.qualityLevel);
+    this.governor = new Governor(this.profile.name);
     this.effects = { ...DEFAULT_EFFECTS, ...(opts.effects ?? {}) };
     this.designTokens = { ...(opts.tokens ?? {}) };
     this.tokens = defaultTokens(this.artDirection, this.designTokens);
@@ -611,12 +612,45 @@ export class GlobeEngine {
 
   setQuality(level: QualityLevel): void {
     this.qualityLevel = level;
-    this.profile = resolveQuality(level);
+    this.applyTier(resolveQuality(level).name);
+    this.governor.reset(this.profile.name);
+    this.renderScale = 1;
+    this.resizeDirty = true;
+  }
+
+  /**
+   * Starts the governor over from the device's ceiling at full scale (auto quality only), as when the viewer picks a
+   * look: a step down to the lite tier is never left standing against what the viewer asked for. A machine that is
+   * really too slow steps down again.
+   */
+  resetGovernor(): void {
+    if (this.qualityLevel !== 'auto') return;
+    this.applyGovernorStep(this.governor.reset());
+  }
+
+  /** The governor has stepped down to the lite tier from a higher one: the globe draws its lite look for now. */
+  get forcedLite(): boolean {
+    return this.qualityLevel === 'auto' && this.governor.forcedLite;
+  }
+
+  /** Puts a quality tier's profile in place (the moon, the atmosphere, the state lines follow it). */
+  private applyTier(tier: Tier): void {
+    this.profile = PROFILES[tier];
     this.moon.set({ lite: this.profile.moonLite });
     this.atmosphere.setSteps(this.profile.atmoSteps);
     this.borders.setStatesAllowed(this.profile.name !== 'low');
-    this.renderScale = 1;
+  }
+
+  private applyGovernorStep(step: { tier: Tier; scale: number }): void {
+    if (step.tier !== this.profile.name) this.applyTier(step.tier);
+    this.renderScale = step.scale;
     this.resizeDirty = true;
+    this.emit('quality', {
+      level: step.tier,
+      dpr: this.dpr,
+      scale: step.scale,
+      forcedLite: this.governor.forcedLite,
+    });
   }
 
   setMode(mode: EngineMode, opts: AmbientOptions = {}): void {
@@ -3144,41 +3178,11 @@ export class GlobeEngine {
     s.suppressed = this.choreo.suppressed;
     this.renderer.info.reset();
 
-    // Dynamic resolution governor (auto quality only): step the render scale down on sustained
-    // slow frames, and probe back up slowly when frames are comfortably fast.
+    // The quality governor (auto quality only, governor.ts): only frames the page drew are evidence, and a long gap
+    // between two of them is a stall, not a slow frame.
     if (this.qualityLevel === 'auto' && !this.hidden) {
-      const ms = Math.min(dtRaw * 1000, 200);
-      if (ms > 19.5) {
-        this.slowT += dtRaw;
-        this.calmT = 0;
-      } else {
-        this.calmT += dtRaw;
-        this.slowT = Math.max(0, this.slowT - dtRaw * 0.5);
-      }
-      if (this.slowT > 1.5 && this.renderScale > 0.56) {
-        this.renderScale = Math.max(0.55, this.renderScale - 0.1);
-        this.slowT = 0;
-        this.lastDowngrade = this.time;
-        this.resizeDirty = true;
-        this.emit('quality', { level: this.profile.name, dpr: this.dpr, scale: this.renderScale });
-      } else if (this.slowT > 1.5 && this.profile.name !== 'low') {
-        // The render scale is at its floor and frames are still long: drop a tier (the ladder is high, medium, low).
-        const next = this.profile.name === 'high' ? 'medium' : 'low';
-        this.profile = PROFILES[next];
-        this.moon.set({ lite: this.profile.moonLite });
-        this.atmosphere.setSteps(this.profile.atmoSteps);
-        this.borders.setStatesAllowed(this.profile.name !== 'low');
-        this.renderScale = 0.8;
-        this.slowT = 0;
-        this.lastDowngrade = this.time;
-        this.resizeDirty = true;
-        this.emit('quality', { level: next, dpr: this.dpr, scale: this.renderScale });
-      } else if (this.calmT > 12 && this.renderScale < 1 && this.time - this.lastDowngrade > 20) {
-        this.renderScale = Math.min(1, this.renderScale + 0.05);
-        this.calmT = 0;
-        this.resizeDirty = true;
-        this.emit('quality', { level: this.profile.name, dpr: this.dpr, scale: this.renderScale });
-      }
+      const step = this.governor.frame(dtRaw, performance.now() / 1000);
+      if (step) this.applyGovernorStep(step);
     }
     this.emit('frame', s);
   }

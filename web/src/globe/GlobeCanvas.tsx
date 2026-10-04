@@ -10,8 +10,10 @@
 //   engine is created on a new canvas and re-bound (all state comes from the store and the URL).
 // - Motion: the app's motion setting (system, full, reduced, off) drives `engine.setReduced`.
 // - Quality: the user's performance tier picks the engine's quality; under `auto` the engine's
-//   governor lowers the render scale, then the tier (high, medium, low). The lite tier draws the
-//   dot-matrix planet ("holo"), whatever the art style setting says.
+//   governor (engine/governor.ts) lowers the render scale, then the tier (high, medium, low), and
+//   climbs back once frames are calm; a stall (the page not drawn) is not a slow frame. When it has
+//   stepped down to the lite tier the globe draws the dot-matrix planet ("holo"), whatever the art
+//   style setting says, until it climbs back or the viewer picks a look or a performance tier.
 // - Art style: `useUi().globeArt` (marble default, holo = dot matrix, neon), persisted.
 // - Borders: `useUi().globeBorders` (off, countries, or countries with state lines: the default), persisted;
 //   state lines are fetched when the camera first comes down and are never drawn on the low tier.
@@ -190,7 +192,7 @@ export function GlobeCanvas() {
             e.setMoonStatus(status);
           }
         });
-        const offQuality = e.on('quality', (q) => setGovernorLite(q.level === 'low'));
+        const offQuality = e.on('quality', (q) => setGovernorLite(q.forcedLite));
         const fitMoon = () => e.setMoon({ scale: window.innerWidth < 720 ? 0.86 : 1 });
         fitMoon();
         window.addEventListener('resize', fitMoon);
@@ -297,8 +299,20 @@ export function GlobeCanvas() {
   // ---- preferences ------------------------------------------------------------------------
   useEffect(() => {
     if (!engine) return;
-    engine.setQuality(isSoftwareGl(engine) ? 'low' : QUALITY[perf]);
+    const software = isSoftwareGl(engine);
+    engine.setQuality(software ? 'low' : QUALITY[perf]);
+    // A new level starts the governor over, and a lite look it had forced goes with it (software GL keeps its own).
+    setGovernorLite(software);
   }, [engine, perf]);
+
+  // The look the viewer picks is honored at once: a governor that had stepped down to the lite tier (which draws holo
+  // whatever the setting says) starts over from the top. A machine that is really too slow steps down again.
+  const artPicked = useRef(art);
+  useEffect(() => {
+    if (artPicked.current === art) return;
+    artPicked.current = art;
+    engine?.resetGovernor();
+  }, [engine, art]);
 
   useEffect(() => {
     if (!engine) return;
