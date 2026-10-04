@@ -1,0 +1,275 @@
+/* The Apps hub: the parts that are its own (the hero's capacity rails, the picture of the biggest apps, the owners
+   that open in place, the deployments chart's figures, the short lists, the economy) on top of the hub family's frame
+   in features/hub/hub.css. A hub is a window, so every size is a container query on the window or on the panel, never
+   the viewport. Motion is transform and opacity, once, on arrival, and none of it plays under reduced or off. Tokens
+   only; classes are prefixed ap-. */
+
+/* ---- small shared pieces -------------------------------------------------------------------------------- */
+
+.ap-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}
+
+.ap-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent-400);
+}
+
+.ap-foot-note {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+
+.ap-id {
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+}
+
+.ap-num {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-dim {
+  color: var(--text-3);
+}
+
+/* ---- the search before the index ------------------------------------------------------------------------- */
+
+/* The examples under the field come with the app index. The row they sit in is as tall as a chip from the start, and
+   until they arrive a pill of about their width stands in their place, so the page does not move when they do. */
+.ap-search {
+  --ap-chip-row: 20.5px;
+}
+
+@media (pointer: coarse) {
+  .ap-search {
+    --ap-chip-row: 32px;
+  }
+}
+
+.ap-search .hub-search__idle {
+  min-height: var(--ap-chip-row);
+}
+
+/* Where the hint and two chips may not share a line, the chips are always under the hint, so the field is the same
+   height whatever the apps are called. */
+@container hub (max-width: 899px) {
+  .ap-search .hub-search__idle {
+    display: grid;
+    justify-items: start;
+  }
+}
+
+.ap-search[data-wait] .hub-search__idle::after {
+  content: "";
+  flex: none;
+  width: min(16rem, 100%);
+  height: var(--ap-chip-row);
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  animation: ap-ghost-pulse 1.6s var(--ease-standard) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ap-search[data-wait] .hub-search__idle::after {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ap-search[data-wait] .hub-search__idle::after {
+  animation: none;
+}
+
+/* ---- the hero's capacity rails -------------------------------------------------------------------------- */
+
+.ap-rails {
+  display: grid;
+  gap: var(--space-6);
+  align-content: center;
+  min-width: 0;
+  margin: 0;
+}
+
+.ap-rails__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-sm) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.ap-rails__sub {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  letter-spacing: 0;
+}
+
+.ap-rails__list {
+  display: grid;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ap-rail {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  --ui-meter-surface: var(--ink-1);
+}
+
+.ap-rail__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ap-rail__name {
+  flex: none;
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-sm) / 1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.ap-rail__of {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ap-rail__of > span {
+  color: var(--text-3);
+}
+
+/* With the network's total unknown the figure beside the rail says so; the kit's own "Unknown" under it is the same word. */
+.ap-rail__of > span[data-unknown]::before {
+  content: "\00b7\00a0";
+}
+
+.ap-rail .ui-meter__value[data-unknown] {
+  visibility: hidden;
+}
+
+.ap-rail__pct {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-1);
+  font: var(--fw-light) var(--fs-2xl) / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A rail is a bar on a track of the whole network: a tick every tenth, so a fill reads as a share at a glance. */
+.ap-rail .ui-meter {
+  --ui-meter-h: 10px;
+}
+
+.ap-rail .ui-meter__track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(10% - 1px),
+    var(--ink-1) calc(10% - 1px) 10%
+  );
+  pointer-events: none;
+}
+
+.ap-rail .ui-meter__fill {
+  /* The meter slides one full-width fill left, so the end of this gradient is what shows: it ends in the kit's blue. */
+  background: linear-gradient(90deg, var(--accent-700), var(--accent-500));
+  animation: ap-rail-in var(--dur-slower) var(--ease-out) calc(var(--i, 0) * 90ms) both;
+}
+
+@keyframes ap-rail-in {
+  from {
+    translate: calc(var(--ui-meter-h) - 100%) 0;
+  }
+}
+
+.ap-rails__note {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}
+
+/* ---- the rails before their answer ----------------------------------------------------------------------- */
+
+/* The rails drawn from made-up numbers stand in until the overview is in, still being read, or failed, so the hero is
+   as tall as it will be. A failure is laid over them in the same cell: it can only make the cell taller, never shorter. */
+.ap-hold {
+  display: grid;
+  min-width: 0;
+}
+
+.ap-hold > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.ap-hold__under {
+  display: grid;
+  gap: var(--space-6);
+  align-content: start;
+}
+
+.ap-hold[data-failed] .ap-hold__under {
+  visibility: hidden;
+}
+
+.ap-hold__over {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+}
+
+/* The name of a rail is known before its numbers are. */
+.ap-ghost .ap-rail__name {
+  -webkit-text-fill-color: currentColor;
+  box-shadow: none;
+}
+
+.ap-ghost .ap-rail .ui-meter__fill {
+  animation: none;
+}
+
+.ap-rails__title .ap-waiting {
+  align-self: center;
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ap-rail .ui-meter__fill {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ap-rail .ui-meter__fill {
+  animation: none;
+}

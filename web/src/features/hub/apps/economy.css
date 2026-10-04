@@ -1,0 +1,128 @@
+/* The economy panel: what apps paid in thirty days as the one big figure, its change against the thirty days before,
+   a sparkline of the days, and the other windows as plain rows. Tokens only; classes are prefixed ap-eco and ap-facts. */
+
+.ap-eco {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.ap-eco__lead {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.ap-eco__label {
+  margin: 0;
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / var(--lh-snug) var(--font-sans);
+}
+
+.ap-eco__big {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.ap-eco__v {
+  color: var(--text-1);
+  font: var(--fw-light) var(--fs-3xl) / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-eco__unit {
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.ap-eco__unknown {
+  font: var(--fw-light) var(--fs-2xl) / 1 var(--font-display);
+}
+
+.ap-eco__trend {
+  display: grid;
+  gap: var(--space-3);
+  --ui-spark-color: var(--viz-1);
+  --ui-spark-surface: var(--ink-1);
+}
+
+/* The sparkline's room while the numbers load: a field of the height it will be. */
+.ap-eco__spark {
+  width: 100%;
+  height: 56px;
+  border-radius: var(--r-sm);
+}
+
+.ap-eco__cap {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+  text-wrap: pretty;
+}
+
+/* ---- the other windows as rows -------------------------------------------------------------------------- */
+
+.ap-facts {
+  display: grid;
+  margin: 0;
+}
+
+.ap-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-1);
+}
+
+.ap-facts dt {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+
+.ap-facts dd {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+}
+
+.ap-facts__v {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / var(--lh-snug) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-facts__n {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / var(--lh-snug) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-facts__link {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-1);
+  text-decoration: none;
+  font: var(--fw-medium) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .ap-facts__link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}

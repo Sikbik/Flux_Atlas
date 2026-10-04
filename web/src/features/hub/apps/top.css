@@ -1,0 +1,305 @@
+/* The top-apps panel: the picture of the biggest apps (a treemap whose cells are links, laid out by transform so they glide
+   from one measure to the other) and the ranked list beside it, tied together by a shared highlight. Container queries on
+   the panel, never the viewport. Tokens only; classes are prefixed ap-tree, ap-rank and ap-top. */
+
+.ap-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6) var(--space-8);
+  min-width: 0;
+}
+
+@container hubpanel (min-width: 760px) {
+  .ap-top {
+    grid-template-columns: minmax(0, 1.6fr) minmax(250px, 1fr);
+    align-items: start;
+  }
+}
+
+/* ---- the picture ---------------------------------------------------------------------------------------- */
+
+.ap-treefig {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: 0;
+}
+
+.ap-treefig__cap {
+  max-width: 78ch;
+}
+
+/* What the apps without a cell hold: a share bar under the picture, in the kit's own language. */
+.ap-treefig__tail {
+  --ui-sb-h: 8px;
+}
+
+.ap-tree {
+  position: relative;
+  width: 100%;
+  height: clamp(280px, 46cqi, 420px);
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--r-md);
+}
+
+.ap-tree__cell {
+  --ap-c: var(--viz-1);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: linear-gradient(
+    155deg,
+    color-mix(in oklab, var(--ap-c) 36%, var(--ink-2)),
+    color-mix(in oklab, var(--ap-c) 17%, var(--ink-2))
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--ap-c) 52%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.07);
+  color: var(--text-1);
+  text-decoration: none;
+  cursor: pointer;
+  animation: ap-tree-in var(--dur-slow) var(--ease-out) both;
+  animation-delay: calc(var(--i) * 16ms);
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    width var(--dur-slow) var(--ease-out),
+    height var(--dur-slow) var(--ease-out),
+    background var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.ap-tree__cell:hover,
+.ap-tree__cell[data-hot] {
+  z-index: 1;
+  background: linear-gradient(
+    155deg,
+    color-mix(in oklab, var(--ap-c) 56%, var(--ink-2)),
+    color-mix(in oklab, var(--ap-c) 28%, var(--ink-2))
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--ap-c) 92%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.12),
+    0 0 22px -6px color-mix(in oklab, var(--ap-c) 60%, transparent);
+}
+
+.ap-tree__cell:focus-visible {
+  outline: 2px solid var(--accent-300);
+  outline-offset: -2px;
+}
+
+/* Pointing at one app quiets the rest, so the one in question is the only bright thing in the picture. */
+.ap-tree[data-hot] .ap-tree__cell:not([data-hot]) {
+  opacity: 0.5;
+}
+
+.ap-tree[data-resizing] .ap-tree__cell {
+  transition: none;
+}
+
+/* A link centres its content even when that overflows; the text sits in a box that cannot. */
+.ap-tree__in {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* The name is one or two lines laid out by nameLines, split evenly; a line that still does not fit ends in an ellipsis. */
+.ap-tree__name {
+  display: grid;
+  overflow: hidden;
+  font: var(--fw-medium) var(--fs-xs) / 1.25 var(--font-sans);
+}
+
+.ap-tree__ln {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ap-tree__n {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-2xs) / 1.25 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ap-tree__share {
+  color: var(--text-3);
+}
+
+.ap-tip {
+  display: grid;
+  gap: 2px;
+}
+
+.ap-tip b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+@keyframes ap-tree-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+
+/* ---- the ranked list ------------------------------------------------------------------------------------ */
+
+.ap-rank {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ap-rank__h {
+  margin: 0;
+  padding-inline: var(--space-4);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+}
+
+.ap-rank__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ap-rank__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    "n who val"
+    ". sub sub";
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: 1px;
+  min-height: 46px;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line-1);
+  border-radius: var(--r-sm);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ap-rank__row:last-child {
+  border-bottom: 0;
+}
+
+.ap-rank__row[data-hot] {
+  background: color-mix(in oklab, var(--hot) 4%, transparent);
+}
+
+.ap-rank__row:has(.ap-rank__link:focus-visible) {
+  background: color-mix(in oklab, var(--accent-500) 8%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent-400);
+}
+
+.ap-rank__n {
+  grid-area: n;
+  color: var(--text-3);
+  font: var(--fw-semibold) var(--fs-sm) / 1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-rank__row:nth-child(-n + 3) .ap-rank__n {
+  color: var(--accent-300);
+}
+
+.ap-rank__who {
+  grid-area: who;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The name's link covers the whole row, so the row is one big target; the lock beside it sits above. */
+.ap-rank__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+  text-decoration: none;
+}
+
+.ap-rank__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.ap-rank__link:focus-visible {
+  outline: none;
+}
+
+.ap-rank__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--ap-c);
+}
+
+.ap-rank__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ap-rank__lock {
+  position: relative;
+  flex: none;
+  color: var(--text-3);
+}
+
+.ap-rank__val {
+  grid-area: val;
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-align: right;
+}
+
+.ap-rank__sub {
+  grid-area: sub;
+  min-height: 14px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ap-tree__cell {
+    animation: none;
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ap-tree__cell {
+  animation: none;
+  transition: none;
+}

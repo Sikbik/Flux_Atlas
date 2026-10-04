@@ -1,0 +1,88 @@
+/* A skeleton made of the real markup (ghost.tsx): the same elements with made-up numbers, so a loading part has the
+   geometry of the loaded one at every width. The text is not painted, every leaf of it is a block of the loading gray,
+   and nothing in it moves except a slow pulse of opacity. Tokens only; classes are prefixed ap-ghost and ap-waiting. */
+
+/* What a heading says while the server is reading the network for the first time. */
+.ap-waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+  white-space: nowrap;
+}
+
+.ap-waiting > svg {
+  color: var(--accent-300);
+}
+
+.ap-ghost {
+  pointer-events: none;
+  user-select: none;
+  -webkit-text-fill-color: transparent;
+  animation: ap-ghost-pulse 1.6s var(--ease-standard) infinite;
+}
+
+/* A block of gray over whatever a leaf draws, its own fill and gradient included. A ghost that holds nothing but text
+   (a sentence in a line) is a leaf itself. */
+.ap-ghost:not(:has(*)),
+.ap-ghost.ap-ghost :not(:has(*)) {
+  box-shadow: inset 0 0 0 100vmax var(--ink-3);
+}
+
+/* Lower than any rule of the real markup, so a block keeps the shape its own rule gives it. */
+:where(.ap-ghost) :where(:not(:has(*))) {
+  inline-size: fit-content;
+  justify-self: start;
+  border-radius: var(--r-xs);
+}
+
+.ap-ghost svg {
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.ap-ghost svg * {
+  visibility: hidden;
+}
+
+/* A chart is a field of gray, not an ellipse. */
+.ap-ghost .vz-chart > svg {
+  border-radius: var(--r-md);
+}
+
+/* A bar that is drawn by a pseudo-element is gray too, and only as tall as it is painted. */
+.ap-ghost .ui-sharebar__seg {
+  box-shadow: none;
+}
+
+.ap-ghost .ui-sharebar__seg::before {
+  background: var(--ink-3);
+  box-shadow: none;
+}
+
+/* What is known before the numbers are (a label, a heading, the name of a column) is drawn as it is. */
+.ap-ghost [data-static],
+.ap-ghost [data-static] * {
+  -webkit-text-fill-color: currentColor;
+  box-shadow: none;
+}
+
+@keyframes ap-ghost-pulse {
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ap-ghost {
+    animation: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ap-ghost {
+  animation: none;
+}
