@@ -31,14 +31,21 @@ export function standingFraction(rank: number | null, count: number): number | n
   return Math.min(1, Math.max(0, 1 - (rank - 1) / (count - 1)));
 }
 
-/** `Top 0.2%`, `Top 12%`, `Top half`: the share of operators at or above this rank. */
+/**
+ * What a rank means in words. The top half reads as the share of operators at or above it ("Top 0.4% by nodes"); the
+ * bottom half as the share it is ahead of ("Ahead of 12% of operators by nodes"), because "Top 88%" is a boast that
+ * reads as a slight. The smallest operators and a lone operator say so.
+ */
 export function topShareText(rank: number | null, count: number): string | null {
   if (rank === null || count <= 0 || rank < 1) return null;
-  const share = rank / count;
-  if (share <= 0.0005) return 'Top 0.1%';
-  if (share < 0.1) return `Top ${(share * 100).toFixed(1)}%`;
-  if (share <= 0.5) return `Top ${Math.round(share * 100)}%`;
-  return `${Math.round(share * 100)}th percentile from the top`;
+  if (count === 1) return 'The only operator';
+  const share = Math.min(1, rank / count);
+  const pct = share * 100;
+  if (share <= 0.0005) return 'Top 0.1% by nodes';
+  if (pct < 9.95) return `Top ${pct.toFixed(1)}% by nodes`;
+  if (share <= 0.5) return `Top ${Math.round(pct)}% by nodes`;
+  const ahead = Math.round(100 - pct);
+  return ahead >= 1 ? `Ahead of ${ahead}% of operators by nodes` : 'Among the smallest operators by nodes';
 }
 
 export function Standing() {
@@ -163,11 +170,11 @@ export function Standing() {
                   <span
                     className="wl-ruler"
                     role="img"
-                    aria-label={`${top}: rank ${s.operator_rank} of ${s.operator_count} operators by number of nodes`}
+                    aria-label={`Rank ${s.operator_rank} of ${s.operator_count} operators by number of nodes`}
                   >
                     <i style={{ left: `${(frac * 100).toFixed(2)}%` }} />
                   </span>
-                  <span>{top} by nodes</span>
+                  <span>{top}</span>
                 </>
               )
             }
