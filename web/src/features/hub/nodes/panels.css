@@ -1,0 +1,286 @@
+/* The Nodes hub's compact panels: the payment queue at a glance, the three distributions and decentralization. Panels
+   are sized by container queries on their own width. Tier colours mark tiers and nothing else. Tokens only; classes
+   are prefixed nd-. */
+
+/* ---- the payment queue ---------------------------------------------------------------------------------- */
+
+.nd-q__skeleton {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.nd-q {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nd-q__tier {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--ink-0) 38%, var(--ink-1));
+  box-shadow: inset 2px 0 0 var(--tier-ink, var(--line-2));
+}
+
+.nd-q__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.nd-q__name {
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-sm) / 1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.nd-q__nodes {
+  margin-left: auto;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-q__figs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.nd-q__figs > div {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.nd-q__figs dt {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1.2 var(--font-sans);
+}
+
+.nd-q__figs dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.nd-q__figs small {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-regular);
+}
+
+.nd-q__next {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.nd-q__label {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+/* The next payee changes with every block and must not change the height of the card: one line, cut short. */
+.nd-q__next .ex-nodelink {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- the distributions ---------------------------------------------------------------------------------- */
+
+.nd-dist {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.nd-dist__reading {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}
+
+.nd-dist__more {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+/* In a narrow panel a sentence of names is two lines whoever the names are, and the line about the rest of the list can
+   wrap on a longer number: two lines are kept for each, so what arrives does not move the bars. */
+@container hubpanel (max-width: 451px) {
+  .nd-dist[data-names] .nd-dist__reading {
+    min-block-size: calc(2 * var(--fs-xs) * var(--lh-normal));
+  }
+
+  .nd-dist__more[data-long] {
+    min-block-size: calc(2 * var(--fs-2xs) * var(--lh-snug));
+  }
+}
+
+/* Rows that only keep room (the versions in use are fewer than the list is set to hold) show nothing. */
+.nd-dist[data-pad="1"] .ui-barlist__item:nth-last-child(-n + 1),
+.nd-dist[data-pad="2"] .ui-barlist__item:nth-last-child(-n + 2) {
+  visibility: hidden;
+}
+
+/* On touch every row is as tall as the rows that open something, the one that opens nothing (the nodes that report no
+   version) and the ones that only keep room included, so the list is the same height whichever rows it has. */
+@media (pointer: coarse) {
+  .nd-dist .ui-barlist__row {
+    min-height: var(--touch-min);
+  }
+}
+
+/* ---- decentralization ----------------------------------------------------------------------------------- */
+
+.nd-dc {
+  display: grid;
+  gap: var(--space-7);
+}
+
+.nd-dc__nak {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nd-dc__nak li {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--r-md);
+  background: var(--ink-2);
+}
+
+.nd-dc__nak b {
+  color: var(--text-1);
+  font: var(--fw-light) var(--fs-3xl) / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-dc__nak span {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.nd-dc__lead {
+  margin: var(--space-4) 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+.nd-dc__hhi {
+  display: grid;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nd-dc__hhi-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.nd-dc__hhi-head b {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-dc__hhi-head small {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+/* Three bands in the blue ramp, and a notch where the reading falls. */
+.nd-gauge {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  block-size: 6px;
+}
+
+.nd-gauge > i {
+  flex: 1;
+  border-radius: 3px;
+  background: var(--band, var(--seq-3));
+}
+
+.nd-gauge > [data-band="low"] {
+  --band: var(--seq-2);
+}
+
+.nd-gauge > [data-band="moderate"] {
+  --band: var(--seq-3);
+}
+
+.nd-gauge > [data-band="high"] {
+  --band: var(--seq-5);
+}
+
+.nd-gauge__at {
+  position: absolute;
+  inset-block: -4px;
+  inset-inline-start: calc(var(--at, 0) * 100%);
+  inline-size: 2px;
+  margin-inline-start: -1px;
+  border-radius: 1px;
+  background: var(--text-1);
+  box-shadow: 0 0 0 2px var(--ink-1);
+}
+
+.nd-redact .nd-gauge__at {
+  visibility: hidden;
+}
+
+.nd-dc__reading {
+  margin: 0;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line-1);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}
+
+@container hubpanel (max-width: 419px) {
+  .nd-dc__nak b {
+    font-size: var(--fs-2xl);
+  }
+
+  .nd-dc__nak li {
+    padding: var(--space-4) var(--space-5);
+  }
+}

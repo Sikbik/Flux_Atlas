@@ -1,0 +1,404 @@
+/* Who holds the supply: the concentration ring, the largest addresses and the movers. The card is one grid that folds by
+   its own width (three columns when wide, two when medium, one on a phone). The movers block is also the movers section
+   of the Rich list page. Motion is transform and opacity only, once: the ring's slices fade in a beat apart.
+   Tokens only; classes are prefixed ex-. */
+
+.ex-rich {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-8) var(--space-9);
+}
+
+.ex-rich--skeleton {
+  align-items: center;
+}
+
+.ex-rich__skel-col {
+  display: grid;
+  gap: var(--space-3);
+}
+
+@container hubpanel (min-width: 640px) {
+  .ex-rich {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  }
+
+  /* The movers run across the card under a hairline, their two lists side by side. */
+  .ex-rich > .ex-movers {
+    grid-column: 1 / -1;
+    padding-top: var(--space-7);
+    border-top: 1px solid var(--line-1);
+  }
+}
+
+.ex-rich__h,
+.ex-movers__title {
+  margin: 0 0 var(--space-4);
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-sm) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.ex-movers__title {
+  margin: 0;
+}
+
+/* The five largest addresses sit in a narrow column, so the leaderboard's rows run flush to its edges. */
+.ex-rich .hub-lb__head,
+.ex-rich .hub-lb__row {
+  padding-inline: var(--space-3);
+}
+
+/* ---- the ring ------------------------------------------------------------------------------------------- */
+
+.ex-ring {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.ex-ring__plot {
+  position: relative;
+  inline-size: min(100%, 220px);
+  aspect-ratio: 1;
+  margin-inline: auto;
+}
+
+.ex-ring__svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+}
+
+.ex-ring__track {
+  stroke: var(--ink-2);
+}
+
+.ex-ring__slice {
+  transform-box: view-box;
+  transform-origin: center;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+  animation: ex-ring-in var(--dur-slower) var(--ease-out) calc(var(--i, 0) * 70ms) backwards;
+}
+
+.ex-ring__slice[data-dim] {
+  opacity: 0.35;
+}
+
+.ex-ring__slice[data-hot] {
+  transform: scale(1.03);
+}
+
+@keyframes ex-ring-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+.ex-ring__center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  pointer-events: none;
+}
+
+.ex-ring__figure {
+  color: var(--text-1);
+  font: var(--fw-light) 40px / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-ring__figure small {
+  margin-left: 2px;
+  color: var(--text-3);
+  font-size: 18px;
+}
+
+.ex-ring__caption {
+  max-inline-size: 11ch;
+  margin-inline: auto;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+
+.ex-ring__legend {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ex-ring__legend li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 28px;
+  padding-inline: var(--space-3);
+  border-radius: var(--r-md);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ex-ring__legend li[data-hot] {
+  background: var(--ink-2);
+}
+
+.ex-ring__legend i {
+  display: block;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 3px;
+}
+
+.ex-ring__name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.ex-ring__holders {
+  color: var(--text-4);
+  font-size: var(--fs-2xs);
+}
+
+.ex-ring__share {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the movers ----------------------------------------------------------------------------------------- */
+
+.ex-movers {
+  container: movers / inline-size;
+  display: grid;
+  gap: var(--space-5);
+  align-content: start;
+  min-width: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.ex-movers[data-stale] {
+  opacity: 0.6;
+}
+
+.ex-movers__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+
+.ex-movers__skeleton,
+.ex-movers__ready {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ex-movers__tracking {
+  display: block;
+  max-inline-size: 36ch;
+  margin-inline: auto;
+}
+
+.ex-movers__span {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.ex-movers__trend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--r-md);
+  background: var(--ink-2);
+}
+
+.ex-movers__trend p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.ex-movers__lists {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.ex-movers__flow {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+@container movers (min-width: 560px) {
+  .ex-movers__lists {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-6) var(--space-9);
+  }
+
+  .ex-movers__flow {
+    grid-column: 1 / -1;
+  }
+}
+
+.ex-mvs {
+  min-width: 0;
+}
+
+.ex-mvs__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  letter-spacing: 0.01em;
+}
+
+.ex-mvs__count {
+  color: var(--text-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+.ex-mvs__none {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ex-mvs__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ex-mvs__scroll[data-open] {
+  max-block-size: 380px;
+  overflow-y: auto;
+}
+
+.ex-mvs__scroll:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ex-mvs__more {
+  margin-top: var(--space-2);
+}
+
+.ex-mv {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 42px;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.ex-mv:last-child {
+  border-bottom: 0;
+}
+
+.ex-mv__who {
+  display: grid;
+  min-width: 0;
+}
+
+.ex-mv__sub {
+  overflow: hidden;
+  color: var(--text-4);
+  font-size: var(--fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ex-mv__delta {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ex-mv[data-tone="gain"] .ex-mv__delta {
+  color: var(--div-pos);
+}
+
+.ex-mv[data-tone="loss"] .ex-mv__delta {
+  color: var(--div-neg);
+}
+
+.ex-mv__unit {
+  margin-left: 4px;
+  color: var(--text-4);
+  font-size: var(--fs-2xs);
+}
+
+/* How an address moved on the ranking: an arrow and the places, or "New" / the rank it entered at. */
+.ex-shift {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-inline-size: 40px;
+  block-size: 20px;
+  padding-inline: var(--space-3);
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ex-shift[data-dir="up"] {
+  background: color-mix(in oklab, var(--div-pos) 14%, transparent);
+  color: var(--div-pos);
+}
+
+.ex-shift[data-dir="down"] {
+  background: color-mix(in oklab, var(--div-neg) 14%, transparent);
+  color: var(--div-neg);
+}
+
+.ex-shift[data-dir="new"] {
+  background: color-mix(in oklab, var(--accent-500) 18%, transparent);
+  color: var(--accent-300);
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ex-ring__slice {
+    animation: none;
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-ring__slice {
+  animation: none;
+  transition: none;
+}

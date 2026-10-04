@@ -411,6 +411,9 @@ function collectEmptyState(c: Collector, inp: ModelInput): void {
   const tryRows: PaletteRow[] = [];
   const tip = store.tip?.height ?? null;
   if (tip !== null) tryRows.push(blockRow(tip, { sub: 'The latest block', score: 80, group: 'try' }));
+  // The rich list is the page people ask for by what it shows, so it is offered before they have to know its name.
+  const rich = actionById('view.richlist');
+  if (rich) tryRows.push({ ...actionRow(rich, env, 79), group: 'try' });
   tryRows.push({
     id: 'try:goto',
     group: 'try',

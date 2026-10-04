@@ -251,7 +251,7 @@ let closing = null; // the window the close scenario is about to close
 const scenarios = [
   {
     name: 'window-open',
-    note: 'desktop: the Explorer launcher opens the tip block window, out of the launcher',
+    note: 'desktop: the Explorer launcher opens the Explorer landing, out of the launcher',
     view: DESKTOP,
     times: range(560, 40),
     cols: 4,

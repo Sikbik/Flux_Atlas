@@ -1125,7 +1125,9 @@ web/src/
   store/        network.ts (NetworkStore: typed arrays + versioned subscriptions via useSyncExternalStore), ui.ts (zustand)
   globe/        engine/ (from labs/globe), GlobeCanvas.tsx (mounted once as the living wallpaper), bindings.ts (store → engine)
   shell/        desktop, dock, window manager, command palette, terminal, boot sequence, toasts, ambient mode, achievements
-  features/     node/, app/, explorer/ (block, tx, address, mempool), analytics/, timemachine/, operator/, search/
+  features/     node/, app/, explorer/ (the landing, block, tx, address, mempool, supply, rich list), hub/ (the frame the
+                Explorer, Nodes and Apps landings share, and the Nodes and Apps landings), analytics/, timemachine/,
+                operator/, search/
   ui/           primitives: StatTile, Sparkline, Badge, Table, Tabs, Tooltip, Skeleton, Ticker, …
   lib/          format (FLUX amounts, heights→time), geo, time, keyboard
 ```

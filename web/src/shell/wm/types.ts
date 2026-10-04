@@ -3,9 +3,12 @@
 
 /** Every window kind in the design IA (section 2.3). `time` and `weather` are tracked, never framed. */
 export type WindowType =
+  | 'nodes'
   | 'node'
   | 'host'
+  | 'apps'
   | 'app'
+  | 'explorer'
   | 'block'
   | 'tx'
   | 'address'

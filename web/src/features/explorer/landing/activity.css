@@ -1,0 +1,124 @@
+/* The chain activity panel: the row of figure tiles that choose the chart, the chart's own bar (its name and the scale),
+   and the quiet footnote on the mining years. Container queries on the panel, never the viewport. Tokens only; classes
+   are prefixed ex-act. */
+
+.ex-act {
+  display: grid;
+  gap: var(--space-5);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+/* A new range keeps the last chart on screen, dimmed, until its answer arrives. */
+.ex-act[data-stale] {
+  opacity: 0.55;
+}
+
+.ex-act__skeleton {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.ex-act__tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+  min-inline-size: 0;
+  border: 0;
+  /* Room for the focus ring and the lit rim of a tile. */
+  padding: 2px;
+  margin: -2px;
+}
+
+/* The tile that is drawn below lights up like the rich list tile of the quick links. */
+.ex-act__tile[aria-pressed="true"] {
+  background:
+    linear-gradient(160deg, color-mix(in oklab, var(--accent-500) 14%, var(--ink-1)), var(--ink-1) 70%)
+    padding-box,
+    var(--ui-rim-hot) border-box;
+}
+
+@container hubpanel (max-width: 899px) {
+  /* A strip that scrolls sideways, a tile and a bit of the next showing, rather than a wall of tiles. */
+  .ex-act__tiles {
+    display: flex;
+    margin-inline: calc(var(--space-6) * -1);
+    padding: 2px var(--space-6);
+    overflow-x: auto;
+    scroll-padding-inline: var(--space-6);
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .ex-act__tiles::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ex-act__tiles > * {
+    flex: 0 0 min(210px, 62%);
+    scroll-snap-align: start;
+  }
+}
+
+@container hubpanel (max-width: 399px) {
+  .ex-act__tiles {
+    margin-inline: calc(var(--space-5) * -1);
+    padding-inline: var(--space-5);
+    scroll-padding-inline: var(--space-5);
+  }
+}
+
+.ex-act__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.ex-act__title {
+  margin: 0;
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-sm) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.ex-act__wait {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.ex-act__wait svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--accent-400);
+}
+
+.ex-act__legacy {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ex-act__legacy summary {
+  width: fit-content;
+  min-height: var(--hit-min);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  line-height: var(--hit-min);
+}
+
+.ex-act__legacy summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ex-act__legacy p {
+  max-width: 78ch;
+  margin: 0 0 var(--space-3);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}

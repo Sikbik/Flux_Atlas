@@ -2,9 +2,10 @@
 // per tier, Stratus first. A glass pill under the top bar, centred in the free area the windows leave. The
 // payees swap 2.6 s after each block, once the relay on the globe has finished (usePayoutLines holds the old
 // ones until then). A watched payee's chip is ringed in white. It steps aside in the time machine,
-// ambient, the weather layer, analytics and About Flux. The countdown is a visual; a polite status line
-// announces only when the three payees change, never the ticking. On the phone (`inline`) it is the third row
-// of the header instead: no pill, always there, and the row scrolls sideways when the chips do not fit.
+// ambient, the weather layer, analytics, the Explorer, Nodes and Apps landings and About Flux. The countdown is a visual; a
+// polite status line announces only when the three payees change, never the ticking. On the phone (`inline`)
+// it is the third row of the header instead: no pill, always there, and the row scrolls sideways when the
+// chips do not fit.
 
 import { useEffect, useRef, useState } from 'react';
 import { useRuntime } from '../../app/context';
@@ -22,7 +23,15 @@ import { amountLabel, amountWords, type PayoutLine } from './payouts';
 import './aimstrip.css';
 
 /** Where the strip is not shown (design 8.13). */
-const HIDDEN_FOR: readonly WindowType[] = ['analytics', 'about', 'time', 'weather'];
+const HIDDEN_FOR: readonly WindowType[] = [
+  'analytics',
+  'explorer',
+  'nodes',
+  'apps',
+  'about',
+  'time',
+  'weather',
+];
 
 function useAimVisible(): boolean {
   return useWm((s) => !Object.values(s.windows).some((w) => HIDDEN_FOR.includes(w.type)), Object.is);

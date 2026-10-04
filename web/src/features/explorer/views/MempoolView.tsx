@@ -28,7 +28,8 @@ import {
   ViewHeader,
 } from '../../../ui';
 import { type MempoolRow, useMempoolLive } from '../hooks/useMempoolLive';
-import { TX_KINDS } from '../lib/txkinds';
+import { ExplorerNav } from '../landing/ExplorerNav';
+import { isCheckin, TX_KINDS } from '../lib/txkinds';
 import { txSizeText } from '../lib/txsize';
 import { MempoolRing } from './mempool/MempoolRing';
 import { Dense, KIND_ICON } from './shared';
@@ -36,12 +37,6 @@ import './mempool/mempool.css';
 import './view.css';
 
 type Filter = 'all' | 'value' | 'checkin';
-
-const isCheckin = (kind: string, value: string) =>
-  kind === 'node_confirm' ||
-  kind === 'node_start' ||
-  kind === 'node_tx' ||
-  (kind === 'unknown' && Number(value) === 0);
 
 const rowCheck = (r: MempoolRow) => isCheckin(r.tx.kind, r.tx.value);
 const rowKey = (r: MempoolRow) => r.tx.txid;
@@ -212,7 +207,9 @@ export function MempoolView() {
   if (m.isPending && m.rows.length === 0) {
     return (
       <div role="status" aria-busy="true" aria-label="Loading the mempool">
-        <ViewHeader kind="Mempool" icon={Layers2} title="Mempool" />
+        <ViewHeader kind="Mempool" icon={Layers2} title="Mempool">
+          <ExplorerNav current="mempool" />
+        </ViewHeader>
         <Section>
           <div className="ex-mempool-grid">
             <Skeleton h={340} radius={170} />
@@ -237,7 +234,9 @@ export function MempoolView() {
         title="Mempool"
         subtitle="Transactions the network has seen that no block has taken yet. Most are nodes checking in; the ones carrying value are highlighted."
         freshness={<StatusChip status="live" label="Live" />}
-      />
+      >
+        <ExplorerNav current="mempool" />
+      </ViewHeader>
       <Section>
         <div className="ex-mempool-grid">
           <MempoolRing

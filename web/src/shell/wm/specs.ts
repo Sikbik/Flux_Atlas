@@ -51,6 +51,8 @@ export interface WindowSpec {
 
 const DOCK = { w: 420, min: 360, max: 640 };
 const EXPLORER_FLOAT = { x: 118, y: 'top', w: 820, h: 'fill' } as const;
+/** The wide, maximizable frame of the hub windows (the Explorer, Nodes and Apps landings) and of analytics. */
+const HUB_FLOAT = { x: 118, y: 'top', w: 1112, h: 'fill' } as const;
 const DOCKED_FLOAT = (w: number) => ({ x: 'right', y: 'top', w, h: 'fill' }) as const;
 
 function spec(
@@ -99,14 +101,21 @@ const nodeTitle = (key: string | null): string => {
 };
 
 export const WINDOW_SPECS: Record<WindowType, WindowSpec> = {
+  // The hubs: what the dock's Nodes and Apps launchers open when no node or app window is. The inspectors open
+  // from them (a node, a host or an operator from Nodes; an app from Apps).
+  nodes: spec('nodes', () => 'Nodes', { float: HUB_FLOAT, key: 'N' }),
   node: spec('node', nodeTitle, docked(420, { tether: 'node', key: 'N' })),
   host: spec('host', named('Host'), docked(420, { tether: 'cluster' })),
+  apps: spec('apps', () => 'Apps', { float: HUB_FLOAT, key: 'A' }),
   app: spec('app', named('App'), docked(452, { key: 'A' })),
   operator: spec('operator', named('Operator'), docked(440, { key: 'O' })),
   // The wallet workspace: a wide analytics-style window (maximizable), opened from the operator panel, an address,
   // the palette or `/?wallet=`. It rides on the Operator launcher, which is the operator's door.
   wallet: spec('wallet', named('Wallet'), { float: { x: 118, y: 'top', w: 1180, h: 'fill' } }),
   about: spec('about', () => 'About Flux', docked(464, { tether: 'moon', key: 'M' })),
+  // The Explorer landing: the hub of the chain, as wide as the analytics window (maximizable). It is what the
+  // dock's Explorer launcher opens; the block, transaction, address and the other explorer views open from it.
+  explorer: spec('explorer', () => 'Explorer', { float: HUB_FLOAT, key: 'E' }),
   block: spec('block', named('Block'), { key: 'E' }),
   tx: spec('tx', named('Transaction'), { key: 'E' }),
   address: spec('address', named('Address'), { key: 'E' }),
@@ -114,10 +123,7 @@ export const WINDOW_SPECS: Record<WindowType, WindowSpec> = {
   supply: spec('supply', () => 'Supply', { key: 'E' }),
   richlist: spec('richlist', () => 'Rich list', { key: 'E' }),
   queue: spec('queue', (k) => (k ? `Payment queue, ${k}` : 'Payment queue'), { key: 'Q' }),
-  analytics: spec('analytics', (k) => (k ? `Analytics, ${k}` : 'Analytics'), {
-    float: { x: 118, y: 'top', w: 1112, h: 'fill' },
-    key: 'S',
-  }),
+  analytics: spec('analytics', (k) => (k ? `Analytics, ${k}` : 'Analytics'), { float: HUB_FLOAT, key: 'S' }),
   terminal: spec('terminal', () => 'Terminal', {
     float: { x: 118, y: 'bottom', w: 760, h: 420 },
     key: '`',

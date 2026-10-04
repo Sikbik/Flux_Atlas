@@ -32,11 +32,16 @@ chrome steps back on that attribute alone, in CSS (`frame.css`): the Pulse folds
 archive view", the rail's blocks fade out under a label, and what is paused leaves the key and the reading order
 (`visibility`), while the veil still takes the pointer so nothing falls through to the globe.
 
-**The palette.** It is open while the URL carries `?q=`, even empty. The launchers that need a subject open it on
-a kind's prefix (`PALETTE_SEED` in `launchers.tsx`: `node `, `app `), and a prefix is only a prefix with its trailing
-space, which is why the `q` validator (`text` in `app/search.ts`) keeps the end of what it is given. The Operator
-launcher needs no subject: it opens the watchlist (`/operator/watchlist`, `WATCHLIST` in `launchers.tsx`), or raises
-an operator window that is already open.
+**The palette.** It is open while the URL carries `?q=`, even empty. A prefix such as `node ` or `app ` scopes it to
+one kind, and a prefix is only a prefix with its trailing space, which is why the `q` validator (`text` in
+`app/search.ts`) keeps the end of what it is given.
+
+**The hub launchers.** Explorer, Nodes and Apps each open a landing of their own (`EXPLORER_HOME`, `NODES_HOME`,
+`APPS_HOME` in `launchers.tsx`: `/explorer`, `/nodes`, `/apps`; see `features/hub`), not a block, a palette or a
+search. A launcher raises a window of its kind that is already open, whatever it shows. When that window is already
+the one in front, raising it would change nothing, so the launcher goes home instead: the landing, from which the
+latest block, a node or an app is one action away. The Operator launcher opens the watchlist (`/operator/watchlist`,
+`WATCHLIST` in `launchers.tsx`), or raises an operator window that is already open.
 
 **Skip to content.** The first stop of the tab order, hidden above the screen until it has focus (`.skip-link`,
 `frame.css`). It does not follow its fragment: it moves focus to what is open (`focusContent`, `skip.ts`), the

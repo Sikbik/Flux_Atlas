@@ -21,6 +21,7 @@ import {
   StatGrid,
   ViewHeader,
 } from '../../../ui';
+import { ExplorerNav } from '../landing/ExplorerNav';
 import { ANNOUNCED_MAX_SUPPLY_FLUX, BLOCKS_PER_DAY, payoutSchedule } from '../lib/emission';
 import { DEV_FUND_ADDRESS } from '../lib/entities';
 import { CutCard } from './supply/CutCard';
@@ -30,7 +31,9 @@ import './view.css';
 function SupplySkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="Loading supply">
-      <ViewHeader kind="Supply" icon={Coins} title="Supply" />
+      <ViewHeader kind="Supply" icon={Coins} title="Supply">
+        <ExplorerNav current="supply" />
+      </ViewHeader>
       <div className="ex-hero">
         <StatGrid min={150}>
           <Stat hero label="Total supply" loading />
@@ -78,6 +81,7 @@ export function SupplyView() {
         subtitle="How much FLUX exists, where it sits, and the schedule that makes more."
         freshness={<Freshness label="supply" ts={s?.updated_ms ?? null} cadenceMs={600_000} />}
       >
+        <ExplorerNav current="supply" />
         {circulating !== null ? (
           <Chip title="The explorer's own circulating figure; its exclusion rule is not documented upstream">
             Circulating {formatCompact(flux(circulating))} per explorer

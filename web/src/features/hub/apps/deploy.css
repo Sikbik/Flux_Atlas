@@ -1,0 +1,62 @@
+/* The deployments panel: the three figures above the chart, and the lighter bar of the day still running. The chart
+   itself is the wallet's plot (features/wallet/viz). Container queries on the panel, never the viewport. Tokens only;
+   classes are prefixed ap-dep and ap-mini. */
+
+.ap-dep {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.ap-mini {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5) var(--space-6);
+  margin: 0;
+}
+
+.ap-mini > div {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  min-width: 0;
+}
+
+.ap-mini dt,
+.ap-mini__t {
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / var(--lh-snug) var(--font-sans);
+}
+
+.ap-mini dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.ap-mini__v {
+  color: var(--text-1);
+  font: var(--fw-light) var(--fs-xl) / 1.1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-mini__n {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+}
+
+/* The day still running is not a whole day: its bars are drawn lighter. */
+.ap-dep .wl-bar[data-running] {
+  opacity: 0.55;
+}
+
+@container hubpanel (max-width: 459px) {
+  .ap-mini {
+    gap: var(--space-4);
+  }
+
+  .ap-mini__v {
+    font-size: var(--fs-lg);
+  }
+}

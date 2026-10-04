@@ -71,3 +71,13 @@ export const NODE_TX_KINDS: Record<NodeTxKind, { label: string; hint: string }> 
 export function isNodeKind(kind: TxKind): boolean {
   return kind === 'node_confirm' || kind === 'node_start' || kind === 'node_tx';
 }
+
+/**
+ * A node checking in rather than value moving: a confirm or a start, or a transaction no block has classified yet that
+ * carries no value (the mempool lists those before it knows what they are).
+ */
+export const isCheckin = (kind: string, value: string): boolean =>
+  kind === 'node_confirm' ||
+  kind === 'node_start' ||
+  kind === 'node_tx' ||
+  (kind === 'unknown' && Number(value) === 0);

@@ -1,0 +1,524 @@
+/* The Explorer landing: the parts that are its own (the hero's live line, the latest blocks list, the mempool pool, the
+   supply split and the small notes) on top of the hub family's frame in features/hub/hub.css. Panels are sized by
+   container queries, because a window is 360 to 1112 px wide, not viewport-sized. Motion is transform and opacity only,
+   once, on arrival. Tokens only; classes are prefixed ex-. */
+
+/* ---- small shared pieces -------------------------------------------------------------------------------- */
+
+.ex-foot-note {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+
+.ex-num {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-addr {
+  margin-right: var(--space-3);
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+}
+
+/* The age in the hero's sentence is prose, not a code: the interface face, with figures that line up. */
+.hub-hero__caption .ui-reltime {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The caption is two lines that never wrap, so a ticking count cannot change how tall the hero is. */
+.ex-hero__line {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ex-hero__next[data-phase="late"] {
+  color: var(--status-warn);
+}
+
+.ex-hero__next[data-phase="quiet"],
+.ex-hero__next[data-phase="lost"] {
+  color: var(--status-crit);
+}
+
+/* ---- the latest blocks ---------------------------------------------------------------------------------- */
+
+.ex-blocks {
+  container: blocks / inline-size;
+}
+
+.ex-blocks__skeleton,
+.ex-pool__skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ex-blocks__head,
+.ex-blk {
+  display: grid;
+  grid-template-columns: 104px 88px minmax(0, 0.7fr) 68px minmax(0, 1.5fr);
+  align-items: center;
+  column-gap: var(--space-5);
+  padding-inline: var(--space-6);
+}
+
+.ex-blocks__head {
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / var(--lh-snug) var(--font-sans);
+}
+
+.ex-blocks__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ex-blk {
+  position: relative;
+  isolation: isolate;
+  min-height: 48px;
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--line-1);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ex-blk:last-child {
+  border-bottom: 0;
+}
+
+@media (hover: hover) {
+  .ex-blk:hover {
+    background: color-mix(in oklab, var(--hot) 3%, transparent);
+  }
+}
+
+.ex-blk:has(.ex-blk__link:focus-visible) {
+  background: color-mix(in oklab, var(--accent-500) 8%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent-400);
+}
+
+.ex-blk__height {
+  min-width: 0;
+}
+
+/* The height is the row's link and covers the whole row, so the row is one big target; the producer sits above it. */
+.ex-blk__link {
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-sm) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.ex-blk__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.ex-blk__link:focus-visible {
+  outline: none;
+}
+
+.ex-blk__cell {
+  min-width: 0;
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / var(--lh-snug) var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-blk__tx {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.ex-blk__n {
+  min-width: 2ch;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.ex-mix {
+  display: flex;
+  flex: 0 1 96px;
+  gap: 1px;
+  min-width: 24px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.ex-mix > i {
+  display: block;
+  flex-basis: 0;
+  min-width: 2px;
+  background: var(--mix, var(--text-4));
+}
+
+.ex-mix [data-mix="confirms"] {
+  --mix: var(--accent-500);
+}
+
+.ex-mix [data-mix="starts"] {
+  --mix: var(--hot-2);
+}
+
+.ex-mix [data-mix="transfers"] {
+  --mix: var(--accent-300);
+}
+
+.ex-mix [data-mix="other"] {
+  --mix: var(--text-4);
+}
+
+.ex-blk__producer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.ex-blk__producer a {
+  position: relative;
+  z-index: 1;
+}
+
+.ex-blk__city {
+  overflow: hidden;
+  color: var(--text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A block that arrives slides in at the top, and a wash decays over it. */
+.ex-blk[data-fresh] {
+  animation: ex-blk-arrive var(--dur-enter) var(--ease-out) both;
+}
+
+.ex-blk[data-fresh]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--text-1) 10%, transparent),
+    color-mix(in oklab, var(--text-1) 2%, transparent) 70%,
+    transparent
+  );
+  animation: ex-blk-wash var(--dur-fresh) var(--ease-out) both;
+  pointer-events: none;
+}
+
+@keyframes ex-blk-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes ex-blk-wash {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@container blocks (max-width: 559px) {
+  .ex-blocks__head {
+    display: none;
+  }
+
+  .ex-blk {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "height age"
+      "tx by";
+    row-gap: var(--space-2);
+    padding-inline: var(--space-5);
+  }
+
+  .ex-blk__height {
+    grid-area: height;
+  }
+
+  .ex-blk__age {
+    grid-area: age;
+    text-align: right;
+  }
+
+  .ex-blk__tx {
+    grid-area: tx;
+  }
+
+  .ex-blk__by {
+    grid-area: by;
+    justify-self: end;
+    max-width: 100%;
+  }
+
+  .ex-blk__size {
+    display: none;
+  }
+}
+
+/* ---- the mempool pool ----------------------------------------------------------------------------------- */
+
+.hub-panel__body:has(> .ex-pool) {
+  display: flex;
+  flex-direction: column;
+}
+
+.ex-pool {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.ex-pool__count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3) var(--space-4);
+}
+
+.ex-pool__n {
+  --ui-number-weight: var(--fw-light);
+  color: var(--text-1);
+  font: var(--fw-light) 44px / 1 var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-pool__label {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+/* A cell for each waiting transaction, oldest first, so a cell stays where it is while the pool fills. */
+.ex-pool__cells {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap-reverse;
+  align-content: flex-start;
+  gap: 3px;
+  min-height: 116px;
+  padding: var(--space-4);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--ink-0) 55%, var(--ink-1));
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+/* The hexagon lattice behind the pool, faded by a radial mask so it never reaches an edge. */
+.ex-pool__cells::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: var(--pattern-hex);
+  background-size: var(--pattern-hex-size);
+  background-position: center;
+  -webkit-mask: radial-gradient(80% 90% at 50% 100%, var(--ink-0) 0, transparent 100%);
+  mask: radial-gradient(80% 90% at 50% 100%, var(--ink-0) 0, transparent 100%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.ex-pool__cells > i {
+  display: block;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--accent-500) 38%, transparent);
+  animation: ex-cell-in var(--dur-base) var(--ease-out) both;
+}
+
+.ex-pool__cells > i[data-kind="value"] {
+  background: var(--accent-300);
+  box-shadow: 0 0 6px color-mix(in oklab, var(--accent-300) 60%, transparent);
+}
+
+@keyframes ex-cell-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+.ex-pool__more {
+  align-self: center;
+  margin-left: var(--space-2);
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+}
+
+.ex-pool__idle {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  padding: var(--space-5);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.ex-pool__key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+  padding: 0;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1.2 var(--font-sans);
+  list-style: none;
+}
+
+.ex-pool__key li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ex-pool__key b {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+}
+
+.ex-pool__key i {
+  display: block;
+  inline-size: 9px;
+  block-size: 9px;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--accent-500) 38%, transparent);
+}
+
+.ex-pool__key i[data-kind="value"] {
+  background: var(--accent-300);
+}
+
+.ex-pool__facts {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.ex-pool__facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-1);
+}
+
+.ex-pool__facts dt {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.ex-pool__facts dd {
+  margin: 0;
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / 1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-pool__unit {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+
+/* ---- the supply ----------------------------------------------------------------------------------------- */
+
+.ex-supply {
+  display: grid;
+  align-items: center;
+  gap: var(--space-6) var(--space-9);
+}
+
+.ex-supply .ex-supply__figs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: 0;
+  border-top: 0;
+}
+
+.ex-supply__skel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+@container hubpanel (min-width: 820px) {
+  .ex-supply {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+}
+
+/* ---- notes ---------------------------------------------------------------------------------------------- */
+
+/* The ranking on screen is the last good copy: said once, quietly, above the card's content. */
+.ex-stale {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--r-md);
+  background: var(--status-warn-soft);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.ex-stale svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--status-warn);
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .ex-blk[data-fresh] {
+    animation-name: ex-blk-fade;
+  }
+
+  :root:not([data-motion="full"]) .ex-pool__cells > i {
+    animation: none;
+  }
+}
+
+:root[data-motion="reduced"] .ex-blk[data-fresh] {
+  animation-name: ex-blk-fade;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .ex-pool__cells > i {
+  animation: none;
+}
+
+:root[data-motion="off"] .ex-blk[data-fresh],
+:root[data-motion="off"] .ex-blk[data-fresh]::before {
+  animation: none;
+}
+
+@keyframes ex-blk-fade {
+  from {
+    opacity: 0;
+  }
+}

@@ -40,6 +40,7 @@ import { FlowDiagram } from '../flow/FlowDiagram';
 import { ConfirmationGauge } from '../gauge/ConfirmationGauge';
 import { isNotFound, useTxData } from '../hooks/useExplorerData';
 import { JsonView } from '../json/JsonView';
+import { ExplorerNav } from '../landing/ExplorerNav';
 import { payoutSchedule } from '../lib/emission';
 import { buildFlow } from '../lib/txflow';
 import { NODE_TX_KINDS, TX_KINDS } from '../lib/txkinds';
@@ -139,6 +140,7 @@ function TxSkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="Loading transaction">
       <ViewHeader kind="Transaction" icon={ArrowLeftRight} title={<Skeleton w={260} h={26} radius={6} />}>
+        <ExplorerNav />
         <Skeleton w={200} h={22} radius={11} />
         <Skeleton w={110} h={22} radius={11} />
       </ViewHeader>
@@ -470,6 +472,7 @@ export function TxView({ txid }: { txid: string }) {
           </Row>
         }
       >
+        <ExplorerNav />
         <ConfirmationGauge confirmations={q.confirmations} pending={pending} />
         <Chip>{TX_KINDS[tx.kind].label}</Chip>
         {tx.height !== null ? (

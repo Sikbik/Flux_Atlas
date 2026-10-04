@@ -154,6 +154,9 @@ const TONE_VAR: Record<PulseTone, string> = {
 
 /** Windows that sit where the Pulse is (the left, from x 88): the Pulse steps aside for them. */
 const COVERING: readonly WindowType[] = [
+  'explorer',
+  'nodes',
+  'apps',
   'block',
   'tx',
   'address',

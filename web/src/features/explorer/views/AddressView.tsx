@@ -29,6 +29,7 @@ import {
 import { useOpenWallet } from '../../wallet/hooks/useOpenWallet';
 import { isWalletAddress } from '../../wallet/lib/address';
 import { isNotFound, useAddressData, useAddressNodes } from '../hooks/useExplorerData';
+import { ExplorerNav } from '../landing/ExplorerNav';
 import { knownEntity } from '../lib/entities';
 import { AddressNodesTab, AddressOverview } from './address/AddressOverview';
 import { AddressTxList } from './address/AddressTxList';
@@ -55,6 +56,7 @@ function AddressSkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="Loading address">
       <ViewHeader kind="Address" icon={Wallet} title={<Skeleton w={300} h={26} radius={6} />}>
+        <ExplorerNav />
         <Skeleton w={120} h={22} radius={11} />
         <Skeleton w={150} h={22} radius={11} />
       </ViewHeader>
@@ -132,6 +134,7 @@ export function AddressView({ addr }: { addr: string }) {
           </Row>
         }
       >
+        <ExplorerNav />
         <Chip>{KIND[d.kind] ?? d.kind}</Chip>
         {entity ? <Chip tone="accent">{entity.label}</Chip> : null}
         {rank ? (
