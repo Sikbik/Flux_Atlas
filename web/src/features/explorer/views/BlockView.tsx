@@ -40,6 +40,7 @@ import { ConfirmationGauge } from '../gauge/ConfirmationGauge';
 import { useTipHeight } from '../hooks/useChain';
 import { isNotFound, useBlockData } from '../hooks/useExplorerData';
 import { useMempoolLive } from '../hooks/useMempoolLive';
+import { ExplorerNav } from '../landing/ExplorerNav';
 import { payoutSchedule } from '../lib/emission';
 import { BlockTxs } from './BlockTxs';
 import { buildSlices, RewardSplit } from './RewardSplit';
@@ -51,6 +52,7 @@ function BlockSkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="Loading block">
       <ViewHeader kind="Block" icon={Blocks} title={<Skeleton w={190} h={26} radius={6} />}>
+        <ExplorerNav />
         <Skeleton w={190} h={22} radius={11} />
         <Skeleton w={150} h={22} radius={11} />
       </ViewHeader>
@@ -84,6 +86,7 @@ function BlockGhost({ height, tip }: { height: number; tip: number | null }) {
   return (
     <div>
       <ViewHeader kind="Block" icon={Blocks} title={formatHeight(height)} mono>
+        <ExplorerNav />
         <Chip icon={Clock}>Not mined yet</Chip>
       </ViewHeader>
       <div className="ex-ghost" role="status">
@@ -263,6 +266,7 @@ export function BlockView({ blockKey }: { blockKey: string }) {
           </>
         }
       >
+        <ExplorerNav current={tip === b.height ? 'latest' : undefined} />
         <ConfirmationGauge confirmations={q.confirmations} />
         <Chip>{kindWord}</Chip>
         <Chip icon={Clock} mono>

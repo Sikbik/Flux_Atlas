@@ -3,9 +3,10 @@
 // addresses with their share and how much of each balance is locked in nodes.
 
 import { useQuery } from '@tanstack/react-query';
-import { ListOrdered, X } from 'lucide-react';
+import { ArrowUpDown, ListOrdered, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { RichListEntry } from '../../../api/generated/RichListEntry';
+import type { RichMoversWindow } from '../../../api/generated/RichMoversWindow';
 import { queries, useRichList } from '../../../api/queries';
 import { formatInt, parseFlux } from '../../../lib/format';
 import {
@@ -28,6 +29,10 @@ import {
 } from '../../../ui';
 import { useCollateral } from '../hooks/useCollateral';
 import { useDwell } from '../hooks/useDom';
+import { DEFAULT_MOVERS_WINDOW, isRichListStale, useRichMovers } from '../landing/api';
+import { ExplorerNav } from '../landing/ExplorerNav';
+import { MoversBlock } from '../landing/MoversBlock';
+import { StaleNote } from '../landing/StaleNote';
 import { knownEntity } from '../lib/entities';
 import { concentration, formatShare, lockedSats } from '../lib/richlist';
 import { AddressTag, Dense } from './shared';
@@ -105,7 +110,9 @@ const rowKey = (e: RichListEntry) => e.address;
 function RichListSkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="Loading the rich list">
-      <ViewHeader kind="Rich list" icon={ListOrdered} title="Rich list" />
+      <ViewHeader kind="Rich list" icon={ListOrdered} title="Rich list">
+        <ExplorerNav current="richlist" />
+      </ViewHeader>
       <div className="ex-hero">
         <StatGrid min={220}>
           <Stat hero label="Held by the ten largest addresses" loading />
@@ -120,6 +127,8 @@ function RichListSkeleton() {
 
 export function RichListView() {
   const q = useRichList();
+  const [moversWindow, setMoversWindow] = useState<RichMoversWindow>(DEFAULT_MOVERS_WINDOW);
+  const movers = useRichMovers(moversWindow);
   const [bucketKey, setBucketKey] = useState<string | null>(null);
   const [nodeFilter, setNodeFilter] = useState<NodeFilter>('all');
   const entries = q.data?.entries;
@@ -190,9 +199,16 @@ export function RichListView() {
         subtitle="Who holds the supply, ranked by balance."
         freshness={<Freshness label="ranking" ts={q.data?.updated_ms ?? null} cadenceMs={600_000} />}
       >
+        <ExplorerNav current="richlist" />
         <Chip mono>{formatInt(conc.listed)} addresses ranked</Chip>
         <Chip title="Collateral locked by a node stays in its owner's balance">Locked coins are counted</Chip>
       </ViewHeader>
+
+      {isRichListStale(q.data) && q.data ? (
+        <div className="ex-hero">
+          <StaleNote what="ranking" ts={q.data.updated_ms} />
+        </div>
+      ) : null}
 
       <div className="ex-hero">
         <StatGrid min={220}>
@@ -219,6 +235,10 @@ export function RichListView() {
           labelWidth="minmax(104px, 150px)"
         />
         <p className="ex-caption">Choose a bar to list its addresses below.</p>
+      </Section>
+
+      <Section title="Movers" icon={ArrowUpDown}>
+        <MoversBlock query={movers} window={moversWindow} onWindow={setMoversWindow} variant="page" />
       </Section>
 
       <Section title="Addresses by balance" aside={`${formatInt(shown.length)} shown`} flush>
