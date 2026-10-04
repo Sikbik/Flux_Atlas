@@ -2,7 +2,7 @@
 // entities carry a label and a note), its history, the nodes it is paid for and when, its unspent
 // outputs. Everything updates as blocks land.
 
-import { Wallet } from 'lucide-react';
+import { Wallet, WalletCards } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useRichList } from '../../../api/queries';
 import { usePrice } from '../../../app/context';
@@ -10,6 +10,7 @@ import { formatInt, formatSats, parseFlux } from '../../../lib/format';
 import {
   Amount,
   AnimatedNumber,
+  Button,
   Chip,
   CopyButton,
   EmptyState,
@@ -25,6 +26,7 @@ import {
   Tabs,
   ViewHeader,
 } from '../../../ui';
+import { useOpenWallet } from '../../wallet/hooks/useOpenWallet';
 import { isNotFound, useAddressData, useAddressNodes } from '../hooks/useExplorerData';
 import { knownEntity } from '../lib/entities';
 import { AddressNodesTab, AddressOverview } from './address/AddressOverview';
@@ -74,6 +76,7 @@ export function AddressView({ addr }: { addr: string }) {
   const price = usePrice();
   const rich = useRichList();
   const nodes = useAddressNodes(addr);
+  const openWallet = useOpenWallet();
   const [tab, setTab] = useState<TabId>('overview');
   const d = q.data;
 
@@ -141,6 +144,16 @@ export function AddressView({ addr }: { addr: string }) {
           <Chip title="On its way and not in the balance yet">
             Unconfirmed <Amount value={pending} decimals={2} sign="always" tone="signed" />
           </Chip>
+        ) : null}
+        {d.kind === 'p2pkh' || d.kind === 'p2sh' ? (
+          <Button
+            size="sm"
+            icon={WalletCards}
+            title="Earnings, payments, fleet, health and apps of this address, in the wallet workspace"
+            onClick={() => openWallet(d.address)}
+          >
+            Open wallet workspace
+          </Button>
         ) : null}
       </ViewHeader>
 

@@ -284,6 +284,24 @@ export function addressRow(
   };
 }
 
+/** The wallet workspace of an address: earnings, fleet, health and apps, for the nodes paid to it. */
+export function walletRow(addr: string, sub: string | undefined, score: number): PaletteRow {
+  return {
+    id: `wallet:${addr}`,
+    group: 'addresses',
+    kind: 'wallet',
+    icon: 'wallet',
+    title: addr,
+    mono: true,
+    sub: sub ? `Wallet workspace, ${sub}` : 'Wallet workspace',
+    chip: 'Wallet',
+    score,
+    action: { type: 'go', target: { to: '/wallet/$addr', params: { addr } } },
+    alongside: true,
+    remember: true,
+  };
+}
+
 export function operatorRow(addr: string, sub: string | undefined, score: number): PaletteRow {
   return {
     id: `operator:${addr}`,

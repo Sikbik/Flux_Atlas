@@ -1,8 +1,9 @@
-import { Eye, EyeOff, Globe, LocateFixed, UserRound } from 'lucide-react';
+import { Eye, EyeOff, Globe, LocateFixed, UserRound, WalletCards } from 'lucide-react';
 import { useMemo } from 'react';
 import { useGlobeEngine } from '../../../globe';
 import { formatInt } from '../../../lib/format';
 import { Button, Hash, IconButton, StatusChip, TierChip, ViewHeader } from '../../../ui';
+import { useOpenWallet } from '../../wallet/hooks/useOpenWallet';
 import {
   type FleetNode,
   type FleetState,
@@ -90,6 +91,7 @@ export function FleetHeader({
   onToggleWatch,
 }: FleetHeaderProps) {
   const engine = useGlobeEngine();
+  const openWallet = useOpenWallet();
   const watchlist = mode === 'watchlist';
   const mix: TierMix = useMemo(() => tierMix(nodes), [nodes]);
   const dominant: QueueTier | undefined = (['stratus', 'nimbus', 'cumulus'] as const).find((t) => mix[t] > 0);
@@ -158,6 +160,16 @@ export function FleetHeader({
           mix[t] > 0 ? (
             <TierChip key={t} tier={t} size="sm" label={`${formatInt(mix[t])} ${tierName(t)}`} />
           ) : null,
+        )}
+        {watchlist ? null : (
+          <Button
+            size="sm"
+            icon={WalletCards}
+            title="Earnings, payments, fleet, health and apps of this address, in the wallet workspace"
+            onClick={() => openWallet(addr)}
+          >
+            Open wallet workspace
+          </Button>
         )}
       </ViewHeader>
       <div className="ix-pad ix-gap-top">

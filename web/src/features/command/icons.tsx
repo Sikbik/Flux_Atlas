@@ -35,6 +35,7 @@ import {
   UserRound,
   Volume2,
   Wallet,
+  WalletCards,
   Wind,
 } from 'lucide-react';
 import { TierGlyph } from '../../ui';
@@ -49,6 +50,7 @@ const ICONS: Record<Exclude<IconId, 'moon'>, LucideIcon> = {
   block: Box,
   tx: ArrowLeftRight,
   address: Wallet,
+  wallet: WalletCards,
   operator: UserRound,
   country: Flag,
   city: MapPin,

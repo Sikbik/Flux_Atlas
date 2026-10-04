@@ -196,11 +196,48 @@ describe('local matches', () => {
     expect(run('block 2,996,914').best?.id).toBe('block:2996914');
   });
 
-  it('shows an address at once and offers its operator', () => {
+  it('shows an address at once and offers its wallet workspace and its operator', () => {
     const a = 't1cz5PE2QbwzPvqMVohgGqnoaupwzS3k4bx';
     const m = run(a);
-    expect(group(m, 'addresses')?.rows.map((r) => r.id)).toEqual([`address:${a}`, `operator:${a}`]);
-    expect(run(`operator ${a}`).groups[0]?.rows[0]?.id).toBe(`operator:${a}`);
+    expect(group(m, 'addresses')?.rows.map((r) => r.id)).toEqual([
+      `address:${a}`,
+      `wallet:${a}`,
+      `operator:${a}`,
+    ]);
+    expect(run(`operator ${a}`).groups[0]?.rows.map((r) => r.id)).toEqual([`operator:${a}`]);
+    expect(run(`addr ${a}`).groups[0]?.rows.map((r) => r.id)).toEqual([
+      `address:${a}`,
+      `wallet:${a}`,
+      `operator:${a}`,
+    ]);
+  });
+
+  it('opens the wallet workspace from a row, and from the wallet prefix alone', () => {
+    const a = 't1cz5PE2QbwzPvqMVohgGqnoaupwzS3k4bx';
+    const row = group(run(a), 'addresses')?.rows.find((r) => r.kind === 'wallet');
+    expect(row).toMatchObject({
+      icon: 'wallet',
+      chip: 'Wallet',
+      mono: true,
+      sub: 'Wallet workspace',
+      alongside: true,
+      remember: true,
+      action: { type: 'go', target: { to: '/wallet/$addr', params: { addr: a } } },
+    });
+    const only = run(`wallet ${a}`);
+    expect(only.groups).toHaveLength(1);
+    expect(only.groups[0]?.rows.map((r) => r.id)).toEqual([`wallet:${a}`]);
+    expect(only.best?.id).toBe(`wallet:${a}`);
+  });
+
+  it('offers a wallet for a ZelID-shaped address too, as the operator row does', () => {
+    const zel = '1cz5PE2QbwzPvqMVohgGqnoaupwzS3k4bx';
+    expect(group(run(zel), 'addresses')?.rows.map((r) => r.kind)).toEqual(['address', 'wallet', 'operator']);
+  });
+
+  it('leaves a word that is not an address without a wallet row', () => {
+    expect(rowsOf(run('kadena')).some((r) => r.kind === 'wallet')).toBe(false);
+    expect(rowsOf(run('wallet kadena')).some((r) => r.kind === 'wallet')).toBe(false);
   });
 });
 
@@ -254,6 +291,13 @@ describe('actions and prefixes', () => {
     expect(bare.usage).toBe('goto <place or lat,lon>');
     expect(group(bare, 'goto')?.rows.length).toBeGreaterThan(0);
     expect(run('operator ').usage).toBe('operator <address or ZelID>');
+    expect(run('wallet ').usage).toBe('wallet <address>');
+  });
+
+  it('reads the wallet prefix and its plural', () => {
+    expect(parseInput('wallet t1abc')).toMatchObject({ prefix: 'wallet', text: 't1abc' });
+    expect(parseInput('Wallets t1abc')).toMatchObject({ prefix: 'wallet' });
+    expect(parseInput('wallet')).toMatchObject({ prefix: null, text: 'wallet' });
   });
 });
 
@@ -339,6 +383,29 @@ describe('merging server hits', () => {
     ];
     const m = run(a, { hits: server });
     expect(group(m, 'addresses')?.rows[0]?.sub).toBe('Address, pays 3 active nodes');
+  });
+
+  it('tells the wallet row how many nodes an operator hit pays', () => {
+    const a = 't1cz5PE2QbwzPvqMVohgGqnoaupwzS3k4bx';
+    const server: SearchHit[] = [
+      { kind: 'operator', key: a, label: `Operator ${a}`, sublabel: 'pays 3 active nodes' },
+    ];
+    const m = run(a, { hits: server });
+    const rows = group(m, 'addresses')?.rows ?? [];
+    expect(rows.find((r) => r.kind === 'wallet')?.sub).toBe('Wallet workspace, pays 3 active nodes');
+    expect(rows.find((r) => r.kind === 'operator')?.sub).toBe('Operator, pays 3 active nodes');
+    expect(rows.filter((r) => r.kind === 'wallet')).toHaveLength(1);
+  });
+
+  it('keeps the wallet row of an operator hit under the wallet prefix, and drops the others', () => {
+    const a = 't1cz5PE2QbwzPvqMVohgGqnoaupwzS3k4bx';
+    const server: SearchHit[] = [
+      { kind: 'operator', key: a, label: `Operator ${a}`, sublabel: 'pays 3 active nodes' },
+      { kind: 'address', key: a, label: `Address ${a}`, sublabel: null },
+    ];
+    const m = run(`wallet ${a}`, { hits: server });
+    expect(rowsOf(m).map((r) => r.id)).toEqual([`wallet:${a}`]);
+    expect(rowsOf(m)[0]?.sub).toBe('Wallet workspace, pays 3 active nodes');
   });
 });
 
