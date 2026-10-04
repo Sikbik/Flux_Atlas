@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react';
 import { AnimatedNumber, Delta, SegmentedControl, Stat, StatGrid, Switch } from '../../../../ui';
 import { useWalletCtx } from '../../context';
+import { wholeDays } from '../../lib/earnings';
 import { flux, MONTH_DAYS, YEAR_DAYS } from '../../lib/money';
 import { useWalletPrefs } from '../../prefs';
 import { Panel } from '../../ui/Panel';
@@ -44,9 +45,16 @@ export function RunRate() {
   const pa = paDay * spec.days;
   const total = native + (includePa ? pa : 0);
 
+  // What was paid in the last seven days, as stored. The comparisons (a week against the week before, the daily
+  // average against the pace) use whole days only: the window's first day and the running day are partial, and a
+  // partial day would read as a drop.
   const week = useMemo(() => lastDays(e.days, 7), [e.days]);
-  const change = week.before !== null && week.before > 0 ? (week.last / week.before - 1) * 100 : null;
-  const weekAvg = e.days.length > 0 ? week.last / Math.min(7, e.days.length) : 0;
+  const whole = useMemo(() => {
+    const list = wholeDays(e.days, e.covered_from_ms, Date.now());
+    return { ...lastDays(list, 7), count: Math.min(7, list.length) };
+  }, [e.days, e.covered_from_ms]);
+  const change = whole.before !== null && whole.before > 0 ? (whole.last / whole.before - 1) * 100 : null;
+  const weekAvg = whole.count > 0 ? whole.last / whole.count : 0;
   const paceVsWeek = nativeDay > 0 && weekAvg > 0 ? (weekAvg / nativeDay - 1) * 100 : null;
 
   const none = dto.nodes.length === 0 || (nativeDay === 0 && paDay === 0);

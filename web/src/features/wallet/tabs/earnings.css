@@ -106,7 +106,8 @@
 .wl-costs__fields {
   display: grid;
   gap: var(--space-5) var(--space-6);
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  /* A field keeps a sensible width: one tier alone does not stretch across the whole panel. */
+  grid-template-columns: repeat(auto-fill, minmax(190px, 260px));
 }
 
 .wl-costs__label {

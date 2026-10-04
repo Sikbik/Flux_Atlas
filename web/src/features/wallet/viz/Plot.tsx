@@ -73,6 +73,8 @@ export interface PlotProps {
   axis: PlotAxis;
   formatTick: (value: number, step: number) => string;
   height?: number;
+  /** Room each label on the time axis gets, in px (default 74): a long window with wide labels needs more. */
+  tickSpace?: number;
   /** The marks, in the plot's own pixels, drawn under the crosshair. Keep it stable (`useCallback`): it is only called again when it or the geometry changes. */
   marks: (geo: PlotGeo) => ReactNode;
   /** The line the tooltip keeps clear of, in the plot's own pixels. Keep it stable. */
@@ -125,6 +127,7 @@ export function Plot({
   axis,
   formatTick,
   height = 232,
+  tickSpace = TICK_SPACE,
   marks,
   track,
   anchor,
@@ -162,8 +165,8 @@ export function Plot({
   }, [width, height, plotW, plotH, domain, axis.lo, axis.hi]);
 
   const xTicks = useMemo(
-    () => timeTicks(domain[0], domain[1], Math.max(3, Math.floor(plotW / TICK_SPACE))),
-    [domain, plotW],
+    () => timeTicks(domain[0], domain[1], Math.max(3, Math.floor(plotW / tickSpace))),
+    [domain, plotW, tickSpace],
   );
 
   // A new window starts with nothing under the crosshair.

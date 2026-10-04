@@ -19,8 +19,7 @@ export function ParallelStrip() {
       <Panel title="Parallel assets">
         {assets.isError ? (
           <EmptyState compact icon={CloudOff} title="Parallel assets are not available right now" tone="warn">
-            Zelcore Fusion, where they are claimed, is not answering. Everything else on this page is
-            unaffected.
+            Flux Fusion, where they are claimed, is not answering. Everything else on this page is unaffected.
           </EmptyState>
         ) : (
           <StatGrid min={150} columns={3} aria-busy="true">
@@ -43,7 +42,7 @@ export function ParallelStrip() {
   const share = claimedShare(a);
   const chains = a.chains.filter((c) => c.active).length;
   return (
-    <Panel title="Parallel assets" aside="claimed in Zelcore Fusion">
+    <Panel title="Parallel assets" aside="claimed in Flux Fusion">
       <StatGrid min={150} columns={2}>
         <Stat
           label="Claimable now"

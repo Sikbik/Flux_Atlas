@@ -175,7 +175,7 @@ export function ProfitPanel({ price, factor }: { price: number | null; factor: n
         />
         <Stat
           label="Margin"
-          value={profit.margin === null ? null : formatPercent(profit.margin, 1)}
+          value={profit.margin === null || !profit.costed ? null : formatPercent(profit.margin, 1)}
           caption={profit.costed ? 'of what is earned' : 'enter a cost'}
         />
         <Stat
@@ -198,7 +198,11 @@ export function ProfitPanel({ price, factor }: { price: number | null; factor: n
         </div>
         {profit.breakEven !== null && price !== null ? (
           <Meter
-            label="FLUX price against break-even"
+            label={
+              Math.abs(factor - 1) < 0.005
+                ? "Today's FLUX price against break-even"
+                : 'Scenario FLUX price against break-even'
+            }
             value={price}
             min={0}
             max={gaugeMax}
@@ -207,7 +211,7 @@ export function ProfitPanel({ price, factor }: { price: number | null; factor: n
               { from: 0, to: profit.breakEven, tone: 'crit', label: 'Loss' },
               { from: profit.breakEven, to: gaugeMax, tone: 'ok', label: 'Profit' },
             ]}
-            format={(v) => `${formatPrice(v, money.currency)} today`}
+            format={(v) => formatPrice(v, money.currency)}
             showValue
             startLabel={formatPrice(0, money.currency)}
             endLabel={formatPrice(gaugeMax, money.currency)}

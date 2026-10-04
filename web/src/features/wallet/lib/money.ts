@@ -125,6 +125,28 @@ export function priceOf(spot: Nullable<PricesDto['spot']>, code: CurrencyCode): 
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
 }
 
+/**
+ * The currencies the prices quote, in the selector's order. The server quotes them all when CoinGecko answered,
+ * and only dollars and bitcoin when CoinGecko never has (a fallback), so the list can be short.
+ */
+export function quotedCurrencies(spot: Nullable<PricesDto['spot']>): CurrencyCode[] {
+  return CURRENCIES.filter((c) => priceOf(spot, c) !== null);
+}
+
+/**
+ * The currency to show: the viewer's own choice, unless the prices do not quote it right now, and then dollars (or the
+ * first one that is quoted). The choice itself is kept, so it comes back when the prices do. With no prices at all
+ * the choice stands and every money figure reads Unknown.
+ */
+export function displayCurrency(
+  preferred: CurrencyCode,
+  spot: Nullable<PricesDto['spot']>,
+): { currency: CurrencyCode; fellBack: boolean } {
+  const quoted = quotedCurrencies(spot);
+  if (quoted.length === 0 || quoted.includes(preferred)) return { currency: preferred, fellBack: false };
+  return { currency: quoted.includes('usd') ? 'usd' : (quoted[0] as CurrencyCode), fellBack: true };
+}
+
 /** FLUX as money at a price (one FLUX in the currency); null without a price. */
 export function toMoney(fluxAmount: number, price: Nullable<number>): number | null {
   return price === null || price === undefined ? null : fluxAmount * price;

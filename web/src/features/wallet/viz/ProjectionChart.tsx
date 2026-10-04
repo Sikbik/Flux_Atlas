@@ -159,6 +159,7 @@ export function ProjectionChart({
       summary={summary}
       t={centers}
       domain={domain}
+      tickSpace={104}
       axis={axis}
       formatTick={tick}
       marks={marks}

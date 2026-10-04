@@ -74,7 +74,7 @@ export function ProjectionPanel({ unit, onUnit, price }: ProjectionPanelProps) {
         </>
       }
     >
-      <StatGrid min={150} columns={3}>
+      <StatGrid min={200}>
         {HORIZONS.map((d) => (
           <Stat
             key={d}

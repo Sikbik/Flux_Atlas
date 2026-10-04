@@ -138,6 +138,27 @@ export function isCompleteDay(d: Pick<Daily, 't' | 'partialFirst' | 'partialLast
   return !(d.partialFirst && i === 0) && !(d.partialLast && i === d.t.length - 1);
 }
 
+/**
+ * The days that are whole: the window's first day is left out when the stored blocks begin part way through it, and the
+ * last when it has not ended. For the figures that compare days (an average, a week against the week before).
+ */
+export function wholeDays<T extends { day_ms: number }>(
+  days: readonly T[],
+  coveredFromMs: number | null,
+  nowMs: number,
+): T[] {
+  if (days.length === 0) return [];
+  const first = (days[0] as T).day_ms;
+  const last = (days[days.length - 1] as T).day_ms;
+  const dropFirst =
+    coveredFromMs !== null && coveredFromMs - first >= PARTIAL_FIRST_MS && coveredFromMs - first < DAY_MS;
+  const dropLast = nowMs - last < DAY_MS && nowMs >= last;
+  // One partial day alone leaves nothing; two partial days at the ends of a two-day window leave nothing either.
+  const from = dropFirst ? 1 : 0;
+  const to = dropLast ? days.length - 1 : days.length;
+  return from < to ? days.slice(from, to) : [];
+}
+
 export interface DailyTotals {
   native: number;
   pa: number;

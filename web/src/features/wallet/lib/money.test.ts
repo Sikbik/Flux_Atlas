@@ -3,6 +3,7 @@ import type { PricePoint, PricesDto } from '../types';
 import {
   convertMoney,
   DAY_MS,
+  displayCurrency,
   flux,
   fluxOrNull,
   formatMoney,
@@ -11,6 +12,7 @@ import {
   isCurrency,
   priceOf,
   priceOnDay,
+  quotedCurrencies,
   toMoney,
 } from './money';
 
@@ -113,6 +115,33 @@ describe('priceOf and conversions', () => {
     expect(convertMoney(10, 'usd', 'eur', spot)).toBeCloseTo((10 / 0.0747) * 0.0687, 8);
     expect(convertMoney(10, 'usd', 'usd', spot)).toBe(10);
     expect(convertMoney(10, 'usd', 'eur', null)).toBeNull();
+  });
+});
+
+describe('the currency to show', () => {
+  // CoinGecko never answered: the server quotes dollars and bitcoin only.
+  const fallback: PricesDto['spot'] = { usd: 0.0747, btc: 0.00000088 };
+
+  it('lists the currencies the prices quote, in the selector order', () => {
+    expect(quotedCurrencies(spot)).toHaveLength(16);
+    expect(quotedCurrencies(fallback)).toEqual(['usd', 'btc']);
+    expect(quotedCurrencies(null)).toEqual([]);
+    expect(quotedCurrencies({ usd: 0, eur: Number.NaN })).toEqual([]);
+  });
+
+  it("keeps the viewer's choice while it is quoted", () => {
+    expect(displayCurrency('eur', spot)).toEqual({ currency: 'eur', fellBack: false });
+    expect(displayCurrency('btc', fallback)).toEqual({ currency: 'btc', fellBack: false });
+  });
+
+  it('shows dollars when the choice is not quoted, and says it fell back', () => {
+    expect(displayCurrency('eur', fallback)).toEqual({ currency: 'usd', fellBack: true });
+    expect(displayCurrency('jpy', { btc: 0.000001 })).toEqual({ currency: 'btc', fellBack: true });
+  });
+
+  it('leaves the choice alone when there are no prices at all', () => {
+    expect(displayCurrency('eur', null)).toEqual({ currency: 'eur', fellBack: false });
+    expect(displayCurrency('eur', {})).toEqual({ currency: 'eur', fellBack: false });
   });
 });
 

@@ -55,8 +55,6 @@
   stroke-dasharray: 1;
   stroke-dashoffset: 0;
   animation: wl-dial-sweep var(--dur-stage, 900ms) var(--ease-out) backwards;
-  /* a quarter of the ring stays lit so the draw reads as a sweep that settles, not a full ring that pops */
-  mask: none;
 }
 
 .wl-dial__hubring {

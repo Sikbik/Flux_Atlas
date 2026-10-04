@@ -14,6 +14,7 @@ import {
   rangesFor,
   sliceDays,
   totalsOf,
+  wholeDays,
 } from './earnings';
 import { DAY_MS } from './money';
 
@@ -186,6 +187,34 @@ describe('buildDaily', () => {
     expect(isCompleteDay(d, 1)).toBe(true);
     expect(isCompleteDay(d, 9)).toBe(true);
     expect(isCompleteDay(d, 10)).toBe(false);
+  });
+});
+
+describe('wholeDays', () => {
+  const now = START + 10 * DAY_MS + 6 * 3_600_000;
+  const list = days(11);
+
+  it('drops the running day and a partial first day', () => {
+    const w = wholeDays(list, START + 15 * 3_600_000, now);
+    expect(w).toHaveLength(9);
+    expect(w[0]).toBe(list[1]);
+    expect(w[8]).toBe(list[9]);
+  });
+
+  it('keeps a first day the window covers whole', () => {
+    expect(wholeDays(list, START, now)).toHaveLength(10);
+    expect(wholeDays(list, START + 20 * 60_000, now)).toHaveLength(10);
+    expect(wholeDays(list, null, now)).toHaveLength(10);
+  });
+
+  it('keeps the last day once it has ended', () => {
+    expect(wholeDays(list, START, START + 12 * DAY_MS)).toHaveLength(11);
+  });
+
+  it('leaves nothing when every day is partial or there are none', () => {
+    expect(wholeDays(days(1), START + 9 * 3_600_000, START + 12 * 3_600_000)).toEqual([]);
+    expect(wholeDays(days(2), START + 9 * 3_600_000, START + DAY_MS + 3_600_000)).toEqual([]);
+    expect(wholeDays([], START, now)).toEqual([]);
   });
 });
 
