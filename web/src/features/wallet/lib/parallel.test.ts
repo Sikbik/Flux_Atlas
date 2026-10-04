@@ -4,18 +4,24 @@ import {
   chainName,
   chainTicker,
   chainTotals,
+  claimAllSaving,
   claimChainLabel,
   claimEfficiency,
   claimedShare,
   claimHistoryTotals,
   claimLink,
+  composition,
+  daysToWorth,
   explorerUrl,
+  feeGaugePos,
   feeShareText,
+  GAUGE_STOPS,
   isClaimAll,
   receivingLink,
   safeHttpUrl,
   sortChains,
   verdictView,
+  waitText,
 } from './parallel';
 
 const claim = (over: Partial<PaClaim> = {}): PaClaim => ({
@@ -134,6 +140,88 @@ describe('sortChains and chainTotals', () => {
   it('adds up only the chains that can be claimed', () => {
     const t = chainTotals(chains);
     expect(t).toEqual({ claimable: 10_100, fees: 30, net: 10_070, active: 3, inactive: 1 });
+  });
+});
+
+describe('composition and claim-all savings', () => {
+  const chains = [
+    chain('kda', { claimed: 100, claimable: 40, claim_fee: 10 }),
+    chain('eth', { claimed: 50, claimable: 60, claim_fee: 12 }),
+    chain('erg', { active: false, claimed: 70, claimable: 90, claim_fee: 10 }),
+  ];
+
+  it('splits what was mined into claimed, claimable now and stuck on an ended chain', () => {
+    expect(composition(chains)).toEqual({ claimed: 220, claimable: 100, stuck: 90 });
+    expect(composition([])).toEqual({ claimed: 0, claimable: 0, stuck: 0 });
+  });
+
+  it('never counts a negative figure', () => {
+    expect(composition([chain('a', { claimed: -5, claimable: -9 })])).toEqual({
+      claimed: 0,
+      claimable: 0,
+      stuck: 0,
+    });
+  });
+
+  it('saves the difference between claiming each chain and claiming all', () => {
+    // 10 + 12 on their own (the ended chain is not claimable), 15 for the claim-all.
+    expect(claimAllSaving(chains, { claimable: 100, fees: 15 })).toBe(7);
+  });
+
+  it('saves nothing when claiming all is not cheaper, or there is no quote', () => {
+    expect(claimAllSaving(chains, { claimable: 100, fees: 30 })).toBe(0);
+    expect(claimAllSaving(chains, { claimable: 0, fees: 0 })).toBe(0);
+  });
+});
+
+describe('how long until a claim is worth it', () => {
+  it('counts the days to a claim whose fee is one percent', () => {
+    // A fee of 31 is one percent of 3,100; 100 are waiting and 300 accrue a day.
+    const e = claimEfficiency(chain('matic', { claimable: 100, claim_fee: 31 }));
+    expect(e.worthAt).toBeCloseTo(3100, 9);
+    expect(daysToWorth(e, 300)).toBeCloseTo(10, 9);
+  });
+
+  it('is zero once it is, and unknown without a pace or a fee', () => {
+    expect(daysToWorth(claimEfficiency(chain('a', { claimable: 5000, claim_fee: 10 })), 300)).toBe(0);
+    expect(daysToWorth(claimEfficiency(chain('a', { claimable: 100, claim_fee: 10 })), 0)).toBeNull();
+    expect(daysToWorth(claimEfficiency(chain('a', { claimable: 100, claim_fee: 0 })), 300)).toBeNull();
+  });
+
+  it('writes a wait the way it reads', () => {
+    expect(waitText(0.4)).toBe('under a day');
+    expect(waitText(1)).toBe('about 1 day');
+    expect(waitText(3.2)).toBe('about 3 days');
+    expect(waitText(35)).toBe('about 5 weeks');
+    expect(waitText(150)).toBe('about 5 months');
+    expect(waitText(500)).toBe('over a year');
+  });
+});
+
+describe('the fee gauge', () => {
+  it('runs from a thousandth of the claim to all of it on a log scale', () => {
+    expect(feeGaugePos(0.001)).toBe(0);
+    expect(feeGaugePos(0.0001)).toBe(0);
+    expect(feeGaugePos(1)).toBe(1);
+    expect(feeGaugePos(3)).toBe(1);
+    expect(feeGaugePos(0.0316227766)).toBeCloseTo(0.5, 6);
+  });
+
+  it('puts the one percent and five percent stops where the advice changes', () => {
+    expect(GAUGE_STOPS.worth).toBeCloseTo(1 / 3, 12);
+    expect(GAUGE_STOPS.fair).toBeCloseTo((Math.log10(0.05) + 3) / 3, 12);
+    expect(GAUGE_STOPS.worth).toBeLessThan(GAUGE_STOPS.fair);
+    expect(feeGaugePos(0.0002296) as number).toBe(0);
+    expect(feeGaugePos(0.005) as number).toBeLessThan(GAUGE_STOPS.worth);
+    expect(feeGaugePos(0.03) as number).toBeGreaterThan(GAUGE_STOPS.worth);
+    expect(feeGaugePos(0.03) as number).toBeLessThan(GAUGE_STOPS.fair);
+    expect(feeGaugePos(0.2) as number).toBeGreaterThan(GAUGE_STOPS.fair);
+  });
+
+  it('has no position for no share', () => {
+    expect(feeGaugePos(null)).toBeNull();
+    expect(feeGaugePos(Number.NaN)).toBeNull();
+    expect(feeGaugePos(-1)).toBeNull();
   });
 });
 

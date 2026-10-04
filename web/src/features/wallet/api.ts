@@ -65,11 +65,12 @@ export const walletQueries = {
     queryOptions({
       queryKey: walletKeys.assets(addr),
       queryFn: ({ signal }) => walletApi.parallelAssets(addr, { signal }),
-      // An external service: ask politely, and keep what it said for a few minutes. While it is down, ask again at
-      // the pace the server states, and stop the moment it answers (the page is open and visible: no background
-      // polling).
+      // An external service: ask politely, and keep what it said for a few minutes. When it is down the page must
+      // say so at once, not after the app's own retries (which wait out the server's Retry-After: half a minute
+      // each), so there is no retry here. The state it shows asks again at the pace the server states, and stops the
+      // moment Fusion answers (the page is open and visible: no background polling).
       staleTime: 5 * MIN,
-      retry: 1,
+      retry: false,
       refetchInterval: (query) => (query.state.status === 'error' ? retryAfterMs(query.state.error) : false),
     }),
   prices: () =>

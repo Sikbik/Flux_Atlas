@@ -1,0 +1,91 @@
+/* The fee gauge: a log-scale track painted to the advice (worth it, a small share, wait), and the chain's own share as a
+   marker. Tokens only; at rest nothing moves, and the marker travels only when the numbers change. */
+
+.wl-gauge {
+  --wl-gauge-h: 8px;
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: 16px;
+  min-width: 0;
+}
+
+.wl-gauge__track {
+  position: relative;
+  display: block;
+  height: var(--wl-gauge-h);
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--status-ok) 38%, transparent) 0 var(--worth),
+    color-mix(in srgb, var(--status-pending) 38%, transparent) var(--worth) var(--fair),
+    color-mix(in srgb, var(--status-warn) 38%, transparent) var(--fair) 100%
+  );
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+
+.wl-gauge__marker {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: calc(var(--wl-gauge-h) + 10px);
+  border-radius: var(--r-pill);
+  background: var(--text-1);
+  box-shadow:
+    0 0 0 2px var(--ink-1),
+    0 0 10px 0 var(--wl-gauge-glow, transparent);
+  transform: translate(-50%, -50%);
+  transition: left var(--dur-slow) var(--ease-out);
+}
+
+.wl-gauge[data-tone="ok"] {
+  --wl-gauge-glow: var(--status-ok);
+}
+
+.wl-gauge[data-tone="pending"] {
+  --wl-gauge-glow: var(--status-pending);
+}
+
+.wl-gauge[data-tone="warn"] {
+  --wl-gauge-glow: var(--status-warn);
+}
+
+.wl-gauge[data-tone="crit"] {
+  --wl-gauge-glow: var(--status-crit);
+}
+
+.wl-gauge__ticks {
+  position: absolute;
+  inset: calc(var(--wl-gauge-h) + var(--space-2)) 0 0;
+  color: var(--text-4);
+  font: var(--fw-regular) 10px / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.wl-gauge__ticks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* the ends keep inside the track */
+.wl-gauge__ticks span:first-child {
+  transform: none;
+}
+
+.wl-gauge__ticks span:last-child {
+  transform: translateX(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .wl-gauge__marker {
+    transition: none;
+  }
+}
+
+:root[data-motion="reduced"] .wl-gauge__marker,
+:root[data-motion="off"] .wl-gauge__marker {
+  transition: none;
+}

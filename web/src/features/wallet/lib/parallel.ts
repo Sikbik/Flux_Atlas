@@ -1,5 +1,5 @@
 // Parallel assets: what a claim is worth against what it costs, the order the chains read in, and safe links to
-// their explorers. Atlas never claims anything (that happens in Zelcore Fusion); this only reads and advises.
+// their explorers. Atlas never claims anything (that happens in Flux Fusion); this only reads and advises.
 
 import type { PaChain, PaClaim, ParallelAssetsDto } from '../types';
 
@@ -86,6 +86,29 @@ export function verdictView(v: ClaimVerdict): VerdictView {
   }
 }
 
+/**
+ * How many days at `perDay` until this chain's claim is big enough for its fee to be one percent of it; 0 when it
+ * already is, null when there is no pace or the fee is not known. The parallel-asset rule gives every chain the same
+ * accrual (a tenth of the native rewards), so `perDay` is the same for each.
+ */
+export function daysToWorth(
+  e: Pick<Efficiency, 'feeKnown' | 'gross' | 'worthAt'>,
+  perDay: number,
+): number | null {
+  if (!e.feeKnown || !(perDay > 0)) return null;
+  const missing = e.worthAt - e.gross;
+  return missing <= 0 ? 0 : missing / perDay;
+}
+
+/** A wait in days as it reads: `under a day`, `about 3 days`, `about 5 weeks`, `over a year`. */
+export function waitText(days: number): string {
+  if (days < 1) return 'under a day';
+  if (days < 14) return `about ${Math.round(days)} ${Math.round(days) === 1 ? 'day' : 'days'}`;
+  if (days < 90) return `about ${Math.round(days / 7)} weeks`;
+  if (days < 365) return `about ${Math.round(days / 30.4375)} months`;
+  return 'over a year';
+}
+
 /** The fee as it reads: `0.02%`, `1.4%`, `over 100%`. */
 export function feeShareText(share: number | null): string {
   if (share === null) return 'Unknown';
@@ -134,6 +157,62 @@ export function chainTotals(chains: readonly PaChain[]): ChainTotals {
 export function claimedShare(dto: Pick<ParallelAssetsDto, 'mined' | 'claimed'>): number | null {
   return dto.mined > 0 ? Math.min(1, Math.max(0, dto.claimed / dto.mined)) : null;
 }
+
+export interface Composition {
+  /** Already claimed. */
+  claimed: number;
+  /** Waiting on a chain that can be claimed now. */
+  claimable: number;
+  /** Waiting on a chain Fusion no longer swaps: it accrues but cannot be claimed. */
+  stuck: number;
+}
+
+/** What has been mined, split by where it stands: claimed, claimable now, and stuck on an ended chain. */
+export function composition(chains: readonly PaChain[]): Composition {
+  const out: Composition = { claimed: 0, claimable: 0, stuck: 0 };
+  for (const c of chains) {
+    out.claimed += Math.max(0, c.claimed);
+    if (c.active) out.claimable += Math.max(0, c.claimable);
+    else out.stuck += Math.max(0, c.claimable);
+  }
+  return out;
+}
+
+/**
+ * What a claim-all saves over claiming each chain on its own: the sum of the per-chain fees less the fee Fusion
+ * quotes for the claim-all. Zero when claiming all is not cheaper (or the quote is missing).
+ */
+export function claimAllSaving(
+  chains: readonly PaChain[],
+  multi: Pick<ParallelAssetsDto['multi'], 'fees' | 'claimable'>,
+): number {
+  if (!(multi.claimable > 0)) return 0;
+  const separate = chainTotals(chains).fees;
+  return Math.max(0, separate - Math.max(0, multi.fees));
+}
+
+// ---- the fee gauge --------------------------------------------------------------------------------
+
+/** The gauge covers a fee from a thousandth of the claim to all of it, on a log scale, so each decade has its room. */
+export const GAUGE_LOW = 0.001;
+
+/**
+ * Where a fee share sits on the gauge, 0 (a thousandth or less) to 1 (the whole claim or more); null with no share. The
+ * advice changes at one percent and five, so a linear scale would squeeze everything that matters into its first
+ * twentieth.
+ */
+export function feeGaugePos(share: number | null): number | null {
+  if (share === null || !Number.isFinite(share) || share < 0) return null;
+  if (share <= GAUGE_LOW) return 0;
+  if (share >= 1) return 1;
+  return (Math.log10(share) - Math.log10(GAUGE_LOW)) / (0 - Math.log10(GAUGE_LOW));
+}
+
+/** The gauge's stops: where the fee is one percent of the claim, and five. */
+export const GAUGE_STOPS = {
+  worth: feeGaugePos(WORTH_SHARE) as number,
+  fair: feeGaugePos(FAIR_SHARE) as number,
+} as const;
 
 // ---- links ----------------------------------------------------------------------------------------
 
