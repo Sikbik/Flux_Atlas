@@ -398,13 +398,24 @@ export function metaFor(a: ActionDef, env: ActionEnv): RowMeta | undefined {
   return undefined;
 }
 
+/**
+ * A page whose first word is exactly what was typed ("rich" for the Rich list, "time" for the Time machine) is a hit on
+ * its name. Without this a place that merely starts with the same letters ("Richmond") ties with it and, because places
+ * are listed before pages, outranks the page the word was typed for.
+ */
+function leadWordHit(a: ActionDef, q: string): number {
+  const typed = q.trim().toLowerCase();
+  if (a.chip !== 'Page' || typed.length < 3) return 0;
+  return a.title.toLowerCase().split(' ')[0] === typed ? 100 : 0;
+}
+
 /** How well the query finds an action: the title weighs most, keywords and the sub-line less. */
 export function actionScore(a: ActionDef, q: string): number {
   const t = matchScore(q, a.title, { fuzzy: true });
   let kw = 0;
   for (const w of a.keywords.split(' ')) kw = Math.max(kw, matchScore(q, w) - 20);
   const sub = a.sub ? matchScore(q, a.sub) - 30 : 0;
-  return Math.max(t, kw, sub, 0);
+  return Math.max(t, kw, sub, leadWordHit(a, q), 0);
 }
 
 /** The catalogue as palette rows for a query (empty query lists the first few worth showing). */

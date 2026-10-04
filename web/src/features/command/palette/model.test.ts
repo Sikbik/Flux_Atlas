@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { syntheticOutpoint } from '../../../api/bin/writer';
+import { encodeSyntheticNodesBin, type SyntheticNode, syntheticOutpoint } from '../../../api/bin/writer';
 import type { SearchHit } from '../../../api/generated/SearchHit';
+import { decodeNodesBin } from '../../../api/nodesBin';
 import { NetworkStore } from '../../../store/network';
 import { bootstrap, hex64, syntheticNodesBin } from '../../../testing/fixtures';
 import type { ActionEnv } from './actions';
@@ -87,6 +88,8 @@ describe('the empty state', () => {
     const rows = rowsOf(m);
     expect(rows[0]).toMatchObject({ id: 'block:2996914', title: 'Block 2,996,914' });
     expect(rows.some((r) => r.id === 'action:ambient.enter')).toBe(true);
+    // The rich list is offered before anyone has to know what it is called.
+    expect(rows.some((r) => r.id === 'action:view.richlist')).toBe(true);
     expect(m.best?.id).toBe('block:2996914');
     expect(m.empty).toBe(false);
   });
@@ -270,6 +273,45 @@ describe('finding the explorer and the rich list', () => {
       expect(ids(run(q)), q).toContain('action:view.richlist');
     expect(best('rich')?.id).toBe('action:view.richlist');
     expect(best('whales')?.action).toEqual({ type: 'go', target: { to: '/richlist' } });
+  });
+
+  it('lists the rich list before a place that starts with the same letters', () => {
+    // A country called Richland, with a few nodes in it: "rich" matches the place as well as the page.
+    const nodes: SyntheticNode[] = Array.from({ length: 6 }, (_, i) => ({
+      id: i,
+      lat: 10,
+      lon: 20,
+      tier: 1,
+      status: 1,
+      flags: 0,
+      loc: 1,
+      country: 1,
+      org: 1,
+      appCount: 0,
+      rank: i + 1,
+      lastPaid: 2_990_000,
+      ip: `5.0.0.${i}:16127`,
+    }));
+    const bin = decodeNodesBin(
+      encodeSyntheticNodesBin(nodes, {
+        seq: 100,
+        generatedMs: 1_000,
+        countries: ['', 'RL\u001fRichland'],
+        orgs: ['', 'Hetzner Online GmbH'],
+        versions: ['', '8.20.0'],
+        locations: [
+          { lat: Number.NaN, lon: Number.NaN, country: 0, nodeCount: 0, city: '' },
+          { lat: 10, lon: 20, country: 1, nodeCount: 6, city: '' },
+        ],
+        withOutpoints: true,
+      }),
+    );
+    const rich = new NetworkStore();
+    rich.loadSnapshot({ bootstrap: bootstrap(100, 2_996_914), nodes: bin });
+    const m = buildModel({ raw: 'rich', store: rich, env });
+    expect(group(m, 'goto')?.rows.map((r) => r.title)).toContain('Richland');
+    expect(m.groups[0]?.id).toBe('commands');
+    expect(m.best?.id).toBe('action:view.richlist');
   });
 });
 
