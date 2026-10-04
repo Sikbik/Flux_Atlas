@@ -230,9 +230,18 @@ describe('local matches', () => {
     expect(only.best?.id).toBe(`wallet:${a}`);
   });
 
-  it('offers a wallet for a ZelID-shaped address too, as the operator row does', () => {
+  it('offers no wallet for a ZelID, which the server refuses: only its address and its operator', () => {
     const zel = '1cz5PE2QbwzPvqMVohgGqnoaupwzS3k4bx';
-    expect(group(run(zel), 'addresses')?.rows.map((r) => r.kind)).toEqual(['address', 'wallet', 'operator']);
+    expect(group(run(zel), 'addresses')?.rows.map((r) => r.kind)).toEqual(['address', 'operator']);
+    expect(group(run(`addr ${zel}`), 'addresses')?.rows.map((r) => r.kind)).toEqual(['address', 'operator']);
+    expect(rowsOf(run(`operator ${zel}`)).map((r) => r.kind)).toEqual(['operator']);
+    expect(rowsOf(run(`wallet ${zel}`))).toEqual([]);
+  });
+
+  it('offers a wallet for a t3 address as it does for a t1 address', () => {
+    const a = 't3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ';
+    expect(group(run(a), 'addresses')?.rows.map((r) => r.kind)).toEqual(['address', 'wallet', 'operator']);
+    expect(rowsOf(run(`wallet ${a}`)).map((r) => r.id)).toEqual([`wallet:${a}`]);
   });
 
   it('leaves a word that is not an address without a wallet row', () => {
@@ -395,6 +404,16 @@ describe('merging server hits', () => {
     expect(rows.find((r) => r.kind === 'wallet')?.sub).toBe('Wallet workspace, pays 3 active nodes');
     expect(rows.find((r) => r.kind === 'operator')?.sub).toBe('Operator, pays 3 active nodes');
     expect(rows.filter((r) => r.kind === 'wallet')).toHaveLength(1);
+  });
+
+  it('adds no wallet row for an operator hit that is a ZelID', () => {
+    const zel = '1cz5PE2QbwzPvqMVohgGqnoaupwzS3k4bx';
+    const server: SearchHit[] = [
+      { kind: 'operator', key: zel, label: `Operator ${zel}`, sublabel: 'pays 3 active nodes' },
+    ];
+    const rows = rowsOf(run(zel, { hits: server }));
+    expect(rows.some((r) => r.kind === 'wallet')).toBe(false);
+    expect(rows.find((r) => r.kind === 'operator')?.sub).toBe('Operator, pays 3 active nodes');
   });
 
   it('keeps the wallet row of an operator hit under the wallet prefix, and drops the others', () => {

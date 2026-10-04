@@ -4,6 +4,7 @@ import { useGlobeEngine } from '../../../globe';
 import { formatInt } from '../../../lib/format';
 import { Button, Hash, IconButton, StatusChip, TierChip, ViewHeader } from '../../../ui';
 import { useOpenWallet } from '../../wallet/hooks/useOpenWallet';
+import { isWalletAddress } from '../../wallet/lib/address';
 import {
   type FleetNode,
   type FleetState,
@@ -161,7 +162,7 @@ export function FleetHeader({
             <TierChip key={t} tier={t} size="sm" label={`${formatInt(mix[t])} ${tierName(t)}`} />
           ) : null,
         )}
-        {watchlist ? null : (
+        {watchlist || !isWalletAddress(addr) ? null : (
           <Button
             size="sm"
             icon={WalletCards}

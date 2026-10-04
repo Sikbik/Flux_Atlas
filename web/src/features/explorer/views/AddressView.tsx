@@ -27,6 +27,7 @@ import {
   ViewHeader,
 } from '../../../ui';
 import { useOpenWallet } from '../../wallet/hooks/useOpenWallet';
+import { isWalletAddress } from '../../wallet/lib/address';
 import { isNotFound, useAddressData, useAddressNodes } from '../hooks/useExplorerData';
 import { knownEntity } from '../lib/entities';
 import { AddressNodesTab, AddressOverview } from './address/AddressOverview';
@@ -145,7 +146,7 @@ export function AddressView({ addr }: { addr: string }) {
             Unconfirmed <Amount value={pending} decimals={2} sign="always" tone="signed" />
           </Chip>
         ) : null}
-        {d.kind === 'p2pkh' || d.kind === 'p2sh' ? (
+        {isWalletAddress(d.address) ? (
           <Button
             size="sm"
             icon={WalletCards}

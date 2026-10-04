@@ -8,6 +8,7 @@
 import type { SearchHit } from '../../../api/generated/SearchHit';
 import { formatInt } from '../../../lib/format';
 import type { NetworkStore } from '../../../store/network';
+import { isWalletAddress } from '../../wallet/lib/address';
 import { activeFilters, describeFilters, type FilterLookup, parseFilterExpr } from '../filters';
 import { countryPlace, matchPlaces } from '../places';
 import { ACTIONS, type ActionEnv, actionById, actionRow, actionRows } from './actions';
@@ -551,15 +552,19 @@ function collectTx(c: Collector, text: string): void {
   else if (shape.kind === 'outpoint') c.add(txRow(shape.txid, `Collateral output ${shape.vout}`, 100));
 }
 
-/** The rows of an address typed after a prefix: `addr` shows all three ways in, `wallet` and `operator` only their own. */
+/**
+ * The rows of an address typed after a prefix: `addr` shows all three ways in, `wallet` and `operator` only their own.
+ * A ZelID has no wallet (the server answers one only for a `t1` or `t3` address), so it gets the other two.
+ */
 function collectAddress(c: Collector, text: string, prefix: 'addr' | 'wallet' | 'operator'): void {
   const shape = classifyText(text);
   if (shape.kind !== 'address') return;
   if (prefix === 'operator') c.add(operatorRow(shape.addr, undefined, 100));
-  else if (prefix === 'wallet') c.add(walletRow(shape.addr, undefined, 100));
-  else {
+  else if (prefix === 'wallet') {
+    if (isWalletAddress(shape.addr)) c.add(walletRow(shape.addr, undefined, 100));
+  } else {
     c.add(addressRow(shape.addr, undefined, 100));
-    c.add(walletRow(shape.addr, undefined, 90));
+    if (isWalletAddress(shape.addr)) c.add(walletRow(shape.addr, undefined, 90));
     c.add(operatorRow(shape.addr, undefined, 80));
   }
 }
@@ -734,7 +739,7 @@ function collectGeneral(
     }
     case 'address':
       c.add(addressRow(shape.addr, undefined, 100));
-      c.add(walletRow(shape.addr, undefined, 90));
+      if (isWalletAddress(shape.addr)) c.add(walletRow(shape.addr, undefined, 90));
       c.add(operatorRow(shape.addr, undefined, 80));
       break;
     default:
@@ -794,7 +799,7 @@ function mergeHits(
     const score = isExactHit(hit, input.text) ? 100 : Math.max(40, 82 - Math.min(rank, 42));
     // An address that pays nodes is also a wallet: the workspace row says how many (it is the same address, so
     // it is its own row, kept or dropped by the prefix like any other).
-    if (hit.kind === 'operator') {
+    if (hit.kind === 'operator' && isWalletAddress(hit.key)) {
       const wallet = walletRow(hit.key, hit.sublabel ?? undefined, 90);
       if (!input.prefix || prefixAccepts(input.prefix, wallet)) c.replace(wallet);
     }
