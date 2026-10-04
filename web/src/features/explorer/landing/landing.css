@@ -29,6 +29,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The caption is two lines that never wrap, so a ticking count cannot change how tall the hero is. */
+.ex-hero__line {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ex-hero__next[data-phase="late"] {
   color: var(--status-warn);
 }

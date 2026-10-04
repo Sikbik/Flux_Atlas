@@ -84,11 +84,17 @@ export function ChainHero() {
       }
       caption={
         newest ? (
+          // Two lines that never wrap: a count that ticks (seconds ago, seconds to go) must not change how many lines
+          // the caption takes, or the whole page below it would jump.
           <>
-            Block {formatInt(newest.height)} was mined <RelativeTime ts={newest.timeMs} /> with{' '}
-            {formatInt(newest.txCount)} {newest.txCount === 1 ? 'transaction' : 'transactions'}.{' '}
-            <span className="ex-hero__next" data-phase={view.phase}>
-              {capitalize(view.sub)}.
+            <span className="ex-hero__line">
+              Block {formatInt(newest.height)} was mined <RelativeTime ts={newest.timeMs} />.
+            </span>{' '}
+            <span className="ex-hero__line">
+              {formatInt(newest.txCount)} {newest.txCount === 1 ? 'transaction' : 'transactions'}.{' '}
+              <span className="ex-hero__next" data-phase={view.phase}>
+                {capitalize(view.sub)}.
+              </span>
             </span>
           </>
         ) : (
