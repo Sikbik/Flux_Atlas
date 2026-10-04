@@ -203,6 +203,42 @@ export function reasonLabel(r: Pick<HealthReason, 'kind' | 'metric' | 'value' | 
   return REASON_LABEL[v ? `${r.kind}:${v}` : r.kind] ?? r.kind.replace(/_/g, ' ');
 }
 
+export const SEVERITY_WORD: Record<Severity, string> = { crit: 'Critical', warn: 'Warning', info: 'Note' };
+
+export interface IssueSummary {
+  /** Issues (kinds of finding) of each severity. */
+  issues: Record<Severity, number>;
+  /** Nodes whose worst finding is of each severity. */
+  nodes: Record<Severity, number>;
+  /** Nodes with any finding. */
+  flagged: number;
+}
+
+/** How many issues and how many nodes sit at each severity (a node counts once, at its worst). */
+export function summarizeIssues(
+  groups: readonly IssueGroup[],
+  attention: readonly NodeAttention[],
+): IssueSummary {
+  const issues: Record<Severity, number> = { crit: 0, warn: 0, info: 0 };
+  for (const g of groups) issues[g.severity]++;
+  const nodes: Record<Severity, number> = { crit: 0, warn: 0, info: 0 };
+  let flagged = 0;
+  for (const a of attention) {
+    const worst = worstSeverity(a.reasons);
+    if (worst === null) continue;
+    nodes[worst]++;
+    flagged++;
+  }
+  return { issues, nodes, flagged };
+}
+
+/** The unit a reason's measurement is in: a benchmark metric's own, or `blocks` for the blocks left to confirm. */
+export function metricUnit(metric: string | null): string {
+  if (metric === null) return '';
+  if (metric === 'blocks_left') return 'blocks';
+  return (METRIC_META as Record<string, { unit: string } | undefined>)[metric]?.unit ?? '';
+}
+
 /** `480 of at least 450 (7% over)`: a measurement against its threshold, when the server sent both. */
 export function marginText(n: Pick<IssueNode, 'value' | 'threshold'>, unit = ''): string | null {
   if (n.value === null || n.threshold === null) return null;
@@ -344,6 +380,31 @@ export const HHI_BANDS = { moderate: 0.15, high: 0.25 } as const;
 
 export function riskLevel(hhi: number): RiskLevel {
   return hhi >= HHI_BANDS.high ? 'high' : hhi >= HHI_BANDS.moderate ? 'moderate' : 'low';
+}
+
+/** Where the bands sit on the gauge (0..1 of its length): the low band is wide so most fleets land in the open. */
+export const HHI_GAUGE = { moderate: 0.4, high: 0.62 } as const;
+
+/**
+ * The position of an index on the gauge, 0..1. The scale is piecewise: the three bands take fixed stretches of the
+ * track (so each is wide enough to read), and the index runs linearly inside its own band.
+ */
+export function hhiPosition(hhi: number): number {
+  const v = Math.min(1, Math.max(0, Number.isFinite(hhi) ? hhi : 0));
+  if (v < HHI_BANDS.moderate) return (v / HHI_BANDS.moderate) * HHI_GAUGE.moderate;
+  if (v < HHI_BANDS.high) {
+    const t = (v - HHI_BANDS.moderate) / (HHI_BANDS.high - HHI_BANDS.moderate);
+    return HHI_GAUGE.moderate + t * (HHI_GAUGE.high - HHI_GAUGE.moderate);
+  }
+  return HHI_GAUGE.high + ((v - HHI_BANDS.high) / (1 - HHI_BANDS.high)) * (1 - HHI_GAUGE.high);
+}
+
+/** The words for an index, for a sentence: `about 3 equal groups`, `a single group`. */
+export function effectiveGroups(hhi: number): string {
+  if (!(hhi > 0)) return 'no groups';
+  const n = 1 / hhi;
+  if (n < 1.5) return 'a single group';
+  return `about ${n < 10 ? n.toFixed(1).replace(/\.0$/, '') : Math.round(n)} equal groups`;
 }
 
 const BY_WORD: Record<ConcentrationBy, { one: string; plural: string }> = {

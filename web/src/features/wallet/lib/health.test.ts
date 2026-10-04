@@ -6,18 +6,25 @@ import {
   bandSentence,
   bandStatus,
   concentrationTitle,
+  effectiveGroups,
   evenSample,
   groupIssues,
+  HHI_BANDS,
+  HHI_GAUGE,
+  hhiPosition,
   ISSUE_COPY,
   METRIC_META,
   METRICS,
   marginText,
   medianOf,
   medianStanding,
+  metricUnit,
   metricValue,
   readConcentration,
   reasonLabel,
   riskLevel,
+  SEVERITY_WORD,
+  summarizeIssues,
   uptimeBands,
   variantOf,
   worstSeverity,
@@ -184,6 +191,40 @@ describe('attention helpers', () => {
   });
 });
 
+describe('issue summary', () => {
+  const attention = [
+    attn('a:0', reason('dos'), reason('version_outdated', { metric: 'flux_os' })),
+    attn('b:0', reason('unreachable')),
+    attn('c:0', reason('version_outdated', { metric: 'flux_os' })),
+    attn('d:0'),
+  ];
+
+  it('counts the issues and the nodes at each severity, a node once at its worst', () => {
+    const s = summarizeIssues(groupIssues(attention), attention);
+    expect(s.issues).toEqual({ crit: 1, warn: 1, info: 1 });
+    expect(s.nodes).toEqual({ crit: 1, warn: 1, info: 1 });
+    expect(s.flagged).toBe(3);
+  });
+
+  it('is all zero for a healthy fleet', () => {
+    const s = summarizeIssues([], []);
+    expect(s.issues).toEqual({ crit: 0, warn: 0, info: 0 });
+    expect(s.flagged).toBe(0);
+  });
+
+  it('says the severity in a word', () => {
+    expect(SEVERITY_WORD).toEqual({ crit: 'Critical', warn: 'Warning', info: 'Note' });
+  });
+
+  it('knows the unit of a measurement', () => {
+    expect(metricUnit('eps')).toBe('EPS');
+    expect(metricUnit('disk_write_mbs')).toBe('MB/s');
+    expect(metricUnit('blocks_left')).toBe('blocks');
+    expect(metricUnit('flux_os')).toBe('');
+    expect(metricUnit(null)).toBe('');
+  });
+});
+
 const band = (over: Partial<WalletBenchmark> = {}): WalletBenchmark => ({
   tier: 'stratus',
   metric: 'eps',
@@ -281,6 +322,36 @@ describe('concentration', () => {
     expect(riskLevel(0.2499)).toBe('moderate');
     expect(riskLevel(0.25)).toBe('high');
     expect(riskLevel(1)).toBe('high');
+  });
+
+  it('places the index on the gauge so each band is wide enough to read', () => {
+    expect(hhiPosition(0)).toBe(0);
+    expect(hhiPosition(0.075)).toBeCloseTo(0.2, 9);
+    expect(hhiPosition(HHI_BANDS.moderate)).toBeCloseTo(HHI_GAUGE.moderate, 9);
+    expect(hhiPosition(HHI_BANDS.high)).toBeCloseTo(HHI_GAUGE.high, 9);
+    expect(hhiPosition(0.2)).toBeCloseTo(0.51, 9);
+    expect(hhiPosition(1)).toBe(1);
+  });
+
+  it('keeps the gauge position in range and never goes backwards', () => {
+    expect(hhiPosition(-3)).toBe(0);
+    expect(hhiPosition(7)).toBe(1);
+    expect(hhiPosition(Number.NaN)).toBe(0);
+    let last = -1;
+    for (let i = 0; i <= 100; i++) {
+      const p = hhiPosition(i / 100);
+      expect(p).toBeGreaterThanOrEqual(last);
+      last = p;
+    }
+  });
+
+  it('says how many equal groups an index is like', () => {
+    expect(effectiveGroups(0)).toBe('no groups');
+    expect(effectiveGroups(1)).toBe('a single group');
+    expect(effectiveGroups(0.5)).toBe('about 2 equal groups');
+    expect(effectiveGroups(0.4)).toBe('about 2.5 equal groups');
+    expect(effectiveGroups(0.2)).toBe('about 5 equal groups');
+    expect(effectiveGroups(0.05)).toBe('about 20 equal groups');
   });
 
   it('says what one provider outage does to a single-provider fleet', () => {

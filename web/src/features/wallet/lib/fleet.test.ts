@@ -29,6 +29,8 @@ import {
   nodesCsvHeader,
   nodesCsvRows,
   normalizeColumns,
+  rowsInBucket,
+  sameProvider,
   sortFleet,
   summarizeRows,
 } from './fleet';
@@ -439,10 +441,12 @@ describe('activeFilters', () => {
       city: 'FI:Helsinki',
       provider: 'Hetzner',
       version: '8.19.1',
+      only: { label: '2 nodes close to expiring', keys: [op(1), op(2)] },
     };
     const chips = activeFilters(f, facets);
     expect(chips.map((c) => c.label)).toEqual([
       'Search: abc',
+      '2 nodes close to expiring',
       'Tier: Nimbus',
       'Tier: Stratus',
       'State: Down or gone',
@@ -453,6 +457,7 @@ describe('activeFilters', () => {
     ]);
     expect(chips.map((c) => c.clear)).toEqual([
       { text: '' },
+      { only: null },
       { tiers: ['stratus'] },
       { tiers: ['nimbus'] },
       { buckets: [] },
@@ -512,6 +517,76 @@ describe('cities and groups as filters', () => {
     expect(groupInFilter('state', { ...NO_FILTER, buckets: ['down'] })).toBe('down');
     expect(groupInFilter('provider', NO_FILTER)).toBeNull();
     expect(groupInFilter('none', { ...NO_FILTER, country: 'FI' })).toBeNull();
+  });
+});
+
+describe('a named set of nodes', () => {
+  const r = rows();
+  const only = (keys: string[]) => ({ ...NO_FILTER, only: { label: 'these', keys } });
+
+  it('keeps exactly the nodes named, and counts as one filter', () => {
+    expect(filterFleet(r, only([op(2), op(4)])).map((x) => x.id)).toEqual([2, 4]);
+    expect(filterFleet(r, only([])).map((x) => x.id)).toEqual([]);
+    expect(filterCount(only([op(2)]))).toBe(1);
+    expect(isFiltered(only([op(2)]))).toBe(true);
+  });
+
+  it('adds up with the other filters', () => {
+    const f = { ...only([op(1), op(2), op(4)]), country: 'FI' };
+    expect(filterFleet(r, f).map((x) => x.id)).toEqual([2, 4]);
+  });
+});
+
+describe('rowsInBucket', () => {
+  const r = rows();
+  const ids = (list: FleetRow[]) => list.map((x) => x.id);
+
+  it('finds a country by its code', () => {
+    expect(ids(rowsInBucket(r, 'country', { key: 'FI', label: 'Finland' }))).toEqual([2, 4]);
+  });
+
+  it('finds a city by the server key, which is lower case and has the country in front', () => {
+    expect(ids(rowsInBucket(r, 'city', { key: 'FI/helsinki', label: 'Helsinki' }))).toEqual([2, 4]);
+    expect(ids(rowsInBucket(r, 'city', { key: 'DE/helsinki', label: 'Helsinki' }))).toEqual([]);
+  });
+
+  it('finds a provider by its name, in any of its spellings, or by its key', () => {
+    expect(ids(rowsInBucket(r, 'provider', { key: 'as24940', label: 'Hetzner Online GmbH' }))).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(ids(rowsInBucket(r, 'provider', { key: 'hetzner', label: 'Something else' }))).toEqual([2]);
+    expect(ids(rowsInBucket(r, 'provider', { key: 'as1', label: 'Other Company' }))).toEqual([]);
+  });
+
+  it('finds the nodes with no value in the unknown bucket', () => {
+    const rs = buildFleetRows(
+      [node(1, { org: '' }), node(2)],
+      [rosterRow(1, { city: null }), rosterRow(2)],
+      [],
+      [],
+    );
+    expect(ids(rowsInBucket(rs, 'provider', { key: 'unknown', label: 'Unknown' }))).toEqual([1]);
+    expect(ids(rowsInBucket(rs, 'city', { key: 'unknown', label: 'Unknown' }))).toEqual([1]);
+    expect(ids(rowsInBucket(rs, 'country', { key: 'unknown', label: 'Unknown' }))).toEqual([]);
+  });
+});
+
+describe('sameProvider', () => {
+  it('takes company suffixes and punctuation off before it compares', () => {
+    expect(sameProvider('Hetzner Online GmbH', 'Hetzner')).toBe(true);
+    expect(sameProvider('HETZNER-DC', 'Hetzner Online GmbH')).toBe(true);
+    expect(sameProvider('NEOCOM Ltd', 'Neocom')).toBe(true);
+    expect(sameProvider('Stofa A/S', 'Stofa A/S')).toBe(true);
+  });
+
+  it('treats a shared long first word as one company, and a short one as nothing', () => {
+    expect(sameProvider('Amazon Technologies Inc.', 'Amazon.com')).toBe(true);
+    expect(sameProvider('OVH SAS', 'OVH Hosting')).toBe(false);
+  });
+
+  it('keeps different providers apart', () => {
+    expect(sameProvider('Hetzner Online GmbH', 'Linode, LLC')).toBe(false);
+    expect(sameProvider('', 'Hetzner')).toBe(false);
   });
 });
 

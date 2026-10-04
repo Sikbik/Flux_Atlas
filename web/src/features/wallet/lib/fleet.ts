@@ -7,6 +7,8 @@ import { type SortState, type SortValue, sortRows } from '../../../ui/table/sort
 import { type FleetNode, type FleetState, fleetState } from '../../inspect/derive/operator';
 import { type NodeStatusKind, nodeStatusKind } from '../../inspect/derive/statusKind';
 import {
+  type ConcentrationBucket,
+  type ConcentrationBy,
   type HealthKind,
   type NodeAttention,
   type NodeRow,
@@ -268,6 +270,13 @@ export function normalizeColumns(ids: unknown): ColumnId[] {
 
 // ---- filters --------------------------------------------------------------------------------------
 
+/** A named set of nodes, by key: what another tab means by "these nodes" (an issue's, a provider's). */
+export interface OnlyNodes {
+  /** What the set is, for the chip that removes it. */
+  label: string;
+  keys: readonly string[];
+}
+
 export interface FleetFilter {
   text: string;
   tiers: readonly PayTier[];
@@ -277,6 +286,8 @@ export interface FleetFilter {
   city: string | null;
   provider: string | null;
   version: string | null;
+  /** Only these nodes (set by the Health tab, never by the filter panel). */
+  only: OnlyNodes | null;
 }
 
 export const NO_FILTER: FleetFilter = {
@@ -287,6 +298,7 @@ export const NO_FILTER: FleetFilter = {
   city: null,
   provider: null,
   version: null,
+  only: null,
 };
 
 export function isFiltered(f: FleetFilter): boolean {
@@ -297,7 +309,8 @@ export function isFiltered(f: FleetFilter): boolean {
     f.country !== null ||
     f.city !== null ||
     f.provider !== null ||
-    f.version !== null
+    f.version !== null ||
+    f.only !== null
   );
 }
 
@@ -310,7 +323,8 @@ export function filterCount(f: FleetFilter): number {
     (f.country !== null ? 1 : 0) +
     (f.city !== null ? 1 : 0) +
     (f.provider !== null ? 1 : 0) +
-    (f.version !== null ? 1 : 0)
+    (f.version !== null ? 1 : 0) +
+    (f.only !== null ? 1 : 0)
   );
 }
 
@@ -330,8 +344,10 @@ export function filterFleet(rows: readonly FleetRow[], f: FleetFilter): FleetRow
   const needle = f.text.trim().toLowerCase();
   const tiers = new Set<string>(f.tiers);
   const buckets = new Set<string>(f.buckets);
+  const only = f.only ? new Set<string>(f.only.keys) : null;
   return rows.filter(
     (r) =>
+      (only === null || only.has(r.key)) &&
       (tiers.size === 0 || tiers.has(r.tier)) &&
       (buckets.size === 0 || buckets.has(bucketOf(r))) &&
       (f.country === null || r.countryCode === f.country) &&
@@ -340,6 +356,77 @@ export function filterFleet(rows: readonly FleetRow[], f: FleetFilter): FleetRow
       (f.version === null || r.version === f.version) &&
       (needle === '' || haystack(r).includes(needle)),
   );
+}
+
+const COMPANY_SUFFIX = new Set([
+  'gmbh',
+  'llc',
+  'ltd',
+  'inc',
+  'sas',
+  'sa',
+  'ab',
+  'ag',
+  'corp',
+  'co',
+  'bv',
+  'oy',
+  'srl',
+  'limited',
+  'online',
+  'kg',
+]);
+
+/** A provider's name as words, with the punctuation and the company suffixes taken off (`Hetzner Online GmbH` is `hetzner`). */
+function providerWords(name: string): string[] {
+  const words = name
+    .toLowerCase()
+    .replace(/-dc\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+  while (words.length > 1 && COMPANY_SUFFIX.has(words[words.length - 1] as string)) words.pop();
+  return words;
+}
+
+/**
+ * Whether two spellings are one provider. The server groups by network (ASN) and names a group by its commonest
+ * spelling, so a node of the group may spell it another way: `Hetzner`, `Hetzner Online GmbH` and `HETZNER-DC` agree.
+ */
+export function sameProvider(a: string, b: string): boolean {
+  if (a === b) return true;
+  const x = providerWords(a);
+  const y = providerWords(b);
+  if (x.length === 0 || y.length === 0) return false;
+  return x.join(' ') === y.join(' ') || (x[0] === y[0] && (x[0] as string).length >= 4);
+}
+
+/**
+ * The rows in one concentration bucket. The server names a country by its code, a city `cc/lower-case name` and a
+ * provider by a key of its own (its label is the provider's name); its `unknown` bucket holds the nodes with no value.
+ */
+export function rowsInBucket(
+  rows: readonly FleetRow[],
+  by: ConcentrationBy,
+  bucket: Pick<ConcentrationBucket, 'key' | 'label'>,
+): FleetRow[] {
+  const unknown = bucket.key === 'unknown';
+  switch (by) {
+    case 'country':
+      return rows.filter((r) => (unknown ? r.countryCode === '' : r.countryCode === bucket.key));
+    case 'city':
+      return rows.filter((r) =>
+        unknown ? r.city === '' : r.city !== '' && `${r.countryCode}/${r.city.toLowerCase()}` === bucket.key,
+      );
+    case 'provider':
+      return rows.filter((r) =>
+        unknown
+          ? r.provider === ''
+          : r.provider !== '' &&
+            (sameProvider(r.provider, bucket.label) || r.provider.toLowerCase() === bucket.key),
+      );
+  }
 }
 
 export interface Facet {
@@ -599,6 +686,7 @@ export function activeFilters(f: FleetFilter, facets: Facets): ActiveFilter[] {
   const out: ActiveFilter[] = [];
   const text = f.text.trim();
   if (text) out.push({ id: 'text', label: `Search: ${text}`, clear: { text: '' } });
+  if (f.only) out.push({ id: 'only', label: f.only.label, clear: { only: null } });
   for (const t of f.tiers)
     out.push({
       id: `tier:${t}`,
