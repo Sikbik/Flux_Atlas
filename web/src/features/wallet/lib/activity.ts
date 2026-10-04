@@ -4,7 +4,9 @@
 // The server writes one row per node event a person would read, with a plain-language `detail` of its own
 // ("Paid 9.00000000 FLUX (stratus)"). The kind says what sort of row it is; the detail says the rest.
 
+import { formatInt } from '../../../lib/format';
 import type { FleetDay, WalletActivity } from '../types';
+import { formatDate } from './dates';
 
 export type ActivityGroup = 'payments' | 'health' | 'nodes' | 'apps';
 
@@ -103,6 +105,38 @@ export function filterActivity(
   return items.filter((i) => on.has(groupOfKind(i.kind)));
 }
 
+/**
+ * The items whose kind, sentence or node name contains the text, ignoring case and the spaces at its ends; every
+ * word of the text has to be somewhere in the row, so "unreachable 65.108" finds that node's outage. `nameOf` gives
+ * a node's endpoint (its key when it has none), so a row is found by the node it is about.
+ */
+export function searchActivity(
+  items: readonly WalletActivity[],
+  text: string,
+  nameOf: (nodeKey: string | null) => string,
+): WalletActivity[] {
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [...items];
+  return items.filter((i) => {
+    const hay = `${kindLabel(i.kind)}\n${i.detail}\n${nameOf(i.node_key)}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
+
+/** What time the items span and how many there are; null for none. The feed is the newest rows, not all of them. */
+export function activityWindow(
+  items: readonly WalletActivity[],
+): { from: number; to: number; count: number } | null {
+  if (items.length === 0) return null;
+  let from = Number.POSITIVE_INFINITY;
+  let to = Number.NEGATIVE_INFINITY;
+  for (const i of items) {
+    if (i.t_ms < from) from = i.t_ms;
+    if (i.t_ms > to) to = i.t_ms;
+  }
+  return { from, to, count: items.length };
+}
+
 /** How many items each group holds, for the counts on the filter chips. */
 export function countByGroup(items: readonly WalletActivity[]): Record<ActivityGroup, number> {
   const out: Record<ActivityGroup, number> = { payments: 0, health: 0, nodes: 0, apps: 0 };
@@ -149,6 +183,64 @@ export function paymentSummary(items: readonly WalletActivity[]): PaymentSummary
   return { count, flux: total };
 }
 
+// ---- the rhythm of the feed ------------------------------------------------------------------------
+
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+/** The bucket sizes a rhythm chart picks from, finest first. */
+export const RHYTHM_BUCKETS: readonly number[] = [
+  MIN,
+  5 * MIN,
+  15 * MIN,
+  30 * MIN,
+  HOUR,
+  3 * HOUR,
+  6 * HOUR,
+  12 * HOUR,
+  DAY,
+  2 * DAY,
+  7 * DAY,
+];
+
+export interface Rhythm {
+  /** The start of each bucket, unix ms, ascending and with no gaps. */
+  t: number[];
+  bucketMs: number;
+  /** Events per bucket, per group. */
+  counts: Record<ActivityGroup, number[]>;
+  /** Events per bucket in all. */
+  total: number[];
+}
+
+/**
+ * The feed counted into equal slices of time, one count per filter group: when things happened, and whether the
+ * trouble came all at once. The slice is the finest that leaves no more than `target` of them over the whole span,
+ * and every slice from the first event to the last is there (a quiet hour is a zero, not a gap).
+ */
+export function rhythm(items: readonly WalletActivity[], target = 36): Rhythm | null {
+  const win = activityWindow(items);
+  if (!win) return null;
+  const span = win.to - win.from;
+  const bucketMs =
+    RHYTHM_BUCKETS.find((b) => Math.ceil(span / b) + 1 <= target) ?? (RHYTHM_BUCKETS.at(-1) as number);
+  const start = Math.floor(win.from / bucketMs) * bucketMs;
+  const n = Math.floor((win.to - start) / bucketMs) + 1;
+  const counts: Rhythm['counts'] = {
+    payments: new Array<number>(n).fill(0),
+    health: new Array<number>(n).fill(0),
+    nodes: new Array<number>(n).fill(0),
+    apps: new Array<number>(n).fill(0),
+  };
+  const total = new Array<number>(n).fill(0);
+  for (const i of items) {
+    const k = Math.floor((i.t_ms - start) / bucketMs);
+    (counts[groupOfKind(i.kind)][k] as number)++;
+    (total[k] as number)++;
+  }
+  return { t: Array.from({ length: n }, (_, k) => start + k * bucketMs), bucketMs, counts, total };
+}
+
 // ---- the fleet over time --------------------------------------------------------------------------
 
 export interface FleetSeries {
@@ -171,12 +263,47 @@ export function fleetSeries(history: readonly FleetDay[]): FleetSeries {
   return out;
 }
 
+/**
+ * The series without the days before the fleet had a node (the store keeps a keyframe for every day it ran, and a
+ * young fleet has a long run of zeros in front of it). The last day is always kept, so there is something to say.
+ */
+export function trimLeadingEmpty(s: FleetSeries): FleetSeries {
+  let first = s.total.findIndex((v) => v > 0);
+  if (first < 0) first = Math.max(0, s.total.length - 1);
+  if (first === 0) return s;
+  return {
+    t: s.t.slice(first),
+    cumulus: s.cumulus.slice(first),
+    nimbus: s.nimbus.slice(first),
+    stratus: s.stratus.slice(first),
+    total: s.total.slice(first),
+  };
+}
+
+/** How many nodes each day added (negative: lost) against the day before; the first day has no day before. */
+export function dailyChange(s: FleetSeries): (number | null)[] {
+  return s.total.map((v, i) => (i === 0 ? null : v - (s.total[i - 1] as number)));
+}
+
 /** What changed over the history: first and last count, and the net. Null for fewer than two days. */
 export function fleetChange(s: FleetSeries): { from: number; to: number; net: number } | null {
   if (s.total.length < 2) return null;
   const from = s.total[0] as number;
   const to = s.total[s.total.length - 1] as number;
   return { from, to, net: to - from };
+}
+
+/** The fleet's history in a sentence, for a screen reader and for the chart's table. */
+export function describeFleet(s: FleetSeries): string {
+  const n = s.t.length;
+  if (n === 0) return 'The fleet has no history yet.';
+  const last = s.total[n - 1] as number;
+  const now = `${formatInt(last)} ${last === 1 ? 'node' : 'nodes'}`;
+  if (n === 1) return `One day of fleet history so far, ${formatDate(s.t[0] as number)}: ${now}.`;
+  const c = fleetChange(s) as NonNullable<ReturnType<typeof fleetChange>>;
+  const move =
+    c.net === 0 ? 'no change' : c.net > 0 ? `${formatInt(c.net)} more` : `${formatInt(-c.net)} fewer`;
+  return `Confirmed nodes over ${formatInt(n)} days, ${formatDate(s.t[0] as number)} to ${formatDate(s.t[n - 1] as number)}: ${formatInt(c.from)} at the start and ${now} on the last day, ${move}.`;
 }
 
 /** The tiers that ever had a node, in the order the chart stacks them. */

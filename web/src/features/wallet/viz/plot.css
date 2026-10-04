@@ -35,6 +35,18 @@
   stroke: none;
 }
 
+/* a layer of the fleet's history: a tier's share of the nodes, between the layer under it and its own top */
+.wl-fleetarea {
+  fill: var(--c, var(--viz-1));
+  fill-opacity: 0.5;
+  stroke: none;
+}
+
+/* a bar of a group the filters have left out: still there, to be compared, but quiet */
+.wl-bar[data-dim] {
+  fill-opacity: 0.22;
+}
+
 .wl-line {
   fill: none;
   stroke: var(--c, var(--viz-1));

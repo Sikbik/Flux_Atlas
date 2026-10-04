@@ -17,7 +17,8 @@ export type Unit = 'flux' | 'money';
 
 type SeriesId = PayTier | 'pa';
 
-const TIER_COLOR: Record<PayTier, string> = {
+/** The colours that always mean the tiers, as a chart paints them. */
+export const TIER_COLOR: Record<PayTier, string> = {
   cumulus: 'var(--tier-cumulus-ink)',
   nimbus: 'var(--tier-nimbus-ink)',
   stratus: 'var(--tier-stratus-ink)',

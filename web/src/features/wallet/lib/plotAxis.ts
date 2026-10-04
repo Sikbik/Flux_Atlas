@@ -17,6 +17,18 @@ export function axisFromZero(max: number, target = 4): Axis {
   return { lo: n.min, hi: n.max, ticks: n.ticks, step: n.step };
 }
 
+/**
+ * An axis from zero for a count of things: every tick is a whole number, however few there are (a fleet of one node
+ * is not "0.5 nodes" at the half way line).
+ */
+export function axisCount(max: number, target = 4): Axis {
+  if (!Number.isFinite(max) || max <= 0) return { lo: 0, hi: 1, ticks: [0, 1], step: 1 };
+  const n = niceTicks(0, max * 1.04, target);
+  if (n.step >= 1) return { lo: n.min, hi: n.max, ticks: n.ticks, step: n.step };
+  const hi = Math.max(1, Math.ceil(max));
+  return { lo: 0, hi, ticks: Array.from({ length: hi + 1 }, (_, i) => i), step: 1 };
+}
+
 /** An axis around data that does not start at zero (a cumulative line that begins at its first day's value). */
 export function axisAround(min: number, max: number, target = 4): Axis {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return axisFromZero(0);
