@@ -205,7 +205,6 @@ export function Toolbar(p: ToolbarProps) {
   return (
     <div className="wl-toolbar">
       <SearchField
-        className="wl-toolbar__search"
         size="sm"
         aria-label="Search the fleet"
         placeholder="Search by address, place, provider or version"

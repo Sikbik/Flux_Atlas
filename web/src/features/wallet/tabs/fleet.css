@@ -31,7 +31,9 @@
   gap: var(--space-3) var(--space-5);
 }
 
-.wl-toolbar__search {
+/* the search box is the kit's `.ui-search` wrapper (a class on the field goes to the box inside it), so the wrapper is
+   the flex item that takes the room */
+.wl-toolbar > .ui-search {
   flex: 1 1 260px;
   min-width: 0;
   max-width: 460px;
@@ -46,7 +48,7 @@
 }
 
 @container wl (max-width: 560px) {
-  .wl-toolbar__search {
+  .wl-toolbar > .ui-search {
     flex-basis: 100%;
     max-width: none;
   }

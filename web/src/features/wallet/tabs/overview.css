@@ -28,6 +28,12 @@
   gap: var(--space-5);
 }
 
+/* The balance is the longest figure of the view. It takes the kit's hero size where the tile has room, and the size at
+   which its own digits fit where it does not (`--wl-em` is the figure's width in ems; 44 px is the unit beside it). */
+.wl-standing__main .ui-stat[data-hero] .ui-stat__value {
+  font-size: clamp(22px, min(17cqi, calc((100cqi - 44px) / var(--wl-em, 7.3))), 58px);
+}
+
 .wl-split {
   display: grid;
   gap: var(--space-3);

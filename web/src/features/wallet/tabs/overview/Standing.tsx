@@ -4,6 +4,7 @@
 
 import { Link } from '@tanstack/react-router';
 import { Lock } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import { formatInt, formatPercent } from '../../../../lib/format';
 import {
   AnimatedNumber,
@@ -16,6 +17,7 @@ import {
   tierLabel,
 } from '../../../../ui';
 import { useWalletCtx } from '../../context';
+import { figureEm } from '../../lib/figure';
 import { flux, fluxOrNull } from '../../lib/money';
 import { PAY_TIERS } from '../../types';
 
@@ -53,10 +55,14 @@ export function Standing() {
 
   const frac = standingFraction(s.operator_rank, s.operator_count);
   const top = topShareText(s.operator_rank, s.operator_count);
+  // The balance is the longest figure in the view: the tile sizes it so every digit fits on a phone.
+  const fit = (
+    balance === null ? {} : { '--wl-em': figureEm(formatFlux2(balance)).toFixed(3) }
+  ) as CSSProperties;
 
   return (
     <section className="wl-standing" aria-label="Standing">
-      <div className="wl-standing__main">
+      <div className="wl-standing__main" style={fit}>
         <Stat
           hero
           label="Balance"
