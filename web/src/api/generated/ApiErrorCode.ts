@@ -3,4 +3,4 @@
 /**
  * Machine-readable error codes.
  */
-export type ApiErrorCode = "not_found" | "bad_request" | "upstream" | "unavailable" | "rate_limited" | "internal" | "not_implemented" | "no_history";
+export type ApiErrorCode = "not_found" | "bad_request" | "upstream" | "unavailable" | "rate_limited" | "internal" | "not_implemented" | "no_history" | "upstream_unavailable";

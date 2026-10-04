@@ -199,6 +199,10 @@ impl Default for HttpConfig {
         ] {
             interactive_host_policies.insert(h.to_owned(), HostPolicy::new(2, 4, 2));
         }
+        // A wallet's parallel assets take three Fusion calls at once (cached 10 minutes per
+        // address); only users ask for them.
+        interactive_host_policies
+            .insert("fusion.runonflux.io".to_owned(), HostPolicy::new(2, 4, 3));
         Self {
             user_agent: format!(
                 "flux-atlas/{} (+https://github.com/Sikbik/Flux_Atlas)",

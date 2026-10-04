@@ -1,5 +1,6 @@
 //! Typed upstream clients: FluxOS (gateway plus direct-node failover), Insight (main plus
-//! mirrors), stats.runonflux.io, per-node FluxOS APIs (SSRF-guarded), and CoinGecko.
+//! mirrors), stats.runonflux.io, per-node FluxOS APIs (SSRF-guarded), CoinGecko, and Flux
+//! Fusion.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,10 +20,12 @@ use crate::models::daemon::{
     BlockDeltas, BlockchainInfo, CurrentWinners, DaemonBlock, DaemonInfo, DaemonTx, FluxnodeCount,
     MempoolInfo, PendingNodeEntry, RawMempool, TxOutSetInfo,
 };
+use crate::models::fusion::{ActiveChains, Claimed, CoinbaseSummary, FusionFees, MultiAvailable};
 use crate::models::insight::{
-    CirculatingSupply, CoinGeckoSimplePrice, InsightAddrSummary, InsightAddrTxs, InsightBlock,
-    InsightBlocksPage, InsightStatusInfo, InsightSync, InsightTx, InsightTxsPage, InsightUtxo,
-    LastBlockHash, MarketsInfo, RichListRow, StatPoint,
+    CirculatingSupply, CoinGeckoMarketChart, CoinGeckoSimplePrice, CoinGeckoSpot,
+    InsightAddrSummary, InsightAddrTxs, InsightBlock, InsightBlocksPage, InsightStatusInfo,
+    InsightSync, InsightTx, InsightTxsPage, InsightUtxo, LastBlockHash, MarketsInfo, RichListRow,
+    StatPoint,
 };
 use crate::models::node_api::{
     Bench, ConnectedPeerInfo, FluxInfo, Geolocation, HealthReport, PeerLink, RunningContainer,
@@ -32,7 +35,7 @@ use crate::models::nodes::NodeListEntry;
 use crate::models::stats::{FluxLocation, HistoryStats, MarketplaceApp, StatsNodeRow};
 use crate::ssrf::GuardedEndpoint;
 use crate::upstream::{
-    COINGECKO_BASE, FLUXOS_GATEWAY, FailoverSet, INSIGHT_BASES, STATS_BASE, Upstream,
+    COINGECKO_BASE, FLUXOS_GATEWAY, FUSION_BASE, FailoverSet, INSIGHT_BASES, STATS_BASE, Upstream,
 };
 
 /// Timeout for multi-megabyte bodies (node list, specs, locations, stats rounds).
@@ -1012,6 +1015,133 @@ impl CoinGeckoClient {
         let b = self.http.get_body(&url, &RequestOpts::default()).await?;
         parse_plain("coingecko simple price", &b.bytes)
     }
+
+    /// `simple/price?ids=zelcash` in each of `currencies` (lowercase codes) with the 24 h
+    /// changes, in one request.
+    pub async fn spot(&self, currencies: &[&str]) -> Result<CoinGeckoSpot> {
+        let list = currencies
+            .iter()
+            .map(|c| seg(c))
+            .collect::<Vec<_>>()
+            .join(",");
+        let url = join(
+            &self.base,
+            &format!(
+                "api/v3/simple/price?ids=zelcash&vs_currencies={list}&include_24hr_change=true"
+            ),
+        )?;
+        let b = self.http.get_body(&url, &RequestOpts::default()).await?;
+        parse_plain("coingecko spot", &b.bytes)
+    }
+
+    /// `coins/zelcash/market_chart` in USD over the last `days` days, one point per day
+    /// (about 38 KB for a year).
+    pub async fn market_chart_usd(&self, days: u32) -> Result<CoinGeckoMarketChart> {
+        let url = join(
+            &self.base,
+            &format!(
+                "api/v3/coins/zelcash/market_chart?vs_currency=usd&days={days}&interval=daily"
+            ),
+        )?;
+        let opts = RequestOpts::default()
+            .timeout(Duration::from_secs(30))
+            .max_bytes(4 * 1024 * 1024);
+        let b = self.http.get_body(&url, &opts).await?;
+        parse_plain("coingecko market chart", &b.bytes)
+    }
+}
+
+/// Size cap of a Fusion answer (a claim history is about 0.4 KB per claim).
+pub const FUSION_BODY: usize = 4 * 1024 * 1024;
+
+/// Flux Fusion client (parallel-asset statistics). Only the cheap per-address calls are
+/// offered: `/coinbase/records` answers every coinbase output (37 MB for a large wallet) and
+/// `/coinbase/stats` times out, so neither is ever called.
+#[derive(Clone, Debug)]
+pub struct FusionClient {
+    http: HttpClient,
+    set: Arc<FailoverSet>,
+}
+
+impl FusionClient {
+    pub fn new(http: HttpClient, base: &str) -> Result<Self> {
+        Ok(Self {
+            http,
+            set: Arc::new(FailoverSet::new("fusion", &[base])?),
+        })
+    }
+
+    fn on_lane(&self, http: HttpClient) -> Self {
+        Self {
+            http,
+            set: Arc::new(self.set.primaries_only()),
+        }
+    }
+
+    pub fn failover(&self) -> &FailoverSet {
+        &self.set
+    }
+
+    async fn get<T: DeserializeOwned>(
+        &self,
+        what: &'static str,
+        path: &str,
+        opts: &RequestOpts,
+    ) -> Result<T> {
+        self.set
+            .run(|u| async move {
+                let b = self.http.get_body(&join(&u.base, path)?, opts).await?;
+                Ok((parse_envelope::<T>(what, &b.bytes)?, b.elapsed))
+            })
+            .await
+    }
+
+    fn opts() -> RequestOpts {
+        RequestOpts::default()
+            .timeout(Duration::from_secs(15))
+            .max_bytes(FUSION_BODY)
+    }
+
+    /// Per-chain coinbase statistics of an address (about 0.6 s, 3 s for a large wallet).
+    pub async fn summary(&self, address: &str) -> Result<CoinbaseSummary> {
+        self.get(
+            "fusion coinbase summary",
+            &format!("coinbase/summary?address={}", seg(address)),
+            &Self::opts(),
+        )
+        .await
+    }
+
+    /// The claim-all totals of an address (active chains only).
+    pub async fn multi_available(&self, address: &str) -> Result<MultiAvailable> {
+        self.get(
+            "fusion coinbase multiavailable",
+            &format!("coinbase/multiavailable?address={}", seg(address)),
+            &Self::opts(),
+        )
+        .await
+    }
+
+    /// Every claim of an address.
+    pub async fn claimed(&self, address: &str) -> Result<Claimed> {
+        self.get(
+            "fusion coinbase claimed",
+            &format!("coinbase/claimed?address={}", seg(address)),
+            &Self::opts(),
+        )
+        .await
+    }
+
+    /// Fees per service and chain.
+    pub async fn fees(&self) -> Result<FusionFees> {
+        self.get("fusion fees", "fees", &Self::opts()).await
+    }
+
+    /// Chains Fusion swaps on now.
+    pub async fn active_chains(&self) -> Result<ActiveChains> {
+        self.get("fusion activechains", "swap/activechains", &Self::opts())
+            .await
+    }
 }
 
 /// Endpoint configuration for [`Clients`].
@@ -1022,6 +1152,7 @@ pub struct ClientsConfig {
     pub insight_bases: Vec<String>,
     pub stats_base: String,
     pub coingecko_base: String,
+    pub fusion_base: String,
 }
 
 impl Default for ClientsConfig {
@@ -1032,6 +1163,7 @@ impl Default for ClientsConfig {
             insight_bases: INSIGHT_BASES.iter().map(|s| (*s).to_owned()).collect(),
             stats_base: STATS_BASE.to_owned(),
             coingecko_base: COINGECKO_BASE.to_owned(),
+            fusion_base: FUSION_BASE.to_owned(),
         }
     }
 }
@@ -1052,6 +1184,7 @@ pub struct Clients {
     pub stats: StatsClient,
     pub node_api: NodeApiClient,
     pub coingecko: CoinGeckoClient,
+    pub fusion: FusionClient,
 }
 
 impl Clients {
@@ -1064,6 +1197,7 @@ impl Clients {
             stats: StatsClient::new(http.clone(), &cfg.stats_base)?,
             node_api: NodeApiClient::new(http.clone()),
             coingecko: CoinGeckoClient::new(http.clone(), &cfg.coingecko_base)?,
+            fusion: FusionClient::new(http.clone(), &cfg.fusion_base)?,
             http,
         })
     }
@@ -1102,6 +1236,7 @@ impl Clients {
                 http: http.clone(),
                 base: self.coingecko.base.clone(),
             },
+            fusion: self.fusion.on_lane(http.clone()),
             http,
         }
     }
@@ -1113,6 +1248,7 @@ impl Clients {
             self.fluxos.failover(),
             self.insight.failover(),
             self.stats.failover(),
+            self.fusion.failover(),
         ]
         .into_iter()
         .flat_map(|set| {

@@ -1,0 +1,15 @@
+{
+ "status": "success",
+ "data": [
+  "main",
+  "kda",
+  "eth",
+  "bsc",
+  "trx",
+  "sol",
+  "avax",
+  "algo",
+  "matic",
+  "base"
+ ]
+}

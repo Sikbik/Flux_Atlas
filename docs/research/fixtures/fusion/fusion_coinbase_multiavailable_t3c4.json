@@ -1,0 +1,11 @@
+{
+ "status": "success",
+ "data": {
+  "address": "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
+  "totalClaim": 391999.5,
+  "totalMiningFees": 105,
+  "totalSwapFees": 3013,
+  "totalFee": 3118,
+  "totalReward": 388881.5
+ }
+}
