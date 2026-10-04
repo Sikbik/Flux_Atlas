@@ -3,6 +3,7 @@
 pub mod apps;
 pub mod explorer;
 pub mod hot;
+pub mod hubs;
 pub mod network;
 pub mod nodes;
 pub mod ops;
@@ -59,6 +60,8 @@ fn api(state: &AppState) -> Router<AppState> {
         .route("/network/decentralization", get(network::decentralization))
         .route("/network/app-economy", get(network::app_economy))
         .route("/network/chain-history", get(network::chain_history))
+        // Network hubs (B13): computed once per publish, charged inside.
+        .merge(hubs::routes())
         // Explorer.
         .route("/blocks", get(explorer::blocks))
         .route("/blocks/{id}", get(explorer::block))

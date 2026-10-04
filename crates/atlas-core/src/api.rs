@@ -18,6 +18,8 @@ use crate::ids::{Hash32, NodeId, Outpoint};
 use crate::live::FeedItem;
 use crate::node::{Geo, Hardware, NodeStatus, Tier, Versions};
 
+pub use crate::api_hubs::*;
+
 // ---------------------------------------------------------------------------------------------
 // Shared building blocks
 // ---------------------------------------------------------------------------------------------

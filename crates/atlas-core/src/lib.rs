@@ -7,6 +7,7 @@
 
 pub mod amount;
 pub mod api;
+pub mod api_hubs;
 pub mod app;
 pub mod chain;
 pub mod codec;
@@ -91,6 +92,7 @@ pub fn export_typescript(dir: &Path) -> Result<(), ts_rs::ExportError> {
         live::Topic,
         emission::PayoutSchedule,
     );
+    api_hubs::export(&cfg)?;
     Ok(())
 }
 

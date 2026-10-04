@@ -47,11 +47,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use atlas_core::api::{AppIndexEntry, PriceInfo, TxLite};
-use atlas_core::app::AppInstance;
+use atlas_core::app::{AppInstance, AppMessageRecord};
 use atlas_core::chain::{BlockKind, BlockSummary, Payout, TxKind};
 use atlas_core::codec::nodes_bin::NodeBinInput;
 use atlas_core::emission;
-use atlas_core::event::{AppMessageKind, Event, EventEnvelope};
+use atlas_core::event::{AppMessageKind, Event, EventEnvelope, RemovalReason};
 use atlas_core::live::{
     AppInstallingMsg, AppInstancesDelta, AppPendingMsg, AppPendingResolvedMsg, AppsDelta, BlockMsg,
     DeltaCause, FeedItem, FeedKind, FeedRef, LiveBody, MeshDelta, NextPayeeDto, NextPayeesMsg,
@@ -1230,6 +1230,151 @@ fn seed_rich_history(store: &Store) -> anyhow::Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------------------------
+// The network hubs (B13): operators of different sizes, node ages, churn, app history
+// ---------------------------------------------------------------------------------------------
+
+/// Operators reshaped for the leaderboard: (first, last + 1) fixture operator, the ZelID's
+/// operator (`None`: no ZelID), and how many payment addresses they share.
+const HUB_OPERATORS: [(usize, usize, Option<usize>, usize); 3] = [
+    // One ZelID runs 60 operators' nodes over three payment addresses.
+    (200, 260, Some(200), 3),
+    // One ZelID runs 30 operators' nodes on one address.
+    (300, 330, Some(300), 1),
+    // Ten operators' nodes paid to one address that reports no ZelID.
+    (400, 410, None, 1),
+];
+/// Apps given a registration over the last 89 days (every fourth one is also updated).
+const HUB_REGISTRATIONS: usize = 360;
+
+/// Time since `active_since` of a confirmed node, by a deterministic percentile `p` (0..100):
+/// a few joined today and this week, most months or years ago.
+fn hub_age_ms(p: u64, i: u64) -> u64 {
+    let jitter = (i * 7_919_993) % DAY_MS;
+    let days = match p {
+        0 => 0,
+        1..=2 => 1 + i % 6,
+        3..=9 => 7 + i % 23,
+        10..=34 => 30 + i % 152,
+        35..=59 => 182 + i % 183,
+        60..=84 => 365 + i % 365,
+        _ => 730 + i % 700,
+    };
+    days * DAY_MS + jitter
+}
+
+/// Reshapes the fixture for the hubs (the demo wallet's nodes are left alone): operator sizes
+/// ([`HUB_OPERATORS`]), node ages, app owners, enterprise apps, spread expiries, and
+/// [`HUB_REGISTRATIONS`] app registrations with updates over the last 89 days.
+fn adjust_hubs(f: &mut Fixture) {
+    let wallet = wallet_nodes();
+    let now = f.now_ms;
+    for (i, n) in f.nodes.iter_mut().enumerate() {
+        if wallet.contains(&i) {
+            continue;
+        }
+        let op = i / fixtures::NODES_PER_OPERATOR;
+        if let Some(&(first, _, zelid, addresses)) = HUB_OPERATORS
+            .iter()
+            .find(|(first, end, _, _)| (*first..*end).contains(&op))
+        {
+            n.zelid = zelid.map(|z| fixtures::operator_zelid(z).into());
+            n.payment_address = fixtures::operator_address(first + op % addresses).into();
+        }
+        if n.status == NodeStatus::Confirmed {
+            let p = (i as u64 * 37) % 100;
+            n.active_since_ms = Some(now - hub_age_ms(p, i as u64));
+        }
+    }
+    let tip = f.tip;
+    let tip_time_ms = f.tip_time_ms;
+    let time_of = |h: u32| tip_time_ms - u64::from(tip - h) * 30_000;
+    let mut messages = Vec::new();
+    for (j, a) in f.apps.iter_mut().enumerate() {
+        if j % 3 == 0 {
+            a.spec.owner = fixtures::operator_zelid(10 + j % 40);
+        }
+        if j % 25 == 4 {
+            a.spec.enterprise = true;
+        }
+        // Expiries from 200 blocks (under two hours) to 40,000 blocks ahead.
+        a.expire_height = tip + 200 + (j as u32 * 997) % 40_000;
+        if !(2..HUB_REGISTRATIONS + 2).contains(&j) {
+            continue;
+        }
+        let registered = tip - (j as u32 * 2_311) % (89 * 2_880);
+        let mut heights = vec![(registered, AppMessageKind::Register)];
+        if j % 4 == 0 {
+            heights.push((registered + (tip - registered) / 2, AppMessageKind::Update));
+        }
+        for (k, (height, kind)) in heights.iter().enumerate() {
+            messages.push(AppMessageRecord {
+                hash: Hash32(*blake3::hash(format!("hub-app-{j}-{k}").as_bytes()).as_bytes()),
+                txid: Some(Hash32(
+                    *blake3::hash(format!("hub-app-tx-{j}-{k}").as_bytes()).as_bytes(),
+                )),
+                height: *height,
+                timestamp_ms: time_of(*height),
+                kind: *kind,
+                paid: Amount::from_flux(1 + (j % 9) as i64),
+                spec: a.spec.clone(),
+            });
+        }
+        a.registered_height = Some(registered);
+        a.height = heights.last().map_or(registered, |h| h.0);
+    }
+    f.app_messages.extend(messages);
+}
+
+/// Node events of the churn: the initial confirmation of every node confirmed in the last 7
+/// days (at its `active_since`), and the removal of the fixture's departed nodes over the same
+/// days. Neither changes a node's status, so the time machine's counts stay as they were.
+fn seed_hubs(f: &Fixture, store: &Store) -> anyhow::Result<()> {
+    let now = f.now_ms;
+    let wallet = wallet_nodes();
+    let mut batch = WriteBatch::default();
+    for (i, n) in f.nodes.iter().enumerate() {
+        if wallet.contains(&i) {
+            continue;
+        }
+        match n.status {
+            NodeStatus::Confirmed => {
+                let Some(since) = n.active_since_ms.filter(|t| *t + 7 * DAY_MS > now) else {
+                    continue;
+                };
+                let blocks = ((now - since) / 30_000) as u32;
+                batch.push_event(event(
+                    since,
+                    Event::NodeConfirmed {
+                        node: n.id,
+                        height: f.tip.saturating_sub(blocks),
+                        txid: Hash32(
+                            *blake3::hash(format!("hub-confirm-{i}").as_bytes()).as_bytes(),
+                        ),
+                    },
+                ));
+            }
+            NodeStatus::Departed => {
+                let reason = match i % 3 {
+                    0 => RemovalReason::Expired,
+                    1 => RemovalReason::CollateralSpent,
+                    _ => RemovalReason::Missing,
+                };
+                // One in five left in the last day, the others over the rest of the week.
+                let ago = if i % 5 == 0 {
+                    (i as u64 * 7_919_993) % DAY_MS
+                } else {
+                    DAY_MS + (i as u64 * 7_919_993) % (6 * DAY_MS)
+                };
+                batch.push_event(event(now - ago, Event::NodeRemoved { node: n.id, reason }));
+            }
+            _ => {}
+        }
+    }
+    store.commit_durable(batch)?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let filter = tracing_subscriber::EnvFilter::try_from_env("ATLAS_LOG")
@@ -1260,6 +1405,7 @@ async fn main() -> anyhow::Result<()> {
     let t0 = Instant::now();
     let mut fixture = Fixture::build(FixtureSpec::MAINNET);
     adjust_wallet(&mut fixture);
+    adjust_hubs(&mut fixture);
     let history = fixture.clone();
     let (engine, f) = fixtures::fixture_engine_from(
         &db,
@@ -1272,7 +1418,8 @@ async fn main() -> anyhow::Result<()> {
         fixture,
         |store| {
             seed_wallet_history(&history, store)?;
-            seed_rich_history(store)
+            seed_rich_history(store)?;
+            seed_hubs(&history, store)
         },
     )?;
     drop(history);
