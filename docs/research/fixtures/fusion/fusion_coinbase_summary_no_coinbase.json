@@ -1,0 +1,85 @@
+{
+ "status": "success",
+ "data": {
+  "address": "t1Kz2ZvPAPKXDmKaGzgwCoJkUFh3qzrkbJu",
+  "satoshis": 0,
+  "amount": 0,
+  "numberOfTxs": 0,
+  "isMiner": false,
+  "maxClaimablePerChain": 0,
+  "maxClaimableTotal": 0,
+  "claimedTotal": 0,
+  "chainStatistics": [
+   {
+    "chain": "kda",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "eth",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "bsc",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "trx",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "sol",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "avax",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "erg",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "algo",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "matic",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   },
+   {
+    "chain": "base",
+    "claimedAmount": 0,
+    "receivedAmount": 0,
+    "feesPaid": 0,
+    "possibleToClaim": 0
+   }
+  ]
+ }
+}

@@ -1,0 +1,85 @@
+{
+ "status": "success",
+ "data": {
+  "address": "t1aNeir5K3gpPYJg3XgkWZauAbW5R2fiKbe",
+  "satoshis": 462706250000,
+  "amount": 4627.0625,
+  "numberOfTxs": 2492,
+  "isMiner": false,
+  "maxClaimablePerChain": 462.70625,
+  "maxClaimableTotal": 4627.0625,
+  "claimedTotal": 959.0625,
+  "chainStatistics": [
+   {
+    "chain": "kda",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 75.90625,
+    "feesPaid": 20,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "eth",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 80.90625,
+    "feesPaid": 15,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "bsc",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 85.90625,
+    "feesPaid": 10,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "trx",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 75.90625,
+    "feesPaid": 20,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "sol",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 85.90625,
+    "feesPaid": 10,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "avax",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 85.90625,
+    "feesPaid": 10,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "erg",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 85.90625,
+    "feesPaid": 10,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "algo",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 85.90625,
+    "feesPaid": 10,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "matic",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 85.90625,
+    "feesPaid": 10,
+    "possibleToClaim": 366.8
+   },
+   {
+    "chain": "base",
+    "claimedAmount": 95.90625,
+    "receivedAmount": 85.90625,
+    "feesPaid": 10,
+    "possibleToClaim": 366.8
+   }
+  ]
+ }
+}

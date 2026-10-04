@@ -1169,6 +1169,446 @@ pub struct OperatorDto {
     pub next_payments: Vec<NextPayment>,
 }
 
+// ---------------------------------------------------------------------------------------------
+// Wallet intelligence
+// ---------------------------------------------------------------------------------------------
+
+/// `GET /wallet/{addr}`: everything the wallet dashboard shows except parallel assets, for a
+/// transparent (t1 / t3) address. An address without nodes answers too, with empty fleet
+/// sections. Node keys (`node_key`) are collateral outpoints (`txid:vout`), the key node URLs
+/// use.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct WalletDto {
+    pub address: String,
+    pub generated_ms: u64,
+    pub tip_height: u32,
+    pub standing: WalletStanding,
+    /// Confirmed nodes paying this address, per tier.
+    pub tiers: TierCounts,
+    /// Every listed node paying this address (the `/operator` rows).
+    pub nodes: Vec<NodeRow>,
+    pub earnings: WalletEarnings,
+    /// Each confirmed node's next payment, soonest first.
+    pub payouts: Vec<WalletPayout>,
+    pub health: WalletHealth,
+    /// Per tier the fleet runs and per metric: the fleet against the network and the minimum.
+    pub benchmarks: Vec<WalletBenchmark>,
+    /// The fleet's confirmed nodes by country, city and provider.
+    pub concentration: Vec<WalletConcentration>,
+    pub apps: WalletApps,
+    /// Newest first, at most 200.
+    pub activity: Vec<WalletActivity>,
+    /// Confirmed nodes at the end of each UTC day of the stored keyframes, oldest first; the
+    /// last row is today (live).
+    pub fleet_history: Vec<FleetDay>,
+}
+
+/// Where the wallet stands.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct WalletStanding {
+    /// Confirmed balance (Insight); `null` when the explorer could not be asked.
+    pub balance: Option<Amount>,
+    /// Collateral of the listed nodes paying this address (rewards go to the address holding
+    /// the collateral, so it sits in `balance`).
+    pub collateral_locked: Amount,
+    /// `balance - collateral_locked`, at least 0; `null` without a balance.
+    pub liquid: Option<Amount>,
+    /// 1-based position in the explorer's rich list (top 1,000); `null` outside it or when the
+    /// list is unavailable.
+    pub richlist_rank: Option<u32>,
+    /// 1-based rank by confirmed node count among payment addresses (ties share a rank);
+    /// `null` without confirmed nodes.
+    pub operator_rank: Option<u32>,
+    /// Payment addresses with at least one confirmed node.
+    pub operator_count: u32,
+    /// Share of each tier's confirmed nodes this wallet runs, 0..1.
+    pub share_of_tier: TierShares,
+    /// Oldest `active_since` of the current nodes.
+    pub first_active_ms: Option<u64>,
+}
+
+/// A 0..1 value per tier.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, TS)]
+pub struct TierShares {
+    pub cumulus: f64,
+    pub nimbus: f64,
+    pub stratus: f64,
+}
+
+/// Realized and projected earnings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct WalletEarnings {
+    /// Payouts received per UTC day over the stored blocks (at most 30 days), oldest first;
+    /// the first and last days are partial.
+    pub days: Vec<EarningsDay>,
+    /// Time of the first stored block the realized figures cover; `null` when none is stored.
+    pub covered_from_ms: Option<u64>,
+    /// Payments the queue owed this wallet's nodes over the covered window, and payments the
+    /// ledger shows (every payout to the address, attributed to a node or not).
+    pub expected_payments: u32,
+    pub received_payments: u32,
+    /// Nodes that received fewer payments than the queue owed them, worst first.
+    pub missed: Vec<MissedPayments>,
+    /// The fleet's current run rate: confirmed nodes x tier payout x blocks per day / queue
+    /// length.
+    pub native_per_day: Amount,
+    /// Parallel-asset accrual at the same rate (see `emission::parallel_asset_accrual`).
+    pub pa_per_day: Amount,
+    /// The next 365 UTC days at the current fleet and queue sizes, subsidy reductions applied.
+    pub projection: Vec<ProjectionDay>,
+    /// The next subsidy reduction; `null` after the last one.
+    pub reduction: Option<SubsidyReduction>,
+}
+
+/// Payouts received on one UTC day.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct EarningsDay {
+    pub day_ms: u64,
+    pub native: Amount,
+    pub payments: u32,
+    pub cumulus: Amount,
+    pub nimbus: Amount,
+    pub stratus: Amount,
+}
+
+/// A node with fewer payments than the queue owed it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct MissedPayments {
+    pub node_key: String,
+    pub expected: u32,
+    pub received: u32,
+}
+
+/// One projected day.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ProjectionDay {
+    pub day_ms: u64,
+    pub native: Amount,
+    pub pa: Amount,
+}
+
+/// A block subsidy reduction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct SubsidyReduction {
+    pub height: u32,
+    pub eta_ms: u64,
+    pub subsidy_before: Amount,
+    pub subsidy_after: Amount,
+}
+
+/// A node's next payment.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct WalletPayout {
+    pub node_key: String,
+    pub tier: Tier,
+    pub height: u32,
+    pub eta_ms: u64,
+    pub amount: Amount,
+}
+
+/// Fleet health.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct WalletHealth {
+    /// Listed nodes without any reason for attention.
+    pub healthy: u32,
+    /// Nodes with at least one reason, most reasons first.
+    pub attention: Vec<NodeAttention>,
+}
+
+/// The reasons one node needs attention.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct NodeAttention {
+    pub node_key: String,
+    pub reasons: Vec<HealthReason>,
+}
+
+/// Why a node needs attention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthKind {
+    /// FluxOS or fluxbench older than the version most of the network runs.
+    VersionOutdated,
+    /// The last benchmark failed.
+    BenchFailed,
+    /// The benchmark reported an error.
+    BenchError,
+    /// Late to confirm: fewer than 120 blocks (about an hour) left before the confirmation
+    /// deadline. A healthy node confirms every 500 or so blocks, so it never gets this close.
+    ExpiringSoon,
+    /// On the DOS list.
+    Dos,
+    /// The host API did not answer the last crawl.
+    Unreachable,
+    /// A benchmark metric within 10% of (or below) the tier minimum.
+    LowHeadroom,
+}
+
+/// One reason, with the metric it is about when there is one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct HealthReason {
+    pub kind: HealthKind,
+    /// Plain-language explanation.
+    pub detail: String,
+    /// `eps`, `disk_write_mbs`, `down_mbps`, `up_mbps`, `ram_gb`, `cores`, `ssd_gb`,
+    /// `blocks_left`, `flux_os` or `bench`.
+    pub metric: Option<String>,
+    pub value: Option<f64>,
+    pub threshold: Option<f64>,
+}
+
+/// A benchmark metric.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum BenchMetric {
+    Eps,
+    DiskWriteMbs,
+    DownMbps,
+    UpMbps,
+    RamGb,
+    Cores,
+    SsdGb,
+}
+
+impl BenchMetric {
+    pub const ALL: [Self; 7] = [
+        Self::Eps,
+        Self::DiskWriteMbs,
+        Self::DownMbps,
+        Self::UpMbps,
+        Self::RamGb,
+        Self::Cores,
+        Self::SsdGb,
+    ];
+
+    /// Wire name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Eps => "eps",
+            Self::DiskWriteMbs => "disk_write_mbs",
+            Self::DownMbps => "down_mbps",
+            Self::UpMbps => "up_mbps",
+            Self::RamGb => "ram_gb",
+            Self::Cores => "cores",
+            Self::SsdGb => "ssd_gb",
+        }
+    }
+
+    /// The metric of a benchmark; `None` when it is not measured (0).
+    pub fn of(self, hw: &Hardware) -> Option<f64> {
+        let v = match self {
+            Self::Eps => f64::from(hw.eps),
+            Self::DiskWriteMbs => f64::from(hw.disk_write_mbs),
+            Self::DownMbps => f64::from(hw.down_mbps),
+            Self::UpMbps => f64::from(hw.up_mbps),
+            Self::RamGb => f64::from(hw.ram_gb),
+            Self::Cores => f64::from(hw.cores),
+            Self::SsdGb => f64::from(hw.ssd_gb),
+        };
+        (v.is_finite() && v > 0.0).then_some(v)
+    }
+
+    /// The tier minimum of this metric.
+    pub fn minimum(self, tier: Tier) -> Option<f64> {
+        let m = tier.minimums()?;
+        Some(match self {
+            Self::Eps => m.eps,
+            Self::DiskWriteMbs => m.disk_write_mbs,
+            Self::DownMbps => m.down_mbps,
+            Self::UpMbps => m.up_mbps,
+            Self::RamGb => m.ram_gb,
+            Self::Cores => m.cores,
+            Self::SsdGb => m.ssd_gb,
+        })
+    }
+
+    /// Measured on every benchmark run and so able to drift (CPU, disk and bandwidth), as
+    /// opposed to the provisioned size of the machine.
+    pub const fn fluctuates(self) -> bool {
+        matches!(
+            self,
+            Self::Eps | Self::DiskWriteMbs | Self::DownMbps | Self::UpMbps
+        )
+    }
+}
+
+/// 10th, 50th and 90th percentiles.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, TS)]
+pub struct Percentiles {
+    pub p10: f64,
+    pub p50: f64,
+    pub p90: f64,
+}
+
+/// One metric of one tier: the network's confirmed nodes against this fleet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct WalletBenchmark {
+    pub tier: Tier,
+    pub metric: BenchMetric,
+    pub network: Percentiles,
+    pub fleet_median: f64,
+    pub fleet_min: f64,
+    /// The tier minimum (`Tier::minimums`).
+    pub minimum: Option<f64>,
+    /// Fleet nodes with this metric measured.
+    pub fleet_nodes: u32,
+}
+
+/// What a concentration groups by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ConcentrationBy {
+    Country,
+    City,
+    /// Grouped by ASN (`AS<n>` keys), else the org name.
+    Provider,
+}
+
+/// The fleet grouped one way.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct WalletConcentration {
+    pub by: ConcentrationBy,
+    /// Largest first; nodes without a known value are in an `unknown` bucket.
+    pub buckets: Vec<ConcentrationBucket>,
+    /// Herfindahl-Hirschman index over the known buckets, 0..1 (1 = all in one place).
+    pub hhi: f64,
+    /// Share of the largest known bucket, 0..1.
+    pub top_share: f64,
+}
+
+/// One concentration bucket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ConcentrationBucket {
+    pub key: String,
+    pub label: String,
+    pub nodes: u32,
+}
+
+/// Apps running on the fleet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct WalletApps {
+    /// App instances on the fleet (an app on two nodes counts twice).
+    pub instances: u32,
+    /// Most instances first.
+    pub apps: Vec<WalletApp>,
+}
+
+/// One app on the fleet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct WalletApp {
+    pub name: String,
+    pub display_name: String,
+    pub instances: u32,
+    pub node_keys: Vec<String>,
+}
+
+/// One fleet event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct WalletActivity {
+    pub t_ms: u64,
+    /// `started`, `confirmed`, `paid`, `ip_changed`, `at_risk`, `expired`, `left`, `dos`,
+    /// `collateral_spent`, `unreachable`, `recovered`, `status`, `benchmark`, `version` or
+    /// `apps`.
+    pub kind: String,
+    pub node_key: Option<String>,
+    pub height: Option<u32>,
+    pub detail: String,
+}
+
+/// Confirmed nodes on one UTC day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FleetDay {
+    pub day_ms: u64,
+    pub cumulus: u32,
+    pub nimbus: u32,
+    pub stratus: u32,
+}
+
+/// `GET /wallet/{addr}/parallel-assets`: FLUX accrued on the parallel-asset chains, from Flux
+/// Fusion. Amounts are FLUX as Fusion reports them (floats).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ParallelAssetsDto {
+    pub address: String,
+    /// When Fusion was asked (the answer is reused for about 10 minutes).
+    pub fetched_ms: u64,
+    /// Across all chains: accrued, claimed so far, and claimable now.
+    pub mined: f64,
+    pub claimed: f64,
+    pub claimable: f64,
+    /// Fusion's claim-all (active chains only).
+    pub multi: MultiClaim,
+    /// Accrual across all chains per day at this wallet's current native run rate; `null`
+    /// without confirmed nodes.
+    pub accrual_per_day: Option<f64>,
+    pub chains: Vec<PaChain>,
+    /// Newest first.
+    pub claims: Vec<PaClaim>,
+}
+
+/// Fusion's claim-all totals.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, TS)]
+pub struct MultiClaim {
+    pub claimable: f64,
+    pub fees: f64,
+    pub net: f64,
+}
+
+/// One parallel-asset chain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PaChain {
+    /// Fusion's chain id (`kda`, `eth`, ...).
+    pub chain: String,
+    pub name: String,
+    /// Fusion swaps (and so claims) on it now.
+    pub active: bool,
+    pub mined: f64,
+    pub claimed: f64,
+    pub received: f64,
+    pub fees_paid: f64,
+    pub claimable: f64,
+    /// Flat FLUX fee of a claim on this chain.
+    pub claim_fee: f64,
+    /// Explorer URL templates with `{txid}` / `{address}`.
+    pub explorer_tx: Option<String>,
+    pub explorer_address: Option<String>,
+}
+
+/// One claim.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PaClaim {
+    pub chain: String,
+    pub amount: f64,
+    /// As Fusion reports it; a claim-all paid out on the Flux main chain reads `flux:<txid>`.
+    pub txid: String,
+    /// Receiving address.
+    pub to: String,
+    pub explorer_url: Option<String>,
+    pub time_ms: Option<u64>,
+    /// Flux main-chain txid when the claim was paid out on the main chain (claim-all), for a
+    /// link inside Atlas.
+    pub main_txid: Option<String>,
+    /// FLUX fee taken from the claim.
+    pub fee: f64,
+}
+
+/// `GET /prices`: FLUX spot prices and a year of daily USD history (CoinGecko).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PricesDto {
+    pub generated_ms: u64,
+    /// Price of one FLUX per currency code (lowercase: `usd`, `eur`, ..., `btc`).
+    pub spot: BTreeMap<String, f64>,
+    /// USD change over 24 hours, percent.
+    pub change_24h_pct: Option<f64>,
+    /// Daily USD prices of the last 365 days, oldest first; the last row is today.
+    pub history: Vec<PricePoint>,
+}
+
+/// One daily price.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+pub struct PricePoint {
+    pub day_ms: u64,
+    pub usd: f64,
+}
+
 /// Machine-readable error codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -1184,6 +1624,9 @@ pub enum ApiErrorCode {
     /// The time machine has no state for the requested time: before the first keyframe, or too
     /// far after the nearest one (HTTP 404).
     NoHistory,
+    /// A third-party source a view depends on (Flux Fusion, CoinGecko) failed and no earlier
+    /// copy is held: 502 when it answered unusably, 503 when it could not be reached.
+    UpstreamUnavailable,
 }
 
 /// Error body inside [`ApiErrorDto`].

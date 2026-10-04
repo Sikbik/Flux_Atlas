@@ -80,6 +80,34 @@ impl ApiError {
         )
     }
 
+    /// A third-party source (Fusion, CoinGecko) failed and nothing earlier is held: 503 when it
+    /// could not be reached or asked (timeout, transport, rate limit, open breaker), 502 when it
+    /// answered something unusable. Code `upstream_unavailable` either way.
+    pub fn third_party(what: &str, e: &FluxError) -> Self {
+        let unreachable = matches!(
+            e,
+            FluxError::Timeout(_)
+                | FluxError::Transport { .. }
+                | FluxError::RateLimited { .. }
+                | FluxError::NoHealthyUpstream(_)
+        ) || matches!(e, FluxError::Status { status, .. } if *status >= 500 || *status == 429);
+        tracing::debug!(error = %e, what, "third-party source failed");
+        if unreachable {
+            Self::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ApiErrorCode::UpstreamUnavailable,
+                format!("{what} is unavailable right now; try again shortly"),
+            )
+            .with_retry_after(30)
+        } else {
+            Self::new(
+                StatusCode::BAD_GATEWAY,
+                ApiErrorCode::UpstreamUnavailable,
+                format!("{what} answered something unusable"),
+            )
+        }
+    }
+
     pub fn with_retry_after(mut self, seconds: u64) -> Self {
         self.retry_after_s = Some(seconds.max(1));
         self

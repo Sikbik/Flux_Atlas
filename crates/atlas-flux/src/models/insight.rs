@@ -502,6 +502,37 @@ pub struct CoinGeckoPrice {
 #[serde(transparent)]
 pub struct CoinGeckoSimplePrice(pub BTreeMap<String, CoinGeckoPrice>);
 
+/// CoinGecko `simple/price?ids=zelcash&vs_currencies=a,b,...&include_24hr_change=true`: per
+/// coin id, the price per currency code and `<code>_24h_change` entries.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(transparent)]
+pub struct CoinGeckoSpot(pub BTreeMap<String, BTreeMap<String, serde_json::Value>>);
+
+impl CoinGeckoSpot {
+    /// Positive prices of `coin` by currency code, and its USD 24 h change in percent.
+    pub fn prices(&self, coin: &str) -> (BTreeMap<String, f64>, Option<f64>) {
+        let Some(m) = self.0.get(coin) else {
+            return (BTreeMap::new(), None);
+        };
+        let num = |v: &serde_json::Value| v.as_f64().filter(|x| x.is_finite());
+        let prices = m
+            .iter()
+            .filter(|(k, _)| !k.contains('_'))
+            .filter_map(|(k, v)| num(v).filter(|x| *x > 0.0).map(|x| (k.clone(), x)))
+            .collect();
+        (prices, m.get("usd_24h_change").and_then(num))
+    }
+}
+
+/// CoinGecko `coins/<id>/market_chart?vs_currency=usd&days=365&interval=daily`: `[unix ms,
+/// price]` pairs, oldest first (daily at 00:00 UTC, then the current price).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct CoinGeckoMarketChart {
+    #[serde(deserialize_with = "lenient::vec_skip_bad")]
+    pub prices: Vec<(f64, f64)>,
+}
+
 /// One payee row in pool statistics (under PoN these are Stratus payees, not producers).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]

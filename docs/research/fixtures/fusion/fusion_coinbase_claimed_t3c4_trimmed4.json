@@ -1,0 +1,53 @@
+{
+ "status": "success",
+ "data": {
+  "address": "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
+  "numberOfTxs": 39,
+  "transactions": [
+   {
+    "address": "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
+    "amount": 27814.40625,
+    "chain": "matic",
+    "txid": "0x539a52a18c64db511a271066f66e3ce1388a1e36834818021edd5df1955023e7",
+    "claimedAddress": "0x7ecd55d25d03d52bff87d8a111c55ec08cca3e95",
+    "message": "16984873134164j0dnv86hcd8h0vvbqz4gcl7buvzmu75m415i46u98ox",
+    "signature": "H6hy9Nz/YVuxkiQ/clWbmWpdwInFOVruUOjGhdGCL2GFdWx5iZ0jPheImK8J9tRhdUm/AZVKVhORf8jRoAnP/Rk=",
+    "fee": 4,
+    "timestamp": 1698487313694
+   },
+   {
+    "address": "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
+    "amount": 27814.40625,
+    "chain": "erg",
+    "txid": "1d8240ab2fa978c89f2cdb839d144b5393f70035a0a3321aecf7bbf506b2a370",
+    "claimedAddress": "9i7X2tQqTdbkJ9mspYaPLmAPdZt8hs2g8xjMzYFoWfPwKUBGaon",
+    "message": "1698487410039jsu7dyekk89lljm5dl11yj1bk3xtzssmej7hr6zttvq",
+    "signature": "IKTmQ7OjbKfHrEuXuRYXrDAky7yLG+BnxKNRWGdbzH8DM6JfH3LrHorl4su80rP3GgbDyicIfWxJmxNJkZdbOPg=",
+    "fee": 3,
+    "timestamp": 1698487429260
+   },
+   {
+    "address": "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
+    "amount": 44095.5,
+    "chain": "kda",
+    "claimedAddress": "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
+    "message": "17800448616292po53sp7wr3lfu2i0i3ehss4jla08t8jn6cc64bu8uh",
+    "signature": "ICyqwHJ+pgOhmidW+heviQwbUQg5l2RHBctNsbtXzDpUUYpLpzWfXDoqClkh1p+QYANJuJX/2IQ56O7qJpKzjuI=",
+    "fee": 10,
+    "timestamp": 1780044862432,
+    "txid": "flux:9aad7af6547849c9dbaa7734b4a6794646df7bd68a23e34bb06bdf76b3ca59d0"
+   },
+   {
+    "address": "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
+    "amount": 44095.5,
+    "chain": "base",
+    "claimedAddress": "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
+    "message": "17800448616292po53sp7wr3lfu2i0i3ehss4jla08t8jn6cc64bu8uh",
+    "signature": "ICyqwHJ+pgOhmidW+heviQwbUQg5l2RHBctNsbtXzDpUUYpLpzWfXDoqClkh1p+QYANJuJX/2IQ56O7qJpKzjuI=",
+    "fee": 10,
+    "timestamp": 1780044862432,
+    "txid": "flux:9aad7af6547849c9dbaa7734b4a6794646df7bd68a23e34bb06bdf76b3ca59d0"
+   }
+  ]
+ }
+}

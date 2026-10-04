@@ -82,6 +82,7 @@ fn clients(base: &str) -> Clients {
         insight_bases: vec![base.to_owned()],
         stats_base: base.to_owned(),
         coingecko_base: base.to_owned(),
+        fusion_base: base.to_owned(),
         ..ClientsConfig::default()
     };
     cfg.http.attempts = 1;

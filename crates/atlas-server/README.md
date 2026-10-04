@@ -56,7 +56,8 @@ Every `serve` flag has an environment variable. Flags win over the environment.
 Fixed limits (ARCHITECTURE section 11.2): a 10 s header read timeout that also bounds keep-alive idle time,
 a 30 s write stall timeout, a 30 s request timeout (not the WebSocket session), store reads 32 at once
 with a 10 s deadline, the compute routes (`/nodes`, `/operator`, `/metrics`, `/timeline/state`, `/search`,
-node history and payments) at 15 requests a second per client (burst 60) with 2 global compute slots, and a
+node history and payments, and `/wallet` on a cache miss) at 15 requests a second per client (burst 60) with 2
+global compute slots, and a
 shutdown that drains for 4 s and flushes the store within 8 s of SIGTERM.
 
 ### `ATLAS_INTERVALS` keys
@@ -122,7 +123,8 @@ command" with `atlas metrics`) prints it; a remote scraper needs `ATLAS_METRICS_
   with ingest disabled, seeds a temp store, waits for the engine's startup publish, then publishes
   the fixture.
 - `cargo run -p atlas-server --example demo_server` serves a mainnet-sized fixture network with a
-  synthetic live stream (ingest disabled).
+  synthetic live stream (ingest disabled). The wallet views answer from fixed market sources (Fusion-like
+  parallel assets, CoinGecko-like prices); the demo wallet is `t1gRaP5qAggMj84X2y8ChKdZfLGYDz6Dhyt`.
 - Web smoke against any running server: `ATLAS_E2E_SERVER=http://127.0.0.1:3100 ATLAS_WEB_PORT=4273
   npm run e2e` (in `web/`).
 - Release build with the embedded app: `(cd web && npm run build) && cargo build --release -p atlas-server`.
