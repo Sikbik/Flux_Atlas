@@ -14,6 +14,8 @@ export interface VerdictProps {
 }
 
 const count = (n: number, word: string) => `${formatInt(n)} ${n === 1 ? word : `${word}s`}`;
+/** A severity tile's caption: how many issues and what they ask for, or a calm word when there are none. */
+const issues = (n: number, ask: string) => (n === 0 ? 'None right now' : `${count(n, 'issue')} ${ask}`);
 
 export function Verdict({ healthy, summary }: VerdictProps) {
   const total = healthy + summary.flagged;
@@ -59,7 +61,7 @@ export function Verdict({ healthy, summary }: VerdictProps) {
           }
           value={<AnimatedNumber value={summary.nodes.crit} maxHz={0} tint={false} />}
           unit={summary.nodes.crit === 1 ? 'node' : 'nodes'}
-          caption={`${count(summary.issues.crit, 'issue')}, needs action`}
+          caption={issues(summary.issues.crit, 'to act on')}
         />
         <Stat
           label={
@@ -69,7 +71,7 @@ export function Verdict({ healthy, summary }: VerdictProps) {
           }
           value={<AnimatedNumber value={summary.nodes.warn} maxHz={0} tint={false} />}
           unit={summary.nodes.warn === 1 ? 'node' : 'nodes'}
-          caption={`${count(summary.issues.warn, 'issue')}, worth a look`}
+          caption={issues(summary.issues.warn, 'worth a look')}
         />
         <Stat
           label={
@@ -79,7 +81,7 @@ export function Verdict({ healthy, summary }: VerdictProps) {
           }
           value={<AnimatedNumber value={summary.nodes.info} maxHz={0} tint={false} />}
           unit={summary.nodes.info === 1 ? 'node' : 'nodes'}
-          caption={`${count(summary.issues.info, 'issue')}, for when it suits you`}
+          caption={issues(summary.issues.info, 'for when it suits you')}
         />
       </StatGrid>
       {total > 0 ? (
