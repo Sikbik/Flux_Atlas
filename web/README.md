@@ -66,6 +66,7 @@ block, so a resync always lands on current data. Env: `ATLAS_DEMO_BIND`, `ATLAS_
 | `node scripts/globe-check.mjs soak` | heap after forced GC once a minute while routes churn for `--minutes` (default 10) |
 | `npm run shot -- /dev/live out.png --base http://127.0.0.1:5173` | screenshot tool (playwright-core + system Chromium) |
 | `npm run sync-tokens` | copies `docs/design/tokens.css`, `tokens.json` and the fonts into `src/styles/` (`--from <dir>`, `--check`) |
+| `node scripts/borders-admin1.mjs` | rebuilds `public/data/admin1-lines.bin`, the state and province lines the globe draws once the camera is down (Natural Earth 1:10m admin-1, release v5.1.2, public domain). It downloads the pinned release, checks its SHA-256, cuts what the coastlines and country borders already draw, simplifies and packs it. `--src <file>` uses a local copy, `--stats` prints the size per detail level, `--check` exits 1 when the committed file is stale. The raw 21 MB source is never committed |
 
 `npm run e2e` compiles the demo server on first use; set `ATLAS_DEMO_BIN` to a prebuilt binary to
 skip cargo, and `CARGO_TARGET_DIR` as usual.

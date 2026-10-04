@@ -1,6 +1,7 @@
 // UI preferences (zustand). Network data lives in the NetworkStore; URL state (selection, filters,
 // camera, windows) lives in the router. This holds only local preferences: motion, performance
-// tier, the globe's art style, the watchlist. Persisted per browser; every storage access is guarded.
+// tier, the globe's art style and its borders, the watchlist. Persisted per browser; every storage
+// access is guarded.
 //
 // The watchlist is kept by collateral outpoint (ARCHITECTURE 8.1): node ids are local to the
 // instance that served the snapshot, so `watched` (ids) is derived from `watchedKeys` after every
@@ -21,12 +22,22 @@ export type GlobeArtPref = 'marble' | 'holo' | 'neon';
 
 export const GLOBE_ARTS: readonly GlobeArtPref[] = ['marble', 'holo', 'neon'];
 
+/**
+ * The political lines on the globe: none, the country borders, or the country borders with state and
+ * province lines (the default). State lines come in as the camera comes down, and are not drawn on the
+ * Lite level.
+ */
+export type GlobeBordersPref = 'off' | 'countries' | 'states';
+
+export const GLOBE_BORDERS: readonly GlobeBordersPref[] = ['off', 'countries', 'states'];
+
 const MAX_WATCHED = 500;
 
 interface Persisted {
   motion: MotionPref;
   perf: PerfPref;
   globeArt: GlobeArtPref;
+  globeBorders: GlobeBordersPref;
   watchedKeys: string[];
   legacyWatched: number[];
 }
@@ -35,6 +46,7 @@ export interface UiState {
   motion: MotionPref;
   perf: PerfPref;
   globeArt: GlobeArtPref;
+  globeBorders: GlobeBordersPref;
   /** Watched node ids in the loaded snapshot (WatchProbe enrollment; P1 effects). Derived. */
   watched: number[];
   /** Watched nodes by outpoint `txid:vout`: what is stored. */
@@ -47,6 +59,7 @@ export interface UiState {
   setMotion(m: MotionPref): void;
   setPerf(p: PerfPref): void;
   setGlobeArt(a: GlobeArtPref): void;
+  setGlobeBorders(b: GlobeBordersPref): void;
   watch(id: number): void;
   unwatch(id: number): void;
   /** Maps the watchlist onto a freshly loaded table (and migrates legacy ids). */
@@ -66,6 +79,9 @@ export function parseUi(raw: string | null | undefined): Partial<Persisted> {
     if (v.perf === 'auto' || v.perf === 'high' || v.perf === 'balanced' || v.perf === 'lite')
       out.perf = v.perf;
     if (v.globeArt === 'marble' || v.globeArt === 'holo' || v.globeArt === 'neon') out.globeArt = v.globeArt;
+    // Absent in what an older client stored (the default applies); anything else is dropped.
+    if (v.globeBorders === 'off' || v.globeBorders === 'countries' || v.globeBorders === 'states')
+      out.globeBorders = v.globeBorders;
     if (Array.isArray(v.watched)) {
       const list = v.watched.slice(0, MAX_WATCHED);
       out.watchedKeys = [
@@ -97,6 +113,7 @@ function save(s: Persisted): void {
         motion: s.motion,
         perf: s.perf,
         globeArt: s.globeArt,
+        globeBorders: s.globeBorders,
         watched: [...s.watchedKeys, ...s.legacyWatched],
       }),
     );
@@ -143,6 +160,7 @@ export const useUi = create<UiState>()((set, get) => ({
   motion: 'system',
   perf: 'auto',
   globeArt: 'marble',
+  globeBorders: 'states',
   watchedKeys: [],
   legacyWatched: [],
   ...stored,
@@ -158,6 +176,10 @@ export const useUi = create<UiState>()((set, get) => ({
   },
   setGlobeArt: (globeArt) => {
     set({ globeArt });
+    save(get());
+  },
+  setGlobeBorders: (globeBorders) => {
+    set({ globeBorders });
     save(get());
   },
   watch: (id) => {

@@ -13,6 +13,8 @@
 //   governor lowers the render scale, then the tier (high, medium, low). The lite tier draws the
 //   dot-matrix planet ("holo"), whatever the art style setting says.
 // - Art style: `useUi().globeArt` (marble default, holo = dot matrix, neon), persisted.
+// - Borders: `useUi().globeBorders` (off, countries, or countries with state lines: the default), persisted;
+//   state lines are fetched when the camera first comes down and are never drawn on the low tier.
 
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
@@ -76,6 +78,7 @@ export function GlobeCanvas() {
   const [engine, setEngine] = useState<GlobeEngine | null>(null);
   const [governorLite, setGovernorLite] = useState(false);
   const art = useUi((s) => s.globeArt);
+  const borders = useUi((s) => s.globeBorders);
   const perf = useUi((s) => s.perf);
   const motion = useUi((s) => s.motion);
   const watched = useUi((s) => s.watched);
@@ -128,6 +131,7 @@ export function GlobeCanvas() {
           e = new GlobeEngine(canvas, {
             assetBase: import.meta.env.BASE_URL,
             artDirection: effectiveArt(ui.globeArt, ui.perf, false),
+            borders: ui.globeBorders,
             quality: QUALITY[ui.perf],
             maxDpr: 2,
             respectReducedMotion: false,
@@ -301,6 +305,11 @@ export function GlobeCanvas() {
     const want = effectiveArt(art, perf, governorLite);
     if (engine.artDirection !== want) engine.setArtDirection(want);
   }, [engine, art, perf, governorLite]);
+
+  useEffect(() => {
+    if (!engine) return;
+    engine.setBorders(borders);
+  }, [engine, borders]);
 
   useEffect(() => {
     if (!engine) return;

@@ -139,6 +139,8 @@ export type GlobeEvent =
   | { type: 'peerLink'; a: number; b: number; op: 'add' | 'remove'; time?: number };
 
 export type ArtDirection = 'dotmatrix' | 'marble' | 'neon';
+/** Political lines on the planet: none, country borders, or country borders with state and province lines. */
+export type BordersMode = 'off' | 'countries' | 'states';
 export type QualityLevel = 'auto' | 'high' | 'medium' | 'low';
 export type EngineMode = 'explore' | 'ambient';
 
@@ -306,6 +308,8 @@ export interface AmbientCaption {
 
 export interface GlobeOptions {
   artDirection?: ArtDirection;
+  /** Country borders and state lines (default `states`: both; state lines never draw on the low tier). */
+  borders?: BordersMode;
   quality?: QualityLevel;
   /** Cap on device pixel ratio. Default 2. */
   maxDpr?: number;

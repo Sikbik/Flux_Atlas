@@ -14,6 +14,7 @@ import {
   effectiveMotion,
   GLOBE_ARTS,
   type GlobeArtPref,
+  type GlobeBordersPref,
   type MotionPref,
   type PerfPref,
   useUi,
@@ -46,6 +47,40 @@ const ARTS: Record<GlobeArtPref, { name: string; says: string; src: string }> = 
   neon: { name: 'Neon', says: 'Coastlines and borders that glow', src: artNeon },
 };
 
+const BORDER_OPTIONS: readonly { value: GlobeBordersPref; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'countries', label: 'Countries' },
+  { value: 'states', label: 'Countries and states' },
+];
+
+const BORDER_HINT: Record<GlobeBordersPref, string> = {
+  off: 'The planet with no political lines.',
+  countries: 'Country borders, drawn in the style of the look you chose.',
+  states: 'Country borders, and state and province lines as you zoom in.',
+};
+
+function GlobeBorders() {
+  const borders = useUi((s) => s.globeBorders);
+  const setBorders = useUi((s) => s.setGlobeBorders);
+  const perf = useUi((s) => s.perf);
+  // The Lite level never loads or draws state lines (it is the level for weak graphics).
+  const hint =
+    borders === 'states' && perf === 'lite'
+      ? 'State and province lines need the Balanced level or higher; Lite draws country borders only.'
+      : BORDER_HINT[borders];
+  return (
+    <Field stacked title="Borders" hint={hint}>
+      <SegmentedControl
+        aria-label="Borders on the globe"
+        fullWidth
+        value={borders}
+        options={BORDER_OPTIONS}
+        onChange={setBorders}
+      />
+    </Field>
+  );
+}
+
 function GlobeArt() {
   const art = useUi((s) => s.globeArt);
   const setArt = useUi((s) => s.setGlobeArt);
@@ -73,6 +108,7 @@ function GlobeArt() {
           </label>
         ))}
       </fieldset>
+      <GlobeBorders />
     </Section>
   );
 }

@@ -362,9 +362,9 @@ function Hood() {
 
       <h4 className="ab-h4">Credits</h4>
       <p className="ab-note">
-        Earth imagery from NASA Visible Earth and Earth Observatory. Coastlines from Natural Earth, in the
-        public domain. Type in Montserrat, Open Sans, Lora and IBM Plex Mono, under the SIL Open Font License.
-        Icons from Lucide.{' '}
+        Earth imagery from NASA Visible Earth and Earth Observatory. Coastlines, country borders and state and
+        province lines from Natural Earth, in the public domain. Type in Montserrat, Open Sans, Lora and IBM
+        Plex Mono, under the SIL Open Font License. Icons from Lucide.{' '}
         <a
           href={`${import.meta.env.BASE_URL}licenses/ATTRIBUTION.txt`}
           target="_blank"
