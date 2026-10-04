@@ -1,0 +1,529 @@
+/* The long panels lower on the Nodes hub: how nodes benchmark (a range bar per tier on one scale, with the numbers
+   written out beside it), how old they are (columns) and the newest nodes (a list that runs in two columns when the
+   panel is wide). Panels are sized by container queries on their own width. Tier colours mark tiers and nothing else.
+   Motion is transform and opacity only, once. Tokens only; classes are prefixed nd-. */
+
+/* ---- benchmarks ----------------------------------------------------------------------------------------- */
+
+.nd-benchwrap {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.nd-bench__skeleton {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.nd-bench {
+  --nd-bench-cols: 112px minmax(160px, 1fr) repeat(4, 64px);
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.nd-bench__head,
+.nd-br,
+.nd-bench__axis {
+  display: grid;
+  grid-template-columns: var(--nd-bench-cols);
+  align-items: center;
+  column-gap: var(--space-6);
+}
+
+.nd-bench__head {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-sans);
+}
+
+.nd-bench__head > span:nth-child(n + 3) {
+  text-align: right;
+}
+
+.nd-bench__rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nd-br {
+  min-height: 56px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.nd-br:last-child {
+  border-bottom: 0;
+}
+
+.nd-br__tier {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.nd-br__plot {
+  position: relative;
+  block-size: 28px;
+}
+
+/* The track the bars sit on, and a hairline at each quarter of the scale. */
+.nd-br__plot::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  block-size: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--ink-3);
+}
+
+.nd-br__grid {
+  position: absolute;
+  inset-block: 4px;
+  inline-size: 1px;
+  background: var(--viz-grid);
+}
+
+.nd-br__range {
+  position: absolute;
+  top: 50%;
+  block-size: 10px;
+  margin-top: -5px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, color-mix(in oklab, var(--tier-ink) 45%, transparent), var(--tier-ink));
+  transform-origin: left center;
+  animation: nd-range-in var(--dur-slower) var(--ease-out) backwards;
+}
+
+.nd-br__med {
+  position: absolute;
+  top: 50%;
+  inline-size: 2px;
+  block-size: 20px;
+  margin: -10px 0 0 -1px;
+  border-radius: 1px;
+  background: var(--text-1);
+  box-shadow: 0 0 0 2px var(--ink-1);
+}
+
+.nd-br__min {
+  position: absolute;
+  inset-block: 2px;
+  inline-size: 0;
+  margin-left: -1px;
+  border-left: 2px dashed var(--text-2);
+}
+
+@keyframes nd-range-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.05);
+  }
+}
+
+.nd-br__n {
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.nd-br__n[data-strong] {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.nd-br__n > small {
+  display: none;
+}
+
+.nd-bench__axis {
+  margin-top: calc(var(--space-3) * -1);
+}
+
+.nd-bench__ticks {
+  position: relative;
+  block-size: 14px;
+}
+
+.nd-bench__ticks > span {
+  position: absolute;
+  top: 0;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  transform: translateX(-50%);
+}
+
+.nd-bench__ticks > [data-edge="start"] {
+  transform: none;
+}
+
+.nd-bench__ticks > [data-edge="end"] {
+  transform: translateX(-100%);
+}
+
+.nd-bench__unit {
+  text-align: left;
+}
+
+.nd-bench__key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.nd-bench__key li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.nd-bench__key i {
+  display: block;
+  flex: none;
+}
+
+.nd-bench__key [data-key="range"] {
+  inline-size: 24px;
+  block-size: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--text-2) 35%, transparent), var(--text-2));
+}
+
+.nd-bench__key [data-key="median"] {
+  inline-size: 2px;
+  block-size: 14px;
+  border-radius: 1px;
+  background: var(--text-1);
+}
+
+.nd-bench__key [data-key="min"] {
+  inline-size: 0;
+  block-size: 14px;
+  border-left: 2px dashed var(--text-2);
+}
+
+.nd-bench__reading {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}
+
+/* Narrow: a tier is a block, its name and bar on top and its four numbers under the bar, each with its own label. */
+@container hubpanel (max-width: 659px) {
+  .nd-bench__head,
+  .nd-bench__axis {
+    display: none;
+  }
+
+  .nd-br {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-areas:
+      "tier tier tier tier"
+      "plot plot plot plot"
+      "p10 p50 p90 min";
+    row-gap: var(--space-3);
+    padding-block: var(--space-5);
+  }
+
+  .nd-br__tier {
+    grid-area: tier;
+  }
+
+  .nd-br__plot {
+    grid-area: plot;
+  }
+
+  .nd-br__n {
+    display: grid;
+    gap: var(--space-2);
+    text-align: left;
+  }
+
+  .nd-br__n > small {
+    display: block;
+    color: var(--text-3);
+    font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-sans);
+  }
+
+  .nd-br__n[data-col="p10"] {
+    grid-area: p10;
+  }
+
+  .nd-br__n[data-col="p50"] {
+    grid-area: p50;
+  }
+
+  .nd-br__n[data-col="p90"] {
+    grid-area: p90;
+  }
+
+  .nd-br__n[data-col="min"] {
+    grid-area: min;
+  }
+}
+
+/* A skeleton does not draw the median tick or the minimum line (they carry their own shadow and border). */
+.nd-redact .nd-br__med,
+.nd-redact .nd-br__min {
+  visibility: hidden;
+}
+
+/* ---- node age ------------------------------------------------------------------------------------------- */
+
+/* The columns take the height the panel has, so a panel beside a taller one fills its card instead of leaving a gap. */
+.hub-panel__body:has(> .nd-age),
+.hub-panel__body:has(> .nd-age-redact) {
+  display: flex;
+  flex-direction: column;
+}
+
+.nd-age-redact {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.nd-age {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.nd-age__cols {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(var(--n, 7), minmax(0, 1fr));
+  gap: var(--space-4);
+  min-block-size: 200px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nd-age__col {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  justify-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.nd-age__n {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-age__bar {
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  inline-size: min(100%, 44px);
+  justify-self: center;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.nd-age__bar > i {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 2px;
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
+  background: linear-gradient(180deg, var(--accent-400), var(--accent-600));
+  transform: scaleY(var(--frac, 0));
+  transform-origin: bottom;
+  animation: nd-col-grow var(--dur-slower) var(--ease-out) calc(var(--i, 0) * 50ms) backwards;
+}
+
+/* The nodes with no known start: the reserved gray, hatched, so it is never read as one more age. */
+.nd-age__col[data-unknown] .nd-age__bar > i {
+  background: repeating-linear-gradient(135deg, var(--status-off) 0 3px, transparent 3px 6px);
+  outline: 1px solid color-mix(in oklab, var(--status-off) 60%, transparent);
+  outline-offset: -1px;
+}
+
+@keyframes nd-col-grow {
+  from {
+    opacity: 0;
+    transform: scaleY(0.02);
+  }
+}
+
+.nd-age__lab {
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.nd-age__share {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-age__reading {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  text-wrap: pretty;
+}
+
+@container hubpanel (max-width: 419px) {
+  .nd-age__cols {
+    gap: var(--space-2);
+  }
+
+  .nd-age__share {
+    display: none;
+  }
+}
+
+/* ---- the newest nodes ----------------------------------------------------------------------------------- */
+
+.nd-new__skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.nd-new__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A wide panel runs the list down the first column and then the second. */
+@container hubpanel (min-width: 760px) {
+  .nd-new__list {
+    grid-auto-flow: column;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(5, auto);
+    column-gap: var(--space-9);
+  }
+
+  .nd-new:nth-child(6) {
+    border-top: 0;
+  }
+}
+
+.nd-new {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 56px;
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--line-1);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.nd-new:first-child {
+  border-top: 0;
+}
+
+@media (hover: hover) {
+  .nd-new:hover {
+    background: color-mix(in oklab, var(--hot) 3%, transparent);
+  }
+}
+
+.nd-new:has(.nd-new__link:focus-visible) {
+  background: color-mix(in oklab, var(--accent-500) 8%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent-400);
+}
+
+.nd-new__who {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The node's link covers the whole row, so the row is one big target; the provider's link sits above it. */
+.nd-new__link {
+  overflow: hidden;
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / 1.2 var(--font-mono);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nd-new__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.nd-new__link:focus-visible {
+  outline: none;
+}
+
+.nd-new__sub {
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.nd-new__country {
+  flex: none;
+}
+
+.nd-new__sub .nd-new__provider {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nd-new__age {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .nd-br__range,
+  :root:not([data-motion="full"]) .nd-age__bar > i {
+    animation: none;
+  }
+
+  :root:not([data-motion="full"]) .nd-new {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-br__range,
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-age__bar > i {
+  animation: none;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-new {
+  transition: none;
+}

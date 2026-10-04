@@ -1,0 +1,413 @@
+/* The Nodes hub: the parts that are its own (the hero's honeycomb and health strip, and the small notes) on top of the
+   hub family's frame in features/hub/hub.css. Panels are sized by container queries, because a window is 360 to
+   1112 px wide, not viewport-sized. Motion is transform and opacity only, once, on arrival. The tier colours are
+   worn by tiers and nothing else; the status colours by status and nothing else. Tokens only; classes are
+   prefixed nd-. */
+
+/* ---- small shared pieces -------------------------------------------------------------------------------- */
+
+.nd-muted {
+  margin-left: var(--space-3);
+  color: var(--text-3);
+  font-weight: var(--fw-regular);
+}
+
+.nd-foot-note {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+
+/* A quiet line of explanation inside a panel: a wait state, a missing piece, a caveat. */
+.nd-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--r-md);
+  background: var(--ink-2);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.nd-note > svg {
+  flex: none;
+  color: var(--accent-300);
+}
+
+.nd-note[data-tone="warn"] {
+  background: var(--status-warn-soft);
+}
+
+/* ---- the hero ------------------------------------------------------------------------------------------- */
+
+/* The health strip and the figures sit under the figure and the honeycomb, under one hairline. */
+.nd-hero__lower {
+  display: grid;
+  gap: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line-1);
+}
+
+.nd-hero__lower .hub-figs {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* ---- the nodes by tier ---------------------------------------------------------------------------------- */
+
+.nd-tiers {
+  container: tiers / inline-size;
+  min-width: 0;
+}
+
+.nd-tiers__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-6) var(--space-8);
+  min-width: 0;
+}
+
+/* Wide enough for the honeycomb and its legend side by side (the legend needs 200 px, the honeycomb gives way down to
+   150); narrower, the legend goes under it. */
+@container tiers (min-width: 385px) {
+  .nd-tiers__grid {
+    grid-template-columns: minmax(150px, 236px) minmax(200px, 1fr);
+  }
+}
+
+.nd-tiers__fig {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.nd-tiers__svg {
+  display: block;
+  inline-size: min(100%, 236px);
+  block-size: auto;
+  overflow: visible;
+}
+
+.nd-tiers__cap {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-snug);
+  text-align: center;
+}
+
+.nd-hex {
+  fill: var(--ink-3);
+  stroke: rgb(255 255 255 / 0.1);
+  stroke-width: 0.6;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  /* The cells come in one after another, row by row, once. */
+  animation: nd-hex-in var(--dur-slow) var(--ease-out) calc(var(--i, 0) * 7ms) backwards;
+}
+
+.nd-hex[data-tier="cumulus"] {
+  fill: var(--tier-cumulus-ink);
+}
+
+.nd-hex[data-tier="nimbus"] {
+  fill: var(--tier-nimbus-ink);
+}
+
+.nd-hex[data-tier="stratus"] {
+  fill: var(--tier-stratus-ink);
+}
+
+.nd-hex[data-tier="unknown"] {
+  fill: var(--tier-unknown);
+}
+
+.nd-hex[data-dim] {
+  opacity: 0.25;
+}
+
+@keyframes nd-hex-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+.nd-tiers__legend {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nd-tier {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto 5.5ch;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 38px;
+  padding-inline: var(--space-4);
+  border-radius: var(--r-md);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.nd-tier[data-hot] {
+  background: var(--ink-2);
+}
+
+.nd-tier__name {
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.nd-tier__count {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-tier__share {
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ---- the health strip ---------------------------------------------------------------------------------- */
+
+/* Every line has a fixed height and never wraps, so a count that gains a digit moves nothing. */
+.nd-health {
+  container: ndhealth / inline-size;
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.nd-health__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-block-size: 24px;
+}
+
+/* The bar and the legend of a skeleton sit in one wrapper, so the wrapper keeps the gap the strip has between them. */
+.nd-health__ghost {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.nd-health__head > :nth-child(2) {
+  flex: none;
+}
+
+.nd-health__title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font: var(--fw-regular) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nd-health__bar {
+  display: flex;
+  gap: 2px;
+  block-size: 10px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  transform-origin: left;
+  animation: nd-bar-grow var(--dur-slower) var(--ease-out) both;
+}
+
+.nd-health__bar > i {
+  display: block;
+  flex-basis: 0;
+  min-inline-size: 4px;
+  background: var(--seg, var(--status-off));
+}
+
+@keyframes nd-bar-grow {
+  from {
+    opacity: 0;
+    transform: scaleX(0.02);
+  }
+}
+
+.nd-health [data-tone="ok"] {
+  --seg: var(--status-ok);
+}
+
+.nd-health [data-tone="warn"] {
+  --seg: var(--status-warn);
+}
+
+.nd-health [data-tone="off"] {
+  --seg: var(--status-off);
+}
+
+/* A narrow strip stacks the three, one line each; a wide one sets them side by side, two lines each. */
+.nd-health__legend {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3) var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nd-health__legend li {
+  display: grid;
+  grid-template-columns: 8px auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: 2px;
+  min-width: 0;
+  color: var(--text-2);
+}
+
+@container ndhealth (min-width: 520px) {
+  .nd-health__legend {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .nd-health__legend li {
+    grid-template-columns: 8px minmax(0, 1fr);
+  }
+
+  .nd-health__legend small {
+    grid-column: 2;
+  }
+}
+
+.nd-health__what {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--fw-regular) var(--fs-xs) / 18px var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nd-health__what b {
+  margin-right: var(--space-3);
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-sm) / 18px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-health__legend small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nd-health__dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--seg, var(--status-off));
+}
+
+/* ---- a skeleton made of the real markup ------------------------------------------------------------------ */
+
+/* The same markup with made-up numbers, so a loading panel has the geometry of the loaded one at every width. The text
+   is not painted, every glyph of it is a block of the loading gray, and nothing in it moves except a slow pulse of
+   opacity. */
+.nd-redact {
+  pointer-events: none;
+  user-select: none;
+  -webkit-text-fill-color: transparent;
+  animation: nd-redact-pulse 1.6s var(--ease-standard) infinite;
+}
+
+/* A block of gray over whatever a leaf draws, its own fill and gradient included. */
+.nd-redact :not(:has(*)) {
+  box-shadow: inset 0 0 0 100vmax var(--ink-3);
+}
+
+/* Lower than any rule of the real markup, so a block keeps the shape its own rule gives it. */
+:where(.nd-redact) :where(:not(:has(*))) {
+  inline-size: fit-content;
+  justify-self: start;
+  border-radius: var(--r-xs);
+}
+
+.nd-redact svg {
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.nd-redact svg * {
+  visibility: hidden;
+}
+
+@keyframes nd-redact-pulse {
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* What a heading says while the server is reading the chain tip. */
+.nd-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-block-size: 24px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.nd-wait > svg {
+  color: var(--accent-300);
+}
+
+/* Where a heading will have its freshness chip, while the panel loads: the same size, so the heading does not grow. */
+.nd-aside-ghost {
+  display: block;
+  inline-size: 118px;
+  block-size: 24px;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .nd-hex,
+  :root:not([data-motion="full"]) .nd-health__bar,
+  :root:not([data-motion="full"]) .nd-redact {
+    animation: none;
+  }
+
+  :root:not([data-motion="full"]) .nd-hex,
+  :root:not([data-motion="full"]) .nd-tier {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-hex,
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-health__bar,
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-redact {
+  animation: none;
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-hex,
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-tier {
+  transition: none;
+}

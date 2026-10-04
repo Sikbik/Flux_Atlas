@@ -1,0 +1,300 @@
+/* Live activity: the join and leave counts and the list of node events. The two halves sit side by side when the panel
+   is wide and stack when it is not. A new event slides in with a wash that decays, once. Motion is transform and
+   opacity only. Tokens only; classes are prefixed nd-. */
+
+.nd-sub {
+  margin: 0 0 var(--space-4);
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-sm) / var(--lh-snug) var(--font-display);
+  letter-spacing: var(--tracking-heading);
+}
+
+.nd-act {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-8) var(--space-9);
+}
+
+@container hubpanel (min-width: 620px) {
+  .nd-act {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  }
+}
+
+.nd-act__part {
+  min-width: 0;
+}
+
+/* ---- joined and left ------------------------------------------------------------------------------------ */
+
+.nd-churn {
+  inline-size: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.nd-churn thead th {
+  padding: 0 0 var(--space-3);
+  color: var(--text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-sans);
+  text-align: right;
+}
+
+.nd-churn thead th:first-child {
+  inline-size: 34%;
+  text-align: left;
+}
+
+.nd-churn tbody th,
+.nd-churn tbody td {
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--line-1);
+  vertical-align: baseline;
+}
+
+.nd-churn tbody th {
+  font-weight: var(--fw-regular);
+  text-align: left;
+}
+
+/* The tag sits beside the period, so a row is the same height with it and without it. */
+.nd-churn__label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+
+.nd-churn__window {
+  display: block;
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-sm) / 1.2 var(--font-sans);
+}
+
+.nd-churn small {
+  display: block;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 1.2;
+}
+
+.nd-churn tbody td {
+  padding-left: var(--space-4);
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-lg) / 1 var(--font-display);
+  letter-spacing: var(--tracking-heading);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.nd-churn__defs {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-6) 0 0;
+}
+
+.nd-churn__defs > div {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.nd-churn__defs dt {
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / var(--lh-normal) var(--font-sans);
+}
+
+.nd-churn__defs dd {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+/* What the figures were counted over is a short phrase from a server that has run the whole period and a sentence from
+   a young one: two lines are kept for it, so the panel is the same size either way. */
+.nd-churn__defs > [data-line="counted"] dd {
+  min-block-size: calc(2 * var(--fs-xs) * var(--lh-normal));
+}
+
+/* Joined is the Flux blue and left the coral of the diverging pair; the sign is in the text, so neither is colour
+   alone. */
+.nd-churn td[data-dir="up"] {
+  color: var(--div-pos);
+}
+
+.nd-churn td[data-dir="down"] {
+  color: var(--div-neg);
+}
+
+.nd-churn td[data-dir="flat"] {
+  color: var(--text-2);
+}
+
+/* ---- the latest node events ----------------------------------------------------------------------------- */
+
+/* Every row has the same height and the list reserves room for all of them, so the panel keeps its size as the first
+   events arrive and while the ages tick. */
+.nd-act {
+  --nd-ev-h: 46px;
+  --nd-ev-rows: var(--nd-ev-max, 7);
+}
+
+/* A narrow panel lists five and reserves five: the tail of the list is the least news on a small screen. */
+@container hubpanel (max-width: 519px) {
+  .nd-act {
+    --nd-ev-rows: 5;
+  }
+
+  .nd-ev:nth-child(n + 6),
+  .nd-ev__skeleton > :nth-child(n + 6) {
+    display: none;
+  }
+
+  .nd-ev:nth-child(5) {
+    border-bottom: 0;
+  }
+}
+
+.nd-ev__reserve {
+  min-block-size: calc(var(--nd-ev-rows) * var(--nd-ev-h));
+}
+
+.nd-ev__skeleton > * {
+  block-size: calc(var(--nd-ev-h) - 8px);
+  margin-block: 4px;
+}
+
+.nd-ev__empty {
+  display: grid;
+  place-items: center;
+}
+
+.nd-events {
+  display: grid;
+  grid-auto-rows: var(--nd-ev-h);
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The node on top, what happened under it, how long ago at the right; a status glyph on the left in the status colour. */
+.nd-ev {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-rows: 16px 14px;
+  align-content: center;
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: 1px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.nd-ev:last-child {
+  border-bottom: 0;
+}
+
+.nd-ev__glyph {
+  display: grid;
+  grid-row: 1 / span 2;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 50%;
+  background: var(--status-soft);
+  color: var(--status);
+}
+
+.nd-ev__node,
+.nd-ev__what {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nd-ev__node {
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+
+.nd-ev__what {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 14px;
+}
+
+.nd-ev__age {
+  grid-column: 3;
+  grid-row: 1;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* An event that arrives slides in at the top, and a wash decays over it. */
+.nd-ev[data-fresh] {
+  animation: nd-ev-arrive var(--dur-enter) var(--ease-out) both;
+}
+
+.nd-ev[data-fresh]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--text-1) 10%, transparent),
+    color-mix(in oklab, var(--text-1) 2%, transparent) 70%,
+    transparent
+  );
+  animation: nd-ev-wash var(--dur-fresh) var(--ease-out) both;
+  pointer-events: none;
+}
+
+@keyframes nd-ev-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes nd-ev-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes nd-ev-wash {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .nd-ev[data-fresh] {
+    animation-name: nd-ev-fade;
+  }
+}
+
+:root[data-motion="reduced"] .nd-ev[data-fresh] {
+  animation-name: nd-ev-fade;
+}
+
+:root[data-motion="off"] .nd-ev[data-fresh],
+:root[data-motion="off"] .nd-ev[data-fresh]::before {
+  animation: none;
+}

@@ -1,0 +1,356 @@
+/* The operator leaderboard's own cells, on top of the hub family's Leaderboard (features/hub/hub.css): the tier mix
+   strip, a count with its leading place under it, the run rate, the health cell and the wallet link. Motion is
+   transform and opacity only. Tokens only; classes are prefixed nd-. */
+
+.nd-ops__list {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+/* Switching between ZelID and payment address keeps the old list on screen, dimmed, until the next one is in. */
+.nd-ops__list[data-stale] {
+  opacity: 0.55;
+}
+
+/* The wallet link sits in a column of one width, in the header and in every row (the rows are separate grids, so an
+   automatic width would differ from row to row and from the header), and the figures above it line up. It is the
+   glyph alone, with its name for assistive technology and a hover title, so the figures keep the room. */
+.nd-ops {
+  --nd-wallet-w: 32px;
+}
+
+.nd-ops .hub-lb__head > :last-child,
+.nd-ops .hub-lb__acts {
+  min-inline-size: var(--nd-wallet-w);
+}
+
+.nd-ops .hub-lb__acts {
+  justify-content: flex-end;
+}
+
+@container lb (max-width: 619px) {
+  .nd-ops .hub-lb__acts {
+    min-inline-size: 0;
+  }
+}
+
+.nd-op__name {
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+}
+
+/* When the operator began, and that it has no ZelID: whole items on one line. One that does not fit wraps below, out of
+   sight (the line is one line high), so no word is ever cut in half; the full text is the hover title. */
+.nd-idsub {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-4);
+  block-size: 14px;
+  overflow: hidden;
+  line-height: 14px;
+}
+
+.nd-idsub > span + span::before {
+  content: "\00b7";
+  margin-right: var(--space-4);
+}
+
+/* ---- the tier mix --------------------------------------------------------------------------------------- */
+
+.nd-mix {
+  display: block;
+  padding-block: 5px;
+}
+
+.nd-mix__bar {
+  display: flex;
+  gap: 1px;
+  block-size: 6px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+}
+
+.nd-mix__bar > i {
+  display: block;
+  flex-basis: 0;
+  min-inline-size: 3px;
+  background: var(--tier-unknown);
+}
+
+.nd-mix__bar > [data-tier="cumulus"] {
+  background: var(--tier-cumulus-ink);
+}
+
+.nd-mix__bar > [data-tier="nimbus"] {
+  background: var(--tier-nimbus-ink);
+}
+
+.nd-mix__bar > [data-tier="stratus"] {
+  background: var(--tier-stratus-ink);
+}
+
+/* ---- a count with its leading place --------------------------------------------------------------------- */
+
+.nd-place {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nd-place__n {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-place__top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.nd-place__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nd-place__pct {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the run rate --------------------------------------------------------------------------------------- */
+
+.nd-rate {
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- health --------------------------------------------------------------------------------------------- */
+
+.nd-hc {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nd-hc__pct {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  white-space: nowrap;
+  color: var(--text-1);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nd-hc__dot {
+  display: block;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--st, var(--status-off));
+}
+
+.nd-hc__dot[data-tone="ok"] {
+  --st: var(--status-ok);
+}
+
+.nd-hc__dot[data-tone="warn"] {
+  --st: var(--status-warn);
+}
+
+.nd-hc__dot[data-tone="crit"] {
+  --st: var(--status-crit);
+}
+
+/* Two lines are set aside for the problems, whether a row has none, one or two, so every row has the same height:
+   at risk and unreachable sit side by side when the column is wide enough and one over the other when it is not.
+   Each is a whole item that never wraps inside itself, so no figure or word is cut. */
+.nd-hc__sub {
+  display: block;
+  min-block-size: 28px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 14px;
+}
+
+.nd-hc__sub > span {
+  display: inline-block;
+  margin-right: var(--space-4);
+  white-space: nowrap;
+}
+
+/* The DoS count is rare: it rides on the first line, beside the share, a size smaller so that a few digits still fit. */
+.nd-hc__dos {
+  color: var(--status-crit);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-regular);
+  white-space: nowrap;
+}
+
+.nd-hc__sub > [data-kind="at-risk"] {
+  color: var(--status-warn);
+}
+
+/* ---- the wallet link ------------------------------------------------------------------------------------ */
+
+.nd-wallet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .nd-wallet:hover {
+    background: var(--ink-2);
+    color: var(--text-1);
+  }
+}
+
+.nd-wallet:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* A finger gets the touch size both ways, and the column that holds the link with it. */
+@media (pointer: coarse) {
+  .nd-ops {
+    --nd-wallet-w: var(--touch-min);
+  }
+
+  .nd-wallet {
+    inline-size: var(--touch-min);
+    block-size: var(--touch-min);
+  }
+}
+
+/* ---- the list at each width ----------------------------------------------------------------------------- */
+
+/* The library drops every column marked to hide at 859 px, the ones that hide only on a phone too, and a name needs
+   room: with six figures beside it, it is left with less than a hundred pixels under 950. So the panel takes its own
+   steps. Wide keeps all six columns; below 950 px the providers go; below 810 the countries go as well; below 620 the
+   library folds the row (the phone row, below). The tracks of each step are set from the columns in OperatorsPanel. */
+@container lb (min-width: 810px) and (max-width: 949px) {
+  .nd-ops [data-hide="compact"] {
+    display: none;
+  }
+
+  .nd-ops .hub-lb__head,
+  .nd-ops .hub-lb__row {
+    grid-template-columns: var(--nd-t-mid);
+  }
+}
+
+@container lb (min-width: 620px) and (max-width: 809px) {
+  .nd-ops [data-hide] {
+    display: none;
+  }
+
+  .nd-ops .hub-lb__head,
+  .nd-ops .hub-lb__row {
+    grid-template-columns: var(--nd-t-low);
+  }
+}
+
+/* ---- the phone row -------------------------------------------------------------------------------------- */
+
+/* The row folds into two lines: the operator on top, and under it the figures in four short columns, each with its
+   name above it (a figure with no name is a number nobody can read). */
+@container lb (max-width: 619px) {
+  .nd-ops .hub-lb__row {
+    grid-template-areas:
+      "rank who acts"
+      "cells cells cells";
+  }
+
+  .nd-ops .hub-lb__cells {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(116px, 1.4fr);
+    gap: var(--space-4);
+  }
+
+  .nd-ops .hub-lb__cell:not([data-hide]) {
+    display: grid;
+    align-content: start;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .nd-ops .hub-lb__cell::before {
+    color: var(--text-3);
+    font: var(--fw-regular) var(--fs-2xs) / 1.2 var(--font-sans);
+    white-space: nowrap;
+  }
+
+  .nd-ops [data-col="nodes"]::before {
+    content: "Nodes" / "";
+  }
+
+  .nd-ops [data-col="tiers"]::before {
+    content: "Tier mix" / "";
+  }
+
+  .nd-ops [data-col="rate"]::before {
+    content: "FLUX a day" / "";
+  }
+
+  .nd-ops [data-col="health"]::before {
+    content: "Healthy" / "";
+  }
+
+  /* A count and its share are two whole items: when the column is short of room the share goes below the count. */
+  .nd-ops .hub-lbbar__text {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--space-3);
+  }
+
+  .nd-ops .hub-lbbar__text .nd-muted {
+    margin-left: 0;
+  }
+}
+
+/* The wallet link of a loading row is a plain block of the loading gray. */
+.nd-redact .nd-wallet {
+  border-color: transparent;
+  background: var(--ink-3);
+}
+
+/* The segments of a loading tier mix are not drawn in the tier colours; the strip's own track shows through. */
+.nd-redact .nd-mix__bar > i {
+  background: transparent;
+}
+
+/* ---- motion modes --------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .nd-ops__list,
+  :root:not([data-motion="full"]) .nd-wallet {
+    transition: none;
+  }
+}
+
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-ops__list,
+:root:is([data-motion="reduced"], [data-motion="off"]) .nd-wallet {
+  transition: none;
+}
