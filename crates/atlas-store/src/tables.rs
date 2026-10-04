@@ -71,6 +71,10 @@ pub(crate) const CHAIN_POINTS: TableDefinition<'_, u32, &[u8]> =
     TableDefinition::new("chain_points");
 /// `chain_daily`: UTC day start (unix ms) -> difficulty from Insight's daily series.
 pub(crate) const CHAIN_DAILY: TableDefinition<'_, u64, f64> = TableDefinition::new("chain_daily");
+/// `rich_snapshots`: UTC day start (unix ms) -> `[version] ++ zstd(postcard(RichSnapshot))`, the
+/// explorer's top 1,000 addresses once a day.
+pub(crate) const RICH_SNAPSHOTS: TableDefinition<'_, u64, &[u8]> =
+    TableDefinition::new("rich_snapshots");
 
 /// Creates every table (idempotent).
 pub(crate) fn create_all(txn: &WriteTransaction) -> Result<()> {
@@ -99,6 +103,7 @@ pub(crate) fn create_all(txn: &WriteTransaction) -> Result<()> {
     txn.open_table(GEO_CACHE)?;
     txn.open_table(CHAIN_POINTS)?;
     txn.open_table(CHAIN_DAILY)?;
+    txn.open_table(RICH_SNAPSHOTS)?;
     Ok(())
 }
 

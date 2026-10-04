@@ -10,6 +10,7 @@ use atlas_engine::EngineHandle;
 use atlas_store::Store;
 
 use crate::body::CachedBody;
+use crate::chain_daily::ChainDaily;
 use crate::config::ServerConfig;
 use crate::derived::DerivedGuard;
 use crate::error::ApiError;
@@ -21,6 +22,7 @@ use crate::metrics::Metrics;
 use crate::net::ForwardStats;
 use crate::net::listener::Listener;
 use crate::proxy::TtlCache;
+use crate::richlist::RichRows;
 use crate::sources::{FusionMeta, FusionWallet, LiveSources, MarketSources, Spot};
 use crate::views::{ViewCache, Views};
 use crate::wallet::fleet::FleetLedger;
@@ -83,6 +85,13 @@ pub struct Inner {
     pub price_history: Arc<KeepGood<Vec<atlas_core::api::PricePoint>>>,
     /// Daily fleet sizes by address from the stored keyframes (rebuilt every 3 hours).
     pub fleet: Arc<KeepGood<FleetLedger>>,
+    /// Insight's daily chain series, joined by day (12 h, last good copy).
+    pub chain_daily: Arc<KeepGood<ChainDaily>>,
+    /// The explorer's rich list: one shared copy (30 min, last good copy).
+    pub rich: Arc<KeepGood<RichRows>>,
+    /// `/richlist/movers` bodies keyed by `(window, newest snapshot day, snapshots)` (10 min).
+    pub movers_cache:
+        moka::future::Cache<(atlas_core::api::RichMoversWindow, u64, u32), Arc<CachedBody>>,
 }
 
 /// Node id to the apps with an instance on it.
@@ -108,6 +117,10 @@ pub const NODES_CACHE_BYTES: u64 = 16 << 20;
 pub const WALLET_CACHE_BYTES: u64 = 24 << 20;
 /// Byte bound of the Fusion answers (a few KB per address).
 pub const FUSION_CACHE_BYTES: u64 = 4 << 20;
+
+/// The first fill of the daily chain series starts this long after a start (it takes about
+/// 40 s, on the bulk lane, out of the ingest's way).
+const DAILY_WARM_DELAY: Duration = Duration::from_secs(2);
 
 /// Store reads running at once. Each holds a blocking-pool thread; during a compaction they all
 /// wait on the database lock, so the bound keeps a compaction from piling up threads.
@@ -167,8 +180,10 @@ impl AppState {
             Arc::new(LiveSources {
                 fusion: explorer.clients().fusion.clone(),
                 coingecko: engine.bulk_clients().coingecko.clone(),
+                insight: engine.bulk_clients().insight.clone(),
             })
         });
+        let rich = crate::richlist::keep(cfg.proxy.richlist);
         let listener = Listener::new(cfg.http.clone(), cfg.proxies.clone());
         let derived = DerivedGuard::new(cfg.derived);
         let state = Self {
@@ -242,6 +257,12 @@ impl AppState {
                     crate::wallet::FLEET_TTL,
                     Duration::from_secs(600),
                 )),
+                chain_daily: crate::chain_daily::keep(),
+                rich,
+                movers_cache: moka::future::Cache::builder()
+                    .max_capacity(16)
+                    .time_to_live(crate::richlist::MOVERS_TTL)
+                    .build(),
             }),
         };
         let weak = Arc::downgrade(&state.inner);
@@ -274,6 +295,33 @@ impl AppState {
             let _ = s.fleet_ledger().await;
         });
         state
+    }
+
+    /// The shared inner state (for background tasks that hold it weakly).
+    pub fn inner(&self) -> &Arc<Inner> {
+        &self.inner
+    }
+
+    /// The state again from a weak handle; `None` once it was dropped.
+    pub fn upgrade(weak: &std::sync::Weak<Inner>) -> Option<Self> {
+        weak.upgrade().map(|inner| Self { inner })
+    }
+
+    /// Starts the background work of a serving instance (not of tests that build a state):
+    /// the first fill of the daily chain series (six Insight calls on the bulk lane, so the
+    /// first `/chain/daily` request finds it ready) and the daily rich-list snapshot.
+    pub fn start_background(&self) {
+        let weak = Arc::downgrade(&self.inner);
+        tokio::spawn(async move {
+            tokio::time::sleep(DAILY_WARM_DELAY).await;
+            let Some(s) = Self::upgrade(&weak) else {
+                return;
+            };
+            if let Err(e) = crate::chain_daily::copy(&s, Duration::from_secs(300)).await {
+                tracing::warn!(error = %e.message, "daily chain series warm-up failed");
+            }
+        });
+        crate::richlist::spawn_snapshots(self);
     }
 
     /// Views of the current publish.

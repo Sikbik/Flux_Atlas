@@ -322,6 +322,7 @@ struct Writer<'t> {
     geo_cache: Table<'t, Bytes, Bytes>,
     chain_points: Table<'t, u32, Bytes>,
     chain_daily: Table<'t, u64, f64>,
+    rich_snapshots: Table<'t, u64, Bytes>,
     /// Row sequence: loaded lazily, written back in `finish`.
     row_seq: Option<(u64, bool)>,
 }
@@ -354,6 +355,7 @@ impl<'t> Writer<'t> {
             geo_cache: txn.open_table(tables::GEO_CACHE)?,
             chain_points: txn.open_table(tables::CHAIN_POINTS)?,
             chain_daily: txn.open_table(tables::CHAIN_DAILY)?,
+            rich_snapshots: txn.open_table(tables::RICH_SNAPSHOTS)?,
             row_seq: None,
         })
     }
@@ -520,6 +522,9 @@ impl<'t> Writer<'t> {
             Op::PutChainPoint(height, point) => {
                 self.chain_points
                     .insert(height, codec::encode(&point)?.as_slice())?;
+            }
+            Op::PutRichSnapshot(day_ms, blob) => {
+                self.rich_snapshots.insert(day_ms, blob.as_slice())?;
             }
             Op::PutChainDaily(day_ms, difficulty) => {
                 self.chain_daily.insert(day_ms, difficulty)?;

@@ -608,6 +608,7 @@ impl Store {
                 "geo_cache" => tables::GEO_CACHE,
                 "chain_points" => tables::CHAIN_POINTS,
                 "chain_daily" => tables::CHAIN_DAILY,
+                "rich_snapshots" => tables::RICH_SNAPSHOTS,
             ))
         })
     }

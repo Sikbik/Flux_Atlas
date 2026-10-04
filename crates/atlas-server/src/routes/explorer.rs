@@ -620,13 +620,11 @@ pub async fn supply(
     Ok(json_response(&headers, &dto, cache::SLOW))
 }
 
-/// `GET /richlist`.
-pub async fn richlist(
-    State(s): State<AppState>,
-    headers: HeaderMap,
-    ClientIp(ip): ClientIp,
-) -> ApiResult<Response> {
-    let rows = s.explorer.richlist(Some(ip)).await?;
+/// `GET /richlist`: the shared copy (`crate::richlist`), no upstream call of its own; while the
+/// explorer fails the last good copy is served with `stale: true`.
+pub async fn richlist(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    let copy = crate::richlist::shared(&s, crate::richlist::RICH_WAIT).await?;
+    let rows = &copy.rows;
     let v = s.views();
     let supply = match v.published.network.supply.clone() {
         Some(x) => Some(x),
@@ -646,16 +644,12 @@ pub async fn richlist(
             } else {
                 0.0
             },
-            node_count: v
-                .index
-                .by_address(&r.address)
-                .iter()
-                .filter(|&&i| v.at(i as usize).status.is_active())
-                .count() as u32,
+            node_count: crate::richlist::active_nodes(&v, &r.address),
         })
         .collect();
     let dto = RichListDto {
         updated_ms: rows.fetched_ms,
+        stale: copy.stale,
         entries,
     };
     Ok(json_response(&headers, &dto, cache::SLOW))

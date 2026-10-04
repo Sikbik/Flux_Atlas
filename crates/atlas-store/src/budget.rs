@@ -60,6 +60,8 @@ pub struct HistoryRetention {
     /// `chain_points` off the sample grid: per-block time and difficulty (the 24 h to 30 d
     /// chain-history windows). Older history keeps the grid rows only.
     pub chain_blocks_ms: Option<u64>,
+    /// `rich_snapshots`: the daily rich lists (rich-list movers and concentration).
+    pub rich_snapshots_ms: Option<u64>,
 }
 
 impl Default for HistoryRetention {
@@ -72,6 +74,7 @@ impl Default for HistoryRetention {
             app_messages_ms: None,
             app_events_ms: None,
             chain_blocks_ms: Some(31 * DAY_MS),
+            rich_snapshots_ms: Some(400 * DAY_MS),
         }
     }
 }
@@ -293,6 +296,9 @@ impl Store {
         if let Some(c) = cut(retention.chain_blocks_ms) {
             out.push(("chain_points", self.thin_chain_points_before(c)?));
         }
+        if let Some(c) = cut(retention.rich_snapshots_ms) {
+            out.push(("rich_snapshots", self.prune_rich_snapshots_before(c)?));
+        }
         out.retain(|(_, n)| *n > 0);
         Ok(out)
     }
@@ -446,6 +452,9 @@ impl Store {
             if let Some((k, _)) = txn.open_table(tables::SNAPSHOTS)?.first()? {
                 see(k.value());
             }
+            if let Some((k, _)) = txn.open_table(tables::RICH_SNAPSHOTS)?.first()? {
+                see(k.value());
+            }
             if let Some((_, v)) = txn.open_table(tables::BLOCKS)?.first()? {
                 let b: BlockSummary = codec::decode(v.value())?;
                 see(b.time_ms);
@@ -503,6 +512,10 @@ impl Store {
         out.push(("node_events", ne as u64));
         out.push(("mesh_events", me as u64));
         out.push(("snapshots", self.prune_snapshots_before(before_ms)?));
+        out.push((
+            "rich_snapshots",
+            self.prune_rich_snapshots_before(before_ms)?,
+        ));
         out.push(("app_events", self.prune_app_events_before(before_ms)?));
         // The sample grid stays: it is the whole chain's history in a few hundred kilobytes.
         out.push(("chain_points", self.thin_chain_points_before(before_ms)?));

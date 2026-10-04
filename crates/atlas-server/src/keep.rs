@@ -6,6 +6,8 @@
 //!   (stale while revalidate), so only the very first request ever waits.
 //! - A failed fill or refresh is not retried for `retry`: a failing upstream is asked at most
 //!   that often, however many requests arrive. A failed refresh keeps the last good copy.
+//! - [`KeepGood::get_within`] runs even the first fill in the background (a request that gives
+//!   up does not cancel it) and waits for it at most a given time: for slow fills.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -26,6 +28,8 @@ pub struct KeepGood<T> {
     ttl: Duration,
     retry: Duration,
     state: tokio::sync::Mutex<KeepState<T>>,
+    /// Bumped whenever a background fill or refresh ends (either way).
+    done: tokio::sync::watch::Sender<u64>,
 }
 
 impl<T> std::fmt::Debug for KeepGood<T> {
@@ -48,6 +52,70 @@ impl<T: Send + Sync + 'static> KeepGood<T> {
                 refreshing: false,
                 failed: None,
             }),
+            done: tokio::sync::watch::Sender::new(0),
+        }
+    }
+
+    /// The lifetime of a copy.
+    pub fn ttl(&self) -> Duration {
+        self.ttl
+    }
+
+    /// The held value and when it was fetched, without starting anything.
+    pub async fn held(&self) -> Option<(Instant, Arc<T>)> {
+        let st = self.state.lock().await;
+        st.value.as_ref().map(|(at, v)| (*at, Arc::clone(v)))
+    }
+
+    /// The last fill or refresh failed (the held value, if any, is the last good copy).
+    pub async fn failing(&self) -> bool {
+        self.state.lock().await.failed.is_some()
+    }
+
+    /// Like [`Self::get`], but a missing value is filled by a background task, waited for at
+    /// most `limit`: a slow first fill is neither cancelled by a request that gives up nor
+    /// repeated by the next one. Past `limit` the answer is a 503 with `Retry-After`.
+    pub async fn get_within<F, Fut>(
+        self: &Arc<Self>,
+        limit: Duration,
+        fetch: F,
+    ) -> Result<(Instant, Arc<T>), ApiError>
+    where
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T, ApiError>> + Send + 'static,
+    {
+        let mut done = self.done.subscribe();
+        {
+            let mut st = self.state.lock().await;
+            let backing_off = st
+                .failed
+                .as_ref()
+                .is_some_and(|(at, _)| at.elapsed() < self.retry);
+            if let Some((at, v)) = st.value.as_ref() {
+                let held = (*at, Arc::clone(v));
+                if at.elapsed() >= self.ttl && !st.refreshing && !backing_off {
+                    st.refreshing = true;
+                    self.spawn_refresh(fetch);
+                }
+                return Ok(held);
+            }
+            if backing_off && let Some((_, e)) = st.failed.as_ref() {
+                return Err(e.clone());
+            }
+            if !st.refreshing {
+                st.refreshing = true;
+                self.spawn_refresh(fetch);
+            }
+            done.mark_unchanged();
+        }
+        let waited = tokio::time::timeout(limit, done.changed()).await;
+        let st = self.state.lock().await;
+        if let Some((at, v)) = st.value.as_ref() {
+            return Ok((*at, Arc::clone(v)));
+        }
+        match (waited, st.failed.as_ref()) {
+            (Ok(_), Some((_, e))) => Err(e.clone()),
+            _ => Err(ApiError::unavailable("still loading; try again shortly").with_retry_after(5)),
         }
     }
 
@@ -132,6 +200,8 @@ impl<T: Send + Sync + 'static> KeepGood<T> {
                     st.failed = Some((Instant::now(), e));
                 }
             }
+            drop(st);
+            me.done.send_modify(|n| *n += 1);
         });
     }
 }
@@ -242,5 +312,86 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
         let got = k.peek(|| async { Ok(8) }).await;
         assert_eq!(got.map(|(_, v)| *v), Some(7));
+    }
+
+    async fn within(
+        k: &Arc<KeepGood<u32>>,
+        calls: &Arc<AtomicU32>,
+        limit: Duration,
+        took: Duration,
+        ok: bool,
+    ) -> Result<u32, ApiError> {
+        let calls = Arc::clone(calls);
+        k.get_within(limit, move || async move {
+            let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
+            tokio::time::sleep(took).await;
+            if ok {
+                Ok(n)
+            } else {
+                Err(ApiError::upstream("down"))
+            }
+        })
+        .await
+        .map(|(_, v)| *v)
+    }
+
+    #[tokio::test]
+    async fn get_within_shares_a_slow_fill_that_outlives_its_callers() {
+        let ms = Duration::from_millis;
+        let k = Arc::new(KeepGood::new(Duration::from_secs(60), ms(500)));
+        let calls = counter();
+        // The fill takes 80 ms; callers give up after 20 ms with a 503 and Retry-After.
+        for _ in 0..3 {
+            let e = within(&k, &calls, ms(20), ms(80), true).await.unwrap_err();
+            assert_eq!(e.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "one fill, not cancelled");
+        assert!(!k.failing().await);
+        tokio::time::sleep(ms(100)).await;
+        assert_eq!(within(&k, &calls, ms(20), ms(80), true).await.unwrap(), 1);
+        assert_eq!(k.held().await.map(|(_, v)| *v), Some(1));
+        // A caller that waits long enough gets the fill's answer.
+        let k2 = Arc::new(KeepGood::new(Duration::from_secs(60), ms(500)));
+        assert_eq!(within(&k2, &calls, ms(500), ms(30), true).await.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_within_reports_a_failed_fill_and_backs_off() {
+        let ms = Duration::from_millis;
+        let k = Arc::new(KeepGood::new(Duration::from_secs(60), ms(80)));
+        let calls = counter();
+        let e = within(&k, &calls, ms(500), ms(10), false)
+            .await
+            .unwrap_err();
+        assert_eq!(e.message, "down");
+        assert!(k.failing().await);
+        assert!(k.held().await.is_none());
+        // Within the retry pause the error is repeated without a call.
+        assert_eq!(
+            within(&k, &calls, ms(500), ms(10), true)
+                .await
+                .unwrap_err()
+                .message,
+            "down"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        tokio::time::sleep(ms(90)).await;
+        assert_eq!(within(&k, &calls, ms(500), ms(10), true).await.unwrap(), 2);
+        assert!(!k.failing().await);
+    }
+
+    #[tokio::test]
+    async fn get_within_keeps_the_last_good_copy_and_flags_the_failure() {
+        let ms = Duration::from_millis;
+        let k = Arc::new(KeepGood::new(ms(50), ms(500)));
+        let calls = counter();
+        assert_eq!(within(&k, &calls, ms(200), ms(5), true).await.unwrap(), 1);
+        tokio::time::sleep(ms(60)).await;
+        // Expired: the old copy at once, a failing refresh behind it.
+        assert_eq!(within(&k, &calls, ms(200), ms(5), false).await.unwrap(), 1);
+        tokio::time::sleep(ms(30)).await;
+        assert!(k.failing().await, "the last refresh failed");
+        assert_eq!(within(&k, &calls, ms(200), ms(5), true).await.unwrap(), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "no retry within the pause");
     }
 }

@@ -13,7 +13,10 @@ use atlas_core::node::{Geo, NodeRecord};
 
 use crate::codec;
 use crate::error::Result;
-use crate::records::{ChainPoint, MeshChangeRecord, MeshEdgeRecord, MetricsRow, Resolution};
+use crate::records::{
+    ChainPoint, MeshChangeRecord, MeshEdgeRecord, MetricsRow, RICH_SNAPSHOT_FORMAT_VERSION,
+    Resolution, RichSnapshot,
+};
 
 /// Format version byte of snapshot blobs. The snapshot type itself is chosen by the engine; if
 /// its shape changes incompatibly, bump this constant. [`crate::Store::snapshot_at_or_before`]
@@ -55,6 +58,7 @@ pub(crate) enum Op {
     DeleteGeo(IpAddr),
     PutChainPoint(u32, ChainPoint),
     PutChainDaily(u64, f64),
+    PutRichSnapshot(u64, Vec<u8>),
 }
 
 /// A set of writes applied atomically by [`crate::Store::commit`].
@@ -235,6 +239,12 @@ impl WriteBatch {
     /// Upserts the daily difficulty of the UTC day starting at `day_ms` (`chain_daily`).
     pub fn put_chain_daily(&mut self, day_ms: u64, difficulty: f64) -> &mut Self {
         self.push(Op::PutChainDaily(day_ms, difficulty))
+    }
+
+    /// Upserts the rich list of the UTC day `snapshot.day_ms` (`rich_snapshots`), compressed.
+    pub fn put_rich_snapshot(&mut self, snapshot: &RichSnapshot) -> Result<&mut Self> {
+        let blob = codec::encode_blob(snapshot, RICH_SNAPSHOT_FORMAT_VERSION)?;
+        Ok(self.push(Op::PutRichSnapshot(snapshot.day_ms, blob)))
     }
 
     fn push(&mut self, op: Op) -> &mut Self {

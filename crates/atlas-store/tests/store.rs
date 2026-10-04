@@ -14,8 +14,8 @@ use atlas_core::ids::{Hash32, NodeId, Outpoint};
 use atlas_core::node::{Geo, NodeRecord, Tier};
 use atlas_store::{
     CHAIN_SAMPLE_GRID, ChainPoint, DAY_MS, EventKey, HOUR_MS, MINUTE_MS, MeshChangeRecord,
-    MeshEdgeRecord, MeshReporter, MetricsRow, Order, Resolution, RetentionPolicy, SCHEMA_VERSION,
-    Store, StoreError, StoreOptions, WriteBatch, meta_keys,
+    MeshEdgeRecord, MeshReporter, MetricsRow, Order, Resolution, RetentionPolicy, RichHolding,
+    RichSnapshot, SCHEMA_VERSION, Store, StoreError, StoreOptions, WriteBatch, meta_keys,
 };
 
 fn tmp() -> (TempDir, std::path::PathBuf) {
@@ -167,7 +167,7 @@ fn open_creates_tables_and_schema_version() {
     );
     assert!(store.meta_u64(meta_keys::CREATED_MS).unwrap().is_some());
     let counts = store.table_counts().unwrap();
-    assert_eq!(counts.len(), 25);
+    assert_eq!(counts.len(), 26);
     assert!(counts.iter().all(|(name, n)| *name == "meta" || *n == 0));
 }
 
@@ -578,6 +578,64 @@ fn chain_points_seed_from_stored_blocks_once() {
         store.chain_daily().unwrap(),
         vec![(0, 10.5), (DAY_MS, 11.5)]
     );
+}
+
+#[test]
+fn rich_snapshots_round_trip_and_prune() {
+    let (_dir, path) = tmp();
+    let store = Store::open(&path).unwrap();
+    let snap = |day: u64, n: usize| RichSnapshot {
+        day_ms: day * DAY_MS,
+        fetched_ms: day * DAY_MS + 300_000,
+        supply: day
+            .is_multiple_of(2)
+            .then(|| Amount::from_flux(420_000_000)),
+        rows: (0..n)
+            .map(|i| RichHolding {
+                address: format!("t1addr{day}x{i}"),
+                balance: Amount::from_sat(1_000_000_000_000 - i as i64 * 7),
+            })
+            .collect(),
+    };
+    let mut b = WriteBatch::new();
+    for day in [3u64, 1, 2] {
+        b.put_rich_snapshot(&snap(day, 1_000)).unwrap();
+    }
+    store.commit(b).unwrap();
+    assert_eq!(
+        store.rich_snapshot_days().unwrap(),
+        vec![DAY_MS, 2 * DAY_MS, 3 * DAY_MS]
+    );
+    assert_eq!(
+        store.rich_snapshot(2 * DAY_MS).unwrap(),
+        Some(snap(2, 1_000))
+    );
+    assert_eq!(store.rich_snapshot(4 * DAY_MS).unwrap(), None);
+    let mut seen = Vec::new();
+    store
+        .for_each_rich_snapshot(|s| {
+            seen.push((s.day_ms, s.rows.len()));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        seen,
+        vec![(DAY_MS, 1_000), (2 * DAY_MS, 1_000), (3 * DAY_MS, 1_000)]
+    );
+    // Compact: 1,000 rows of address and balance in a few dozen kilobytes.
+    let counts = store.table_counts().unwrap();
+    assert!(counts.contains(&("rich_snapshots", 3)));
+    // A second write of the same day replaces it.
+    let mut b = WriteBatch::new();
+    b.put_rich_snapshot(&snap(3, 10)).unwrap();
+    store.commit(b).unwrap();
+    assert_eq!(
+        store.rich_snapshot(3 * DAY_MS).unwrap().unwrap().rows.len(),
+        10
+    );
+    assert_eq!(store.prune_rich_snapshots_before(3 * DAY_MS).unwrap(), 2);
+    assert_eq!(store.rich_snapshot_days().unwrap(), vec![3 * DAY_MS]);
+    assert_eq!(store.prune_rich_snapshots_before(3 * DAY_MS).unwrap(), 0);
 }
 
 #[test]

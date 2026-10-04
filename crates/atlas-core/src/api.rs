@@ -1079,11 +1079,185 @@ pub struct RichListEntry {
     pub node_count: u32,
 }
 
-/// `GET /richlist`.
+/// `GET /richlist`: the explorer's top 1,000 addresses (one shared copy, refreshed every 30
+/// minutes).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct RichListDto {
+    /// When this copy was fetched from the explorer.
     pub updated_ms: u64,
+    /// The explorer failed the last refresh (or the copy is over an hour old): this is the last
+    /// good copy.
+    pub stale: bool,
     pub entries: Vec<RichListEntry>,
+}
+
+/// Window of `GET /richlist/movers`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+pub enum RichMoversWindow {
+    #[serde(rename = "1d")]
+    Day,
+    #[serde(rename = "7d")]
+    Week,
+    #[serde(rename = "30d")]
+    Month,
+}
+
+impl RichMoversWindow {
+    /// Days the window spans.
+    pub const fn days(self) -> u64 {
+        match self {
+            Self::Day => 1,
+            Self::Week => 7,
+            Self::Month => 30,
+        }
+    }
+
+    /// The wire name (`1d`, `7d`, `30d`).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Day => "1d",
+            Self::Week => "7d",
+            Self::Month => "30d",
+        }
+    }
+
+    /// Parses the wire name.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "1d" => Some(Self::Day),
+            "7d" => Some(Self::Week),
+            "30d" => Some(Self::Month),
+            _ => None,
+        }
+    }
+}
+
+/// `GET /richlist/movers?window=1d|7d|30d`: how the top 1,000 changed between two of the daily
+/// rich-list snapshots this server stores (one per UTC day, kept 400 days).
+///
+/// The newest snapshot is compared with the stored one closest to `window` before it (the exact
+/// day when stored). With fewer than two snapshots every list is empty and `from_ms` is `null`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct RichMoversDto {
+    /// `1d`, `7d` or `30d`, as asked.
+    pub window: String,
+    /// When the newest snapshot was fetched.
+    pub to_ms: u64,
+    /// When the snapshot compared against was fetched; `null` while only one snapshot exists.
+    pub from_ms: Option<u64>,
+    /// Daily snapshots stored.
+    pub snapshots: u32,
+    /// The biggest balance increases among addresses in both snapshots, at most 15, largest
+    /// first.
+    pub gainers: Vec<RichMove>,
+    /// The biggest balance decreases among addresses in both snapshots, at most 15, largest
+    /// drop first (`delta` is negative).
+    pub losers: Vec<RichMove>,
+    /// Addresses new in the top 1,000, by rank.
+    pub entered: Vec<RichEntered>,
+    /// Addresses that dropped out of the top 1,000, by previous rank. Their balance now is
+    /// unknown (below the list's cutoff).
+    pub left: Vec<RichLeft>,
+    /// One row per stored snapshot, oldest first.
+    pub concentration: Vec<RichConcentration>,
+}
+
+/// One address whose balance changed between the two snapshots.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct RichMove {
+    pub address: String,
+    /// Rank in the newest snapshot (always set today: movers are in both snapshots).
+    pub rank: Option<u32>,
+    /// Rank in the older snapshot (always set today).
+    pub prev_rank: Option<u32>,
+    pub balance: Amount,
+    pub prev_balance: Amount,
+    /// `balance - prev_balance`.
+    pub delta: Amount,
+    /// Confirmed nodes paying out to the address now (this server's node list).
+    pub node_count: u32,
+}
+
+/// An address new in the top 1,000.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct RichEntered {
+    pub address: String,
+    pub rank: u32,
+    pub balance: Amount,
+    /// Confirmed nodes paying out to the address now.
+    pub node_count: u32,
+}
+
+/// An address that dropped out of the top 1,000.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct RichLeft {
+    pub address: String,
+    pub prev_rank: u32,
+    pub prev_balance: Amount,
+}
+
+/// How much of the circulating supply the top addresses held on one day.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+pub struct RichConcentration {
+    /// Start of the UTC day of the snapshot.
+    pub day_ms: u64,
+    /// Percent (0 to 100) of the circulating supply held by the top 10, 100 and 1,000.
+    pub top10_pct: f64,
+    pub top100_pct: f64,
+    pub top1000_pct: f64,
+}
+
+/// `GET /chain/daily?days=30|90|365|all`: Insight's daily chain statistics, joined by UTC day.
+///
+/// The six series are fetched once each (`days=all`) every 12 hours on the bulk lane and the
+/// windows are cut from that copy. A series that failed, or that has no row for a day, leaves
+/// `null` there, never 0. The last day is the current UTC day so far (partial: its counters
+/// are low). `all` is everything Insight serves, which is the last two years (730 days, from
+/// 2024-10-05 on 2026-10-04), not the whole chain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ChainDailyDto {
+    /// When the series were fetched from Insight.
+    pub generated_ms: u64,
+    /// The first day any series has (the whole copy, not just this window); `null` when every
+    /// series failed.
+    pub first_day_ms: Option<u64>,
+    /// Oldest first.
+    pub days: Vec<ChainDay>,
+}
+
+/// One UTC day of [`ChainDailyDto`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+pub struct ChainDay {
+    /// Start of the UTC day, unix ms.
+    pub day_ms: u64,
+    /// Transactions mined that day, coinbase and node confirmations included
+    /// (`statistics/transactions`, `transaction_count`).
+    pub transactions: Option<u64>,
+    /// Blocks mined that day (`statistics/transactions`, `block_count`).
+    pub blocks: Option<u64>,
+    /// **Average fees per block** that day, FLUX (`statistics/fees`). Not the day's total:
+    /// checked against this server's stored blocks, Insight's figure equals their fee sum over
+    /// the block count to the 1e-8 (for example 0.00004231 on 2026-09-30, a 0.1218 FLUX day
+    /// over 2,878 blocks). The day's total is [`Self::fees_total`].
+    pub fees: Option<f64>,
+    /// Fees paid that day, FLUX: `fees x blocks` (Insight rounds the average to 1e-8 FLUX, so
+    /// this is within about 0.00003 FLUX of the exact sum); `null` unless both are known.
+    pub fees_total: Option<f64>,
+    /// Total value of the outputs created that day, FLUX: an amount (FLUX moved, coinbase and
+    /// change included), not a count (`statistics/outputs`).
+    pub outputs: Option<f64>,
+    /// Total coin supply (transparent and shielded) at the end of the day, FLUX
+    /// (`statistics/supply`; 430,806,470.5 on 2026-10-04 against this server's 430,807,198.5 a
+    /// few blocks later).
+    pub supply: Option<f64>,
+    /// Difficulty as Insight reports it for the day (`statistics/difficulty`). It follows one
+    /// block, not the day's mean: since Proof of Node (October 2025) it jumps between the
+    /// 0.00195 floor and about 0.6 from one day to the next (before it, up to about 57,000).
+    pub difficulty: Option<f64>,
+    /// Network solution rate as Insight reports it, sol/s (`statistics/network-hash`). Since
+    /// Proof of Node it no longer measures mining work: it sits near 3.66e10 while the
+    /// difficulty swings (before it, about 8e5 to 4e6).
+    pub network_hash: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------------------------
