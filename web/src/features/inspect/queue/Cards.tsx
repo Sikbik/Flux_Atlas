@@ -62,7 +62,9 @@ function CardFoot({
         {info?.payout != null ? (
           <>
             <Amount value={info.payout} />
-            <span>a block</span>
+            <span title="Paid on the Flux main chain; the parallel assets it accrues are not in this figure">
+              a block, main chain
+            </span>
           </>
         ) : null}
         <small>

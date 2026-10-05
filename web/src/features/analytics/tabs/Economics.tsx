@@ -1,11 +1,14 @@
 // Economics: what a node earns. The headline is the best yearly yield on collateral across the tiers;
 // the instrument is one tile per tier with the yield, FLUX per day, how often it is paid and where the
-// yield lands after the next reward cut. Everything here is an estimate and says so.
+// yield lands after the next reward cut. Everything here is an estimate and says so. Earnings are main
+// chain plus parallel assets (priced as FLUX), or main chain only, as the viewer chose; the marker in
+// the header says which.
 
 import { Coins } from 'lucide-react';
 import { useMemo } from 'react';
 import { useNetwork, usePrice, useTip } from '../../../app/context';
 import { formatInt, formatPercent, parseFlux } from '../../../lib/format';
+import { useUi } from '../../../store/ui';
 import {
   Chip,
   EntityLink,
@@ -17,6 +20,7 @@ import {
   tierLabel,
   ViewHeader,
 } from '../../../ui';
+import { EarningsBasis } from '../../earnings/EarningsBasis';
 import { nextReductionHeight, payoutSchedule } from '../../explorer/lib/emission';
 import { RouteLink } from '../../explorer/views/shared';
 import { formatCycle, type TierInput, tierYields } from '../lib/economics';
@@ -34,6 +38,7 @@ export function EconomicsTab() {
   const tierStats = useNetwork((s) => s.tierStats);
   const tip = useTip();
   const price = usePrice();
+  const includePa = useUi((s) => s.includePa);
 
   const model = useMemo(() => {
     if (tierStats.length === 0) return null;
@@ -44,6 +49,7 @@ export function EconomicsTab() {
         count: s?.count ?? 0,
         collateral: flux(s?.collateral),
         payout: flux(s?.payout),
+        paPayout: flux(s?.pa_payout),
         cycleBlocks: s?.cycle_blocks ?? null,
       };
     });
@@ -56,9 +62,9 @@ export function EconomicsTab() {
           stratus: Number(nextSched.stratus) / 1e8,
         }
       : null;
-    const rows = tierYields(inputs, next).sort((a, b) => b.apy - a.apy);
+    const rows = tierYields(inputs, next, includePa).sort((a, b) => b.apy - a.apy);
     return { rows, cut, hasCut: next !== null };
-  }, [tierStats, tip]);
+  }, [tierStats, tip, includePa]);
 
   if (!model) {
     return (
@@ -88,6 +94,7 @@ export function EconomicsTab() {
         title="What a node earns"
         subtitle="The best estimated yield on collateral at today's rewards, before hosting costs and price changes."
       >
+        <EarningsBasis />
         {usd !== null ? (
           <Chip mono title="The current FLUX price; dollar figures below are estimates at this price">
             FLUX ${usd < 1 ? usd.toFixed(4) : usd.toFixed(2)}

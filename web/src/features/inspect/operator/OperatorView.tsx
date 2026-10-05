@@ -230,11 +230,13 @@ export function OperatorView({ addr }: { addr: string }) {
           counts={counts}
           next={summary.next}
           perDay={summary.perDay}
+          paPerDay={summary.paPerDay}
           settling={data.settling}
         />
       </Section>
       <EarningsSection
         earnings={earn.earnings}
+        split24={earn.split24}
         pending={earn.pending}
         scope={watchlist && nodes.length > 24 ? 'open an operator for totals' : undefined}
       />

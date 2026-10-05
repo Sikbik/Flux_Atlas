@@ -5,6 +5,7 @@
 import { SearchX, Server } from 'lucide-react';
 import { type KeyboardEvent, type PointerEvent, useMemo, useRef } from 'react';
 import { useFresh } from '../../../../motion';
+import { useUi } from '../../../../store/ui';
 import { Button, DataTable, EmptyState, type SortState } from '../../../../ui';
 import { useWalletCtx } from '../../context';
 import { useOpenNode } from '../../hooks/useOpenNode';
@@ -39,7 +40,8 @@ export function NodeTable({ rows, columns: ids, density, sort, onSort, filtered,
     () => new Map(dto.health.attention.map((a) => [a.node_key, a])),
     [dto.health.attention],
   );
-  const columns = useMemo(() => buildColumns(ids, attention), [ids, attention]);
+  const includePa = useUi((s) => s.includePa);
+  const columns = useMemo(() => buildColumns(ids, attention, includePa), [ids, attention, includePa]);
 
   // A payment landing washes over the nodes it paid; a refill of the list (a refetch) is not news.
   const landed = useMemo(() => landings.flatMap((l) => l.keys), [landings]);

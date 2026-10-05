@@ -71,8 +71,8 @@ export function Degraded() {
           </StatGrid>
           <p className="wl-note">
             Every FLUX a node earns accrues another tenth of itself on each of ten chains, so what is waiting
-            in Fusion grows at the same pace as the native rewards. What has been claimed, and what a claim
-            would cost, only Fusion knows.
+            in Fusion grows at the same pace as the main-chain rewards. What has been claimed, and what a
+            claim would cost, only Fusion knows.
           </p>
         </Panel>
       ) : null}

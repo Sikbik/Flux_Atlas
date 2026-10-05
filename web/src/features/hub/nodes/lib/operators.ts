@@ -6,6 +6,7 @@ import type { OperatorsBy } from '../../../../api/generated/OperatorsBy';
 import type { OperatorsDto } from '../../../../api/generated/OperatorsDto';
 import { fluxToNumber, formatInt, shortAddress } from '../../../../lib/format';
 import { shareText } from '../../../analytics/lib/concentration';
+import { earnedOrNull } from '../../../earnings/basis';
 import { isWalletAddress } from '../../../wallet/lib/address';
 import { shortOrg } from './distributions';
 import { TIER_KEYS, TIER_NAME, type TierKey } from './tiers';
@@ -97,9 +98,15 @@ export interface OperatorView {
   topCountry: PlaceLeader | null;
   providers: number;
   topProvider: PlaceLeader | null;
-  /** The run rate: FLUX a day at today's queue lengths. An estimate. */
+  /**
+   * The run rate: FLUX a day at today's queue lengths, an estimate, on the viewer's basis (main chain, plus the
+   * parallel assets it accrues when they count).
+   */
   perDay: number | null;
   perDayText: string;
+  /** The run rate's two parts, whatever the basis. */
+  nativePerDay: number | null;
+  paPerDay: number | null;
   /** 0..1 of the operator's confirmed and DoS-listed nodes that are healthy. */
   healthy: number;
   healthText: string;
@@ -169,13 +176,15 @@ function leader(
   return { name: short(name), full: name, pct: of > 0 ? `${Math.round((nodes / of) * 100)}%` : '' };
 }
 
-export function operatorView(r: OperatorRow, by: OperatorsBy): OperatorView {
+export function operatorView(r: OperatorRow, by: OperatorsBy, includePa = true): OperatorView {
   const tiers: TierMixPart[] = TIER_KEYS.map((tier) => ({
     tier,
     count: r.tiers[tier],
     share: r.nodes > 0 ? r.tiers[tier] / r.nodes : 0,
   }));
-  const perDay = fluxToNumber(r.native_per_day);
+  const nativePerDay = fluxToNumber(r.native_per_day);
+  const paPerDay = fluxToNumber(r.pa_per_day);
+  const perDay = earnedOrNull(nativePerDay, paPerDay, includePa);
   return {
     key: r.key,
     rank: r.rank,
@@ -193,6 +202,8 @@ export function operatorView(r: OperatorRow, by: OperatorsBy): OperatorView {
     topProvider: leader(r.top_provider?.label, r.top_provider?.nodes ?? 0, r.nodes, shortOrg),
     perDay,
     perDayText: perDayText(perDay),
+    nativePerDay,
+    paPerDay,
     healthy: r.healthy_pct,
     healthText: healthText(r.healthy_pct),
     problems: problems(r),
@@ -200,9 +211,9 @@ export function operatorView(r: OperatorRow, by: OperatorsBy): OperatorView {
   };
 }
 
-/** The leaderboard's rows, in the server's rank order. */
-export function operatorViews(dto: OperatorsDto | undefined): OperatorView[] {
-  return dto ? dto.operators.map((r) => operatorView(r, dto.by)) : [];
+/** The leaderboard's rows, in the server's rank order, with the run rate on the viewer's basis. */
+export function operatorViews(dto: OperatorsDto | undefined, includePa = true): OperatorView[] {
+  return dto ? dto.operators.map((r) => operatorView(r, dto.by, includePa)) : [];
 }
 
 /** The first `shown` rows, or all of them when `expanded`. */

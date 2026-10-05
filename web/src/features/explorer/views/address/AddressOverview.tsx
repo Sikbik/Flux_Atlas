@@ -9,6 +9,7 @@ import { queries } from '../../../../api/queries';
 import { useRuntime } from '../../../../app/context';
 import { formatInt, formatSats, parseFlux } from '../../../../lib/format';
 import { useNow } from '../../../../lib/useClock';
+import { useUi } from '../../../../store/ui';
 import {
   Amount,
   Button,
@@ -22,6 +23,8 @@ import {
   TimeSeries,
   tierLabel,
 } from '../../../../ui';
+import { earnedSats } from '../../../earnings/basis';
+import { EarningsBasis } from '../../../earnings/EarningsBasis';
 import { useCollateral } from '../../hooks/useCollateral';
 import { useVisible } from '../../hooks/useDom';
 import { useAddressNodes, useAddressTxsLive } from '../../hooks/useExplorerData';
@@ -148,6 +151,7 @@ export function AddressNodesTab({ addr, counts }: { addr: string; counts: Addres
   const events = useMemo(() => payoutEvents(tx.items, addr), [tx.items, addr]);
   const locked = TIERS.reduce((s, t) => s + BigInt(counts[t]) * collateral[t], 0n);
   const op = operator.data;
+  const includePa = useUi((s) => s.includePa);
   return (
     <>
       <Section
@@ -186,14 +190,16 @@ export function AddressNodesTab({ addr, counts }: { addr: string; counts: Addres
         </StatGrid>
         {op ? (
           <p className="ex-note ex-after">
-            Earned <Amount value={op.earned_24h} decimals={2} /> in the last 24 hours
+            Earned <Amount value={earnedSats(op.earned_24h, op.pa_earned_24h, includePa)} decimals={2} /> in
+            the last 24 hours
             {op.earned_30d !== op.earned_24h ? (
               <>
                 {' '}
-                and <Amount value={op.earned_30d} decimals={2} /> in 30 days
+                and <Amount value={earnedSats(op.earned_30d, op.pa_earned_30d, includePa)} decimals={2} /> in
+                30 days
               </>
             ) : null}
-            , counted from the blocks this server has seen.
+            , counted from the blocks this server has seen. <EarningsBasis size="sm" realized />
           </p>
         ) : null}
       </Section>

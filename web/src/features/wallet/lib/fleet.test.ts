@@ -61,6 +61,7 @@ function node(i: number, over: Partial<FleetNode> = {}): FleetNode {
     lat: 50,
     lon: 10,
     perDay: 14.5,
+    paPerDay: 14.5,
     paymentAddress: 't3c4Ef',
     present: true,
     ...over,
@@ -110,7 +111,7 @@ const attn = (i: number, kind: NodeAttention['reasons'][number]['kind']): NodeAt
 function rows(): FleetRow[] {
   const nodes = [
     node(1),
-    node(2, { country: 'FI', org: 'Hetzner', version: '8.19.1', tier: 'nimbus', perDay: 6 }),
+    node(2, { country: 'FI', org: 'Hetzner', version: '8.19.1', tier: 'nimbus', perDay: 6, paPerDay: 6 }),
     node(3, { status: 'dos', sinceConfirm: 300 }),
     node(4, { country: 'FI', reachable: false }),
     node(5, { present: false }),
@@ -255,6 +256,7 @@ describe('groupFleet', () => {
     expect(fi?.due).toBeCloseTo(12.5, 9);
     expect(fi?.apps).toBe(6);
     expect(fi?.perDay).toBeCloseTo(20.5, 9);
+    expect(fi?.paPerDay).toBeCloseTo(20.5, 9);
   });
 
   it('groups by state and tier with their own words', () => {
@@ -342,6 +344,10 @@ describe('nodes CSV', () => {
     expect(at('arcane')).toBe(true);
     expect(at('ram_gb')).toBe(64);
     expect(at('apps')).toBe(3);
+    // The run rate as main chain, parallel assets and the two together, whatever the viewer counts.
+    expect(at('est_flux_per_day')).toBe(14.5);
+    expect(at('est_parallel_assets_flux_per_day')).toBe(14.5);
+    expect(at('est_main_chain_and_parallel_assets_flux_per_day')).toBe(29);
   });
 
   it('leaves a missing value empty, not zero', () => {
@@ -400,6 +406,7 @@ describe('summarizeRows', () => {
     expect([s.healthy, s.attention, s.down]).toEqual([1, 2, 2]);
     expect(s.tiers).toEqual({ cumulus: 0, nimbus: 1, stratus: 4 });
     expect(s.perDay).toBeCloseTo(64, 9);
+    expect(s.paPerDay).toBeCloseTo(64, 9);
     expect(s.flagged).toBe(1);
     expect(s.apps).toBe(15);
     expect(s.hosts).toBe(5);

@@ -2,6 +2,7 @@
 // payments (exact), or the operator totals the server keeps for 24 hours and 30 days, from which the
 // week is scaled when no better figure exists (an estimate, and labelled as one). Windows longer than
 // our own ledger say so: the history began at our first ingest, so an unobserved day is not a zero.
+// Both count on the viewer's basis: the main chain, plus the parallel assets it accrued when they count.
 
 import { type PaymentLike, windowTotals } from './payments';
 
@@ -31,10 +32,21 @@ const covers = (firstMs: number | null, nowMs: number, windowMs: number) =>
 /** Exact windows from payments (every node of the fleet, newest 30 days at least). */
 export function earningsFromPayments(
   payments: readonly PaymentLike[],
-  o: { nowMs: number; firstMs: number | null; toFlux: (amount: string) => number | null },
+  o: {
+    nowMs: number;
+    firstMs: number | null;
+    toFlux: (amount: string) => number | null;
+    includePa?: boolean;
+  },
 ): Earnings {
   const win = (windowMs: number): EarnedWindow => {
-    const t = windowTotals(payments, { nowMs: o.nowMs, windowMs, firstMs: o.firstMs, toFlux: o.toFlux });
+    const t = windowTotals(payments, {
+      nowMs: o.nowMs,
+      windowMs,
+      firstMs: o.firstMs,
+      toFlux: o.toFlux,
+      includePa: o.includePa,
+    });
     return { flux: t.flux, complete: t.complete, estimate: false };
   };
   return { h24: win(DAY_MS), d7: win(7 * DAY_MS), d30: win(30 * DAY_MS) };

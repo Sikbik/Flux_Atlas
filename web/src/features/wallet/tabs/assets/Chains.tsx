@@ -7,7 +7,6 @@ import { useMemo } from 'react';
 import { formatInt, formatPercent } from '../../../../lib/format';
 import { AnimatedNumber, Hash, StatusChip, type StatusKind } from '../../../../ui';
 import { useWalletCtx } from '../../context';
-import { flux } from '../../lib/money';
 import {
   type ClaimVerdict,
   claimEfficiency,
@@ -25,9 +24,6 @@ import { Panel } from '../../ui/Panel';
 import { FeeGauge } from '../../viz/FeeGauge';
 import { formatFlux2 } from '../overview/Standing';
 
-/** The share of the native rewards each chain accrues a day (the parallel-asset rule: a tenth on each chain). */
-const PER_CHAIN_SHARE = 0.1;
-
 const STATUS_OF: Record<ClaimVerdict, StatusKind> = {
   worth: 'confirmed',
   fair: 'pending',
@@ -39,9 +35,9 @@ const STATUS_OF: Record<ClaimVerdict, StatusKind> = {
 };
 
 export function Chains({ a }: { a: ParallelAssetsDto }) {
-  const { dto } = useWalletCtx();
   const chains = useMemo(() => sortChains(a.chains), [a.chains]);
-  const perDay = flux(dto.earnings.native_per_day) * PER_CHAIN_SHARE;
+  // What each chain accrues a day at the wallet's pace, as the server states it (it applies the rule, not the page).
+  const perDay = a.accrual_per_chain_per_day ?? 0;
   const active = chains.filter((c) => c.active).length;
   return (
     <Panel

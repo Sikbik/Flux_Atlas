@@ -1,8 +1,13 @@
 // The few numbers an operator opens the view for: how many nodes are fine, when the next payment
-// lands, what the fleet earns a day, and what it earned over the last day, week and month.
+// lands, what the fleet earns a day, and what it earned over the last day, week and month. Earnings are
+// main chain plus the parallel assets it accrues, or main chain only, as the viewer chose; each group
+// carries the marker that says which.
 
 import { formatInt } from '../../../lib/format';
+import { useUi } from '../../../store/ui';
 import { AnimatedNumber, Section, Stat, StatGrid, tierLabel } from '../../../ui';
+import { earnedOrNull, type PaSplit } from '../../earnings/basis';
+import { EarningsBasis } from '../../earnings/EarningsBasis';
 import { type EarnedWindow, type Earnings, earningTiles } from '../derive/earnings';
 import { etaShort } from '../derive/eta';
 import type { FleetNode, FleetState } from '../derive/operator';
@@ -49,16 +54,22 @@ export function FleetStats({
   total,
   counts,
   next,
-  perDay,
+  perDay: nativePerDay,
+  paPerDay,
   settling,
 }: {
   total: number;
   counts: Record<FleetState, number>;
   next: FleetNode | null;
+  /** Main-chain FLUX a day at today's queue lengths. */
   perDay: number | null;
+  /** What that accrues a day in parallel assets. */
+  paPerDay: number | null;
   /** Reachability is not known yet (see `FleetData.settling`): the healthy count would be a guess. */
   settling: boolean;
 }) {
+  const includePa = useUi((s) => s.includePa);
+  const perDay = earnedOrNull(nativePerDay, paPerDay, includePa);
   const worry = counts.risk + counts.down + counts.pending + counts.gone;
   return (
     <StatGrid min={TRIO_MIN} className="ix-trio">
@@ -77,7 +88,18 @@ export function FleetStats({
         label="Per day"
         value={perDay === null ? null : <AnimatedNumber value={perDay} format={fmt2} />}
         unit="FLUX"
-        caption="estimate"
+        caption={
+          <span className="eb-cap">
+            <span>estimate</span>
+            <EarningsBasis
+              size="sm"
+              split={
+                nativePerDay === null || paPerDay === null ? null : { native: nativePerDay, pa: paPerDay }
+              }
+              per="a day"
+            />
+          </span>
+        }
       />
     </StatGrid>
   );
@@ -92,15 +114,19 @@ function windowCaption(w: EarnedWindow, short: string): string | undefined {
 /** What the fleet was paid: 24 hours, 7 days and 30 days, each saying when it is an estimate or cut short. */
 export function EarningsSection({
   earnings,
+  split24,
   pending,
   scope,
 }: {
   earnings: Earnings;
+  /** The last 24 hours as main chain and parallel assets, for the marker's breakdown. */
+  split24?: PaSplit | null;
   pending: boolean;
   /** Said under the figures when none is known, and why. */
   scope?: string;
 }) {
   const e = earnings;
+  const includePa = useUi((s) => s.includePa);
   const tiles = earningTiles([
     ['24 hours', e.h24],
     ['7 days', e.d7],
@@ -115,7 +141,12 @@ export function EarningsSection({
   return (
     <Section
       title="Earnings"
-      aside={pending ? undefined : (shared ?? (unknown ? undefined : 'paid to the fleet'))}
+      aside={
+        pending
+          ? undefined
+          : (shared ?? (unknown ? undefined : includePa ? 'earned by the fleet' : 'paid to the fleet'))
+      }
+      actions={<EarningsBasis realized split={split24 ?? null} per="in 24 hours" />}
     >
       <StatGrid
         min={TRIO_MIN}

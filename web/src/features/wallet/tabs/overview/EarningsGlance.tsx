@@ -4,35 +4,39 @@
 
 import { useMemo } from 'react';
 import { formatInt } from '../../../../lib/format';
+import { useUi } from '../../../../store/ui';
 import { AnimatedNumber, Delta, Sparkline, StatGrid } from '../../../../ui';
+import { EarningsBasis } from '../../../earnings/EarningsBasis';
 import { useWalletCtx } from '../../context';
-import { buildDaily, isCompleteDay, parallelRatio, totalsOf } from '../../lib/earnings';
-import { flux } from '../../lib/money';
+import { buildDaily, dayEarned, isCompleteDay, totalsOf } from '../../lib/earnings';
 import { FitStat } from '../../ui/FitStat';
 import { Panel } from '../../ui/Panel';
 import { formatFlux2 } from './Standing';
 
 export function EarningsGlance() {
   const { dto, money, setTab } = useWalletCtx();
+  const includePa = useUi((s) => s.includePa);
   const e = dto.earnings;
   const daily = useMemo(
     () =>
       buildDaily({
         days: e.days,
         coveredFromMs: e.covered_from_ms,
-        ratio: parallelRatio(flux(e.native_per_day), flux(e.pa_per_day)),
         history: money.history,
         spot: money.spot,
         currency: money.currency,
         nowMs: Date.now(),
       }),
-    [e.days, e.covered_from_ms, e.native_per_day, e.pa_per_day, money.history, money.spot, money.currency],
+    [e.days, e.covered_from_ms, money.history, money.spot, money.currency],
   );
-  const t = useMemo(() => totalsOf(daily), [daily]);
+  const t = useMemo(() => totalsOf(daily, includePa), [daily, includePa]);
 
   // The shape of the whole days: the window's first day and the running one are artefacts of where it starts and
   // ends, and would draw a dip at each edge.
-  const whole = useMemo(() => daily.native.filter((_, i) => isCompleteDay(daily, i)), [daily]);
+  const whole = useMemo(
+    () => daily.t.flatMap((_, i) => (isCompleteDay(daily, i) ? [dayEarned(daily, i, includePa)] : [])),
+    [daily, includePa],
+  );
   const half = Math.floor(whole.length / 2);
   const recent = whole.slice(half).reduce((s, v) => s + v, 0);
   const earlier = whole.slice(0, half).reduce((s, v) => s + v, 0);
@@ -54,12 +58,20 @@ export function EarningsGlance() {
     <Panel
       title={`Earnings, ${formatInt(n)} ${n === 1 ? 'day' : 'days'}`}
       aside={`${formatInt(t.payments)} ${t.payments === 1 ? 'payment' : 'payments'}, UTC`}
+      actions={
+        <EarningsBasis
+          realized
+          split={{ native: t.native, pa: t.pa }}
+          per={`over ${formatInt(n)} ${n === 1 ? 'day' : 'days'}`}
+          money={(v) => (money.price === null ? null : money.text(v))}
+        />
+      }
     >
       <StatGrid min={140} columns={2}>
         <FitStat
-          label="Paid"
-          fit={formatFlux2(t.native)}
-          value={<AnimatedNumber value={t.native} format={formatFlux2} maxHz={0} />}
+          label={includePa ? 'Earned' : 'Paid'}
+          fit={formatFlux2(t.total)}
+          value={<AnimatedNumber value={t.total} format={formatFlux2} maxHz={0} />}
           unit="FLUX"
           delta={
             change === null ? undefined : (
@@ -69,7 +81,12 @@ export function EarningsGlance() {
           caption={t.value === null ? undefined : money.fmt(t.value)}
           spark={
             whole.length >= 2 ? (
-              <Sparkline values={whole} form="area" size="tile" label="Native FLUX per whole day" />
+              <Sparkline
+                values={whole}
+                form="area"
+                size="tile"
+                label={includePa ? 'FLUX earned per whole day' : 'Main-chain FLUX per whole day'}
+              />
             ) : undefined
           }
         />
@@ -84,7 +101,7 @@ export function EarningsGlance() {
             t.average === null
               ? 'needs one whole day'
               : t.best
-                ? `best day ${formatFlux2(t.best.native)}`
+                ? `best day ${formatFlux2(t.best.amount)}`
                 : undefined
           }
         />

@@ -3,14 +3,14 @@ import { useMemo } from 'react';
 import { Button, Menu, type MenuItem } from '../../../ui';
 import type { Money } from '../hooks/useMoney';
 import { csvFilename, downloadCsv, toCsv } from '../lib/csv';
-import { buildDaily, claimsCsv, dailyCsv, parallelRatio } from '../lib/earnings';
+import { buildDaily, claimsCsv, dailyCsv } from '../lib/earnings';
 import { type FleetRow, nodesCsvHeader, nodesCsvRows } from '../lib/fleet';
-import { flux } from '../lib/money';
 import type { ParallelAssetsDto, WalletDto } from '../types';
 
 /**
  * The downloads: the nodes, the daily earnings (each day at its own price) and the parallel-asset claims. A file is
  * built when it is asked for, from what the page already holds, so nothing is fetched and nothing is sent anywhere.
+ * Earnings columns come as main chain, parallel assets and the two together, whatever the viewer's basis.
  */
 export function ExportMenu({
   dto,
@@ -46,7 +46,6 @@ export function ExportMenu({
           const daily = buildDaily({
             days: e.days,
             coveredFromMs: e.covered_from_ms,
-            ratio: parallelRatio(flux(e.native_per_day), flux(e.pa_per_day)),
             history: money.history,
             spot: money.spot,
             currency: money.currency,

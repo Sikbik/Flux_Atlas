@@ -92,7 +92,7 @@ export function Feed() {
       ? `The newest ${formatInt(KEPT)} events, back to ${back}. A node's own page goes further back.`
       : `${formatInt(items.length)} ${items.length === 1 ? 'event' : 'events'}, back to ${back}.`,
     pay.count > 0
-      ? `${formatInt(pay.count)} ${pay.count === 1 ? 'payment' : 'payments'} among them paid ${pay.flux.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} FLUX${money.price === null ? '' : `, worth ${money.text(pay.flux)} at today's price`}.`
+      ? `${formatInt(pay.count)} ${pay.count === 1 ? 'payment' : 'payments'} among them paid ${pay.flux.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} FLUX on the main chain${money.price === null ? '' : `, worth ${money.text(pay.flux)} at today's price`}.`
       : '',
   ]
     .filter(Boolean)

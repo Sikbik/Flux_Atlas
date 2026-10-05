@@ -10,10 +10,11 @@ import { queries } from '../../../api/queries';
 import { useNetwork, useRuntime, useTip } from '../../../app/context';
 import { fluxToNumber } from '../../../lib/format';
 import { useUi } from '../../../store/ui';
+import { earnedOrNull, type PaSplit } from '../../earnings/basis';
 import { type Earnings, earningsFromPayments, earningsFromTotals, NO_EARNINGS } from '../derive/earnings';
 import { buildFleet, buildWatchFleet, type FleetNode } from '../derive/operator';
 import { useFirstIngestMs } from './hooks';
-import { tierPayouts, useQueues, useTierInfo } from './live';
+import { tierPaPayouts, tierPayouts, useQueues, useTierInfo } from './live';
 import { useWatchRows } from './watchRoster';
 
 /** The route key that stands for the user's own watchlist (`/operator/watchlist`). */
@@ -76,8 +77,9 @@ export function useFleet(addr: string): FleetData {
   const built = useMemo(() => {
     if (!loaded) return [];
     const payouts = tierPayouts(info);
-    if (watchlist) return buildWatchFleet(watched, store.nodes, queues, tip, payouts, rows);
-    return op.data ? buildFleet(op.data.nodes, store.nodes, queues, tip, payouts) : [];
+    const pa = tierPaPayouts(info);
+    if (watchlist) return buildWatchFleet(watched, store.nodes, queues, tip, payouts, rows, pa);
+    return op.data ? buildFleet(op.data.nodes, store.nodes, queues, tip, payouts, pa) : [];
   }, [loaded, watchlist, watched, rows, op.data, store, queues, tip, info, nodesVersion]);
 
   const nodes = useStableFleet(built);
@@ -97,6 +99,8 @@ export interface FleetEarnings {
   pending: boolean;
   /** The 7 day figure is a sum of payments (not scaled from the 30 days). */
   exactWeek: boolean;
+  /** The last 24 hours as main chain and parallel assets, when the server knows both (operator mode). */
+  split24: PaSplit | null;
 }
 
 /**
@@ -107,6 +111,7 @@ export interface FleetEarnings {
  */
 export function useFleetEarnings(data: FleetData): FleetEarnings {
   const { clock } = useRuntime();
+  const includePa = useUi((s) => s.includePa);
   const first = useFirstIngestMs();
   const small = data.nodes.length > 0 && data.nodes.length <= EXACT_EARNINGS_LIMIT;
   const results = useQueries({
@@ -129,20 +134,31 @@ export function useFleetEarnings(data: FleetData): FleetEarnings {
   const nowMs = clock.now();
   const week = useMemo(
     () =>
-      small ? earningsFromPayments(results.items, { nowMs, firstMs: first, toFlux: fluxToNumber }) : null,
-    [small, results.items, nowMs, first],
+      small
+        ? earningsFromPayments(results.items, { nowMs, firstMs: first, toFlux: fluxToNumber, includePa })
+        : null,
+    [small, results.items, nowMs, first, includePa],
   );
 
   if (data.mode === 'watchlist') {
-    return { earnings: week ?? NO_EARNINGS, pending: small && results.pending, exactWeek: small };
+    return {
+      earnings: week ?? NO_EARNINGS,
+      pending: small && results.pending,
+      exactWeek: small,
+      split24: null,
+    };
   }
   const dto = data.operator;
-  if (!dto) return { earnings: NO_EARNINGS, pending: data.pending, exactWeek: false };
-  const h24 = fluxToNumber(dto.earned_24h);
-  const d30 = fluxToNumber(dto.earned_30d);
+  if (!dto) return { earnings: NO_EARNINGS, pending: data.pending, exactWeek: false, split24: null };
+  // Each window is the main chain plus what it accrued in parallel assets (the server's `pa_*`), on the viewer's
+  // basis; the server leaves both unknown together.
+  const window = (native: string | null, pa: string | null) =>
+    earnedOrNull(fluxToNumber(native), fluxToNumber(pa), includePa);
+  const h24 = window(dto.earned_24h, dto.pa_earned_24h);
+  const d30 = window(dto.earned_30d, dto.pa_earned_30d);
   // The server sums every stored payout to the operator's addresses (B7); a window the stored blocks do not cover
   // is null. Fall back to the node-attributed payments only when the server cannot say.
-  const server7 = fluxToNumber(dto.earned_7d);
+  const server7 = window(dto.earned_7d, dto.pa_earned_7d);
   const exact7 = server7 ?? (week && !results.pending ? week.d7.flux : null);
   const e = earningsFromTotals({
     h24,
@@ -151,5 +167,12 @@ export function useFleetEarnings(data: FleetData): FleetEarnings {
     nowMs,
     firstMs: first,
   });
-  return { earnings: e, pending: false, exactWeek: exact7 !== null };
+  const native24 = fluxToNumber(dto.earned_24h);
+  const pa24 = fluxToNumber(dto.pa_earned_24h);
+  return {
+    earnings: e,
+    pending: false,
+    exactWeek: exact7 !== null,
+    split24: native24 === null || pa24 === null ? null : { native: native24, pa: pa24 },
+  };
 }

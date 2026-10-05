@@ -30,6 +30,7 @@ const row = (over: Partial<OperatorRow> = {}): OperatorRow => ({
   addresses: 70,
   top_address: WALLET,
   native_per_day: '2047.64547647',
+  pa_per_day: '2047.64547647',
   collateral_locked: '4332000.00000000',
   healthy_pct: 0.9954128440366973,
   at_risk: 0,
@@ -41,6 +42,28 @@ const row = (over: Partial<OperatorRow> = {}): OperatorRow => ({
 });
 
 describe('operatorView', () => {
+  it('earns the main chain plus the parallel assets a day, or the main chain only when asked', () => {
+    const r = row({ native_per_day: '2047.64547647', pa_per_day: '2047.64547647' });
+    const all = operatorView(r, 'zelid');
+    expect(all.nativePerDay).toBeCloseTo(2047.64547647, 8);
+    expect(all.paPerDay).toBeCloseTo(2047.64547647, 8);
+    // Golden: 2,047.65 + 2,047.65 = 4,095.29.
+    expect(all.perDay).toBeCloseTo(4095.29095294, 8);
+    expect(all.perDayText).toBe('4,095');
+    const main = operatorView(r, 'zelid', false);
+    expect(main.perDay).toBeCloseTo(2047.64547647, 8);
+    expect(main.perDayText).toBe('2,048');
+    const list: OperatorsDto = {
+      generated_ms: 0,
+      by: 'zelid',
+      total_operators: 1,
+      total_nodes: 436,
+      operators: [r],
+    };
+    expect(operatorViews(list, false)[0]?.perDayText).toBe('2,048');
+    expect(operatorViews(list)[0]?.perDayText).toBe('4,095');
+  });
+
   it('shortens the key and shows the share the way the analytics tabs do', () => {
     const v = operatorView(row(), 'zelid');
     expect(v.name).toBe('1DFiyJ…rRZ2');

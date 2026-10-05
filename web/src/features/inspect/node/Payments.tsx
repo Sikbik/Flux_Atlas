@@ -3,6 +3,7 @@ import type { PaymentRow } from '../../../api/generated/PaymentRow';
 import { useNodePayments } from '../../../api/queries';
 import { useTip } from '../../../app/context';
 import { formatInt, formatUtcDateTime } from '../../../lib/format';
+import { useUi } from '../../../store/ui';
 import {
   Amount,
   Button,
@@ -13,6 +14,8 @@ import {
   RelativeTime,
   tierLabel,
 } from '../../../ui';
+import { earnedSats } from '../../earnings/basis';
+import { EarningsBasis } from '../../earnings/EarningsBasis';
 import { cycleHours } from '../derive/queue';
 import { useFirstIngestMs } from '../sources/hooks';
 import { useNodeCtx } from './context';
@@ -22,7 +25,7 @@ const columns: DataTableColumn<PaymentRow>[] = [
   { id: 'when', header: 'When', cell: (p) => <RelativeTime ts={p.time_ms} />, minWidth: 110 },
   {
     id: 'amount',
-    header: 'Amount',
+    header: 'Amount, main chain',
     numeric: true,
     cell: (p) => <Amount value={p.amount} sign="always" />,
     minWidth: 110,
@@ -49,7 +52,9 @@ export function PaymentsBody() {
   const [shown, setShown] = useState(5);
   const flat = useMemo(() => q.data?.pages.flatMap((p) => p.items) ?? [], [q.data]);
   const rows = useMemo(() => flat.slice(0, shown), [flat, shown]);
-  const total = q.data?.pages[0]?.total_paid ?? null;
+  const includePa = useUi((s) => s.includePa);
+  const page = q.data?.pages[0];
+  const total = page ? earnedSats(page.total_paid, page.pa_total_paid, includePa) : null;
   const more = flat.length > shown || q.hasNextPage;
   const since = tip && pay.lastPaid > 0 ? Math.max(0, tip.height - pay.lastPaid) : null;
 
@@ -87,9 +92,10 @@ export function PaymentsBody() {
             unknown: 'None seen yet',
           },
           {
-            label: 'Paid since first ingest',
-            value: total !== null && /[1-9]/.test(String(total)) ? <Amount value={total} /> : null,
+            label: includePa ? 'Earned since first ingest' : 'Paid since first ingest',
+            value: total !== null && total > 0n ? <Amount value={total} /> : null,
             unknown: 'Nothing yet',
+            note: <EarningsBasis size="sm" realized />,
           },
         ]}
       />
@@ -102,7 +108,7 @@ export function PaymentsBody() {
         </p>
       ) : (
         <DataTable
-          aria-label="Latest payments"
+          aria-label="Latest payments, main chain"
           rows={rows}
           columns={columns}
           rowKey={rowKey}

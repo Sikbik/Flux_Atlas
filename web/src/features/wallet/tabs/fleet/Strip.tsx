@@ -5,7 +5,10 @@
 
 import { useMemo } from 'react';
 import { formatInt, formatPercent, shortCollateral } from '../../../../lib/format';
+import { useUi } from '../../../../store/ui';
 import { AnimatedNumber, ShareBar, type ShareSegment, Stat, StatGrid } from '../../../../ui';
+import { earnedOrNull } from '../../../earnings/basis';
+import { EarningsBasis } from '../../../earnings/EarningsBasis';
 import { useWalletCtx } from '../../context';
 import type { RowSummary } from '../../lib/fleet';
 import { Eta } from '../../ui/Eta';
@@ -22,6 +25,8 @@ export interface StripProps {
 
 export function Strip({ s, total }: StripProps) {
   const { money, fleet } = useWalletCtx();
+  const includePa = useUi((st) => st.includePa);
+  const perDay = earnedOrNull(s.perDay, s.paPerDay, includePa);
   const filtered = s.nodes !== total;
   const healthy = s.nodes === 0 ? null : s.healthy / s.nodes;
 
@@ -98,21 +103,35 @@ export function Strip({ s, total }: StripProps) {
       />
       <FitStat
         label="Earning a day"
-        fit={s.perDay === null ? null : formatFlux2(s.perDay)}
+        fit={perDay === null ? null : formatFlux2(perDay)}
         value={
-          s.perDay === null ? null : (
-            <AnimatedNumber value={s.perDay} format={formatFlux2} maxHz={0} tint={false} />
+          perDay === null ? null : (
+            <AnimatedNumber value={perDay} format={formatFlux2} maxHz={0} tint={false} />
           )
         }
-        unit={s.perDay === null ? undefined : 'FLUX'}
-        caption={s.perDay === null ? 'tier payouts not known yet' : `${money.text(s.perDay)}, an estimate`}
+        unit={perDay === null ? undefined : 'FLUX'}
+        caption={
+          perDay === null ? (
+            'tier payouts not known yet'
+          ) : (
+            <span className="eb-cap">
+              <span>{money.text(perDay)}, an estimate</span>
+              <EarningsBasis
+                size="sm"
+                split={s.paPerDay === null || s.perDay === null ? null : { native: s.perDay, pa: s.paPerDay }}
+                per="a day"
+                money={(v) => (money.price === null ? null : money.text(v))}
+              />
+            </span>
+          )
+        }
       />
       <Stat
         label="Paid next"
         value={s.next ? <Eta at={s.next.etaMs} /> : null}
         caption={
           s.next
-            ? `${s.next.amount === null ? '' : `+${s.next.amount.toFixed(2)} FLUX, `}${nextNode?.endpoint || shortCollateral(s.next.key)}`
+            ? `${s.next.amount === null ? '' : `+${s.next.amount.toFixed(2)} FLUX on the main chain, `}${nextNode?.endpoint || shortCollateral(s.next.key)}`
             : s.nodes > 0
               ? 'none of these is queued'
               : undefined

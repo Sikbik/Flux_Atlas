@@ -5,7 +5,9 @@
 import { Globe } from 'lucide-react';
 import { type CSSProperties, useMemo } from 'react';
 import { formatInt, formatPercent } from '../../../../lib/format';
+import { useUi } from '../../../../store/ui';
 import { DataTable, type DataTableColumn, IconButton, TierGlyph } from '../../../../ui';
+import { earnedOrNull } from '../../../earnings/basis';
 import { useWalletCtx } from '../../context';
 import {
   type FleetFilter,
@@ -60,6 +62,7 @@ export interface GroupsProps {
 
 export function Groups({ by, groups, filter, onPick }: GroupsProps) {
   const { globe } = useWalletCtx();
+  const includePa = useUi((s) => s.includePa);
   const label = GROUP_OPTIONS.find((o) => o.value === by)?.label ?? 'Group';
   const picked = groupInFilter(by, filter);
   // The bars compare the groups with each other: the biggest fills its track.
@@ -105,8 +108,11 @@ export function Groups({ by, groups, filter, onPick }: GroupsProps) {
         numeric: true,
         sortable: true,
         minWidth: 104,
-        sortValue: (g) => g.perDay,
-        cell: (g) => (g.perDay === null ? null : g.perDay.toFixed(2)),
+        sortValue: (g) => earnedOrNull(g.perDay, g.paPerDay, includePa),
+        cell: (g) => {
+          const v = earnedOrNull(g.perDay, g.paPerDay, includePa);
+          return v === null ? null : v.toFixed(2);
+        },
       },
       {
         id: 'next',
@@ -145,7 +151,7 @@ export function Groups({ by, groups, filter, onPick }: GroupsProps) {
         ),
       },
     ],
-    [by, label, biggest, globe],
+    [by, label, biggest, globe, includePa],
   );
 
   return (

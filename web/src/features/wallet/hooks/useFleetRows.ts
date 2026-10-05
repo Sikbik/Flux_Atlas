@@ -6,7 +6,7 @@
 import { useMemo, useRef } from 'react';
 import { useNetwork, useRuntime, useTip } from '../../../app/context';
 import { buildFleet, type FleetNode } from '../../inspect/derive/operator';
-import { tierPayouts, useQueues, useTierInfo } from '../../inspect/sources/live';
+import { tierPaPayouts, tierPayouts, useQueues, useTierInfo } from '../../inspect/sources/live';
 import { buildFleetRows, type FleetRow } from '../lib/fleet';
 import type { WalletDto } from '../types';
 
@@ -58,7 +58,8 @@ export function useFleetRows(dto: WalletDto | undefined): WalletFleet {
   // `nodesVersion` stands for the table's contents, which are read from `store.nodes`.
   // biome-ignore lint/correctness/useExhaustiveDependencies: nodesVersion is the change signal for store.nodes
   const built = useMemo(
-    () => (dto ? buildFleet(dto.nodes, store.nodes, queues, tip, tierPayouts(info)) : NONE),
+    () =>
+      dto ? buildFleet(dto.nodes, store.nodes, queues, tip, tierPayouts(info), tierPaPayouts(info)) : NONE,
     [dto, store, queues, tip, info, nodesVersion],
   );
   const nodes = useStable(built, sameNode);

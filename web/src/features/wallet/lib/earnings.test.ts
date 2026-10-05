@@ -9,7 +9,6 @@ import {
   isEarningsRange,
   missedRows,
   PAYMENT_VERDICT,
-  parallelRatio,
   paymentHealth,
   rangesFor,
   sliceDays,
@@ -44,11 +43,12 @@ const history: PricePoint[] = Array.from({ length: 40 }, (_, i) => ({
   usd: 0.05 + i * 0.001,
 }));
 
-/** `n` days from START, 3,000 FLUX a day of Stratus. */
-function days(n: number): EarningsDay[] {
+/** `n` days from START, 3,000 FLUX a day of Stratus, and the parallel assets the server says each accrued. */
+function days(n: number, pa = '3000.00000000'): EarningsDay[] {
   return Array.from({ length: n }, (_, i) => ({
     day_ms: START + i * DAY_MS,
     native: '3000.00000000',
+    pa,
     payments: 333,
     cumulus: '0.00000000',
     nimbus: '0.00000000',
@@ -94,26 +94,13 @@ describe('ranges that fit the data', () => {
   });
 });
 
-describe('parallelRatio', () => {
-  it('is the parallel run-rate over the native one', () => {
-    expect(parallelRatio(3024, 3024)).toBe(1);
-    expect(parallelRatio(3000, 2910)).toBeCloseTo(0.97, 12);
-  });
-
-  it('is zero when either is nothing, and capped for a bad feed', () => {
-    expect(parallelRatio(0, 5)).toBe(0);
-    expect(parallelRatio(5, 0)).toBe(0);
-    expect(parallelRatio(1, 5000)).toBe(10);
-  });
-});
-
 describe('buildDaily', () => {
   const now = START + 10 * DAY_MS + 6 * 3_600_000;
   // The stored blocks begin at the start of the first day: a whole first day.
+  // Parallel assets that differ from the main chain, so a test can tell which one it reads.
   const base = {
-    days: days(11),
+    days: days(11, '2910.00000000'),
     coveredFromMs: START as number | null,
-    ratio: 0.97,
     history,
     spot,
     currency: 'usd' as const,
@@ -129,8 +116,11 @@ describe('buildDaily', () => {
     expect(d.payments[0]).toBe(333);
   });
 
-  it('estimates the parallel assets from the ratio', () => {
-    expect(buildDaily(base).pa[0]).toBeCloseTo(2910, 9);
+  it("takes each day's parallel assets as the server states them, never from a ratio", () => {
+    expect(buildDaily(base).pa[0]).toBe(2910);
+    const list = days(2);
+    list[1] = { ...(list[1] as EarningsDay), pa: '12.34000000' };
+    expect(buildDaily({ ...base, days: list }).pa).toEqual([3000, 12.34]);
   });
 
   it("values each day at its own price, not today's", () => {
@@ -223,25 +213,41 @@ describe('totalsOf', () => {
   const input = {
     days: days(11),
     coveredFromMs: START as number | null,
-    ratio: 1,
     history,
     spot,
     currency: 'usd' as const,
     nowMs: now,
   };
 
-  it('adds the days up', () => {
-    const t = totalsOf(buildDaily(input));
+  it('adds the days up: main chain and parallel assets, and the two together', () => {
+    const t = totalsOf(buildDaily(input), true);
     expect(t.native).toBe(33_000);
     expect(t.pa).toBe(33_000);
+    expect(t.total).toBe(66_000);
     expect(t.payments).toBe(3663);
     expect(t.value).toBeGreaterThan(0);
+    // Golden: a whole day earned 3,000 on the main chain and accrued 3,000 in parallel assets.
+    expect(t.average).toBe(6000);
+    expect(t.best).toEqual({ t: START, amount: 6000 });
+  });
+
+  it('counts the main chain only when asked, in the total, the average, the best day and the value', () => {
+    const d = buildDaily(input);
+    const main = totalsOf(d, false);
+    const all = totalsOf(d, true);
+    expect(main.total).toBe(33_000);
+    expect(main.average).toBe(3000);
+    expect(main.best).toEqual({ t: START, amount: 3000 });
+    // The parallel assets are priced as FLUX: the same price, twice the FLUX.
+    expect(all.value).toBeCloseTo((main.value as number) * 2, 9);
+    // The parts are the same whatever counts.
+    expect(main.pa).toBe(33_000);
   });
 
   it('averages only whole days, so a running day does not drag it down', () => {
     const list = days(11);
     list[10] = { ...(list[10] as EarningsDay), native: '700.00000000' };
-    const t = totalsOf(buildDaily({ ...input, days: list }));
+    const t = totalsOf(buildDaily({ ...input, days: list }), false);
     expect(t.average).toBe(3000);
     expect(t.completeDays).toBe(10);
     expect(t.native).toBe(30_700);
@@ -251,7 +257,7 @@ describe('totalsOf', () => {
     const list = days(11);
     list[0] = { ...(list[0] as EarningsDay), native: '1200.00000000' };
     list[10] = { ...(list[10] as EarningsDay), native: '700.00000000' };
-    const t = totalsOf(buildDaily({ ...input, days: list, coveredFromMs: START + 15 * 3_600_000 }));
+    const t = totalsOf(buildDaily({ ...input, days: list, coveredFromMs: START + 15 * 3_600_000 }), false);
     expect(t.average).toBe(3000);
     expect(t.completeDays).toBe(9);
     // The totals still count everything that was paid.
@@ -262,8 +268,12 @@ describe('totalsOf', () => {
     const list = days(11);
     list[4] = { ...(list[4] as EarningsDay), native: '3600.00000000' };
     list[10] = { ...(list[10] as EarningsDay), native: '9000.00000000' };
-    const t = totalsOf(buildDaily({ ...input, days: list }));
-    expect(t.best).toEqual({ t: START + 4 * DAY_MS, native: 3600 });
+    const t = totalsOf(buildDaily({ ...input, days: list }), false);
+    expect(t.best).toEqual({ t: START + 4 * DAY_MS, amount: 3600 });
+    expect(totalsOf(buildDaily({ ...input, days: list }), true).best).toEqual({
+      t: START + 4 * DAY_MS,
+      amount: 6600,
+    });
   });
 
   it('has no average or best day while there is no whole day', () => {
@@ -276,6 +286,7 @@ describe('totalsOf', () => {
         coveredFromMs: START + 9 * 3_600_000,
         nowMs: START + 12 * 3_600_000,
       }),
+      true,
     );
     expect(t.native).toBe(3000);
     expect(t.average).toBeNull();
@@ -284,10 +295,11 @@ describe('totalsOf', () => {
   });
 
   it('is empty for no days', () => {
-    const t = totalsOf(buildDaily({ ...input, days: [] }));
+    const t = totalsOf(buildDaily({ ...input, days: [] }), true);
     expect(t).toEqual({
       native: 0,
       pa: 0,
+      total: 0,
       payments: 0,
       value: null,
       average: null,
@@ -350,7 +362,6 @@ describe('dailyCsv', () => {
   const base = {
     days: days(3),
     coveredFromMs: START as number | null,
-    ratio: 1,
     history,
     spot,
     currency: 'usd' as const,
@@ -367,14 +378,15 @@ describe('dailyCsv', () => {
       'nimbus_flux',
       'stratus_flux',
       'payments',
-      'parallel_assets_flux_estimate',
+      'parallel_assets_flux',
+      'main_chain_and_parallel_assets_flux',
       'price_usd_that_day',
       'native_value_usd',
       'native_and_parallel_value_usd',
       'partial_day',
     ]);
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toEqual(['2026-09-01', 3000, 0, 0, 3000, 333, 3000, 0.05, 150, 300, false]);
+    expect(rows[0]).toEqual(['2026-09-01', 3000, 0, 0, 3000, 333, 3000, 6000, 0.05, 150, 300, false]);
     expect(rows.every((r) => r.length === header.length)).toBe(true);
   });
 

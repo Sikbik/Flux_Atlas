@@ -43,8 +43,10 @@ export interface FleetNode {
   org: string;
   lat: number | null;
   lon: number | null;
-  /** Steady-state FLUX per day (an estimate), null when the tier payout is unknown. */
+  /** Steady-state FLUX per day on the main chain (an estimate), null when the tier payout is unknown. */
   perDay: number | null;
+  /** What that accrues a day in parallel assets, at the same pace; null when the tier's accrual is unknown. */
+  paPerDay: number | null;
   paymentAddress: string | null;
   /** False when the live table does not know the node: it left the list, or the list is not loaded. */
   present: boolean;
@@ -69,6 +71,8 @@ export function buildFleet(
   q: QueueSnapshot,
   tip: number | null,
   payouts: TierPayouts,
+  /** What each tier's payout accrues in parallel assets (`TierStats.pa_payout`). */
+  paPayouts: TierPayouts = {},
 ): FleetNode[] {
   return roster.map((r) => {
     // The roster's ids are the answering instance's: match the row by outpoint (ARCHITECTURE 8.1).
@@ -93,6 +97,7 @@ export function buildFleet(
     const pos = known ? positionOf(q, id) : null;
     const size = pos?.size ?? 0;
     const payout = tierName === 'unknown' ? undefined : payouts[tierName];
+    const paPayout = tierName === 'unknown' ? undefined : paPayouts[tierName];
     const version = known ? t.fluxOs(i) : (r.flux_os ?? '');
     return {
       id,
@@ -117,6 +122,7 @@ export function buildFleet(
       lat: known && Number.isFinite(t.lat[i]) ? (t.lat[i] as number) : r.lat,
       lon: known && Number.isFinite(t.lon[i]) ? (t.lon[i] as number) : r.lon,
       perDay: payout !== undefined && size > 0 ? fluxPerDay(payout, size) : null,
+      paPerDay: paPayout !== undefined && size > 0 ? fluxPerDay(paPayout, size) : null,
       paymentAddress: r.payment_address || null,
       present: known,
     };
@@ -160,6 +166,7 @@ export function buildWatchFleet(
   payouts: TierPayouts,
   /** What the server said about some of the nodes (fills what the live table does not carry). */
   rows?: ReadonlyMap<number, NodeRow>,
+  paPayouts: TierPayouts = {},
 ): FleetNode[] {
   return buildFleet(
     ids.map((id) => rows?.get(id) ?? stubRow(id)),
@@ -167,6 +174,7 @@ export function buildWatchFleet(
     q,
     tip,
     payouts,
+    paPayouts,
   );
 }
 
@@ -332,8 +340,10 @@ export interface FleetSummary {
   count: number;
   hosts: number;
   tiers: Record<QueueTier, number>;
-  /** Steady-state FLUX per day over the nodes whose tier payout is known. */
+  /** Steady-state FLUX per day on the main chain over the nodes whose tier payout is known. */
   perDay: number | null;
+  /** What those nodes accrue a day in parallel assets. */
+  paPerDay: number | null;
   next: FleetNode | null;
   atRisk: FleetNode[];
   unreachable: FleetNode[];
@@ -347,6 +357,8 @@ export function summarizeFleet(nodes: readonly FleetNode[]): FleetSummary {
   const hosts = new Set<string>();
   let perDay = 0;
   let anyPerDay = false;
+  let paPerDay = 0;
+  let anyPa = false;
   let apps = 0;
   for (const n of nodes) {
     if (n.tier !== 'unknown') tiers[n.tier]++;
@@ -354,6 +366,10 @@ export function summarizeFleet(nodes: readonly FleetNode[]): FleetSummary {
     if (n.perDay !== null) {
       perDay += n.perDay;
       anyPerDay = true;
+    }
+    if (n.paPerDay !== null) {
+      paPerDay += n.paPerDay;
+      anyPa = true;
     }
     apps += n.appCount;
   }
@@ -363,6 +379,7 @@ export function summarizeFleet(nodes: readonly FleetNode[]): FleetSummary {
     hosts: hosts.size,
     tiers,
     perDay: anyPerDay ? perDay : null,
+    paPerDay: anyPa ? paPerDay : null,
     next: sorted.find((n) => n.position !== null && n.status === 'confirmed') ?? null,
     atRisk: nodes.filter((n) => n.atRisk),
     unreachable: nodes.filter((n) => n.reachable === false),

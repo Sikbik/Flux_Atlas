@@ -1,6 +1,6 @@
-// Realized earnings as columns for the charts and the exports: the days stacked by tier, the parallel assets
-// estimated alongside, each day valued at its own price, and the expected-against-received read. Pure
-// functions over the wallet's days.
+// Realized earnings as columns for the charts and the exports: the days stacked by tier, the parallel assets each
+// day's payouts accrued alongside (the server's figure), each day valued at its own price, and the
+// expected-against-received read. Pure functions over the wallet's days.
 
 import type { CurrencyCode, EarningsDay, PaClaim, PricePoint, PricesDto, WalletEarnings } from '../types';
 import { type CsvCell, dateStamp, dateTimeStamp } from './csv';
@@ -42,31 +42,22 @@ export function effectiveRange(range: EarningsRange, count: number): EarningsRan
   return rangesFor(count).some((r) => r.value === range) ? range : 'all';
 }
 
-/**
- * The parallel assets accrue alongside every native payment, so a day's parallel assets are its native earnings
- * times the ratio of the two run-rates. Only the run-rate is known, not each day: the result is an estimate.
- */
-export function parallelRatio(nativePerDay: number, paPerDay: number): number {
-  if (!(nativePerDay > 0) || !(paPerDay > 0)) return 0;
-  return Math.min(10, paPerDay / nativePerDay);
-}
-
 export interface Daily {
   /** Start of each UTC day. */
   t: number[];
   cumulus: number[];
   nimbus: number[];
   stratus: number[];
-  /** The day's native total, as the server states it. */
+  /** What the main chain paid on the day, as the server states it. */
   native: number[];
-  /** The estimated parallel assets of the day. */
+  /** What those payouts accrued in parallel assets (claimable through Flux Fusion), as the server states it. */
   pa: number[];
   payments: number[];
   /** The price of one FLUX on the day, in the display currency; null where there is none. */
   price: (number | null)[];
-  /** The native earnings valued at that price. */
+  /** The main-chain earnings valued at that price. */
   value: (number | null)[];
-  /** The native and the estimated parallel assets valued at that price. */
+  /** The main chain and the parallel assets valued at that price (parallel assets are priced as FLUX). */
   valueWithPa: (number | null)[];
   /** Any price that was drawn from dollars at today's exchange rate. */
   approximate: boolean;
@@ -80,7 +71,6 @@ export interface DailyInput {
   days: readonly EarningsDay[];
   /** When the first stored block the figures cover happened (`WalletEarnings.covered_from_ms`). */
   coveredFromMs: number | null;
-  ratio: number;
   history: readonly PricePoint[];
   spot: PricesDto['spot'] | null | undefined;
   currency: CurrencyCode;
@@ -108,7 +98,7 @@ export function buildDaily(i: DailyInput): Daily {
   };
   for (const d of i.days) {
     const native = flux(d.native);
-    const pa = native * i.ratio;
+    const pa = flux(d.pa);
     const p = historicPrice(i.history, i.spot, i.currency, d.day_ms);
     out.t.push(d.day_ms);
     out.cumulus.push(flux(d.cumulus));
@@ -160,54 +150,63 @@ export function wholeDays<T extends { day_ms: number }>(
 }
 
 export interface DailyTotals {
+  /** What the main chain paid. */
   native: number;
+  /** What those payouts accrued in parallel assets. */
   pa: number;
+  /** What counts as earned: the main chain, plus the parallel assets when they count. */
+  total: number;
   payments: number;
-  /** Over the days with a price; null with none. */
+  /** What counts, over the days with a price, each at its own; null with none. */
   value: number | null;
-  /** Native FLUX per whole day; null while there is no whole day to average. */
+  /** What counts per whole day; null while there is no whole day to average. */
   average: number | null;
-  /** The best whole day; null while there is none. */
-  best: { t: number; native: number } | null;
+  /** The best whole day by what counts; null while there is none. */
+  best: { t: number; amount: number } | null;
   /** How many whole days the average and the best day are over. */
   completeDays: number;
 }
 
+/** What day `i` earned on the viewer's basis. */
+export const dayEarned = (d: Pick<Daily, 'native' | 'pa'>, i: number, includePa: boolean): number =>
+  (d.native[i] as number) + (includePa ? (d.pa[i] as number) : 0);
+
 /**
- * Totals over the days shown. The totals count every payment received; the average and the best day count whole
- * days only, because the window's first day starts part way through and the running day has not ended, and either
- * would drag the average down.
+ * Totals over the days shown, on the viewer's basis (`includePa`: the parallel assets count). The totals count
+ * every payment received; the average and the best day count whole days only, because the window's first day
+ * starts part way through and the running day has not ended, and either would drag the average down.
  */
-export function totalsOf(d: Daily): DailyTotals {
+export function totalsOf(d: Daily, includePa: boolean): DailyTotals {
   let native = 0;
   let pa = 0;
   let payments = 0;
   let value = 0;
   let valued = false;
-  let completeNative = 0;
+  let completeSum = 0;
   let completeDays = 0;
   let best: DailyTotals['best'] = null;
   d.t.forEach((t, i) => {
-    const n = d.native[i] as number;
-    native += n;
+    native += d.native[i] as number;
     pa += d.pa[i] as number;
     payments += d.payments[i] as number;
-    const v = d.value[i];
+    const v = includePa ? d.valueWithPa[i] : d.value[i];
     if (v !== null && v !== undefined) {
       value += v;
       valued = true;
     }
     if (!isCompleteDay(d, i)) return;
-    completeNative += n;
+    const amount = dayEarned(d, i, includePa);
+    completeSum += amount;
     completeDays++;
-    if (best === null || n > best.native) best = { t, native: n };
+    if (best === null || amount > best.amount) best = { t, amount };
   });
   return {
     native,
     pa,
+    total: native + (includePa ? pa : 0),
     payments,
     value: valued ? value : null,
-    average: completeDays > 0 ? completeNative / completeDays : null,
+    average: completeDays > 0 ? completeSum / completeDays : null,
     best,
     completeDays,
   };
@@ -287,7 +286,11 @@ export function missedRows(missed: WalletEarnings['missed']): MissedRow[] {
 
 // ---- CSV ------------------------------------------------------------------------------------------
 
-/** One header and rows for the daily earnings: FLUX by tier, and what each day was worth at its own price. */
+/**
+ * One header and rows for the daily earnings: what the main chain paid (by tier), what it accrued in parallel
+ * assets, the two together, and what each day was worth at its own price. Every column is written whatever the
+ * viewer's basis, so the file says both.
+ */
 export function dailyCsv(
   d: Daily,
   currency: CurrencyCode,
@@ -303,7 +306,8 @@ export function dailyCsv(
     'nimbus_flux',
     'stratus_flux',
     'payments',
-    'parallel_assets_flux_estimate',
+    'parallel_assets_flux',
+    'main_chain_and_parallel_assets_flux',
     'price_usd_that_day',
     ...(showOwn ? [`price_${cur.toLowerCase()}_that_day_approximate`] : []),
     `native_value_${cur.toLowerCase()}${showOwn ? '_approximate' : ''}`,
@@ -320,6 +324,7 @@ export function dailyCsv(
       round(d.stratus[i] as number),
       d.payments[i] as number,
       round(d.pa[i] as number),
+      round((d.native[i] as number) + (d.pa[i] as number)),
       usd ? usd.price : null,
       ...(showOwn ? [d.price[i] ?? null] : []),
       d.value[i] === null || d.value[i] === undefined ? null : round(d.value[i] as number, 4),

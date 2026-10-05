@@ -78,6 +78,7 @@ const node = (id: number, over: Partial<FleetNode> = {}): FleetNode => ({
   lat: 60,
   lon: 25,
   perDay: 10,
+  paPerDay: 10,
   paymentAddress: 't1Operator',
   present: true,
   ...over,
@@ -98,9 +99,11 @@ describe('buildFleet', () => {
     t.reachable[t.indexOf(4)] = Reach.No;
     t.cores[t.indexOf(2)] = 16;
     const q = buildQueues(t);
-    const fleet = buildFleet([row(2), row(3), row(4)], t, q, 1_000, { stratus: 9 });
+    const fleet = buildFleet([row(2), row(3), row(4)], t, q, 1_000, { stratus: 9 }, { stratus: 9 });
     expect(fleet.map((n) => n.position)).toEqual([2, 3, 4]);
     expect(fleet[0]!.perDay).toBeCloseTo((9 * 2880) / 10, 6);
+    // The parallel assets the payout accrues (the server's `pa_payout`), at the same pace: 2,592 a day each.
+    expect(fleet[0]!.paPerDay).toBeCloseTo(2592, 6);
     expect(fleet[0]!.cores).toBe(16);
     expect(fleet[1]!.sinceConfirm).toBe(580);
     expect(fleet[1]!.atRisk).toBe(true);
@@ -116,7 +119,14 @@ describe('buildFleet', () => {
     const [n] = buildFleet([row(99, { last_confirmed_height: 990, reachable: false })], t, q, 1_000, {
       stratus: 9,
     });
-    expect(n).toMatchObject({ id: 99, position: null, perDay: null, sinceConfirm: 10, reachable: false });
+    expect(n).toMatchObject({
+      id: 99,
+      position: null,
+      perDay: null,
+      paPerDay: null,
+      sinceConfirm: 10,
+      reachable: false,
+    });
     expect(n!.version).toBe('8.20.0');
     expect(n!.lastPaid).toBe(100);
   });
@@ -156,6 +166,7 @@ describe('summaries', () => {
     expect(s.unreachable.map((n) => n.id)).toEqual([3]);
     expect(s.notConfirmed.map((n) => n.id)).toEqual([4]);
     expect(s.perDay).toBe(40);
+    expect(s.paPerDay).toBe(40);
     expect(s.apps).toBe(4);
   });
 });

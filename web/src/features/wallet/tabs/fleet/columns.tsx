@@ -6,6 +6,7 @@ import type { CSSProperties } from 'react';
 import { useTip } from '../../../../app/context';
 import { formatBytes, formatInt, shortCollateral } from '../../../../lib/format';
 import { type DataTableColumn, StatusChip, TierGlyph, Tooltip, tierLabel } from '../../../../ui';
+import { BASIS_PHRASE, basisOf, earnedOrNull } from '../../../earnings/basis';
 import { CHECKIN, expiryState } from '../../../inspect/derive/expiry';
 import { blocksLong, blocksText, COLUMN_SPECS, type ColumnId, type FleetRow } from '../../lib/fleet';
 import { reasonLabel, variantOf } from '../../lib/health';
@@ -122,7 +123,7 @@ const NO_REASONS: readonly HealthReason[] = [];
 type Cell = Pick<DataTableColumn<FleetRow>, 'cell' | 'value' | 'width' | 'minWidth' | 'mono' | 'title'>;
 
 /** How each column draws its cell; the headers, sorting and alignment come from the column specs. */
-function cells(attention: AttentionMap): Record<ColumnId, Cell> {
+function cells(attention: AttentionMap, includePa: boolean): Record<ColumnId, Cell> {
   const reasonsOf = (r: FleetRow) => attention.get(r.key)?.reasons ?? NO_REASONS;
   return {
     node: { cell: (r) => <NodeCell r={r} />, width: '1.7fr', minWidth: 196, mono: true },
@@ -135,7 +136,14 @@ function cells(attention: AttentionMap): Record<ColumnId, Cell> {
       minWidth: 120,
       title: 'Blocks since the last check-in. A node must check in within 640 blocks or it expires.',
     },
-    perDay: { cell: (r) => (r.perDay === null ? null : r.perDay.toFixed(2)), minWidth: 96 },
+    perDay: {
+      cell: (r) => {
+        const v = earnedOrNull(r.perDay, r.paPerDay, includePa);
+        return v === null ? null : v.toFixed(2);
+      },
+      minWidth: 96,
+      title: `FLUX a day at today's queue lengths, ${BASIS_PHRASE[basisOf(includePa)]}`,
+    },
     country: { cell: (r) => r.country || null, width: '1.1fr', minWidth: 132 },
     city: { cell: (r) => r.city || null, minWidth: 112 },
     provider: { cell: (r) => r.provider || null, width: '1.2fr', minWidth: 140 },
@@ -153,8 +161,12 @@ function cells(attention: AttentionMap): Record<ColumnId, Cell> {
 }
 
 /** The table's columns for the chosen ids, in the table's own order. Build once per choice (memoise it). */
-export function buildColumns(ids: readonly ColumnId[], attention: AttentionMap): DataTableColumn<FleetRow>[] {
-  const draw = cells(attention);
+export function buildColumns(
+  ids: readonly ColumnId[],
+  attention: AttentionMap,
+  includePa: boolean,
+): DataTableColumn<FleetRow>[] {
+  const draw = cells(attention, includePa);
   const want = new Set<ColumnId>(ids);
   return COLUMN_SPECS.filter((c) => want.has(c.id)).map((c) => ({
     id: c.id,

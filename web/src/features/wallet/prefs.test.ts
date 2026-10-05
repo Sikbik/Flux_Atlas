@@ -9,7 +9,6 @@ describe('parsePrefs', () => {
       expect(p.currency).toBe('usd');
       expect(p.density).toBe('comfortable');
       expect(p.groupBy).toBe('none');
-      expect(p.includePa).toBe(true);
       expect(p.earningsRange).toBe('all');
       expect(p.horizon).toBe('24h');
       expect(p.columns).toEqual([...DEFAULT_COLUMNS]);
@@ -31,7 +30,6 @@ describe('parsePrefs', () => {
       }),
     );
     expect(p.currency).toBe('eur');
-    expect(p.includePa).toBe(false);
     expect(p.density).toBe('compact');
     expect(p.groupBy).toBe('country');
     expect(p.earningsRange).toBe('7d');
@@ -57,8 +55,13 @@ describe('parsePrefs', () => {
     expect(p.groupBy).toBe('none');
     expect(p.earningsRange).toBe('all');
     expect(p.horizon).toBe('24h');
-    expect(p.includePa).toBe(true);
     expect(p.columns).toEqual(['node', 'payout']);
+  });
+
+  it('leaves the parallel-asset setting to the UI store, which took it over', () => {
+    const p = parsePrefs(JSON.stringify({ currency: 'eur', includePa: false }));
+    expect(p).not.toHaveProperty('includePa');
+    expect(p.currency).toBe('eur');
   });
 
   it('cleans the costs: nothing negative, nothing absurd, nothing that is not a number', () => {
@@ -128,6 +131,8 @@ describe('the preferences store', () => {
     expect(stored.currency).toBe('eur');
     expect(stored.density).toBe('compact');
     expect(stored.groupBy).toBe('provider');
+    // The parallel-asset setting is the UI store's now: this record no longer carries it.
+    expect(JSON.parse(disk.get(KEY) ?? '{}')).not.toHaveProperty('includePa');
   });
 
   it('sets one tier cost at a time, and never a bad number', () => {
@@ -170,7 +175,7 @@ describe('the preferences store', () => {
         throw new Error('quota');
       },
     });
-    expect(() => useWalletPrefs.getState().setIncludePa(false)).not.toThrow();
-    expect(useWalletPrefs.getState().includePa).toBe(false);
+    expect(() => useWalletPrefs.getState().setDensity('compact')).not.toThrow();
+    expect(useWalletPrefs.getState().density).toBe('compact');
   });
 });

@@ -18,6 +18,8 @@ const stat = (tier: TierStats['tier'], count: number, payout: string, head: Node
   count,
   collateral: '1000.00000000',
   payout,
+  // The server's accrual beside each payout: as much again.
+  pa_payout: payout,
   cycle_blocks: count,
   next: head,
 });
@@ -41,11 +43,23 @@ describe('queueRows', () => {
     expect(r[2]?.cycleBlocks).toBe(1781);
   });
 
-  it('estimates what a node earns in a day at that pace', () => {
+  it('estimates what a node earns in a day at that pace, main chain and parallel assets', () => {
     const r = queueRows(STATS, null);
+    expect(r[2]?.nativePerDay).toBeCloseTo((9 * BLOCKS_PER_DAY) / 1781);
+    expect(r[2]?.paPerDay).toBeCloseTo((9 * BLOCKS_PER_DAY) / 1781);
+    // Golden: 14.55 on the main chain and 14.55 in parallel assets.
+    expect(r[2]?.perDay).toBeCloseTo(29.1072, 4);
+    expect(r[2]?.perDayText).toBe('29');
+    expect(r[0]?.perDayText).toBe('1.7');
+  });
+
+  it('counts the main chain only when asked, and keeps a block payout on the main chain either way', () => {
+    const r = queueRows(STATS, null, false);
     expect(r[2]?.perDay).toBeCloseTo((9 * BLOCKS_PER_DAY) / 1781);
     expect(r[2]?.perDayText).toBe('15');
     expect(r[0]?.perDayText).toBe('0.8');
+    expect(r[2]?.payout).toBe('9.00');
+    expect(queueRows(STATS, null)[2]?.payout).toBe('9.00');
   });
 
   it('names who is paid next, from the announced payees first', () => {

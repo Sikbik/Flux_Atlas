@@ -136,8 +136,10 @@ export function useResolvedId(key: string): number | null {
 export interface TierInfo {
   tier: QueueTier;
   count: number;
-  /** FLUX paid per block to the head of the queue. */
+  /** FLUX paid per block to the head of the queue, on the main chain. */
   payout: number | null;
+  /** What that payout accrues in parallel assets (the server's `pa_payout`). */
+  paPayout: number | null;
   cycleBlocks: number;
 }
 
@@ -157,6 +159,7 @@ export function useTierInfo(): readonly TierInfo[] {
               tier,
               count: s?.count ?? 0,
               payout: s ? fluxToNumber(s.payout) : null,
+              paPayout: s ? fluxToNumber(s.pa_payout) : null,
               cycleBlocks: s?.cycle_blocks ?? 0,
             };
           }),
@@ -167,6 +170,13 @@ export function useTierInfo(): readonly TierInfo[] {
 export function tierPayouts(info: readonly TierInfo[]): Partial<Record<QueueTier, number>> {
   const out: Partial<Record<QueueTier, number>> = {};
   for (const t of info) if (t.payout !== null) out[t.tier] = t.payout;
+  return out;
+}
+
+/** Per tier, what a payout accrues in parallel assets. */
+export function tierPaPayouts(info: readonly TierInfo[]): Partial<Record<QueueTier, number>> {
+  const out: Partial<Record<QueueTier, number>> = {};
+  for (const t of info) if (t.paPayout !== null) out[t.tier] = t.paPayout;
   return out;
 }
 

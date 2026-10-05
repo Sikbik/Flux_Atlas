@@ -42,3 +42,26 @@ describe('windowTotals', () => {
     expect(windowTotals([], { nowMs: now, windowMs: DAY, firstMs: null, toFlux: num }).complete).toBe(false);
   });
 });
+
+describe('payments with their parallel assets', () => {
+  // Each payment as the server sends it: the main-chain amount and what it accrued beside it.
+  const pays = [
+    { time_ms: now - 1_000, amount: '9', pa: '9' },
+    { time_ms: now - 2 * DAY, amount: '9', pa: '9' },
+    { time_ms: 9 * DAY + 100, amount: '3.5', pa: '3.5' },
+  ];
+
+  it('counts both when parallel assets count, and the main chain alone otherwise', () => {
+    const opts = { nowMs: now, windowMs: 30 * DAY, firstMs: 0, toFlux: num };
+    expect(windowTotals(pays, { ...opts, includePa: true })).toEqual({ count: 3, flux: 43, complete: false });
+    expect(windowTotals(pays, { ...opts, includePa: false }).flux).toBe(21.5);
+    // Without the option a payment is its main-chain amount, as before.
+    expect(windowTotals(pays, opts).flux).toBe(21.5);
+  });
+
+  it('draws the days on the same basis', () => {
+    const opts = { nowMs: now, days: 3, firstMs: 0, toFlux: num };
+    expect(paymentDays(pays, { ...opts, includePa: true }).map((d) => d.flux)).toEqual([18, 7, 18]);
+    expect(paymentDays(pays, { ...opts, includePa: false }).map((d) => d.flux)).toEqual([9, 3.5, 9]);
+  });
+});

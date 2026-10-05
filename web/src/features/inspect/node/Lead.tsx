@@ -1,5 +1,7 @@
 // The lead of the node inspector: what an operator opens it for. When is the next payment, what does the
-// node earn, how far through its queue is it. Everything else is a fold below.
+// node earn, how far through its queue is it. Everything else is a fold below. What it earns (a day, the
+// last 30 days) is main chain plus parallel assets, or main chain only, as the viewer chose; the next
+// payment's amount is a main-chain payment and says so.
 
 import { useMemo } from 'react';
 import { useNodePayments } from '../../../api/queries';
@@ -17,6 +19,8 @@ import {
   StatGrid,
   tierLabel,
 } from '../../../ui';
+import { earnedOrNull } from '../../earnings/basis';
+import { EarningsBasis } from '../../earnings/EarningsBasis';
 import { etaShort } from '../derive/eta';
 import { paymentDays, windowTotals } from '../derive/payments';
 import { estimatePayment, queueProgress } from '../derive/queue';
@@ -63,7 +67,7 @@ function NextPayment({ pay }: { pay: PayInfo }) {
       />
     );
   }
-  const amount = payout !== null ? `+${fmt2(payout)} FLUX` : null;
+  const amount = payout !== null ? `+${fmt2(payout)} FLUX on the main chain` : null;
   const figure = next ? (
     'Next block'
   ) : est ? (
@@ -99,6 +103,7 @@ function ThirtyDays() {
   const { apiKey } = useNodeCtx();
   const q = useNodePayments(apiKey, { limit: 50 });
   const first = useFirstIngestMs();
+  const includePa = useUi((s) => s.includePa);
   const { clock } = useRuntime();
   const now = clock.now();
   // The windows only need the data and the day, not every render's clock.
@@ -111,10 +116,17 @@ function ThirtyDays() {
         windowMs: 30 * DAY_MS,
         firstMs: first,
         toFlux: fluxToNumber,
+        includePa,
       }),
-      days: paymentDays(flat, { nowMs: day * DAY_MS, days: 30, firstMs: first, toFlux: fluxToNumber }),
+      days: paymentDays(flat, {
+        nowMs: day * DAY_MS,
+        days: 30,
+        firstMs: first,
+        toFlux: fluxToNumber,
+        includePa,
+      }),
     }),
-    [flat, day, first],
+    [flat, day, first, includePa],
   );
 
   // A ledger younger than 30 days says so in the label, so the figure is never read as a full month. Whether it
@@ -153,8 +165,10 @@ function QueueMeter({ pay }: { pay: PayInfo }) {
 
 export function PayLead() {
   const pay = usePayInfo();
+  const includePa = useUi((s) => s.includePa);
   // A node that is not being paid earns nothing a day; the steady-state estimate is for paid nodes only.
   const idle = NOT_PAID[pay.status];
+  const perDay = earnedOrNull(pay.perDay, pay.paPerDay, includePa);
   return (
     <Section>
       <div className="ix-stack">
@@ -165,12 +179,26 @@ export function PayLead() {
             value={
               idle ? (
                 <AnimatedNumber value={0} format={fmt2} />
-              ) : pay.perDay === null ? null : (
-                <AnimatedNumber value={pay.perDay} format={fmt2} />
+              ) : perDay === null ? null : (
+                <AnimatedNumber value={perDay} format={fmt2} />
               )
             }
             unit="FLUX"
-            caption={idle ?? 'estimate'}
+            caption={
+              <span className="eb-cap">
+                <span>{idle ?? 'estimate'}</span>
+                <EarningsBasis
+                  size="sm"
+                  realized
+                  split={
+                    idle || pay.perDay === null || pay.paPerDay === null
+                      ? null
+                      : { native: pay.perDay, pa: pay.paPerDay }
+                  }
+                  per="a day"
+                />
+              </span>
+            }
           />
           <ThirtyDays />
         </StatGrid>

@@ -17,6 +17,7 @@ const tier = (t: TierStats['tier'], count: number, payout: string): TierStats =>
   count,
   collateral: '1000.00000000',
   payout,
+  pa_payout: payout,
   cycle_blocks: count,
   next: null,
 });

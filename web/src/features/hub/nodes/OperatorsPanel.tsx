@@ -1,7 +1,7 @@
 // Top node operators: who runs the nodes, ranked. An operator is a ZelID (or, when asked, a payment address): each
 // row shows how many nodes it runs and its share of the network, the tier mix as a thin strip, the countries and
-// providers its nodes sit in and where most of them are, what it earns a day at today's queue lengths (an estimate),
-// and how healthy its nodes are. The row opens the operator; the wallet link opens the wallet most of its nodes are
+// providers its nodes sit in and where most of them are, what it earns a day at today's queue lengths (an estimate,
+// main chain plus parallel assets unless the viewer chose main chain only), and how healthy its nodes are. The row opens the operator; the wallet link opens the wallet most of its nodes are
 // paid to. The panel owns its states: the endpoint answers "wait" until the server knows the chain tip, and that is a
 // wait state, not an error. While it loads, the panel draws the real list with made-up rows, footer included, so it
 // has the size of the loaded one.
@@ -11,7 +11,10 @@ import { type CSSProperties, useId, useMemo, useState } from 'react';
 import type { OperatorsBy } from '../../../api/generated/OperatorsBy';
 import { formatInt, shortAddress } from '../../../lib/format';
 import { ShellLink } from '../../../shell/frame/ShellLink';
+import { useUi } from '../../../store/ui';
 import { Button, SegmentedControl } from '../../../ui';
+import { BASIS_PHRASE, basisOf } from '../../earnings/basis';
+import { EarningsBasis } from '../../earnings/EarningsBasis';
 import { HubPanel, isFilling, LbBar, type LbColumn, Leaderboard, type PanelState, useOperators } from '..';
 import {
   type ColumnTrack,
@@ -163,7 +166,14 @@ function OperatorsList({ rows, by, max }: { rows: readonly OperatorView[]; by: O
       width: '80px',
       align: 'end',
       cell: (v) => (
-        <span className="nd-rate" title="An estimate: its nodes at today's queue lengths">
+        <span
+          className="nd-rate"
+          title={
+            v.nativePerDay === null
+              ? "An estimate: its nodes at today's queue lengths"
+              : `An estimate at today's queue lengths: ${v.nativePerDay.toFixed(2)} FLUX on the main chain${v.paPerDay === null ? '' : `, ${v.paPerDay.toFixed(2)} in parallel assets`}`
+          }
+        >
           {v.perDayText}
           <span className="ui-sr-only"> (an estimate)</span>
         </span>
@@ -219,7 +229,8 @@ export function OperatorsPanel() {
   const [expanded, setExpanded] = useState(false);
   const listId = useId();
   const q = useOperators(by);
-  const views = useMemo(() => operatorViews(q.data), [q.data]);
+  const includePa = useUi((s) => s.includePa);
+  const views = useMemo(() => operatorViews(q.data, includePa), [q.data, includePa]);
   const shown = useMemo(() => visibleOperators(views, expanded), [views, expanded]);
   const max = useMemo(() => views.reduce((m, v) => Math.max(m, v.nodes), 0), [views]);
 
@@ -238,13 +249,16 @@ export function OperatorsPanel() {
       icon={UserRoundCheck}
       aside={q.data ? operatorsAside(q.data) : waiting ? <WaitAside what="The operators" /> : undefined}
       actions={
-        <SegmentedControl<OperatorsBy>
-          size="sm"
-          aria-label="Group operators by"
-          options={BY_OPTIONS}
-          value={by}
-          onChange={setBy}
-        />
+        <>
+          <EarningsBasis size="sm" />
+          <SegmentedControl<OperatorsBy>
+            size="sm"
+            aria-label="Group operators by"
+            options={BY_OPTIONS}
+            value={by}
+            onChange={setBy}
+          />
+        </>
       }
       state={state}
       flush
@@ -288,7 +302,7 @@ export function OperatorsPanel() {
               {by === 'address'
                 ? 'Grouped by the address nodes are paid to; one operator can use several. '
                 : 'An operator is a ZelID; nodes that report none are grouped by payment address. '}
-              FLUX a day is an estimate from today&apos;s queue lengths.
+              FLUX a day is an estimate from today&apos;s queue lengths, {BASIS_PHRASE[basisOf(includePa)]}.
             </span>
           </>
         ) : undefined

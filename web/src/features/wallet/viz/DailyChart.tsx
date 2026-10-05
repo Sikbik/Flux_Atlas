@@ -1,6 +1,7 @@
 // Daily earnings as stacked bars: one bar a UTC day, the tiers stacked in the colours that always mean those tiers, the
-// parallel assets on top (hatched, because they are estimated from the run-rate and not measured). A legend toggles
-// series; the crosshair reads a day; the unit switches between FLUX and money, each day valued at its own price.
+// parallel assets the day's payouts accrued on top (hatched: accrued on other chains and claimed through Flux Fusion,
+// not paid on the main chain). A legend toggles series; the crosshair reads a day; the unit switches between FLUX and
+// money, each day valued at its own price.
 
 import { type CSSProperties, useCallback, useMemo, useState } from 'react';
 import { formatInt } from '../../../lib/format';
@@ -53,7 +54,7 @@ export function DailyChart({ daily, tiers, includePa, unit, money, rangeKey }: D
     () => [
       ...tiers.map((t) => ({ id: t as SeriesId, label: tierLabel(t), color: TIER_COLOR[t] })),
       ...(includePa
-        ? [{ id: 'pa' as SeriesId, label: 'Parallel assets (estimated)', color: PA_COLOR, estimate: true }]
+        ? [{ id: 'pa' as SeriesId, label: 'Parallel assets', color: PA_COLOR, estimate: true }]
         : []),
     ],
     [tiers, includePa],
@@ -160,10 +161,11 @@ export function DailyChart({ daily, tiers, includePa, unit, money, rangeKey }: D
   );
 
   const totalFlux = daily.native.reduce((s, v) => s + v, 0);
+  const totalPa = daily.pa.reduce((s, v) => s + v, 0);
   const summary =
     n === 0
       ? 'No earnings in this range.'
-      : `Daily earnings over ${formatInt(n)} ${n === 1 ? 'day' : 'days'}, ${dateStamp(daily.t[0] as number)} to ${dateStamp(daily.t[n - 1] as number)}: ${flux2(totalFlux)} FLUX of native payouts${unit === 'money' ? `, valued each day at its own price in ${money.currency.toUpperCase()}` : ''}.`;
+      : `Daily earnings over ${formatInt(n)} ${n === 1 ? 'day' : 'days'}, ${dateStamp(daily.t[0] as number)} to ${dateStamp(daily.t[n - 1] as number)}: ${flux2(totalFlux)} FLUX paid on the main chain${includePa ? ` and ${flux2(totalPa)} FLUX accrued in parallel assets, ${flux2(totalFlux + totalPa)} FLUX in all` : ''}${unit === 'money' ? `, valued each day at its own price in ${money.currency.toUpperCase()}` : ''}.`;
 
   const centers = useMemo(() => daily.t.map((t) => t + DAY_MS / 2), [daily.t]);
 
@@ -211,7 +213,7 @@ export function DailyChart({ daily, tiers, includePa, unit, money, rangeKey }: D
         head: [
           'Date (UTC)',
           ...tiers.map((t) => `${tierLabel(t)} FLUX`),
-          ...(includePa ? ['Parallel assets FLUX (est.)'] : []),
+          ...(includePa ? ['Parallel assets FLUX'] : []),
           'Payments',
           'Price that day',
           'Value',
@@ -247,7 +249,7 @@ export function DailyChart({ daily, tiers, includePa, unit, money, rangeKey }: D
       note={
         <>
           {includePa
-            ? 'The hatched part is the parallel assets, estimated from the wallet’s run-rate: the server states the pace, not each day. '
+            ? 'The hatched part is what each day’s payouts accrued in parallel assets, claimable through Flux Fusion rather than paid on the main chain. '
             : ''}
           {unit === 'money' && daily.approximate
             ? `Each day is valued at that day’s dollar price at today’s ${money.currency.toUpperCase()} exchange rate, so it is approximate.`

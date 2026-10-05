@@ -1,7 +1,12 @@
 // UI preferences (zustand). Network data lives in the NetworkStore; URL state (selection, filters,
 // camera, windows) lives in the router. This holds only local preferences: motion, performance
-// tier, the globe's art style and its borders, the watchlist. Persisted per browser; every storage
-// access is guarded.
+// tier, the globe's art style and its borders, whether earnings count parallel assets, the
+// watchlist. Persisted per browser; every storage access is guarded.
+//
+// Whether earnings count parallel assets was the wallet's own preference (`includePa` in
+// `atlas.wallet.v1`) before every earnings figure in Atlas followed it. A browser that stored it
+// there and not here takes it over once (`migrateIncludePa`), and it is written here at once so
+// the wallet's store can forget it.
 //
 // The watchlist is kept by collateral outpoint (ARCHITECTURE 8.1): node ids are local to the
 // instance that served the snapshot, so `watched` (ids) is derived from `watchedKeys` after every
@@ -38,6 +43,7 @@ interface Persisted {
   perf: PerfPref;
   globeArt: GlobeArtPref;
   globeBorders: GlobeBordersPref;
+  includePa: boolean;
   watchedKeys: string[];
   legacyWatched: number[];
 }
@@ -47,6 +53,12 @@ export interface UiState {
   perf: PerfPref;
   globeArt: GlobeArtPref;
   globeBorders: GlobeBordersPref;
+  /**
+   * Earnings count the parallel assets beside the main chain (the default): every figure of what a node or
+   * an operator earns, run rate, realized, projected or in money, is main chain plus parallel assets, or
+   * main chain only when this is off.
+   */
+  includePa: boolean;
   /** Watched node ids in the loaded snapshot (WatchProbe enrollment; P1 effects). Derived. */
   watched: number[];
   /** Watched nodes by outpoint `txid:vout`: what is stored. */
@@ -60,6 +72,7 @@ export interface UiState {
   setPerf(p: PerfPref): void;
   setGlobeArt(a: GlobeArtPref): void;
   setGlobeBorders(b: GlobeBordersPref): void;
+  setIncludePa(on: boolean): void;
   watch(id: number): void;
   unwatch(id: number): void;
   /** Maps the watchlist onto a freshly loaded table (and migrates legacy ids). */
@@ -67,6 +80,8 @@ export interface UiState {
 }
 
 const KEY = 'atlas.ui.v1';
+/** The wallet's preferences, where `includePa` lived before it moved here. */
+export const WALLET_KEY = 'atlas.wallet.v1';
 
 /** Reads the stored preferences. `watched` holds outpoints, and numeric ids from older clients. */
 export function parseUi(raw: string | null | undefined): Partial<Persisted> {
@@ -82,6 +97,7 @@ export function parseUi(raw: string | null | undefined): Partial<Persisted> {
     // Absent in what an older client stored (the default applies); anything else is dropped.
     if (v.globeBorders === 'off' || v.globeBorders === 'countries' || v.globeBorders === 'states')
       out.globeBorders = v.globeBorders;
+    if (typeof v.includePa === 'boolean') out.includePa = v.includePa;
     if (Array.isArray(v.watched)) {
       const list = v.watched.slice(0, MAX_WATCHED);
       out.watchedKeys = [
@@ -97,9 +113,47 @@ export function parseUi(raw: string | null | undefined): Partial<Persisted> {
 
 const lower = (s: string) => s.toLowerCase();
 
+/**
+ * Takes over the wallet's `includePa` when these preferences have none of their own (stored before the
+ * setting moved here). Null when there is nothing to take over: the setting is here already, or the wallet
+ * never stored one (the default applies).
+ */
+export function migrateIncludePa(
+  ui: Partial<Persisted>,
+  walletRaw: string | null | undefined,
+): boolean | null {
+  if (ui.includePa !== undefined || !walletRaw) return null;
+  try {
+    const v = JSON.parse(walletRaw) as Record<string, unknown> | null;
+    return v && typeof v === 'object' && typeof v.includePa === 'boolean' ? v.includePa : null;
+  } catch {
+    return null;
+  }
+}
+
 function load(): Partial<Persisted> {
   try {
-    return parseUi(globalThis.localStorage?.getItem(KEY));
+    const storage = globalThis.localStorage;
+    const raw = storage?.getItem(KEY);
+    const out = parseUi(raw);
+    const moved = migrateIncludePa(out, storage?.getItem(WALLET_KEY));
+    if (moved !== null) {
+      out.includePa = moved;
+      // Written here at once, beside whatever else is stored, so it no longer depends on the wallet's copy.
+      let rest: Record<string, unknown> = {};
+      try {
+        const v = raw ? (JSON.parse(raw) as unknown) : null;
+        if (v && typeof v === 'object' && !Array.isArray(v)) rest = v as Record<string, unknown>;
+      } catch {
+        // A damaged record is replaced by the setting alone; parseUi already gave up on it.
+      }
+      try {
+        storage?.setItem(KEY, JSON.stringify({ ...rest, includePa: moved }));
+      } catch {
+        // Storage unavailable: the setting still applies for the session.
+      }
+    }
+    return out;
   } catch {
     return {};
   }
@@ -114,6 +168,7 @@ function save(s: Persisted): void {
         perf: s.perf,
         globeArt: s.globeArt,
         globeBorders: s.globeBorders,
+        includePa: s.includePa,
         watched: [...s.watchedKeys, ...s.legacyWatched],
       }),
     );
@@ -161,6 +216,7 @@ export const useUi = create<UiState>()((set, get) => ({
   perf: 'auto',
   globeArt: 'marble',
   globeBorders: 'states',
+  includePa: true,
   watchedKeys: [],
   legacyWatched: [],
   ...stored,
@@ -180,6 +236,10 @@ export const useUi = create<UiState>()((set, get) => ({
   },
   setGlobeBorders: (globeBorders) => {
     set({ globeBorders });
+    save(get());
+  },
+  setIncludePa: (includePa) => {
+    set({ includePa });
     save(get());
   },
   watch: (id) => {
