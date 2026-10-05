@@ -1,0 +1,215 @@
+/* The earnings basis marker: a quiet pill in the chip's geometry, so it sits in a panel's heading row beside an
+   aside or a count, and a glyph made of the charts' swatches (main chain solid, parallel assets hatched). */
+
+.eb {
+  --eb-h: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--eb-h);
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--ink-2) 70%, transparent);
+  box-shadow: var(--ui-lit);
+  color: var(--text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+  white-space: nowrap;
+  vertical-align: middle;
+  position: relative;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+/* A hit band, so the 22 px pill is easy to press without growing the row. */
+.eb::after {
+  content: "";
+  position: absolute;
+  inset: -6px -2px;
+}
+
+.eb:hover,
+.eb[aria-expanded="true"] {
+  border-color: color-mix(in oklab, var(--accent-500) 45%, var(--line-2));
+  background: var(--accent-soft);
+  color: var(--text-1);
+}
+
+.eb:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.eb[data-size="sm"] {
+  --eb-h: 20px;
+  padding: 0 8px 0 6px;
+  font-size: 11.5px;
+}
+
+.eb__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Two swatches: the main chain and the parallel assets. */
+.eb__glyph {
+  display: inline-flex;
+  gap: 2px;
+  flex: none;
+}
+
+.eb__glyph > i {
+  display: block;
+  width: 6px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--accent-300);
+}
+
+.eb__glyph > i + i {
+  box-sizing: border-box;
+  border: 1px solid var(--viz-1);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      color-mix(in oklab, var(--viz-1) 85%, transparent) 0 1.4px,
+      transparent 1.4px 3px
+    ),
+    color-mix(in oklab, var(--viz-1) 12%, transparent);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/* Main chain only: the parallel-asset swatch is an empty outline. */
+[data-basis="main"] > .eb__glyph > i + i,
+.eb__glyph[data-basis="main"] > i + i {
+  border-style: dashed;
+  border-color: var(--ink-5);
+  background: none;
+}
+
+/* A caption that carries the marker after its words ("estimate", then the pill). */
+.eb-cap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* ---- the explanation ----------------------------------------------------------------------------- */
+
+.eb-pop {
+  --ui-layer-max-h: min(70vh, 480px);
+}
+
+.eb-pop__body {
+  display: grid;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font: var(--fw-regular) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+}
+
+.eb-pop__body > p {
+  margin: 0;
+}
+
+.eb-pop__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-1);
+  font: var(--fw-semibold) var(--fs-sm) / 1.2 var(--font-display);
+}
+
+.eb-pop__aside {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.eb-pop__split {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--line-1);
+}
+
+.eb-pop__split > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.eb-pop__split dt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* The breakdown's swatches, as in the glyph: solid for the main chain, hatched for the parallel assets. */
+.eb-sw {
+  display: block;
+  flex: none;
+  width: 6px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--accent-300);
+}
+
+.eb-sw[data-pa] {
+  box-sizing: border-box;
+  border: 1px solid var(--viz-1);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklab, var(--viz-1) 85%, transparent) 0 1.4px,
+    transparent 1.4px 3px
+  );
+}
+
+.eb-pop__split dd {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  text-align: right;
+}
+
+.eb-pop__split dd b {
+  color: var(--text-1);
+  font-weight: var(--fw-medium);
+}
+
+.eb-pop__split [data-part="pa"][data-off] dd {
+  color: var(--text-4);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-5);
+}
+
+.eb-pop__split [data-part="total"] {
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--line-1);
+}
+
+.eb-pop__split [data-part="total"] dt {
+  color: var(--text-2);
+}
+
+.eb-pop__money {
+  display: block;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.eb-pop__switch {
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-1);
+}

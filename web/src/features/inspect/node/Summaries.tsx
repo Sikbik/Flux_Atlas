@@ -4,8 +4,10 @@
 
 import type { ReactNode } from 'react';
 import { useNetworkVersions, useNodePayments } from '../../../api/queries';
-import { fluxToNumber, formatFlux, formatInt, middleTruncate } from '../../../lib/format';
+import { formatFlux, formatInt, middleTruncate } from '../../../lib/format';
+import { useUi } from '../../../store/ui';
 import { LiveDot, Skeleton, type StatusTone } from '../../../ui';
+import { earnedSats } from '../../earnings/basis';
 import { spanText } from '../derive/eta';
 import { checkinGauge } from '../derive/expiry';
 import { latestVersion, versionStanding } from '../derive/versions';
@@ -26,12 +28,15 @@ function Sum({ tone, children }: { tone?: StatusTone; children: ReactNode }) {
 export function PaymentsSummary() {
   const { apiKey } = useNodeCtx();
   const q = useNodePayments(apiKey, { limit: 50 });
+  const includePa = useUi((s) => s.includePa);
   if (q.isPending) return <Skeleton h={12} w={150} />;
   const pages = q.data?.pages ?? [];
   const count = pages.reduce((n, p) => n + p.items.length, 0);
   const more = pages.length > 0 && pages[pages.length - 1]?.next_cursor != null;
   if (!count) return <Sum>No payment recorded yet</Sum>;
-  const paid = (fluxToNumber(pages[0]?.total_paid ?? null) ?? 0) > 0 ? (pages[0]?.total_paid ?? null) : null;
+  // What the node earned since the first ingest, on the viewer's basis (the payments themselves are main chain).
+  const sats = pages[0] ? earnedSats(pages[0].total_paid, pages[0].pa_total_paid, includePa) : null;
+  const paid = sats !== null && sats > 0n ? (Number(sats) / 1e8).toFixed(8) : null;
   return (
     <Sum>
       <span className="ui-mono">

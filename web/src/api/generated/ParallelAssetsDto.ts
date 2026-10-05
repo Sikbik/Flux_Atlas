@@ -24,7 +24,11 @@ multi: MultiClaim,
  * Accrual across all chains per day at this wallet's current native run rate; `null`
  * without confirmed nodes.
  */
-accrual_per_day: number | null, chains: Array<PaChain>, 
+accrual_per_day: number | null, 
+/**
+ * The same on each one chain (`emission::parallel_asset_accrual_per_chain`).
+ */
+accrual_per_chain_per_day: number | null, chains: Array<PaChain>, 
 /**
  * Newest first.
  */

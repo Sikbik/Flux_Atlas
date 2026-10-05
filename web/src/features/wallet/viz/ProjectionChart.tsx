@@ -1,4 +1,4 @@
-// The next 365 days of earnings: the running total (or the daily rate, as steps) with the native payouts and the
+// The next 365 days of earnings: the running total (or the daily rate, as steps) with the main-chain payouts and the
 // parallel assets stacked, and the reward cut marked where it lands. The unit switches between FLUX and money; money
 // is valued at one price, today's or a scenario's, so the curve moves with the price control above it.
 
@@ -135,13 +135,12 @@ export function ProjectionChart({
   const summary =
     n === 0
       ? 'There is no projection yet.'
-      : `Projected earnings over the next ${formatInt(n)} days: ${flux2(proj.sums.native)} FLUX of native payouts${includePa ? ` and ${flux2(proj.sums.pa)} FLUX of parallel assets` : ''}, ${flux2(proj.sums.total)} FLUX in all.${step ? ` The block reward is cut by ${Math.abs(step.change * 100).toFixed(0)}% on ${dateStamp(step.t)}, from ${flux2(step.before)} to ${flux2(step.after)} FLUX a day.` : ''}`;
+      : `Projected earnings over the next ${formatInt(n)} days: ${flux2(proj.sums.native)} FLUX paid on the main chain${includePa ? ` and ${flux2(proj.sums.pa)} FLUX accrued in parallel assets` : ''}, ${flux2(proj.sums.total)} FLUX in all.${step ? ` The block reward is cut by ${Math.abs(step.change * 100).toFixed(0)}% on ${dateStamp(step.t)}, from ${flux2(step.before)} to ${flux2(step.after)} FLUX a day.` : ''}`;
 
   const tipAt = (i: number): PlotTip => {
     const rows: TipRow[] = [];
-    if (includePa)
-      rows.push({ label: 'Parallel assets (est.)', value: fmt(layers.pa[i] as number), color: PA });
-    rows.push({ label: 'Native', value: fmt(layers.native[i] as number), color: NATIVE });
+    if (includePa) rows.push({ label: 'Parallel assets', value: fmt(layers.pa[i] as number), color: PA });
+    rows.push({ label: 'Main chain', value: fmt(layers.native[i] as number), color: NATIVE });
     if (includePa) rows.push({ label: 'Total', value: fmt(layers.top[i] as number) });
     rows.push({
       label: view === 'cumulative' ? 'That day alone' : 'Running total',
@@ -173,8 +172,8 @@ export function ProjectionChart({
       table={{
         head: [
           'Date (UTC)',
-          'Native FLUX a day',
-          'Parallel assets a day (est.)',
+          'Main chain FLUX a day',
+          'Parallel assets FLUX a day',
           'Running total FLUX',
           unit === 'money' ? 'Running total value' : 'Running total',
         ],
@@ -191,8 +190,8 @@ export function ProjectionChart({
       revealKey={revealKey}
       legend={
         <ul className="cp-legend" aria-label="Series">
-          <LegendKey label="Native" color={NATIVE} />
-          {includePa ? <LegendKey label="Parallel assets (estimated)" color={PA} /> : null}
+          <LegendKey label="Main chain" color={NATIVE} />
+          {includePa ? <LegendKey label="Parallel assets" color={PA} /> : null}
           {step ? <LegendKey label="Reward cut" color="var(--text-2)" dashed /> : null}
         </ul>
       }

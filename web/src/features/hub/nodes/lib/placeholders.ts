@@ -59,6 +59,8 @@ export function ghostOperators(n = OPERATORS_SHOWN): OperatorView[] {
     topProvider: { name: 'Provider', full: 'Provider', pct: '50%' },
     perDay: 1000,
     perDayText: '1,000',
+    nativePerDay: 500,
+    paPerDay: 500,
     healthy: 0.99,
     healthText: '99%',
     problems: [
@@ -114,6 +116,8 @@ export const GHOST_QUEUE: QueueRow[] = TIER_KEYS.map((tier) => ({
   cycleText: '12 hours',
   perDay: 10,
   perDayText: '10',
+  nativePerDay: 5,
+  paPerDay: 5,
   next: { nodeId: null, outpoint: null, endpoint: '000.000.000.000:00000', address: null },
 }));
 

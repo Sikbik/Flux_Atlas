@@ -1,10 +1,13 @@
 // The payment queue at a glance: per tier, what a block pays, how long one turn of the queue takes, what a node earns
 // in a day at that pace, and who is next. The numbers are the server's per-tier stats; the day's earnings and the
-// turn's length are estimates from them (a block about every 30 seconds). Pure.
+// turn's length are estimates from them (a block about every 30 seconds). A block's payout is a main-chain payment;
+// a day's earnings add what it accrues in parallel assets (the server's `pa_payout`) unless the viewer chose main
+// chain only. Pure.
 
 import type { NextPayeeDto } from '../../../../api/generated/NextPayeeDto';
 import type { TierStats } from '../../../../api/generated/TierStats';
 import { BLOCK_MS, fluxToNumber, formatDuration, formatFlux } from '../../../../lib/format';
+import { earnedOrNull } from '../../../earnings/basis';
 import { perDayText } from './operators';
 import { TIER_KEYS, TIER_NAME, type TierKey } from './tiers';
 
@@ -25,14 +28,17 @@ export interface QueueRow {
   tier: TierKey;
   name: string;
   nodes: number;
-  /** A block's payout to the head of the queue: `9.00`. */
+  /** A block's payout to the head of the queue, on the main chain: `9.00`. */
   payout: string | null;
   /** About how long one turn of the queue takes, and in words. */
   cycleBlocks: number | null;
   cycleText: string | null;
-  /** What a node earns in a day at that pace. An estimate. */
+  /** What a node earns in a day at that pace, on the viewer's basis. An estimate. */
   perDay: number | null;
   perDayText: string;
+  /** Its two parts: the main chain, and what that accrues in parallel assets. */
+  nativePerDay: number | null;
+  paPerDay: number | null;
   next: QueueNext | null;
 }
 
@@ -43,14 +49,21 @@ export interface NextPayeesLike {
 }
 
 /** The tiers in order, smallest first; a tier the server sent no stats for is left out. */
-export function queueRows(stats: readonly TierStats[], next: NextPayeesLike | null): QueueRow[] {
+export function queueRows(
+  stats: readonly TierStats[],
+  next: NextPayeesLike | null,
+  includePa = true,
+): QueueRow[] {
   const rows: QueueRow[] = [];
   for (const tier of TIER_KEYS) {
     const s = stats.find((t) => t.tier === tier);
     if (!s) continue;
     const payout = fluxToNumber(s.payout);
+    const paPayout = fluxToNumber(s.pa_payout);
     const cycle = s.cycle_blocks > 0 ? s.cycle_blocks : null;
-    const perDay = payout !== null && cycle !== null ? (payout * BLOCKS_PER_DAY) / cycle : null;
+    const nativePerDay = payout !== null && cycle !== null ? (payout * BLOCKS_PER_DAY) / cycle : null;
+    const paPerDay = paPayout !== null && cycle !== null ? (paPayout * BLOCKS_PER_DAY) / cycle : null;
+    const perDay = earnedOrNull(nativePerDay, paPerDay, includePa);
     const payee = next?.payees.find((p) => p.tier === tier) ?? null;
     const head = s.next;
     const sameNode = head !== null && (payee === null || payee.node === null || payee.node === head.id);
@@ -64,6 +77,8 @@ export function queueRows(stats: readonly TierStats[], next: NextPayeesLike | nu
       cycleText: cycle === null ? null : formatDuration(cycle * BLOCK_MS),
       perDay,
       perDayText: perDayText(perDay),
+      nativePerDay,
+      paPerDay,
       next:
         nodeId === null && !payee?.address
           ? null

@@ -13,7 +13,7 @@ import type { RewardCutView } from './rewardcut';
 import './tickers.css';
 import './hovercard.css';
 
-/** One sentence per tier: "Next Stratus payout: Helsinki, 9 FLUX, in ~12 s", each linking to the node. */
+/** One sentence per tier: "Next Stratus payout: Helsinki, 9 FLUX on the main chain, in ~12 s", each linking to the node. */
 export function NextPayoutTicker({ className }: { className?: string }) {
   const lines = usePayoutLines();
   const keyOf = useNodeKey();

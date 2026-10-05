@@ -89,7 +89,7 @@ export function AimStrip({ inline = false }: { inline?: boolean }) {
       data-hidden={visible ? undefined : ''}
       inert={visible ? undefined : true}
     >
-      <legend className="sr-only">Next payout</legend>
+      <legend className="sr-only">Next payout on the main chain</legend>
       <span className="aim-lead">
         {beat.height === null ? (
           'Waiting for the next block'
@@ -108,7 +108,7 @@ export function AimStrip({ inline = false }: { inline?: boolean }) {
           <>
             <TierGlyph tier={l.tier} size={13} label={`${TIER_LABEL[l.tier]} tier`} />
             <span className="aim-place">{l.place ?? UNKNOWN}</span>
-            <i>{amountLabel(l.amount)}</i>
+            <i title={`${amountWords(l.amount)} on the main chain`}>{amountLabel(l.amount)}</i>
           </>
         );
         return nodeKey ? (
@@ -157,7 +157,10 @@ export function AimStrip({ inline = false }: { inline?: boolean }) {
   );
 }
 
-/** The sentence a screen reader gets when the three payees change ("Next payout in 18 s: Helsinki 9.0, ..."). */
+/**
+ * The sentence a screen reader gets when the three payees change ("Next main-chain payout in 18 s: Helsinki 9 FLUX,
+ * ...").
+ */
 function useChangeAnnouncement(lines: readonly PayoutLine[], secs: number): string {
   const sig = lines.map(key).join('|');
   const [text, setText] = useState('');
@@ -168,7 +171,7 @@ function useChangeAnnouncement(lines: readonly PayoutLine[], secs: number): stri
     if (sig === '' || sig === last.current) return;
     last.current = sig;
     setText(
-      `Next payout in ${secsRef.current} s: ${lines.map((l) => `${l.place ?? UNKNOWN} ${amountWords(l.amount)}`).join(', ')}`,
+      `Next main-chain payout in ${secsRef.current} s: ${lines.map((l) => `${l.place ?? UNKNOWN} ${amountWords(l.amount)}`).join(', ')}`,
     );
   }, [sig, lines]);
   return text;

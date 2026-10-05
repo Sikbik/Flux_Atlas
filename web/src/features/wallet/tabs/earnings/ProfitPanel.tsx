@@ -5,9 +5,11 @@
 import { Lock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { formatInt, formatPercent } from '../../../../lib/format';
+import { useUi } from '../../../../store/ui';
 import { Button, Meter, Stat, StatGrid, Switch, TextField, TierGlyph, tierLabel } from '../../../../ui';
+import { EarningsBasis } from '../../../earnings/EarningsBasis';
 import { useWalletCtx } from '../../context';
-import { convertMoney, flux, formatPrice } from '../../lib/money';
+import { convertMoney, flux, formatPrice, MONTH_DAYS } from '../../lib/money';
 import { factorText, parseCostInput, profitability } from '../../lib/projection';
 import { MAX_COST, useWalletPrefs } from '../../prefs';
 import { PAY_TIERS, type PayTier } from '../../types';
@@ -25,8 +27,8 @@ export function costText(v: number, digits = 2): string {
 export function ProfitPanel({ price, factor }: { price: number | null; factor: number }) {
   const { dto, money } = useWalletCtx();
   const stored = useWalletPrefs((s) => s.costs);
-  const includePa = useWalletPrefs((s) => s.includePa);
-  const setIncludePa = useWalletPrefs((s) => s.setIncludePa);
+  const includePa = useUi((s) => s.includePa);
+  const setIncludePa = useUi((s) => s.setIncludePa);
   const clearCosts = useWalletPrefs((s) => s.clearCosts);
   const setCosts = useWalletPrefs((s) => s.setCosts);
   const e = dto.earnings;
@@ -116,11 +118,18 @@ export function ProfitPanel({ price, factor }: { price: number | null; factor: n
       title="Profit"
       aside="what you keep after hosting"
       actions={
-        profit.costed ? (
-          <Button size="sm" variant="ghost" onClick={() => clearCosts()}>
-            Clear costs
-          </Button>
-        ) : undefined
+        <>
+          <EarningsBasis
+            split={{ native: flux(e.native_per_day) * MONTH_DAYS, pa: flux(e.pa_per_day) * MONTH_DAYS }}
+            per="a month"
+            money={(v) => (price === null ? null : money.fmt(v * price))}
+          />
+          {profit.costed ? (
+            <Button size="sm" variant="ghost" onClick={() => clearCosts()}>
+              Clear costs
+            </Button>
+          ) : null}
+        </>
       }
     >
       <div className="wl-costs">
@@ -174,7 +183,7 @@ export function ProfitPanel({ price, factor }: { price: number | null; factor: n
           label="Earned per month"
           fit={profit.revenue === null ? null : money.fmt(profit.revenue)}
           value={profit.revenue === null ? null : money.fmt(profit.revenue)}
-          caption={`${formatInt(Math.round(profit.fluxMonthly))} FLUX${includePa ? ', with parallel assets' : ', native only'}`}
+          caption={`${formatInt(Math.round(profit.fluxMonthly))} FLUX${includePa ? ', main chain + parallel assets' : ', main chain only'}`}
         />
         <Stat
           label="Margin"

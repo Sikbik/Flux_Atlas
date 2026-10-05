@@ -1,20 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { formatCycle, tierYields } from './economics';
 
+// `paPayout` is what the server sends beside each payout (`TierStats.pa_payout`): as much again.
 const inputs = [
-  { tier: 'cumulus' as const, count: 3380, collateral: 1000, payout: 1, cycleBlocks: 3380 },
-  { tier: 'nimbus' as const, count: 1578, collateral: 12_500, payout: 3.5, cycleBlocks: 1578 },
-  { tier: 'stratus' as const, count: 1762, collateral: 40_000, payout: 9, cycleBlocks: 1762 },
+  { tier: 'cumulus' as const, count: 3380, collateral: 1000, payout: 1, paPayout: 1, cycleBlocks: 3380 },
+  { tier: 'nimbus' as const, count: 1578, collateral: 12_500, payout: 3.5, paPayout: 3.5, cycleBlocks: 1578 },
+  { tier: 'stratus' as const, count: 1762, collateral: 40_000, payout: 9, paPayout: 9, cycleBlocks: 1762 },
 ];
 
 describe('tierYields', () => {
   const [cumulus, nimbus, stratus] = tierYields(inputs);
-  it('shares a tier day of payouts across the nodes in its cycle', () => {
-    expect(cumulus!.perDay).toBeCloseTo((1 * 2880) / 3380, 6);
-    expect(stratus!.perDay).toBeCloseTo((9 * 2880) / 1762, 6);
+  it('shares a tier day of payouts across the nodes in its cycle, main chain and parallel assets', () => {
+    expect(cumulus!.nativePerDay).toBeCloseTo((1 * 2880) / 3380, 6);
+    expect(cumulus!.paPerDay).toBeCloseTo((1 * 2880) / 3380, 6);
+    expect(cumulus!.perDay).toBeCloseTo((2 * 2880) / 3380, 6);
+    // Golden: a Stratus node earns 14.71 + 14.71 = 29.42 FLUX a day in a 1,762-node queue.
+    expect(stratus!.nativePerDay).toBeCloseTo(14.71056, 4);
+    expect(stratus!.perDay).toBeCloseTo(29.42111, 4);
+  });
+  it('counts the main chain only when asked', () => {
+    const [c, , s] = tierYields(inputs, null, false);
+    expect(c!.perDay).toBeCloseTo((1 * 2880) / 3380, 6);
+    expect(s!.perDay).toBeCloseTo(14.71056, 4);
+    expect(s!.apy).toBeCloseTo((14.71056 * 365) / 40_000, 5);
+    // The parts are the same whatever counts.
+    expect(s!.paPerDay).toBeCloseTo(14.71056, 4);
   });
   it('turns that into a yearly yield on the collateral', () => {
-    expect(cumulus!.apy).toBeCloseTo((((1 * 2880) / 3380) * 365) / 1000, 6);
+    expect(cumulus!.apy).toBeCloseTo((((2 * 2880) / 3380) * 365) / 1000, 6);
     // The smallest tier yields the most per FLUX locked.
     expect(cumulus!.apy).toBeGreaterThan(nimbus!.apy);
     expect(nimbus!.apy).toBeGreaterThan(stratus!.apy);

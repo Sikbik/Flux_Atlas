@@ -77,8 +77,12 @@ export function approxIn(ms: number): string {
   return `in ~${(t / 3_600_000).toFixed(1)} h`;
 }
 
-/** The ticker sentence for one tier: "Next Stratus payout: Helsinki, 9 FLUX, in ~12 s". */
+/**
+ * The ticker sentence for one tier: "Next Stratus payout: Helsinki, 9 FLUX on the main chain, in ~12 s". A payout is a
+ * main-chain payment, and says so, so it never reads as the whole of what a node earns (which adds the parallel
+ * assets the payment accrues).
+ */
 export function payoutSentence(line: PayoutLine, label: string): string {
   const where = line.place ?? 'an unlocated node';
-  return `Next ${label} payout: ${where}, ${amountWords(line.amount)}, ${approxIn(line.etaMs)}`;
+  return `Next ${label} payout: ${where}, ${amountWords(line.amount)} on the main chain, ${approxIn(line.etaMs)}`;
 }

@@ -20,6 +20,7 @@ use atlas_core::api::{
     NodeBenchSpread, NodeChurn, NodeStatusCounts, OperatorRow, OperatorTopCountry,
     OperatorTopProvider, OperatorsBy, ResourceSum, TierCounts,
 };
+use atlas_core::emission::parallel_asset_accrual;
 use atlas_core::event::{Event, RemovalReason};
 use atlas_core::node::windows::{AT_RISK_BLOCKS, expiry_height};
 use atlas_core::{Amount, NodeRecord, NodeStatus, Tier};
@@ -271,6 +272,7 @@ pub fn operator_table(
         .filter(|(_, a)| a.tiers.total > 0)
         .map(|(key, a)| {
             let counts = [a.tiers.cumulus, a.tiers.nimbus, a.tiers.stratus];
+            let native_per_day = run_rate(counts, net, tip.saturating_add(1));
             let top_country = top(&a.countries, |v| v.0).map(|(code, v)| OperatorTopCountry {
                 code: code.to_owned(),
                 name: v.1.to_owned(),
@@ -298,7 +300,8 @@ pub fn operator_table(
                 top_provider,
                 addresses: a.addresses.len() as u32,
                 top_address: top(&a.addresses, |c| *c).map(|(s, _)| s.to_owned()),
-                native_per_day: run_rate(counts, net, tip.saturating_add(1)),
+                native_per_day,
+                pa_per_day: parallel_asset_accrual(native_per_day),
                 collateral_locked: a.collateral,
                 healthy_pct: share(a.healthy, a.tiers.total + a.dos),
                 at_risk: a.at_risk,
@@ -919,6 +922,11 @@ mod tests {
             Amount::from_sat(pay.sat() * 2_880 / 100)
         );
         assert!(t.rows[0].native_per_day > t.rows[2].native_per_day);
+        // Parallel assets accrue beside it at the wallet's rate, row by row.
+        for r in &t.rows {
+            assert_eq!(r.pa_per_day, parallel_asset_accrual(r.native_per_day));
+            assert_eq!(r.pa_per_day, r.native_per_day);
+        }
     }
 
     #[test]

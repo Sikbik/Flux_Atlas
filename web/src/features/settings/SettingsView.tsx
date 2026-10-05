@@ -24,6 +24,7 @@ import { Button, Freshness, Section, SegmentedControl, Select, StatusChip, Switc
 import { AchievementCount, AchievementList } from '../achievements/AchievementList';
 import { track } from '../achievements/events';
 import { enterAmbient } from '../ambient/enter';
+import { BASIS_LABEL, BASIS_TEXT, basisOf, type EarningsBasis, PA_RULE } from '../earnings/basis';
 import artHolo from './assets/art-holo.webp';
 import artMarble from './assets/art-marble.webp';
 import artNeon from './assets/art-neon.webp';
@@ -356,6 +357,35 @@ function Notifications() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Earnings
+// ---------------------------------------------------------------------------------------------
+
+const EARNINGS_OPTIONS: readonly { value: EarningsBasis; label: string }[] = [
+  { value: 'all', label: BASIS_LABEL.all },
+  { value: 'main', label: BASIS_LABEL.main },
+];
+
+/** What every earnings figure in Atlas counts: the same choice as the wallet's switch and the marker's. */
+function EarningsSettings() {
+  const includePa = useUi((s) => s.includePa);
+  const setIncludePa = useUi((s) => s.setIncludePa);
+  const basis = basisOf(includePa);
+  return (
+    <Section title="Earnings" level={3} aside="What a node or an operator earns, everywhere in Atlas">
+      <Field stacked title="Count in earnings" hint={`${PA_RULE} ${BASIS_TEXT[basis]}`}>
+        <SegmentedControl
+          aria-label="Count in earnings"
+          fullWidth
+          value={basis}
+          options={EARNINGS_OPTIONS}
+          onChange={(b) => setIncludePa(b === 'all')}
+        />
+      </Field>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
 // Folds: data freshness and achievements
 // ---------------------------------------------------------------------------------------------
 
@@ -461,6 +491,7 @@ export default function SettingsView() {
       <MotionAndPerformance />
       <AmbientSettings />
       <Notifications />
+      <EarningsSettings />
       <Fold
         id="data"
         title="Data freshness"

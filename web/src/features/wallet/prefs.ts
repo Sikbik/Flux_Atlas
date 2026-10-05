@@ -1,7 +1,11 @@
 // What the wallet workspace remembers about its viewer: the currency money is shown in, what hosting a node
-// costs them, whether parallel assets count as income, and how the fleet table is set up. Local to this browser
-// (`localStorage`, key `atlas.wallet.v1`) and never sent anywhere: a hosting cost is the viewer's own business.
-// Every read and write is guarded, so a private window or a full disk means preferences last for the session.
+// costs them, and how the fleet table is set up. Local to this browser (`localStorage`, key `atlas.wallet.v1`) and
+// never sent anywhere: a hosting cost is the viewer's own business. Every read and write is guarded, so a private
+// window or a full disk means preferences last for the session.
+//
+// Whether parallel assets count in earnings used to live here (`includePa`); every earnings figure in Atlas follows
+// it now, so it is in the UI store (`store/ui.ts`), which takes over a value stored here once. This store no longer
+// reads or writes it.
 
 import { create } from 'zustand';
 import { type EarningsRange, isEarningsRange } from './lib/earnings';
@@ -21,7 +25,6 @@ export const MAX_COST = 1_000_000;
 interface Persisted {
   currency: CurrencyCode;
   costs: HostingCosts;
-  includePa: boolean;
   columns: ColumnId[];
   density: Density;
   groupBy: GroupBy;
@@ -35,7 +38,6 @@ export interface WalletPrefs extends Persisted {
   /** Replaces the whole set of costs at once (they are always stored in one currency). */
   setCosts(costs: HostingCosts): void;
   clearCosts(): void;
-  setIncludePa(on: boolean): void;
   setColumns(ids: readonly ColumnId[]): void;
   setDensity(d: Density): void;
   setGroupBy(g: GroupBy): void;
@@ -46,7 +48,6 @@ export interface WalletPrefs extends Persisted {
 const DEFAULTS: Persisted = {
   currency: DEFAULT_CURRENCY,
   costs: NO_COSTS,
-  includePa: true,
   columns: [...DEFAULT_COLUMNS],
   density: 'comfortable',
   groupBy: 'none',
@@ -75,7 +76,6 @@ export function parsePrefs(raw: string | null | undefined): Persisted {
         },
       };
     }
-    if (typeof v.includePa === 'boolean') out.includePa = v.includePa;
     if (v.columns !== undefined) out.columns = normalizeColumns(v.columns);
     if (v.density === 'comfortable' || v.density === 'compact') out.density = v.density;
     if (isGroupBy(v.groupBy)) out.groupBy = v.groupBy;
@@ -107,7 +107,6 @@ function save(s: Persisted): void {
       JSON.stringify({
         currency: s.currency,
         costs: s.costs,
-        includePa: s.includePa,
         columns: s.columns,
         density: s.density,
         groupBy: s.groupBy,
@@ -150,7 +149,6 @@ export const useWalletPrefs = create<WalletPrefs>()((set, get) => {
         },
       }),
     clearCosts: () => apply({ costs: structuredCopy(NO_COSTS) }),
-    setIncludePa: (includePa) => apply({ includePa }),
     setColumns: (ids) => apply({ columns: normalizeColumns(ids) }),
     setDensity: (density) => apply({ density }),
     setGroupBy: (groupBy) => apply({ groupBy }),

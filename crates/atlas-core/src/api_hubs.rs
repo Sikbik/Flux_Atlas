@@ -84,6 +84,9 @@ pub struct OperatorRow {
     /// Native FLUX a day at the current queue lengths (the wallet's run rate: per tier, nodes x
     /// tier payout x 2,880 / queue length).
     pub native_per_day: Amount,
+    /// What that accrues a day across the parallel-asset chains, claimable through Flux Fusion
+    /// (`emission::parallel_asset_accrual` of `native_per_day`, as the wallet's `pa_per_day`).
+    pub pa_per_day: Amount,
     /// Collateral of every listed node (confirmed, started, DOS).
     pub collateral_locked: Amount,
     /// Confirmed nodes that are neither at risk nor unreachable, over confirmed and DOS nodes;

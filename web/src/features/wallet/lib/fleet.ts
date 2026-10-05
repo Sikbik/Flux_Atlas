@@ -53,8 +53,10 @@ export interface FleetRow {
   ssdGb: number;
   appCount: number;
   addedHeight: number | null;
-  /** FLUX per day, an estimate; null when the tier's payout is not known. */
+  /** FLUX per day on the main chain, an estimate; null when the tier's payout is not known. */
   perDay: number | null;
+  /** What that accrues a day in parallel assets; null when the tier's accrual is not known. */
+  paPerDay: number | null;
   paymentAddress: string | null;
   lat: number | null;
   lon: number | null;
@@ -115,6 +117,7 @@ export function buildFleetRows(
       appCount: n.appCount,
       addedHeight: row?.added_height ?? null,
       perDay: n.perDay,
+      paPerDay: n.paPerDay,
       paymentAddress: n.paymentAddress,
       lat: n.lat,
       lon: n.lon,
@@ -215,7 +218,7 @@ export const COLUMN_SPECS: readonly ColumnSpec[] = [
   },
   {
     id: 'perDay',
-    label: 'FLUX per day',
+    label: 'Earned a day (FLUX)',
     short: 'FLUX a day',
     group: 'Payments',
     numeric: true,
@@ -528,8 +531,10 @@ export interface FleetGroup {
   healthy: number;
   /** Nodes that need attention or are down. */
   trouble: number;
-  /** FLUX per day over the nodes whose payout is known; null when none is. */
+  /** FLUX per day on the main chain over the nodes whose payout is known; null when none is. */
   perDay: number | null;
+  /** What those nodes accrue a day in parallel assets; null when none is known. */
+  paPerDay: number | null;
   /** The soonest next payment in the group, unix ms. */
   nextEtaMs: number | null;
   /** Payments due in the group, FLUX. */
@@ -553,6 +558,7 @@ export function groupFleet(rows: readonly FleetRow[], by: GroupBy): FleetGroup[]
         healthy: 0,
         trouble: 0,
         perDay: null,
+        paPerDay: null,
         nextEtaMs: null,
         due: 0,
         apps: 0,
@@ -564,6 +570,7 @@ export function groupFleet(rows: readonly FleetRow[], by: GroupBy): FleetGroup[]
     if (bucketOf(r) === 'healthy') g.healthy++;
     else g.trouble++;
     if (r.perDay !== null) g.perDay = (g.perDay ?? 0) + r.perDay;
+    if (r.paPerDay !== null) g.paPerDay = (g.paPerDay ?? 0) + r.paPerDay;
     if (r.etaMs !== null) g.nextEtaMs = g.nextEtaMs === null ? r.etaMs : Math.min(g.nextEtaMs, r.etaMs);
     if (r.amount !== null) g.due += r.amount;
     g.apps += r.appCount;
@@ -628,8 +635,10 @@ export interface RowSummary {
   attention: number;
   down: number;
   tiers: Record<PayTier, number>;
-  /** FLUX per day over the nodes whose payout is known; null when none is. */
+  /** FLUX per day on the main chain over the nodes whose payout is known; null when none is. */
   perDay: number | null;
+  /** What those nodes accrue a day in parallel assets; null when none is known. */
+  paPerDay: number | null;
   /** The soonest next payment of the set. */
   next: { etaMs: number; amount: number | null; key: string } | null;
   /** Nodes with at least one finding from the server. */
@@ -648,6 +657,7 @@ export function summarizeRows(rows: readonly FleetRow[]): RowSummary {
     down: 0,
     tiers: { cumulus: 0, nimbus: 0, stratus: 0 },
     perDay: null,
+    paPerDay: null,
     next: null,
     flagged: 0,
     apps: 0,
@@ -661,6 +671,7 @@ export function summarizeRows(rows: readonly FleetRow[]): RowSummary {
     else out.down++;
     if (r.tier !== 'unknown') out.tiers[r.tier]++;
     if (r.perDay !== null) out.perDay = (out.perDay ?? 0) + r.perDay;
+    if (r.paPerDay !== null) out.paPerDay = (out.paPerDay ?? 0) + r.paPerDay;
     if (r.etaMs !== null && (out.next === null || r.etaMs < out.next.etaMs))
       out.next = { etaMs: r.etaMs, amount: r.amount, key: r.key };
     if (r.issues.length > 0) out.flagged++;
@@ -739,7 +750,13 @@ interface CsvColumn {
   value: (r: FleetRow) => CsvCell;
 }
 
-/** Every column of the nodes export, whatever the table shows: an export is the whole record. */
+const per4 = (v: number | null): number | null => (v === null ? null : Math.round(v * 1e4) / 1e4);
+
+/**
+ * Every column of the nodes export, whatever the table shows: an export is the whole record. The run rate comes as
+ * main chain, parallel assets and the two together, whatever the viewer's basis; `next_payout_flux` is a payment on
+ * the main chain.
+ */
 const CSV_COLUMNS: readonly CsvColumn[] = [
   { header: 'node_outpoint', value: (r) => r.key },
   { header: 'endpoint', value: (r) => r.endpoint },
@@ -752,7 +769,12 @@ const CSV_COLUMNS: readonly CsvColumn[] = [
   { header: 'queue_place', value: (r) => r.place },
   { header: 'last_paid_height', value: (r) => r.lastPaidHeight },
   { header: 'blocks_since_checkin', value: (r) => r.sinceConfirm },
-  { header: 'est_flux_per_day', value: (r) => (r.perDay === null ? null : Math.round(r.perDay * 1e4) / 1e4) },
+  { header: 'est_flux_per_day', value: (r) => per4(r.perDay) },
+  { header: 'est_parallel_assets_flux_per_day', value: (r) => per4(r.paPerDay) },
+  {
+    header: 'est_main_chain_and_parallel_assets_flux_per_day',
+    value: (r) => (r.perDay === null || r.paPerDay === null ? null : per4(r.perDay + r.paPerDay)),
+  },
   { header: 'country_code', value: (r) => r.countryCode },
   { header: 'country', value: (r) => r.country },
   { header: 'city', value: (r) => r.city },

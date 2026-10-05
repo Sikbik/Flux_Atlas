@@ -61,6 +61,8 @@ describe('labels', () => {
 
   it('writes the ticker sentence', () => {
     const [line] = nextPayoutLines(next, tip, 1_012_000, 14, (id) => cities[id] ?? null);
-    expect(line && payoutSentence(line, 'Stratus')).toBe('Next Stratus payout: Helsinki, 9 FLUX, in ~18 s');
+    expect(line && payoutSentence(line, 'Stratus')).toBe(
+      'Next Stratus payout: Helsinki, 9 FLUX on the main chain, in ~18 s',
+    );
   });
 });

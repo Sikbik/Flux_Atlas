@@ -140,6 +140,12 @@ pub fn parallel_asset_accrual(native: Amount) -> Amount {
     Amount::from_sat(total.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64)
 }
 
+/// The share of [`parallel_asset_accrual`] that lands on each one of the
+/// [`PARALLEL_ASSET_CHAINS`] (they accrue alike).
+pub fn parallel_asset_accrual_per_chain(native: Amount) -> Amount {
+    Amount::from_sat(parallel_asset_accrual(native).sat() / i64::from(PARALLEL_ASSET_CHAINS))
+}
+
 /// The full expected coinbase split at a PoN height (before fees).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct PayoutSchedule {
@@ -336,6 +342,20 @@ mod tests {
     fn parallel_assets_match_native() {
         assert_eq!(parallel_asset_accrual(flux("3024.5")), flux("3024.5"));
         assert_eq!(parallel_asset_accrual(Amount::ZERO), Amount::ZERO);
+    }
+
+    #[test]
+    fn parallel_assets_per_chain_are_a_tenth() {
+        assert_eq!(parallel_asset_accrual_per_chain(flux("9")), flux("0.9"));
+        assert_eq!(parallel_asset_accrual_per_chain(flux("3.5")), flux("0.35"));
+        // Ten chains alike add up to the whole accrual.
+        let native = flux("1234.56789");
+        assert_eq!(
+            Amount::from_sat(
+                parallel_asset_accrual_per_chain(native).sat() * i64::from(PARALLEL_ASSET_CHAINS)
+            ),
+            parallel_asset_accrual(native)
+        );
     }
 
     #[test]

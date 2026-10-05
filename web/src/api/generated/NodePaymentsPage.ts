@@ -6,4 +6,12 @@ import type { PaymentRow } from "./PaymentRow";
 /**
  * `GET /nodes/{id}/payments`.
  */
-export type NodePaymentsPage = { id: NodeId, items: Array<PaymentRow>, total_paid: Amount, next_cursor: string | null, };
+export type NodePaymentsPage = { id: NodeId, items: Array<PaymentRow>, 
+/**
+ * Every payment to the node on the main chain since the first stored block.
+ */
+total_paid: Amount, 
+/**
+ * The parallel-asset accrual of `total_paid` (`emission::parallel_asset_accrual`).
+ */
+pa_total_paid: Amount, next_cursor: string | null, };

@@ -195,8 +195,12 @@ pub struct TierStats {
     pub tier: Tier,
     pub count: u32,
     pub collateral: Amount,
-    /// Payout per block to this tier's queue head.
+    /// Payout per block to this tier's queue head, on the main chain.
     pub payout: Amount,
+    /// What that payout accrues across the parallel-asset chains, claimable through Flux Fusion
+    /// (`emission::parallel_asset_accrual` of `payout`). A node of the tier earns `payout +
+    /// pa_payout` per payment.
+    pub pa_payout: Amount,
     /// Approximate payment cycle in blocks (about the tier's node count).
     pub cycle_blocks: u32,
     /// Head of the payment queue ("next to be paid").
@@ -470,7 +474,11 @@ pub struct NodeHistoryDto {
 pub struct PaymentRow {
     pub height: u32,
     pub time_ms: u64,
+    /// The transaction output on the main chain.
     pub amount: Amount,
+    /// What the payment accrues across the parallel-asset chains, claimable through Flux Fusion
+    /// (`emission::parallel_asset_accrual` of `amount`); not part of the transaction.
+    pub pa: Amount,
     pub address: String,
     pub tier: Tier,
 }
@@ -480,7 +488,10 @@ pub struct PaymentRow {
 pub struct NodePaymentsPage {
     pub id: NodeId,
     pub items: Vec<PaymentRow>,
+    /// Every payment to the node on the main chain since the first stored block.
     pub total_paid: Amount,
+    /// The parallel-asset accrual of `total_paid` (`emission::parallel_asset_accrual`).
+    pub pa_total_paid: Amount,
     pub next_cursor: Option<String>,
 }
 
@@ -1342,6 +1353,13 @@ pub struct OperatorDto {
     pub earnings_from_ms: Option<u64>,
     /// FLUX paid from `earnings_from_height` to the tip.
     pub earned_covered: Option<Amount>,
+    /// What the main-chain payouts above accrued across the parallel-asset chains over the same
+    /// windows, claimable through Flux Fusion (`emission::parallel_asset_accrual` of each);
+    /// `null` exactly where the main-chain figure is.
+    pub pa_earned_24h: Option<Amount>,
+    pub pa_earned_7d: Option<Amount>,
+    pub pa_earned_30d: Option<Amount>,
+    pub pa_earned_covered: Option<Amount>,
     pub next_payments: Vec<NextPayment>,
 }
 
@@ -1419,6 +1437,12 @@ pub struct WalletEarnings {
     pub days: Vec<EarningsDay>,
     /// Time of the first stored block the realized figures cover; `null` when none is stored.
     pub covered_from_ms: Option<u64>,
+    /// FLUX paid to the address in the last 2,880 blocks up to the tip, counted as the operator
+    /// view counts its `earned_24h`; `null` when the stored blocks do not cover the window.
+    pub earned_24h: Option<Amount>,
+    /// What those payouts accrued across the parallel-asset chains, claimable through Flux Fusion
+    /// (`emission::parallel_asset_accrual` of `earned_24h`); `null` exactly where it is.
+    pub pa_earned_24h: Option<Amount>,
     /// Payments the queue owed this wallet's nodes over the covered window, and payments the
     /// ledger shows (every payout to the address, attributed to a node or not).
     pub expected_payments: u32,
@@ -1440,7 +1464,12 @@ pub struct WalletEarnings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct EarningsDay {
     pub day_ms: u64,
+    /// Paid on the main chain.
     pub native: Amount,
+    /// What those payouts accrued across the parallel-asset chains, claimable through Flux
+    /// Fusion rather than received on the main chain (`emission::parallel_asset_accrual` of
+    /// `native`).
+    pub pa: Amount,
     pub payments: u32,
     pub cumulus: Amount,
     pub nimbus: Amount,
@@ -1715,6 +1744,8 @@ pub struct ParallelAssetsDto {
     /// Accrual across all chains per day at this wallet's current native run rate; `null`
     /// without confirmed nodes.
     pub accrual_per_day: Option<f64>,
+    /// The same on each one chain (`emission::parallel_asset_accrual_per_chain`).
+    pub accrual_per_chain_per_day: Option<f64>,
     pub chains: Vec<PaChain>,
     /// Newest first.
     pub claims: Vec<PaClaim>,

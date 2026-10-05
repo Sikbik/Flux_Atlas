@@ -18,6 +18,15 @@ describe('earningsFromPayments', () => {
     expect(e.d7.estimate).toBe(false);
   });
 
+  it('adds what each payment accrued in parallel assets when they count', () => {
+    const withPa = payments.map((p) => ({ ...p, pa: p.amount }));
+    const all = earningsFromPayments(withPa, { nowMs: NOW, firstMs: 0, toFlux: num, includePa: true });
+    // Golden: twice the main chain, window by window.
+    expect([all.h24.flux, all.d7.flux, all.d30.flux]).toEqual([18, 43, 45]);
+    const main = earningsFromPayments(withPa, { nowMs: NOW, firstMs: 0, toFlux: num, includePa: false });
+    expect([main.h24.flux, main.d7.flux, main.d30.flux]).toEqual([9, 21.5, 22.5]);
+  });
+
   it('marks a window the ledger does not cover', () => {
     const e = earningsFromPayments(payments, { nowMs: NOW, firstMs: NOW - 10 * DAY, toFlux: num });
     expect(e.h24.complete).toBe(true);

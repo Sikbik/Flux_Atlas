@@ -5,6 +5,7 @@ import { queries } from '../../../api/queries';
 import { useNetwork, useTip } from '../../../app/context';
 import { useGlobeEngine } from '../../../globe';
 import { formatInt, parseEndpoint } from '../../../lib/format';
+import { useUi } from '../../../store/ui';
 import {
   AnimatedNumber,
   Chip,
@@ -21,6 +22,8 @@ import {
   tierLabel,
   ViewHeader,
 } from '../../../ui';
+import { earned } from '../../earnings/basis';
+import { EarningsBasis } from '../../earnings/EarningsBasis';
 import { countryName } from '../derive/appSpec';
 import { blocksSinceConfirm } from '../derive/expiry';
 import { fluxPerDay, positionOf } from '../derive/queue';
@@ -178,8 +181,11 @@ export function HostView({ ip }: { ip: string }) {
     [rows, tip],
   );
 
-  const perDay = useMemo(() => {
-    let sum = 0;
+  // What the host's nodes earn a day at their queues' pace: the main chain, and the parallel assets it accrues.
+  const includePa = useUi((s) => s.includePa);
+  const split = useMemo(() => {
+    let native = 0;
+    let pa = 0;
     let known = false;
     for (const n of live) {
       const pos = positionOf(queues, n.id);
@@ -187,12 +193,14 @@ export function HostView({ ip }: { ip: string }) {
       if (!pos || info?.payout == null) continue;
       const v = fluxPerDay(info.payout, pos.size);
       if (v !== null) {
-        sum += v;
+        native += v;
+        pa += info.paPayout === null ? 0 : (fluxPerDay(info.paPayout, pos.size) ?? 0);
         known = true;
       }
     }
-    return known ? sum : null;
+    return known ? { native, pa } : null;
   }, [live, queues, tiers]);
+  const perDay = split === null ? null : earned(split, includePa);
 
   const operators = useMemo(() => {
     const by = new Map<string, number>();
@@ -328,7 +336,12 @@ export function HostView({ ip }: { ip: string }) {
             label="Per day"
             value={perDay === null ? null : <AnimatedNumber value={perDay} format={fmt2} />}
             unit="FLUX"
-            caption="estimate"
+            caption={
+              <span className="eb-cap">
+                <span>estimate</span>
+                <EarningsBasis size="sm" split={split} per="a day" />
+              </span>
+            }
           />
           <Stat
             label="Paid to"

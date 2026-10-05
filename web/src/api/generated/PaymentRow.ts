@@ -5,4 +5,13 @@ import type { Tier } from "./Tier";
 /**
  * One payment to a node.
  */
-export type PaymentRow = { height: number, time_ms: number, amount: Amount, address: string, tier: Tier, };
+export type PaymentRow = { height: number, time_ms: number, 
+/**
+ * The transaction output on the main chain.
+ */
+amount: Amount, 
+/**
+ * What the payment accrues across the parallel-asset chains, claimable through Flux Fusion
+ * (`emission::parallel_asset_accrual` of `amount`); not part of the transaction.
+ */
+pa: Amount, address: string, tier: Tier, };

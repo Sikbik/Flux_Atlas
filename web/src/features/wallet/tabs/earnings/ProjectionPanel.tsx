@@ -4,11 +4,12 @@
 
 import { useMemo, useState } from 'react';
 import { formatInt } from '../../../../lib/format';
+import { useUi } from '../../../../store/ui';
 import { AnimatedNumber, SegmentedControl, Stat, StatGrid } from '../../../../ui';
+import { EarningsBasis } from '../../../earnings/EarningsBasis';
 import { useWalletCtx } from '../../context';
 import { useTween } from '../../hooks/useTween';
 import { buildProjection } from '../../lib/projection';
-import { useWalletPrefs } from '../../prefs';
 import { Panel } from '../../ui/Panel';
 import type { Unit } from '../../viz/DailyChart';
 import { ProjectionChart, type ProjectionView } from '../../viz/ProjectionChart';
@@ -25,7 +26,7 @@ export interface ProjectionPanelProps {
 
 export function ProjectionPanel({ unit, onUnit, price }: ProjectionPanelProps) {
   const { dto, money } = useWalletCtx();
-  const includePa = useWalletPrefs((s) => s.includePa);
+  const includePa = useUi((s) => s.includePa);
   const [view, setView] = useState<ProjectionView>('cumulative');
   const e = dto.earnings;
   const proj = useMemo(
@@ -48,9 +49,13 @@ export function ProjectionPanel({ unit, onUnit, price }: ProjectionPanelProps) {
   return (
     <Panel
       title="Projection, 365 days"
-      aside={includePa ? 'native and parallel assets' : 'native only'}
       actions={
         <>
+          <EarningsBasis
+            split={{ native: proj.sums.native, pa: proj.sums.pa }}
+            per={`over ${formatInt(proj.t.length)} days`}
+            money={(v) => (price === null ? null : money.fmt(v * price))}
+          />
           <SegmentedControl
             size="sm"
             aria-label="Unit"

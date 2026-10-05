@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GLOBE_ARTS, GLOBE_BORDERS, parseUi, useUi } from './ui';
+import { GLOBE_ARTS, GLOBE_BORDERS, migrateIncludePa, parseUi, useUi, WALLET_KEY } from './ui';
 
 const KEY = 'atlas.ui.v1';
 
@@ -128,5 +128,86 @@ describe('persistence of the borders setting', () => {
   it('is part of the shared store the page uses', () => {
     expect(useUi.getState().globeBorders).toBeDefined();
     expect(typeof useUi.getState().setGlobeBorders).toBe('function');
+  });
+});
+
+describe('the parallel-asset setting', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads a stored value, and drops one that is not a yes or a no', () => {
+    expect(parseUi(JSON.stringify({ includePa: false }))).toEqual({ includePa: false });
+    expect(parseUi(JSON.stringify({ includePa: true }))).toEqual({ includePa: true });
+    for (const bad of ['false', 0, 1, null, [], {}]) {
+      expect(parseUi(JSON.stringify({ includePa: bad }))).toEqual({});
+    }
+  });
+
+  it('takes over the wallet value only when it has none of its own', () => {
+    expect(migrateIncludePa({}, JSON.stringify({ currency: 'eur', includePa: false }))).toBe(false);
+    expect(migrateIncludePa({}, JSON.stringify({ includePa: true }))).toBe(true);
+    // Its own value wins; nothing to take over without a wallet value.
+    expect(migrateIncludePa({ includePa: true }, JSON.stringify({ includePa: false }))).toBeNull();
+    expect(migrateIncludePa({}, JSON.stringify({ currency: 'eur' }))).toBeNull();
+    expect(migrateIncludePa({}, null)).toBeNull();
+    expect(migrateIncludePa({}, 'not json')).toBeNull();
+    expect(migrateIncludePa({}, JSON.stringify({ includePa: 'no' }))).toBeNull();
+    expect(migrateIncludePa({}, 'null')).toBeNull();
+  });
+
+  it('counts parallel assets by default, with nothing stored anywhere', async () => {
+    vi.stubGlobal('localStorage', fakeStorage());
+    const { useUi: fresh } = await import('./ui');
+    expect(fresh.getState().includePa).toBe(true);
+  });
+
+  it('migrates a wallet that chose main chain only, and writes it here at once beside the rest', async () => {
+    const storage = fakeStorage({
+      [KEY]: JSON.stringify({ motion: 'reduced', globeArt: 'neon', watched: [] }),
+      [WALLET_KEY]: JSON.stringify({ currency: 'eur', includePa: false }),
+    });
+    vi.stubGlobal('localStorage', storage);
+    const { useUi: fresh } = await import('./ui');
+    expect(fresh.getState()).toMatchObject({ includePa: false, motion: 'reduced', globeArt: 'neon' });
+    expect(JSON.parse(storage.getItem(KEY) ?? '{}')).toMatchObject({
+      motion: 'reduced',
+      globeArt: 'neon',
+      includePa: false,
+    });
+    // The wallet's own record is left as it was.
+    expect(JSON.parse(storage.getItem(WALLET_KEY) ?? '{}')).toEqual({ currency: 'eur', includePa: false });
+
+    // Once here, a later change is the one that counts, whatever the wallet record still says.
+    fresh.getState().setIncludePa(true);
+    vi.resetModules();
+    const again = await import('./ui');
+    expect(again.useUi.getState().includePa).toBe(true);
+  });
+
+  it('migrates into an empty record too, and ignores a damaged one', async () => {
+    const storage = fakeStorage({ [KEY]: 'not json', [WALLET_KEY]: JSON.stringify({ includePa: false }) });
+    vi.stubGlobal('localStorage', storage);
+    const { useUi: fresh } = await import('./ui');
+    expect(fresh.getState().includePa).toBe(false);
+    expect(JSON.parse(storage.getItem(KEY) ?? '{}')).toEqual({ includePa: false });
+  });
+
+  it('applies for the session when storage throws', async () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new Error('quota');
+      },
+    });
+    const { useUi: blocked } = await import('./ui');
+    expect(blocked.getState().includePa).toBe(true);
+    blocked.getState().setIncludePa(false);
+    expect(blocked.getState().includePa).toBe(false);
   });
 });

@@ -20,7 +20,7 @@ use atlas_core::api::{
 };
 use atlas_core::chain::BlockSummary;
 use atlas_core::codec::nodes_bin::{NodeBinInput, encode_nodes_bin_from};
-use atlas_core::emission::{PON_TARGET_SPACING_S, tier_payout};
+use atlas_core::emission::{PON_TARGET_SPACING_S, parallel_asset_accrual, tier_payout};
 use atlas_core::ids::{Collateral, Hash32, NodeId, Outpoint};
 use atlas_core::net::NodeEndpoint;
 use atlas_core::node::windows::expiry_height;
@@ -497,13 +497,15 @@ pub fn bootstrap_dto(v: &Views) -> BootstrapDto {
         .iter()
         .map(|&tier| {
             let q = v.index.queue(tier);
+            let payout = tip
+                .and_then(|t| tier_payout(t + 1, tier))
+                .unwrap_or(Amount::ZERO);
             TierStats {
                 tier,
                 count: p.network.tiers.get(tier),
                 collateral: tier.collateral().unwrap_or(Amount::ZERO),
-                payout: tip
-                    .and_then(|t| tier_payout(t + 1, tier))
-                    .unwrap_or(Amount::ZERO),
+                payout,
+                pa_payout: parallel_asset_accrual(payout),
                 cycle_blocks: q.len() as u32,
                 next: q.first().map(|&i| node_ref(v.at(i as usize))),
             }

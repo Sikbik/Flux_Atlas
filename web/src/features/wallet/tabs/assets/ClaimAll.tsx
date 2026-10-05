@@ -1,6 +1,6 @@
 // Two answers to "what should I do with these": what claiming everything at once would leave after Fusion's fee, and
 // the pace the parallel assets accrue at (every FLUX a node earns accrues a tenth of itself on each of ten chains, so
-// the accrual over all chains equals the native rewards). Atlas never claims; it only reads and advises.
+// the accrual over all chains equals the main-chain rewards). Atlas never claims; it only reads and advises.
 
 import { formatInt } from '../../../../lib/format';
 import { AnimatedNumber } from '../../../../ui';
@@ -117,7 +117,7 @@ export function Accrual({ a }: { a: ParallelAssetsDto }) {
       )}
       <p className="wl-note">
         Every FLUX a node earns accrues another tenth of itself on each of the ten chains, so the total here
-        equals the native rewards. It is yours to claim, and it is only worth what it sells for.
+        equals the main-chain rewards. It is yours to claim, and it is only worth what it sells for.
       </p>
     </Panel>
   );

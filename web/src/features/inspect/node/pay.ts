@@ -17,10 +17,12 @@ export interface PayInfo {
   size: number;
   /** In the queue and waiting to be paid. */
   queued: boolean;
-  /** FLUX per payment for the tier, from the live tier stats. */
+  /** FLUX per payment for the tier on the main chain, from the live tier stats. */
   payout: number | null;
-  /** FLUX per day in steady state (an estimate). */
+  /** Main-chain FLUX per day in steady state (an estimate). */
   perDay: number | null;
+  /** What that accrues a day in parallel assets, at the same pace. */
+  paPerDay: number | null;
   /** Height of the last payment seen, 0 when none. */
   lastPaid: number;
 }
@@ -64,6 +66,7 @@ export function usePayInfo(): PayInfo {
     queued,
     payout,
     perDay: info?.payout != null && tierSize > 0 ? fluxPerDay(info.payout, tierSize) : null,
+    paPerDay: info?.paPayout != null && tierSize > 0 ? fluxPerDay(info.paPayout, tierSize) : null,
     lastPaid: Math.max(live?.lastPaid ?? 0, node?.last_paid_height ?? 0),
   };
 }

@@ -1,5 +1,6 @@
 // The wallet's signature view: when each node is next paid. The dial lays the payments on a ring that reads from
-// now; the list beside it names the ones coming first. Pointing at a node (on the ring or in the list) pings it on
+// now; the list beside it names the ones coming first. Every amount here is a payment on the main chain, and the
+// panel's marker says so: the earnings figures elsewhere add the parallel assets each payment accrues. Pointing at a node (on the ring or in the list) pings it on
 // the globe. A payment that lands while the page is open is announced here and sends a ring out from the dial's hub.
 
 import { CircleCheck } from 'lucide-react';
@@ -7,6 +8,7 @@ import { useMemo } from 'react';
 import { formatInt, shortCollateral } from '../../../../lib/format';
 import { useFresh } from '../../../../motion';
 import { EntityLink, RelativeTime, SegmentedControl, TierGlyph } from '../../../../ui';
+import { EarningsBasis } from '../../../earnings/EarningsBasis';
 import { useWalletCtx } from '../../context';
 import { useBoundaryMs } from '../../hooks/useBoundary';
 import { useOpenNode } from '../../hooks/useOpenNode';
@@ -59,13 +61,16 @@ export function NextPayouts() {
       title="Next payouts"
       aside={`${formatInt(total)} ${total === 1 ? 'node' : 'nodes'} in the queues`}
       actions={
-        <SegmentedControl
-          size="sm"
-          aria-label="Dial horizon"
-          value={horizon}
-          onChange={setHorizon}
-          options={DIAL_HORIZONS.map((h) => ({ value: h, label: HORIZON[h].label }))}
-        />
+        <>
+          <EarningsBasis kind="payments" />
+          <SegmentedControl
+            size="sm"
+            aria-label="Dial horizon"
+            value={horizon}
+            onChange={setHorizon}
+            options={DIAL_HORIZONS.map((h) => ({ value: h, label: HORIZON[h].label }))}
+          />
+        </>
       }
     >
       <div className="wl-payouts">
@@ -127,7 +132,7 @@ export function NextPayouts() {
                 <b>{formatInt(ahead.filter((p) => p.eta_ms - now < horizonSpec.ms).length)} payments</b>
                 {horizon === '24h' ? (
                   <>
-                    , about <b>{day.flux.toFixed(2)} FLUX</b>
+                    , about <b>{day.flux.toFixed(2)} FLUX</b> on the main chain
                     {money.price === null ? '' : ` (${money.text(day.flux)})`}
                   </>
                 ) : null}

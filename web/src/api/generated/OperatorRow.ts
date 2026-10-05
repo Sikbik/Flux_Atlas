@@ -53,6 +53,11 @@ top_address: string | null,
  */
 native_per_day: Amount, 
 /**
+ * What that accrues a day across the parallel-asset chains, claimable through Flux Fusion
+ * (`emission::parallel_asset_accrual` of `native_per_day`, as the wallet's `pa_per_day`).
+ */
+pa_per_day: Amount, 
+/**
  * Collateral of every listed node (confirmed, started, DOS).
  */
 collateral_locked: Amount, 
