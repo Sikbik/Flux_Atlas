@@ -19,6 +19,16 @@ days: Array<EarningsDay>,
  */
 covered_from_ms: number | null, 
 /**
+ * FLUX paid to the address in the last 2,880 blocks up to the tip, counted as the operator
+ * view counts its `earned_24h`; `null` when the stored blocks do not cover the window.
+ */
+earned_24h: Amount | null, 
+/**
+ * What those payouts accrued across the parallel-asset chains, claimable through Flux Fusion
+ * (`emission::parallel_asset_accrual` of `earned_24h`); `null` exactly where it is.
+ */
+pa_earned_24h: Amount | null, 
+/**
  * Payments the queue owed this wallet's nodes over the covered window, and payments the
  * ledger shows (every payout to the address, attributed to a node or not).
  */

@@ -92,6 +92,9 @@ async fn wallet_view_of_a_mixed_fleet() {
     let rate: f64 = earn["native_per_day"].as_str().unwrap().parse().unwrap();
     assert!(rate > 0.0);
     assert_eq!(earn["pa_per_day"], earn["native_per_day"]);
+    // The fixture stores 40 blocks: too few for the 24 hour window, which is unknown (as the
+    // operator view's is), never a partial sum.
+    assert!(earn["earned_24h"].is_null() && earn["pa_earned_24h"].is_null());
     // Each realized day carries its parallel-asset accrual beside what the main chain paid.
     let days = earn["days"].as_array().unwrap();
     assert!(!days.is_empty());

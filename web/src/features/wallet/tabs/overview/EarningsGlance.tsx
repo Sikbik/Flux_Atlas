@@ -1,11 +1,13 @@
-// The recent days of earnings as bars, and what they add up to. Atlas keeps the payouts of the blocks it has stored, at
-// most thirty days. The full chart, the projection and the profit are the Earnings tab; this is the glance that tells
-// whether it is worth opening.
+// The recent days of earnings as bars, and what they add up to, and the last 24 hours by block (the window the
+// operator view counts, so the two agree). Atlas keeps the payouts of the blocks it has stored, at most thirty days.
+// The full chart, the projection and the profit are the Earnings tab; this is the glance that tells whether it is
+// worth opening.
 
 import { useMemo } from 'react';
-import { formatInt } from '../../../../lib/format';
+import { fluxToNumber, formatInt } from '../../../../lib/format';
 import { useUi } from '../../../../store/ui';
 import { AnimatedNumber, Delta, Sparkline, StatGrid } from '../../../../ui';
+import { earnedOrNull } from '../../../earnings/basis';
 import { EarningsBasis } from '../../../earnings/EarningsBasis';
 import { useWalletCtx } from '../../context';
 import { buildDaily, dayEarned, isCompleteDay, totalsOf } from '../../lib/earnings';
@@ -30,6 +32,7 @@ export function EarningsGlance() {
     [e.days, e.covered_from_ms, money.history, money.spot, money.currency],
   );
   const t = useMemo(() => totalsOf(daily, includePa), [daily, includePa]);
+  const day = earnedOrNull(fluxToNumber(e.earned_24h), fluxToNumber(e.pa_earned_24h), includePa);
 
   // The shape of the whole days: the window's first day and the running one are artefacts of where it starts and
   // ends, and would draw a dip at each edge.
@@ -67,7 +70,7 @@ export function EarningsGlance() {
         />
       }
     >
-      <StatGrid min={140} columns={2}>
+      <StatGrid min={140} columns={3}>
         <FitStat
           label={includePa ? 'Earned' : 'Paid'}
           fit={formatFlux2(t.total)}
@@ -104,6 +107,13 @@ export function EarningsGlance() {
                 ? `best day ${formatFlux2(t.best.amount)}`
                 : undefined
           }
+        />
+        <FitStat
+          label="Last 24 hours"
+          fit={day === null ? null : formatFlux2(day)}
+          value={day === null ? null : <AnimatedNumber value={day} format={formatFlux2} maxHz={0} />}
+          unit="FLUX"
+          caption={day === null ? 'needs a whole day of blocks' : 'the last 2,880 blocks'}
         />
       </StatGrid>
       <button type="button" className="wl-more" onClick={() => setTab('earnings')}>

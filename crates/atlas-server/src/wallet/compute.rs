@@ -128,9 +128,12 @@ pub fn build(inp: WalletInputs<'_>) -> WalletDto {
     let window = inp.ledger.from.zip(inp.ledger.tip);
     let (expected, received, missed) = payment_audit(window, tip, entries, &active, net);
     let native_per_day = run_rate(counts, net, tip + 1);
+    let (earned_24h, pa_earned_24h) = realized_24h(inp.ledger, entries);
     let earnings = WalletEarnings {
         days: earnings_days(inp.ledger, entries, tip, tip_ms, today_ms),
         covered_from_ms: inp.ledger.from_ms,
+        earned_24h,
+        pa_earned_24h,
         expected_payments: expected,
         received_payments: received,
         missed,
@@ -251,6 +254,17 @@ pub fn earnings_days(
         d.pa = parallel_asset_accrual(d.native);
     }
     days
+}
+
+/// What the last 2,880 blocks paid the address, and what that accrued in parallel assets: the
+/// operator view's `earned_24h` and `pa_earned_24h` for the same payouts. Both `None` while the
+/// stored blocks do not cover the window.
+pub fn realized_24h(
+    ledger: &PayoutLedger,
+    entries: &[PayoutEntry],
+) -> (Option<Amount>, Option<Amount>) {
+    let d1 = ledger.earnings(entries.iter()).d1;
+    (d1, d1.map(parallel_asset_accrual))
 }
 
 /// Payments missed between consecutive anchors `start`, the payment heights and `end`, for a
@@ -930,6 +944,15 @@ mod tests {
         }
         assert_eq!(last.pa, Amount::from_flux(10));
         assert_eq!(days[1].pa, Amount::ZERO);
+        // The last 2,880 blocks: the two payouts of the last day, and as much again in parallel
+        // assets.
+        assert_eq!(
+            realized_24h(&ledger, &entries),
+            (Some(Amount::from_flux(10)), Some(Amount::from_flux(10)))
+        );
+        // A ledger younger than a day cannot say.
+        let young = PayoutLedger::for_tests(tip, tip - 100, tip_ms);
+        assert_eq!(realized_24h(&young, &entries), (None, None));
     }
 
     /// A confirmed Cumulus node with nothing measured.

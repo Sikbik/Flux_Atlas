@@ -1437,6 +1437,12 @@ pub struct WalletEarnings {
     pub days: Vec<EarningsDay>,
     /// Time of the first stored block the realized figures cover; `null` when none is stored.
     pub covered_from_ms: Option<u64>,
+    /// FLUX paid to the address in the last 2,880 blocks up to the tip, counted as the operator
+    /// view counts its `earned_24h`; `null` when the stored blocks do not cover the window.
+    pub earned_24h: Option<Amount>,
+    /// What those payouts accrued across the parallel-asset chains, claimable through Flux Fusion
+    /// (`emission::parallel_asset_accrual` of `earned_24h`); `null` exactly where it is.
+    pub pa_earned_24h: Option<Amount>,
     /// Payments the queue owed this wallet's nodes over the covered window, and payments the
     /// ledger shows (every payout to the address, attributed to a node or not).
     pub expected_payments: u32,
