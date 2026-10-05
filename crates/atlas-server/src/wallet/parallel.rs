@@ -2,7 +2,9 @@
 //! chain, with display names and explorer links. The accrual rule itself lives in
 //! `atlas_core::emission::parallel_asset_accrual`.
 
+use atlas_core::Amount;
 use atlas_core::api::{MultiClaim, PaChain, PaClaim, ParallelAssetsDto};
+use atlas_core::emission::{parallel_asset_accrual, parallel_asset_accrual_per_chain};
 
 use crate::sources::{FusionMeta, FusionWallet};
 
@@ -107,13 +109,13 @@ fn flux(x: f64) -> f64 {
     }
 }
 
-/// The view of one address. `accrual_per_day` is the wallet's parallel-asset accrual at its
-/// current run rate (FLUX), when it runs nodes.
+/// The view of one address. `native_per_day` is the wallet's main-chain run rate, when it runs
+/// nodes; the accrual figures are the parallel-asset rule applied to it.
 pub fn dto(
     address: &str,
     w: &FusionWallet,
     meta: &FusionMeta,
-    accrual_per_day: Option<f64>,
+    native_per_day: Option<Amount>,
 ) -> ParallelAssetsDto {
     let active = |id: &str| meta.active.iter().any(|a| a.eq_ignore_ascii_case(id));
     let mut chains: Vec<PaChain> = w
@@ -190,7 +192,9 @@ pub fn dto(
             fees: flux(w.multi.total_fee),
             net: flux(w.multi.total_reward),
         },
-        accrual_per_day,
+        accrual_per_day: native_per_day.map(|n| parallel_asset_accrual(n).to_flux_f64()),
+        accrual_per_chain_per_day: native_per_day
+            .map(|n| parallel_asset_accrual_per_chain(n).to_flux_f64()),
         chains,
         claims,
     }
@@ -234,7 +238,7 @@ mod tests {
             "t3c4EfxLoXXSRZCRnPRF3RpjPi9mBzF5yoJ",
             &w,
             &meta,
-            Some(3_092.7),
+            Some(Amount::from_flux_f64(3_092.7).unwrap()),
         );
         assert_eq!(d.chains.len(), 10);
         assert_eq!(d.chains[0].chain, "kda");
@@ -257,6 +261,8 @@ mod tests {
             Some("https://polygonscan.com/tx/{txid}")
         );
         assert_eq!(d.accrual_per_day, Some(3_092.7));
+        // A tenth of it on each chain.
+        assert_eq!(d.accrual_per_chain_per_day, Some(309.27));
     }
 
     #[test]

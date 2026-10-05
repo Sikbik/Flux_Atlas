@@ -223,6 +223,7 @@ pub fn earnings_days(
         .map(|i| EarningsDay {
             day_ms: first + i as u64 * DAY_MS,
             native: Amount::ZERO,
+            pa: Amount::ZERO,
             payments: 0,
             cumulus: Amount::ZERO,
             nimbus: Amount::ZERO,
@@ -245,6 +246,9 @@ pub fn earnings_days(
             Tier::Stratus => d.stratus += e.amount,
             Tier::Unknown => {}
         }
+    }
+    for d in &mut days {
+        d.pa = parallel_asset_accrual(d.native);
     }
     days
 }
@@ -920,6 +924,12 @@ mod tests {
             (Amount::from_flux(9), Amount::from_flux(1))
         );
         assert_eq!(days[0].native, Amount::from_flux(9));
+        // Each day's parallel assets are the rule applied to what the main chain paid that day.
+        for d in &days {
+            assert_eq!(d.pa, parallel_asset_accrual(d.native));
+        }
+        assert_eq!(last.pa, Amount::from_flux(10));
+        assert_eq!(days[1].pa, Amount::ZERO);
     }
 
     /// A confirmed Cumulus node with nothing measured.

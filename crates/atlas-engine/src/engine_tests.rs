@@ -217,6 +217,13 @@ async fn restores_and_publishes_stale_then_bodies() {
     assert_eq!(bin.len(), 29);
     assert!(p.bodies.bootstrap.is_some() && p.bodies.apps_index.is_some());
     assert_eq!(p.tiers.len(), 3);
+    // Every tier states what its payout accrues in parallel assets beside it.
+    for t in p.tiers.iter() {
+        assert_eq!(
+            t.pa_payout,
+            atlas_core::emission::parallel_asset_accrual(t.payout)
+        );
+    }
     assert_eq!(p.freshness.len(), crate::freshness::JOBS.len());
     eng.shutdown().await;
 }

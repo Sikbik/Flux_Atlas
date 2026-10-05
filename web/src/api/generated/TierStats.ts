@@ -8,9 +8,15 @@ import type { Tier } from "./Tier";
  */
 export type TierStats = { tier: Tier, count: number, collateral: Amount, 
 /**
- * Payout per block to this tier's queue head.
+ * Payout per block to this tier's queue head, on the main chain.
  */
 payout: Amount, 
+/**
+ * What that payout accrues across the parallel-asset chains, claimable through Flux Fusion
+ * (`emission::parallel_asset_accrual` of `payout`). A node of the tier earns `payout +
+ * pa_payout` per payment.
+ */
+pa_payout: Amount, 
 /**
  * Approximate payment cycle in blocks (about the tier's node count).
  */

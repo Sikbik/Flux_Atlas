@@ -91,6 +91,11 @@ async fn hot_bodies_negotiate_and_revalidate() {
     assert_eq!(b["network"]["tip"]["height"], TIP);
     assert_eq!(b["stale"], false);
     assert_eq!(b["tiers"].as_array().unwrap().len(), 3);
+    // Each tier's payout accrues as much again in parallel assets (the rule is 10 chains x 10%).
+    for t in b["tiers"].as_array().unwrap() {
+        assert_eq!(t["pa_payout"], t["payout"], "{t}");
+    }
+    assert_ne!(b["tiers"][0]["pa_payout"], "0.00000000");
     let nodes = decode_nodes_bin(&get(&e.app, "/api/v1/nodes.bin").await.body).unwrap();
     assert_eq!(nodes.len(), e.fixture.nodes.len());
     let mesh = decode_mesh_bin(&get(&e.app, "/api/v1/mesh.bin").await.body).unwrap();
@@ -367,6 +372,9 @@ async fn node_history_payments_peers() {
     assert_eq!(p["items"][0]["height"], TIP);
     assert!(p["items"][0]["time_ms"].as_u64().unwrap() > 0);
     assert_ne!(p["total_paid"], "0.00000000");
+    // The parallel assets sit beside the main-chain amounts, row by row and in total.
+    assert_eq!(p["pa_total_paid"], p["total_paid"]);
+    assert_eq!(p["items"][0]["pa"], p["items"][0]["amount"]);
     if let Some(c) = p["next_cursor"].as_str() {
         let p2 = get(
             &e.app,
@@ -412,6 +420,10 @@ async fn operator_by_address_and_zelid() {
     // Earnings: the fixture stores 40 blocks, too few for any window, so every window is
     // unknown (never a partial sum), and the covered range sums the payouts to its addresses.
     assert!(a["earned_24h"].is_null() && a["earned_7d"].is_null() && a["earned_30d"].is_null());
+    // The parallel assets follow the windows exactly: unknown where the main chain is.
+    assert!(
+        a["pa_earned_24h"].is_null() && a["pa_earned_7d"].is_null() && a["pa_earned_30d"].is_null()
+    );
     assert_eq!(a["earnings_from_height"], TIP - 39);
     assert!(a["earnings_from_ms"].is_number());
     let addrs: std::collections::BTreeSet<String> = a["nodes"]
@@ -432,6 +444,7 @@ async fn operator_by_address_and_zelid() {
     assert!(expected > 0.0, "the fixture pays operator 0");
     let covered: f64 = a["earned_covered"].as_str().unwrap().parse().unwrap();
     assert!((covered - expected).abs() < 1e-6, "{covered} vs {expected}");
+    assert_eq!(a["pa_earned_covered"], a["earned_covered"]);
     let z = get(&e.app, &format!("/api/v1/operator/{}", operator_zelid(0)))
         .await
         .json();

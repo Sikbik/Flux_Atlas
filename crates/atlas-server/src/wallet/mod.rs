@@ -24,7 +24,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use atlas_core::api::PricesDto;
-use atlas_core::emission::parallel_asset_accrual;
 use atlas_core::{Amount, NodeId, NodeRecord, now_ms};
 use axum::extract::State;
 use axum::http::HeaderMap;
@@ -197,8 +196,8 @@ pub async fn parallel_assets(
         },
     )
     .await?;
-    let accrual = accrual_per_day(&s, &addr);
-    let dto = parallel::dto(&addr, &wallet, &meta, accrual);
+    let native = native_per_day(&s, &addr);
+    let dto = parallel::dto(&addr, &wallet, &meta, native);
     Ok(json_response(&headers, &dto, cache::SLOW))
 }
 
@@ -216,9 +215,9 @@ async fn fusion_meta(s: &AppState) -> Result<Arc<FusionMeta>, ApiError> {
         .map(|(_, v)| v)
 }
 
-/// Parallel-asset accrual per day of `addr` at its current run rate, in FLUX; `None` without
-/// confirmed nodes.
-fn accrual_per_day(s: &AppState, addr: &str) -> Option<f64> {
+/// The main-chain run rate of `addr` (the wallet's `native_per_day`); `None` without confirmed
+/// nodes.
+fn native_per_day(s: &AppState, addr: &str) -> Option<Amount> {
     let v = s.views();
     let net = v.wallet_network();
     let mut counts = [0u32; 3];
@@ -232,8 +231,7 @@ fn accrual_per_day(s: &AppState, addr: &str) -> Option<f64> {
         return None;
     }
     let tip = v.tip_height().unwrap_or(0);
-    let native = compute::run_rate(counts, &net, tip + 1);
-    Some(parallel_asset_accrual(native).to_flux_f64())
+    Some(compute::run_rate(counts, &net, tip + 1))
 }
 
 // ---------------------------------------------------------------------------------------------

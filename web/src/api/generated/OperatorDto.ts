@@ -21,4 +21,10 @@ earnings_from_height: number | null, earnings_from_ms: number | null,
 /**
  * FLUX paid from `earnings_from_height` to the tip.
  */
-earned_covered: Amount | null, next_payments: Array<NextPayment>, };
+earned_covered: Amount | null, 
+/**
+ * What the main-chain payouts above accrued across the parallel-asset chains over the same
+ * windows, claimable through Flux Fusion (`emission::parallel_asset_accrual` of each);
+ * `null` exactly where the main-chain figure is.
+ */
+pa_earned_24h: Amount | null, pa_earned_7d: Amount | null, pa_earned_30d: Amount | null, pa_earned_covered: Amount | null, next_payments: Array<NextPayment>, };

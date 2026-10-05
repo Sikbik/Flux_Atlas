@@ -4,4 +4,14 @@ import type { Amount } from "./Amount";
 /**
  * Payouts received on one UTC day.
  */
-export type EarningsDay = { day_ms: number, native: Amount, payments: number, cumulus: Amount, nimbus: Amount, stratus: Amount, };
+export type EarningsDay = { day_ms: number, 
+/**
+ * Paid on the main chain.
+ */
+native: Amount, 
+/**
+ * What those payouts accrued across the parallel-asset chains, claimable through Flux
+ * Fusion rather than received on the main chain (`emission::parallel_asset_accrual` of
+ * `native`).
+ */
+pa: Amount, payments: number, cumulus: Amount, nimbus: Amount, stratus: Amount, };

@@ -9,6 +9,7 @@ use atlas_core::api::{
     TierCounts,
 };
 use atlas_core::codec::mesh_bin::{decode_mesh_bin, flags as mesh_flags};
+use atlas_core::emission::parallel_asset_accrual;
 use atlas_core::node::NodeStatus;
 use atlas_core::{Amount, NodeId, NodeRecord, now_ms};
 use atlas_store::{EventKey, Order};
@@ -496,6 +497,7 @@ pub async fn payments(
                     height: *h,
                     time_ms,
                     amount: *amount,
+                    pa: parallel_asset_accrual(*amount),
                     address: payout
                         .map_or_else(|| n.payment_address.to_string(), |p| p.address.to_string()),
                     tier: payout.map_or(n.tier, |p| p.tier),
@@ -510,6 +512,7 @@ pub async fn payments(
                 },
                 items,
                 total_paid,
+                pa_total_paid: parallel_asset_accrual(total_paid),
             })
         })
         .await?;
@@ -660,6 +663,10 @@ pub async fn operator(
         earnings_from_height: ledger.from,
         earnings_from_ms: ledger.from_ms,
         earned_covered: earnings.covered,
+        pa_earned_24h: earnings.d1.map(parallel_asset_accrual),
+        pa_earned_7d: earnings.d7.map(parallel_asset_accrual),
+        pa_earned_30d: earnings.d30.map(parallel_asset_accrual),
+        pa_earned_covered: earnings.covered.map(parallel_asset_accrual),
         next_payments: next,
     };
     Ok(json_response(&headers, &dto, cache::DERIVED))

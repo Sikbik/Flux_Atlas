@@ -11,7 +11,9 @@ use atlas_core::api::{
     AppIndexEntry, BlockLite, NetworkSummary, SupplyInfo, TierCounts, TierStats, TipInfo, TxLite,
 };
 use atlas_core::chain::{NodeTxKind, TxKind};
-use atlas_core::emission::{next_reduction_height, pon_subsidy, tier_payout};
+use atlas_core::emission::{
+    next_reduction_height, parallel_asset_accrual, pon_subsidy, tier_payout,
+};
 use atlas_core::event::{Event, EventEnvelope};
 use atlas_core::live::{
     AppInstancesDelta, AppsDelta, DeltaCause, FeedKind, FeedRef, LiveBody, MeshDelta,
@@ -2069,17 +2071,21 @@ pub fn tier_stats(st: &NetworkState, s: &NetworkSummary) -> Vec<TierStats> {
     let next = st.tip_height() + 1;
     Tier::ALL
         .iter()
-        .map(|t| TierStats {
-            tier: *t,
-            count: s.tiers.get(*t),
-            collateral: t.collateral().unwrap_or(Amount::ZERO),
-            payout: tier_payout(next, *t).unwrap_or(Amount::ZERO),
-            cycle_blocks: st.queue.tier(*t).map_or(0, |q| q.len() as u32),
-            next: st
-                .queue
-                .head(*t)
-                .and_then(|n| st.nodes.rec(n))
-                .map(node_ref),
+        .map(|t| {
+            let payout = tier_payout(next, *t).unwrap_or(Amount::ZERO);
+            TierStats {
+                tier: *t,
+                count: s.tiers.get(*t),
+                collateral: t.collateral().unwrap_or(Amount::ZERO),
+                payout,
+                pa_payout: parallel_asset_accrual(payout),
+                cycle_blocks: st.queue.tier(*t).map_or(0, |q| q.len() as u32),
+                next: st
+                    .queue
+                    .head(*t)
+                    .and_then(|n| st.nodes.rec(n))
+                    .map(node_ref),
+            }
         })
         .collect()
 }

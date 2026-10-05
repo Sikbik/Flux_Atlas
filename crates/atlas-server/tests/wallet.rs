@@ -92,6 +92,12 @@ async fn wallet_view_of_a_mixed_fleet() {
     let rate: f64 = earn["native_per_day"].as_str().unwrap().parse().unwrap();
     assert!(rate > 0.0);
     assert_eq!(earn["pa_per_day"], earn["native_per_day"]);
+    // Each realized day carries its parallel-asset accrual beside what the main chain paid.
+    let days = earn["days"].as_array().unwrap();
+    assert!(!days.is_empty());
+    for d in days {
+        assert_eq!(d["pa"], d["native"], "{d}");
+    }
     let proj = earn["projection"].as_array().unwrap();
     assert_eq!(proj.len(), 365);
     assert_eq!(proj[0]["native"], earn["native_per_day"]);
@@ -214,6 +220,8 @@ async fn parallel_assets_are_cached_and_fail_cleanly() {
     let multi = pa["multi"]["claimable"].as_f64().unwrap();
     assert!(multi < claimable, "the claim-all leaves erg out");
     assert!(pa["accrual_per_day"].as_f64().unwrap() > 0.0);
+    let per_chain = pa["accrual_per_chain_per_day"].as_f64().unwrap();
+    assert!((per_chain * 10.0 - pa["accrual_per_day"].as_f64().unwrap()).abs() < 1e-6);
     let claims = pa["claims"].as_array().unwrap();
     assert!(
         claims
